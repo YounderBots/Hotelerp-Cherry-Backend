@@ -1,0 +1,139 @@
+/* Card.css
+   Uses theme variables from your index.css (e.g. --primary-color, --bg-primary, --text-primary)
+   Exposes two CSS variables you can override via inline style:
+     --card-bg       -> background color for the card
+     --card-text     -> text color for value/label (optional)
+*/
+.card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--border-radius, 8px);
+  background: var(--card-bg, var(--bg-primary));
+  color: var(--card-text, var(--text-primary));
+  box-shadow: var(--shadow-sm);
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  min-width: 140px;
+  /* allow card size to be controlled by the parent container */
+  width: auto;
+  max-width: 400px;
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Icon area */
+.card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  flex: 0 0 44px;
+  
+  /* subtle background that works on colored and white cards */
+  color: inherit;
+  font-size: 18px;
+}
+
+/* Content */
+.card__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* allow truncation */
+}
+
+.card__value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card__label {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  /* color: rgba(0,0,0,0.55); */
+}
+
+/* If you want the label to use theme muted color */
+.card--muted .card__label {
+  color: var(--text-muted);
+}
+
+/* Helper: fluid style if parent wants full width */
+.card--fluid {
+  width: 100%;
+}
+
+/* Small responsive tweak */
+@media (max-width: 420px) {
+  .card {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .card__icon {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+  }
+
+  .card__value {
+    font-size: 1.05rem;
+  }
+}
+
+
+.shine-overlay {
+  position: relative;
+  overflow: hidden;
+
+  &:hover .shine {
+    display: block;
+  }
+}
+
+.shine {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  background: #fff;
+  /* background: -webkit-gradient(linear, left top, right top, from(rgba(255, 255, 255, 0)), color-stop(50%, rgba(255, 255, 255, .8)), to(rgba(255, 255, 255, 0))); */
+  background: -webkit-gradient(linear, left top, right top, from(var(--bg-dark)), color-stop(50%, var(--bg-tertiary)), to(var(--bg-primary)));
+  /* background: linear-gradient(to right, rgba(255, 255, 255, 0) 0, rgba(255, 255, 255, .8) 50%, rgba(255, 255, 255, 0) 100%); */
+  background: linear-gradient(to right, var(--bg-primary) 0, var(--bg-secondary) 50%, var(--bg-primary) 100%);
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  transform: skew(-40deg);
+  animation: shine 0.75s linear 1;
+}
+
+@keyframes shine {
+  0% {
+    left: -50%;
+    opacity: 0;
+  }
+
+  50% {
+    left: 25%;
+    opacity: .5;
+  }
+
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}

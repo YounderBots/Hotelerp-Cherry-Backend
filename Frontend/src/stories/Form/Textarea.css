@@ -1,0 +1,74 @@
+/* Textarea.css */
+.textarea-control {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-md);
+  transition: all var(--transition);
+  outline: none;
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+  box-shadow: var(--shadow-sm);
+}
+
+.textarea-control:hover:not(:disabled):not(:focus) {
+  border-color: var(--primary-lighter);
+  box-shadow: var(--shadow);
+}
+
+.textarea-control:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-lightest);
+}
+
+.textarea-control:disabled {
+  background-color: var(--gray-100);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.textarea-control::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Textarea States */
+.textarea-control--error {
+  border-color: var(--error-color) !important;
+}
+
+.textarea-control--error:focus {
+  border-color: var(--error-color) !important;
+  box-shadow: 0 0 0 3px var(--error-light) !important;
+}
+
+.textarea-control--success {
+  border-color: var(--success-color) !important;
+}
+
+.textarea-control--success:focus {
+  border-color: var(--success-color) !important;
+  box-shadow: 0 0 0 3px var(--success-light) !important;
+}
+
+/* Character Counter */
+.textarea-counter {
+  text-align: right;
+  font-size: 1rem;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+}
+
+.textarea-counter--warning {
+  color: var(--warning-color);
+}
+
+.textarea-counter--error {
+  color: var(--error-color);
+}

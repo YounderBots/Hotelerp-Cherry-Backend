@@ -1,0 +1,520 @@
+/* Tabs Component Styles */
+.tabs-container {
+  width: 100%;
+  background: var(--white);
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.tabs-header {
+  display: flex;
+  align-items: stretch;
+  background: linear-gradient(to bottom,
+      var(--bg-primary),
+      var(--gray-50));
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-shadow: inset 0 -1px 0 var(--border-color);
+
+}
+
+.tabs-header::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs-list {
+  display: flex;
+  align-items: stretch;
+  min-width: 100%;
+  position: relative;
+}
+
+.tabs-list.vertical {
+  flex-direction: column;
+  min-width: auto;
+  border-right: 1px solid var(--border-color);
+}
+
+/* Tab Trigger */
+.tab-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: transparent;
+  border: none;
+  color: var(--primary-dark);
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition);
+  position: relative;
+  white-space: nowrap;
+  font-family: 'Urbanist';
+}
+
+
+
+.tab-trigger.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+}
+
+.tab-trigger.vertical {
+  border-bottom: none;
+  border-right: 2px solid transparent;
+  justify-content: flex-start;
+  text-align: left;
+  min-width: 160px;
+}
+
+.tab-trigger.vertical.active {
+  border-right-color: var(--primary-color);
+  border-bottom: none;
+}
+
+.tab-trigger.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.tab-trigger.disabled:hover {
+  background-color: transparent;
+  color: var(--text-muted);
+}
+
+/* Tab Icon */
+.tab-icon {
+  font-size: 1rem;
+  transition: transform var(--transition);
+}
+
+.tab-trigger.active .tab-icon {
+  color: var(--primary-color);
+  transform: scale(1.1);
+}
+
+.tab-badge {
+  background: var(--gray-300);
+  color: var(--text-primary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--border-radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+}
+
+.tab-trigger.active .tab-badge {
+  background: var(--primary-color);
+  color: var(--white);
+}
+
+/* Tab Content */
+.tabs-content {
+  padding: var(--spacing-xl);
+  background: var(--white);
+  border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg);
+  box-shadow: inset 0 1px 0 var(--border-color);
+}
+
+.tab-panel {
+  display: none;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tabs Variants */
+.tabs-filled .tab-trigger {
+  background: var(--gray-100);
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  margin-right: -1px;
+  border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.tabs-filled .tab-trigger.active {
+  background: var(--white);
+  border-bottom-color: var(--white);
+  z-index: 1;
+}
+
+.tabs-pills .tab-trigger {
+  background: var(--gray-100);
+  border-radius: var(--border-radius-lg);
+  margin: var(--spacing-sm);
+  border-bottom: none;
+}
+
+.tabs-pills .tab-trigger.active {
+  background: var(--primary-color);
+  color: var(--white);
+}
+
+.tabs-pills .tab-trigger.active .tab-icon {
+  color: var(--white);
+}
+
+.tabs-pills .tab-trigger.active .tab-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--white);
+}
+
+.tabs-underline .tab-trigger {
+  border-bottom: 2px solid transparent;
+  background: transparent;
+}
+
+.tabs-underline .tab-trigger.active {
+  border-bottom-color: var(--primary-color);
+  background: transparent;
+}
+
+/* Tabs Sizes */
+.tabs-sm .tab-trigger {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: 0.8rem;
+}
+
+.tabs-lg .tab-trigger {
+  padding: var(--spacing-lg) var(--spacing-xl);
+  font-size: 1rem;
+}
+
+/* Vertical Tabs */
+.tabs-vertical {
+  display: flex;
+  min-height: 400px;
+}
+
+.tabs-vertical .tabs-header {
+  flex-direction: column;
+  border-bottom: none;
+  border-right: 1px solid var(--border-color);
+  min-width: 200px;
+  background: var(--gray-50);
+}
+
+.tabs-vertical .tabs-content {
+  flex: 1;
+  padding: var(--spacing-xl);
+}
+
+/* Tab Add/Remove Functionality */
+.tabs-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  background: var(--primary-color);
+  color: var(--white);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-size: 1.2rem;
+}
+
+.tabs-add-btn:hover {
+  background: var(--primary-dark);
+}
+
+.tab-remove-btn {
+  margin-left: var(--spacing-sm);
+  opacity: 0;
+  transition: opacity var(--transition);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--border-radius-sm);
+}
+
+.tab-trigger:hover .tab-remove-btn {
+  opacity: 1;
+}
+
+.tab-remove-btn:hover {
+  background: var(--error-light);
+  color: var(--error-color);
+}
+
+/* Scrollable Tabs */
+.tabs-scrollable {
+  position: relative;
+}
+
+.tabs-scroll-btn {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40px;
+  background: var(--gray-100);
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  z-index: 2;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+}
+
+.tabs-scroll-btn:hover {
+  background: var(--gray-200);
+  color: var(--text-primary);
+}
+
+.tabs-scroll-btn.prev {
+  left: 0;
+  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.tabs-scroll-btn.next {
+  right: 0;
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.tabs-scrollable.scrollable .tabs-scroll-btn {
+  display: flex;
+}
+
+/* Loading State */
+.tab-panel.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.tab-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--primary-lighter);
+  border-top: 3px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* Dark Theme */
+body.dark .tabs-container {
+  background: var(--bg-primary);
+}
+
+
+
+
+
+body.dark .tab-trigger:hover {
+  background-color: var(--gray-700);
+  color: var(--text-primary);
+}
+
+body.dark .tabs-content {
+  background: var(--bg-primary);
+}
+
+body.dark .tabs-filled .tab-trigger {
+  background: var(--gray-800);
+  border-color: var(--border-color);
+}
+
+body.dark .tabs-filled .tab-trigger.active {
+  background: var(--bg-primary);
+}
+
+body.dark .tabs-pills .tab-trigger {
+  background: var(--gray-800);
+}
+
+body.dark .tabs-vertical .tabs-header {
+  background: var(--gray-800);
+  border-right-color: var(--border-color);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .tabs-header {
+    flex-wrap: wrap;
+  }
+
+  .tab-trigger {
+    flex: 1;
+    min-width: 120px;
+    justify-content: center;
+  }
+
+  .tabs-vertical {
+    flex-direction: column;
+  }
+
+  .tabs-vertical .tabs-header {
+    min-width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+}
+
+/* Animation Variants */
+.tab-panel.slide-left {
+  animation: slideLeft 0.3s ease-in-out;
+}
+
+.tab-panel.slide-right {
+  animation: slideRight 0.3s ease-in-out;
+}
+
+.tab-panel.zoom {
+  animation: zoomIn 0.3s ease-in-out;
+}
+
+@keyframes slideLeft {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideRight {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes zoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+
+.tab-trigger:hover:not(.disabled) {
+  background: var(--gray-100);
+  color: var(--primary-color);
+}
+
+.tab-trigger:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+
+.tab-trigger::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  height: 2px;
+  background: var(--primary-color);
+  transition: all 0.3s ease;
+  transform: translateX(-50%);
+}
+
+.tab-trigger.active::after {
+  width: 100%;
+}
+
+
+.tabs-pills .tab-trigger {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  transition: all 0.25s ease;
+}
+
+.tabs-pills .tab-trigger.active {
+  background: var(--primary-color);
+  color: var(--white);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  transform: translateY(-1px);
+}
+
+.tabs-filled .tab-trigger {
+  background: var(--gray-100);
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  position: relative;
+}
+
+.tabs-filled .tab-trigger.active {
+  background: var(--white);
+  box-shadow: 0 -2px 6px rgba(0,0,0,0.06);
+}
+
+.tabs-vertical .tab-trigger {
+  border-radius: var(--border-radius-md);
+  margin: var(--spacing-xs);
+}
+
+.tabs-vertical .tab-trigger.active {
+  background: var(--primary-light);
+  color: var(--primary-color);
+}
+
+.tabs-scroll-btn {
+  background: linear-gradient(
+    to right,
+    var(--gray-100),
+    transparent
+  );
+}
+
+.tabs-scroll-btn.next {
+  background: linear-gradient(
+    to left,
+    var(--gray-100),
+    transparent
+  );
+}
+
+.tab-panel.loading {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--gray-100),
+    var(--gray-100) 10px,
+    var(--gray-50) 10px,
+    var(--gray-50) 20px
+  );
+}
+
+.sb-show-main .tabs-container {
+  max-width: 900px;
+  margin: auto;
+}

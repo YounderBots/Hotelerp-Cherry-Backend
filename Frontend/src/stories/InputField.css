@@ -1,0 +1,86 @@
+/* InputField.css
+   - Uses a component-level accent color so we don't need to change global theme.
+   - Accent color chosen to match the design (teal).
+*/
+:root {
+  /* component-level override (you can change this) */
+  --search-accent: var(--primary-color); /* teal - matches design screenshot */
+  --search-bg: var(--primary-lightest);
+  --search-border: var(--primary-lightest);
+  --search-placeholder: #9aa6a6;
+}
+
+.InputField-wrapper {
+  display: block;
+}
+
+/* outer container */
+.InputField {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--search-bg);
+  border-radius: 6px;
+  border: 1px solid var(--search-border);
+  padding: 6px 8px;
+  box-shadow: 0 0 0 0 transparent;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  overflow: hidden;
+}
+
+/* focus state */
+.InputField:focus-within {
+  border-color: var(--search-accent);
+  box-shadow: 0 2px 8px rgba(22,160,133,0.08);
+}
+
+/* icon */
+.InputField__icon {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  color: var(--search-accent);
+  flex: 0 0 auto;
+}
+
+/* input */
+.InputField__input {
+  border: none;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: #223;
+  padding: 4px 0;
+}
+
+.InputField__input::placeholder {
+  color: var(--search-placeholder);
+}
+
+/* clear button */
+.InputField__clear {
+  border: none;
+  background: transparent;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.InputField__clear:hover { background: rgba(0,0,0,0.03); }
+
+/* Size presets (these classes are used to set width as percent) */
+.InputField--small  { width: 25%; min-width: 160px; }
+.InputField--medium { width: 50%; min-width: 240px; }
+.InputField--large  { width: 75%; min-width: 320px; }
+.InputField--full   { width: 100%; min-width: 320px; }
+
+/* custom width will be applied inline via style attribute */
+
+/* make the wrapper used in Storybook preview look like your screenshot */
+.sb-InputField-preview { padding: 12px; background: transparent; display: block; }

@@ -1,0 +1,91 @@
+.card__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+  justify-items: center;
+}
+
+/* ================= CARD ================= */
+.profile-card {
+  width: 300px;
+  background: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  padding: 24px 16px 20px;
+  text-align: center;
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid var(--primary-lighter);
+}
+
+.profile-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Header */
+.card-header {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* Menu Button */
+.card-menu {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--secondary-color);
+}
+
+/* Dropdown */
+.card-dropdown {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  z-index: 10;
+  border: 1px solid var(--border-light);
+}
+
+.card-dropdown button {
+  width: 140px;
+  padding: 10px 12px;
+  border: none;
+  background: var(--bg-primary);
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.card-dropdown button:hover {
+  background: var(--primary-lightest);
+}
+
+/* Image */
+.profile-image {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 12px auto 10px;
+  border: 3px solid var(--primary-color);
+}
+
+/* Text */
+.profile-name {
+  margin: 8px 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--secondary-color);
+}
+
+.profile-role {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}

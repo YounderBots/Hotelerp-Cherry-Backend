@@ -1,0 +1,1016 @@
+AdminDashboard.css:root {
+  font-family: "Urbanist", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--primary-lightest);
+  overflow-y: auto;
+}
+
+.dashboard-wrapper {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  /* ✅ restores container padding */
+}
+
+/* Header */
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  background: var(--white);
+  padding: 1.5rem 2rem;
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+}
+
+.dashboard-header h2 {
+  margin: 0 0 0.25rem 0;
+  color: var(--text-primary);
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.dashboard-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.dashboard-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* Buttons */
+.btn-primary,
+.btn-outline {
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--border-radius-md);
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: "Urbanist", sans-serif;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-light));
+  color: var(--text-white);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1.5px solid var(--border-color);
+}
+
+.btn-outline:hover {
+  background: var(--primary-lighter);
+  border-color: var(--primary-color);
+}
+
+/* KPI Grid */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1.25rem;
+  margin-top: 8px;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 1400px) {
+  .kpi-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* KPI Cards */
+.kpi-card {
+  background: var(--white);
+  color: var(--text-primary);
+  padding: 1.5rem;
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: all var(--transition);
+  border: 1px solid var(--border-light);
+  position: relative;
+  overflow: hidden;
+}
+
+.kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.kpi-card.active {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-mild));
+  color: var(--text-white);
+  border-color: var(--primary-color);
+}
+
+.kpi-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.kpi-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  opacity: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kpi-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--border-radius-md);
+  background: var(--primary-lightest);
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kpi-card.active .kpi-icon {
+  background: rgba(255, 255, 255, 0.25);
+  color: var(--text-white);
+}
+
+.kpi-value {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.kpi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--border-radius-full);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.kpi-badge small {
+  opacity: 0.7;
+}
+
+.kpi-badge.up {
+  background: var(--success-light);
+  color: var(--success-color);
+}
+
+.kpi-badge.down {
+  background: var(--error-light);
+  color: var(--error-color);
+}
+
+.kpi-card.active .kpi-badge.up,
+.kpi-card.active .kpi-badge.down {
+  background: rgba(255, 255, 255, 0.25);
+  color: var(--text-white);
+}
+
+/* Cards */
+.card {
+  background: var(--white);
+  padding: 1.5rem;
+  border-radius: var(--border-radius-lg);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  height: 100%;
+  transition: all var(--transition);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.card h4 {
+  margin: 0 0 1.5rem 0;
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 600;
+  border-bottom: 2px solid var(--primary-lightest);
+  padding-bottom: 0.75rem;
+}
+
+/* Booking Platform Card */
+.booking-platform-card {
+  background: var(--white);
+  display: flex;
+  flex-direction: column;
+}
+
+.card-header-inline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.card-header-inline .more {
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  transform: rotate(90deg);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.platform-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.platform-donut {
+  flex-shrink: 0;
+}
+
+/* Platform Legend */
+.platform-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+}
+
+.platform-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.875rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  padding: 0.5rem;
+  border-radius: var(--border-radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.platform-legend li:hover {
+  background: var(--primary-lightest);
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-label b {
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+@media (max-width: 768px) {
+  .platform-content {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+/* Room Availability */
+.availability {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.availability div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  background: var(--primary-lightest);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-light);
+  transition: all var(--transition-fast);
+}
+
+.availability div:hover {
+  background: var(--primary-lighter);
+  transform: translateX(4px);
+}
+
+.availability div span {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.availability div b {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+/* Task List */
+.task-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.task-list li {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.task-list li:last-child {
+  border-bottom: none;
+}
+
+.task-list li.done {
+  color: var(--success-color);
+}
+
+.task-list li.done::before {
+  content: '✓';
+  color: var(--success-color);
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.task-list li.progress {
+  color: var(--warning-color);
+}
+
+.task-list li.progress::before {
+  content: '⏳';
+  color: var(--warning-color);
+  font-weight: bold;
+  margin-right: 0.5rem;
+}
+
+/* Table */
+.table-card {
+  overflow-x: auto;
+  grid-column: 1 / -1;
+}
+
+.table-card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table-card th {
+  background: var(--primary-lightest);
+  padding: 1rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.table-card td {
+  padding: 1rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+  color: var(--text-primary);
+}
+
+.table-card tr:hover {
+  background: var(--primary-lightest);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  padding: 0.375rem 0.75rem;
+  border-radius: var(--border-radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.badge.success {
+  background: var(--success-light);
+  color: var(--success-color);
+}
+
+.badge.warning {
+  background: var(--warning-light);
+  color: var(--warning-color);
+}
+
+.badge.info {
+  background: var(--info-light);
+  color: var(--info-color);
+}
+
+/* Activity List */
+.activity-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.activity-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.activity-list li:last-child {
+  border-bottom: none;
+}
+
+.activity-list li:hover {
+  background: var(--primary-lightest);
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  margin: 0 -0.5rem;
+  border-radius: var(--border-radius-sm);
+}
+
+/* ===== Three Cards Row (Each = 1/3) ===== */
+.three-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .three-cards-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .three-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Bottom Section Layout ===== */
+.dashboard-grid-bottom {
+  display: grid;
+  grid-template-columns: 68% 32%;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Ensure cards fill height */
+.booking-list-section,
+.recent-activity-section {
+  height: 100%;
+}
+
+/* Table card must stretch fully */
+.booking-list-section .card {
+  height: 100%;
+}
+
+/* Recent activity card full height */
+.recent-activity-section .card {
+  height: 100%;
+}
+
+/* Responsive behavior */
+@media (max-width: 1024px) {
+  .dashboard-grid-bottom {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================================
+   DARKER, CLEAN FONT REFINEMENT
+================================ */
+
+/* ---------- Booking Table ---------- */
+.table-card table th {
+  color: var(--secondary-dark);
+  /* Dark navy */
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.2px;
+}
+
+.table-card table td {
+  color: var(--text-primary);
+  /* Navy blue */
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.table-card table td strong {
+  color: var(--secondary-dark);
+  font-weight: 700;
+}
+
+/* Date column inside table */
+.table-card table td span {
+  color: var(--gray-700);
+}
+
+/* ---------- Status Badges ---------- */
+.badge.success {
+  background: var(--success-light);
+  color: var(--success-color);
+  font-weight: 700;
+}
+
+.badge.warning {
+  background: var(--warning-light);
+  color: var(--warning-color);
+  font-weight: 700;
+}
+
+.badge.info {
+  background: var(--info-light);
+  color: var(--info-color);
+  font-weight: 700;
+}
+
+/* ---------- Recent Activity ---------- */
+.activity-list li {
+  color: var(--text-primary);
+}
+
+/* Activity title */
+.activity-list li span:first-child {
+  color: var(--secondary-dark);
+  font-weight: 700;
+}
+
+/* Activity description */
+.activity-list li div div:last-child {
+  color: var(--gray-700);
+  font-weight: 500;
+}
+
+/* Activity time */
+.activity-time {
+  color: var(--gray-600);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Hover effect – subtle but premium */
+.activity-list li:hover {
+  background: var(--primary-lightest);
+}
+
+/* =================================================
+   CARD 1 — BOOKING LIST (PERFECT FONT & TABLE)
+================================================= */
+
+.table-card {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+
+/* Card title */
+.table-card h4 {
+  color: var(--secondary-dark);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* Table header */
+.table-card table th {
+  color: var(--secondary-dark);
+  font-weight: 700;
+  font-size: 0.95rem;
+  background: var(--primary-lightest);
+  border-bottom: 2px solid var(--border-color);
+}
+
+/* Table body text */
+.table-card table td {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+/* Guest name */
+.table-card table td strong {
+  color: var(--secondary-dark);
+  font-weight: 700;
+}
+
+/* Date column */
+.table-card table td span {
+  color: var(--gray-700);
+  font-weight: 500;
+}
+
+/* Row hover */
+.table-card table tbody tr:hover {
+  background: var(--primary-lightest);
+}
+
+/* Status badges */
+.badge {
+  font-weight: 700;
+  padding: 6px 14px;
+  font-size: 0.75rem;
+}
+
+.badge.success {
+  background: var(--success-light);
+  color: var(--success-color);
+}
+
+.badge.warning {
+  background: var(--warning-light);
+  color: var(--warning-color);
+}
+
+.badge.info {
+  background: var(--info-light);
+  color: var(--info-color);
+}
+
+/* =================================================
+   CARD 2 — ROOM AVAILABILITY (CLEAN & DARK)
+================================================= */
+
+.card.room-availability-card {
+  padding: 1.25rem;
+}
+
+/* Card title */
+.card.room-availability-card h4 {
+  color: var(--secondary-dark);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* Availability rows */
+.availability div {
+  background: var(--primary-lightest);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-md);
+  padding: 1rem 1.25rem;
+  transition: all var(--transition-fast);
+}
+
+/* Label text */
+.availability div span {
+  color: var(--secondary-dark);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+/* Numbers */
+.availability div b {
+  color: var(--primary-color);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+/* Hover effect */
+.availability div:hover {
+  background: var(--primary-lighter);
+  transform: translateX(4px);
+}
+
+/* =================================================
+   CARD 3 — TASK LIST (CLEAN & CLEAR)
+================================================= */
+
+.card.task-card {
+  padding: 1.25rem;
+}
+
+/* Card title */
+.card.task-card h4 {
+  color: var(--secondary-dark);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* Task list base */
+.task-list li {
+  color: var(--secondary-dark);
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.9rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Completed task */
+.task-list li.done {
+  color: var(--success-color);
+  font-weight: 700;
+}
+
+/* In progress */
+.task-list li.progress {
+  color: var(--warning-color);
+  font-weight: 700;
+}
+
+/* Icons spacing */
+.task-list li::before {
+  font-size: 1.05rem;
+}
+
+/* Hover effect */
+.task-list li:hover {
+  background: var(--primary-lightest);
+  padding-left: 0.5rem;
+  border-radius: var(--border-radius-sm);
+}
+
+/* =================================================
+   CARD 5 — RECENT ACTIVITIES
+================================================= */
+
+.card .card-header-inline h4 {
+  color: var(--secondary-dark);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+/* Activity item */
+.activity-list li {
+  padding: 0.9rem 0;
+  color: var(--secondary-dark);
+}
+
+/* Activity title */
+.activity-list li span {
+  font-weight: 700;
+  color: var(--secondary-dark);
+}
+
+/* Activity description */
+.activity-list li div div:last-child {
+  color: var(--gray-700);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Time */
+.activity-time {
+  color: var(--gray-600);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Hover */
+.activity-list li:hover {
+  background: var(--primary-lightest);
+  border-radius: var(--border-radius-sm);
+}
+
+/* =================================================
+   BOOKING PLATFORM — BIG BAR VISUAL UPGRADE
+================================================= */
+
+.platform-content {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+/* Bigger donut */
+.booking-platform-card svg {
+  width: 240px;
+  height: 240px;
+}
+
+/* Platform bars */
+.platform-bar {
+  margin-bottom: 0.9rem;
+}
+
+/* Label row */
+.bar-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.35rem;
+}
+
+/* Bar background */
+.bar-track {
+  width: 100%;
+  height: 10px;
+  background: var(--primary-lightest);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* Bar fill */
+.bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  opacity: 0.9;
+}
+
+/* Percentage number */
+.bar-label b {
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+/* =================================================
+   KPI CARD — TITLE FONT COLOR FIX
+================================================= */
+
+/* KPI title (New Bookings, Check-In, etc.) */
+.kpi-title {
+  color: var(--secondary-dark);
+  /* Dark navy */
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.4px;
+}
+
+/* Active KPI card title (on gradient background) */
+.kpi-card.active .kpi-title {
+  color: var(--text-white);
+  opacity: 0.95;
+}
+
+/* =================================================
+   DASHBOARD GRID — IMAGE-EXACT FIX
+================================================= */
+
+/* TOP ROW - 3 EQUAL COLUMNS */
+.dashboard-top-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+/* BOTTOM ROW - 2/3 + 1/3 */
+.dashboard-bottom-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+  align-items: stretch;
+}
+
+.booking-list-wrap {
+  display: flex;
+  width: 100%;
+}
+
+.recent-activity-wrap {
+  display: flex;
+  width: 100%;
+}
+
+.booking-list-wrap .card,
+.recent-activity-wrap .card {
+  flex: 1;
+  height: 100%;
+}
+
+
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .dashboard-top-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+/* Row */
+.dashboard-row {
+  display: flex;
+  margin: -0.75rem;   /* balances column padding */
+  /* width: 100% !important; */
+}
+
+
+
+/* Columns */
+.dashboard-col {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  /* ✅ column gutter */
+
+}
+
+/* 2/3 width */
+.dashboard-col-8 {
+  flex: 0 0 66.6667%;
+}
+
+/* 1/3 width */
+.dashboard-col-4 {
+  flex: 0 0 33.3333%;
+}
+
+/* Full height replacement for h-100 */
+.full-height {
+  height: 100%;
+}
+
+/* Responsive behavior (Bootstrap md breakpoint ≈ 768px) */
+@media (max-width: 768px) {
+  .dashboard-row {
+    flex-direction: column;
+  }
+
+  .dashboard-col-8,
+  .dashboard-col-4 {
+    flex: 0 0 100%;
+  }
+
+  .dashboard-col-8 {
+    margin-bottom: 16px;
+    /* replaces mb-4 */
+  }
+}
+
+/* Half column (used inside the 2/3 block) */
+.dashboard-col-6 {
+  flex: 0 0 50%;
+}
+
+/* Mobile handling for nested row */
+@media (max-width: 768px) {
+  .dashboard-col-6 {
+    flex: 0 0 100%;
+  }
+}
+
+.dashboard-col-8 > .dashboard-row{
+    margin: -0.5rem;
+
+}
