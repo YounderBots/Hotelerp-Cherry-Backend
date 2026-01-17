@@ -1,12 +1,12 @@
 import React from "react";
 
 const data = [
-  { label: "Direct Booking", value: 61, color: "#5b9bd5" },
-  { label: "Booking.com", value: 12, color: "#2c5282" },
-  { label: "Agoda", value: 11, color: "#7bb1e1" },
-  { label: "Airbnb", value: 9, color: "#9cc7ea" },
-  { label: "Hotels.com", value: 5, color: "#1a365d" },
-  { label: "Others", value: 2, color: "#c2ddf5" }
+  { label: "Direct Booking", value: 61, color: "var(--primary-mild)" },        // #db1b4b - Vibrant but not too dark
+  { label: "Booking.com", value: 12, color: "var(--primary-color)" },          // #850126 - Medium maroon
+  { label: "Agoda", value: 11, color: "var(--primary-light)" },                // #d88c9a - Soft rose (lighter)
+  { label: "Airbnb", value: 9, color: "var(--primary-lighter)" },              // #f3c9d2 - Blush pink (very light)
+  { label: "Hotels.com", value: 5, color: "var(--primary-lightest)" },         // #fff1f4 - Almost white with pink tint
+  { label: "Others", value: 2, color: "var(--primary-pale)" }                  // #FFF9F4 - Very pale cream
 ];
 
 const BookingPlatform = () => {

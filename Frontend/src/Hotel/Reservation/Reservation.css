@@ -1,0 +1,685 @@
+/* ================= ACTION BUTTONS ================= */
+.table-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.table-action-btn {
+  border: none;
+  padding: 7px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.table-action-btn.view {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.table-action-btn.edit {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.table-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+/* ================= MODAL ================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-card {
+  background: #fff;
+  width: 720px;
+  border-radius: 14px;
+  animation: modalScale 0.25s ease;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.25);
+}
+
+.modal-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.modal-header button {
+  background: #f1f5f9;
+  border: none;
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+}
+
+.modal-body.grid {
+  padding: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.form-group input,
+.form-group select {
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+}
+
+.modal-body.view input {
+  background: #f8fafc;
+  border: 1px dashed #cbd5f5;
+  cursor: not-allowed;
+}
+
+.modal-footer {
+  padding: 18px 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-mild));
+  color: #fff;
+}
+
+.btn.secondary {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+@keyframes modalScale {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ================= WRAPPER ================= */
+.reservation-wrapper {
+  padding: 20px;
+  font-family: "Urbanist", sans-serif;
+  background: var(--primary-lightest);
+}
+
+/* ================= ROOM TYPE TABS ================= */
+.room-type-tabs {
+  display: flex;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bg-primary, #ffffff);
+  border-radius: var(--border-radius-lg, 14px);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ================= ROOM TAB ================= */
+.room-tab {
+  border: none;
+  background: transparent;
+  padding: 10px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.room-tab .count {
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ================= ACTIVE TAB ================= */
+.room-tab.active {
+  background: var(--primary-mild);
+  color: #ffffff;
+}
+
+.room-tab.active .count {
+  background: #ffffff;
+  color: var(--primary-color);
+}
+
+/* ================= ROOM GRID ================= */
+.room-card-grid {
+  margin-top: 20px;
+  background: var(--bg-primary, #ffffff);
+  padding: 22px;
+  border-radius: var(--border-radius-xl, 18px);
+  border: 1px solid var(--border-color);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+}
+
+/* ================= ROOM CARD ================= */
+.room-card {
+  background: var(--primary-lightest);
+  border-radius: var(--border-radius-md, 12px);
+  padding: 14px 18px;
+  border: 1px solid var(--border-color);
+  transition: all 0.25s ease;
+}
+
+/* ================= CARD TOP ================= */
+.room-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.room-card-top h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ================= AVAILABILITY ================= */
+.availability {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ================= CENTER ICON ================= */
+.room-card-top svg {
+  color: var(--text-muted);
+}
+
+/* ================= ROOM INFO ================= */
+.room-card-info {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* ================= RESERVATION STATUS ================= */
+.reservation-status {
+  margin-top: 14px;
+  font-size: 14px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ================= HOVER ================= */
+.room-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ================= RESPONSIVE ================= */
+@media (max-width: 768px) {
+  .room-type-tabs {
+    overflow-x: auto;
+  }
+
+  .room-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =====================================================
+   ROOM VIEW – FILTER BAR
+===================================================== */
+.roomview-wrapper {
+  padding: 20px;
+  background: var(--primary-lightest);
+  font-family: "Urbanist", sans-serif;
+}
+
+/* ================= FILTER BAR ================= */
+.roomview-filters {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-primary);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+/* Date input */
+.roomview-date {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  font-size: 14px;
+  background: #fff;
+}
+
+/* ================= STATUS TABS ================= */
+.roomview-tabs {
+  display: flex;
+  gap: 10px;
+}
+
+.roomview-tab {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.roomview-tab span {
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+/* Active tab */
+.roomview-tab.active {
+  background: var(--primary-mild);
+  color: #fff;
+}
+
+.roomview-tab.active span {
+  background: #fff;
+  color: var(--primary-color);
+}
+
+/* =====================================================
+   ROOM VIEW – CARDS CONTAINER
+===================================================== */
+.roomview-grid-wrapper {
+  margin-top: 20px;
+  background: var(--bg-primary);
+  padding: 22px;
+  border-radius: var(--border-radius-xl);
+  border: 1px solid var(--border-color);
+}
+
+.roomview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+}
+
+/* =====================================================
+   ROOM CARD
+===================================================== */
+.roomview-card {
+  background: var(--primary-lightest);
+  border-radius: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+}
+
+/* ================= CARD STATUS ================= */
+.roomview-card-status {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--success-color);
+  margin-bottom: 10px;
+}
+
+/* ================= INNER ROOM PANEL ================= */
+.roomview-room {
+  background: var(--primary-mild);
+  border-radius: 16px;
+  padding: 16px;
+  color: #fff;
+}
+
+/* Header */
+.roomview-room-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.roomview-room-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Room number badge */
+.roomview-room-no {
+  background: #ffffff;
+  color: var(--primary-color);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Room type */
+.roomview-room-type {
+  margin-top: 10px;
+  font-size: 14px;
+  opacity: 0.95;
+}
+
+/* =====================================================
+   CARD FOOTER ACTIONS
+===================================================== */
+.roomview-actions {
+  margin-top: 12px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Action icons */
+.roomview-action-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid var(--primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-color);
+  cursor: pointer;
+}
+
+/* =====================================================
+   RESPONSIVE
+===================================================== */
+@media (max-width: 768px) {
+  .roomview-filters {
+    flex-wrap: wrap;
+  }
+
+  .roomview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================= CLICKABLE ROOM ================= */
+.roomview-card.clickable {
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.roomview-card.clickable:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+
+/* ================= IMAGE MODAL ================= */
+.room-image-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.room-image-modal {
+  background: #ffffff;
+  border-radius: 18px;
+  width: 520px;
+  max-width: 90%;
+  padding: 16px;
+  position: relative;
+  animation: zoomIn 0.25s ease;
+}
+
+.room-image-modal img {
+  width: 100%;
+  height: 280px;
+  object-fit: cover;
+  border-radius: 14px;
+}
+
+/* Close button */
+.room-image-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: #ffffff;
+  border: none;
+  border-radius: 50%;
+  padding: 6px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Room info */
+.room-image-info {
+  margin-top: 14px;
+  text-align: center;
+}
+
+.room-image-info h4 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.room-image-info p {
+  margin: 6px 0;
+  color: var(--text-secondary);
+}
+
+.room-image-info span {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Animation */
+@keyframes zoomIn {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* =====================================================
+   RESERVATION VIEW
+===================================================== */
+
+.reservationview-wrapper {
+  padding: 20px;
+  background: var(--primary-lightest);
+}
+
+/* ================= TABS ================= */
+.reservationview-tabs {
+  display: flex;
+  gap: 16px;
+  background: var(--bg-primary);
+  padding: 14px 16px;
+  border-radius: var(--border-radius-lg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.reservationview-tab {
+  border: none;
+  background: transparent;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reservationview-tab span {
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.reservationview-tab.active {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.reservationview-tab.active span {
+  background: #fff;
+  color: var(--primary-color);
+}
+
+/* ================= GRID ================= */
+.reservationview-grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 22px;
+}
+
+/* ================= CARD ================= */
+.reservation-card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Header */
+.reservation-card-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ================= DATES ================= */
+.reservation-dates {
+  margin-top: 14px;
+  background: var(--primary-light);
+  color: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  justify-content: space-between;
+  text-align: center;
+}
+
+.reservation-dates p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.reservation-dates span {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.reservation-dates label {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+  display: block;
+}
+
+/* ================= AMOUNT ================= */
+.reservation-amount {
+  margin-top: 16px;
+  background: var(--primary-mild);
+  color: #fff;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.reservation-amount div {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.reservation-amount div:last-child {
+  margin-bottom: 0;
+}
+
+.reservation-amount .balance {
+  background: #ffffff;
+  color: var(--primary-color);
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+/* ================= RESPONSIVE ================= */
+@media (max-width: 768px) {
+  .reservationview-tabs {
+    overflow-x: auto;
+  }
+
+  .reservationview-grid {
+    grid-template-columns: 1fr;
+  }
+}

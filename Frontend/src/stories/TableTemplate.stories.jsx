@@ -1,6 +1,7 @@
 import React from 'react';
-import TableTemplate from './TableTemplate';
+import TableTemplate, { TableActionButton } from './TableTemplate';
 import './TableTemplate.css';
+import { Plus, UserPlus, Download, Edit } from 'lucide-react';
 
 export default {
   title: 'Components/TableTemplate',
@@ -21,6 +22,7 @@ export default {
     searchable: { control: 'boolean' },
     exportable: { control: 'boolean' },
     loading: { control: 'boolean' },
+    hasActionButton: { control: 'boolean' },
   },
 };
 
@@ -105,9 +107,34 @@ Basic.args = {
   exportable: true,
 };
 
-// Advanced Table with Avatars
-export const AdvancedUsers = Template.bind({});
-AdvancedUsers.args = {
+// Table with Action Button
+export const WithActionButton = Template.bind({});
+WithActionButton.args = {
+  title: 'User Management',
+  columns: [
+    { key: 'name', title: 'Name', width: '200px' },
+    { key: 'email', title: 'Email' },
+    { key: 'role', title: 'Role', align: 'center' },
+    { key: 'status', title: 'Status', type: 'badge', align: 'center' },
+    { key: 'lastLogin', title: 'Last Login', align: 'center' },
+  ],
+  data: sampleUsers,
+  pagination: true,
+  searchable: true,
+  exportable: true,
+  hasActionButton: true,
+  actionButton: {
+    onClick: () => alert('Add New User clicked!'),
+    label: 'Add New User',
+    icon: <UserPlus size={18} />,
+    variant: 'primary',
+    size: 'medium'
+  }
+};
+
+// Advanced Table with Avatars and Action Button
+export const AdvancedWithAction = Template.bind({});
+AdvancedWithAction.args = {
   title: 'Team Members',
   columns: [
     { 
@@ -139,12 +166,20 @@ AdvancedUsers.args = {
   })),
   variant: 'striped',
   pagination: true,
-  pageSize: 3
+  pageSize: 3,
+  hasActionButton: true,
+  actionButton: {
+    onClick: () => console.log('Export team data'),
+    label: 'Export Team',
+    icon: <Download size={18} />,
+    variant: 'outline',
+    size: 'small'
+  }
 };
 
-// Large Dataset with Search
-export const LargeDataset = Template.bind({});
-LargeDataset.args = {
+// Large Dataset with Custom Action Button
+export const LargeDatasetWithAction = Template.bind({});
+LargeDatasetWithAction.args = {
   title: 'User Directory (50 Users)',
   columns: [
     { key: 'id', title: 'ID', width: '80px', align: 'center' },
@@ -156,12 +191,20 @@ LargeDataset.args = {
   data: generateSampleData(50),
   variant: 'hover',
   pagination: true,
-  pageSize: 10
+  pageSize: 10,
+  hasActionButton: true,
+  actionButton: {
+    onClick: () => console.log('Bulk edit users'),
+    label: 'Bulk Edit',
+    icon: <Edit size={18} />,
+    variant: 'secondary',
+    size: 'medium'
+  }
 };
 
-// Without Export Features
-export const Minimal = Template.bind({});
-Minimal.args = {
+// Without Export Features but with Action Button
+export const MinimalWithAction = Template.bind({});
+MinimalWithAction.args = {
   title: 'Simple User List',
   columns: [
     { key: 'name', title: 'Name' },
@@ -172,41 +215,28 @@ Minimal.args = {
   exportable: false,
   searchable: false,
   pagination: false,
+  hasActionButton: true,
+  actionButton: {
+    onClick: () => alert('Quick action!'),
+    label: 'Quick Action',
+    variant: 'primary',
+    size: 'small'
+  }
 };
 
-// Loading State
-export const LoadingState = Template.bind({});
-LoadingState.args = {
-  title: 'User Management',
-  columns: [
-    { key: 'name', title: 'Name' },
-    { key: 'email', title: 'Email' },
-    { key: 'role', title: 'Role' },
-  ],
-  data: [],
-  loading: true,
-};
-
-// Empty State
-export const EmptyState = Template.bind({});
-EmptyState.args = {
-  title: 'User Management',
-  columns: [
-    { key: 'name', title: 'Name' },
-    { key: 'email', title: 'Email' },
-    { key: 'role', title: 'Role' },
-  ],
-  data: [],
-  emptyMessage: 'No users found. Please add some users to get started.',
-};
-
-// Interactive Demo
-export const InteractiveDemo = (args) => {
+// Interactive Demo with Action Button
+export const InteractiveDemoWithAction = (args) => {
   const [currentVariant, setCurrentVariant] = React.useState('default');
   const [currentSize, setCurrentSize] = React.useState('default');
   const [enablePagination, setEnablePagination] = React.useState(true);
   const [enableSearch, setEnableSearch] = React.useState(true);
   const [enableExport, setEnableExport] = React.useState(true);
+  const [hasActionBtn, setHasActionBtn] = React.useState(true);
+  const [buttonVariant, setButtonVariant] = React.useState('primary');
+
+  const handleActionClick = () => {
+    alert('Action button clicked! This could open a modal, navigate, or perform any action.');
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -248,6 +278,29 @@ export const InteractiveDemo = (args) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <input 
             type="checkbox" 
+            id="actionBtn" 
+            checked={hasActionBtn} 
+            onChange={(e) => setHasActionBtn(e.target.checked)}
+          />
+          <label htmlFor="actionBtn">Action Button</label>
+        </div>
+        
+        <div>
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600' }}>Button Style:</label>
+          <select 
+            value={buttonVariant} 
+            onChange={(e) => setButtonVariant(e.target.value)}
+            style={{ padding: '8px', borderRadius: 'var(--border-radius)', border: '1px solid var(--border-color)' }}
+          >
+            <option value="primary">Primary</option>
+            <option value="secondary">Secondary</option>
+            <option value="outline">Outline</option>
+          </select>
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <input 
+            type="checkbox" 
             id="pagination" 
             checked={enablePagination} 
             onChange={(e) => setEnablePagination(e.target.checked)}
@@ -283,13 +336,21 @@ export const InteractiveDemo = (args) => {
         pagination={enablePagination}
         searchable={enableSearch}
         exportable={enableExport}
+        hasActionButton={hasActionBtn}
+        actionButton={hasActionBtn ? {
+          onClick: handleActionClick,
+          label: 'Add New Item',
+          icon: <Plus size={18} />,
+          variant: buttonVariant,
+          size: 'medium'
+        } : null}
       />
     </div>
   );
 };
 
-InteractiveDemo.args = {
-  title: 'Interactive Table Demo',
+InteractiveDemoWithAction.args = {
+  title: 'Interactive Table Demo with Action Button',
   columns: [
     { key: 'name', title: 'Name' },
     { key: 'email', title: 'Email' },
@@ -297,4 +358,73 @@ InteractiveDemo.args = {
     { key: 'status', title: 'Status', type: 'badge' },
   ],
   data: generateSampleData(25),
+};
+
+// Example of using TableActionButton component standalone
+export const ActionButtonDemo = () => {
+  const handlePrimaryClick = () => alert('Primary button clicked!');
+  const handleSecondaryClick = () => alert('Secondary button clicked!');
+  const handleOutlineClick = () => alert('Outline button clicked!');
+
+  return (
+    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      <h3>Action Button Variants</h3>
+      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+        <TableActionButton
+          onClick={handlePrimaryClick}
+          label="Primary Button"
+          icon={<Plus size={18} />}
+          variant="primary"
+        />
+        <TableActionButton
+          onClick={handleSecondaryClick}
+          label="Secondary Button"
+          icon={<Download size={18} />}
+          variant="secondary"
+        />
+        <TableActionButton
+          onClick={handleOutlineClick}
+          label="Outline Button"
+          icon={<Edit size={18} />}
+          variant="outline"
+        />
+      </div>
+      
+      <h3>Different Sizes</h3>
+      <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <TableActionButton
+          onClick={handlePrimaryClick}
+          label="Small"
+          variant="primary"
+          size="small"
+        />
+        <TableActionButton
+          onClick={handlePrimaryClick}
+          label="Medium"
+          variant="primary"
+          size="medium"
+        />
+        <TableActionButton
+          onClick={handlePrimaryClick}
+          label="Large"
+          variant="primary"
+          size="large"
+        />
+      </div>
+      
+      <h3>Icon Only</h3>
+      <div style={{ display: 'flex', gap: '15px' }}>
+        <TableActionButton
+          onClick={handlePrimaryClick}
+          icon={<Plus size={18} />}
+          variant="primary"
+        />
+        <TableActionButton
+          onClick={handleSecondaryClick}
+          icon={<Download size={18} />}
+          variant="secondary"
+        />
+      </div>
+    </div>
+  );
 };

@@ -1,6 +1,7 @@
 // KPISection.jsx
 import React, { useState } from "react";
 import KPICard from "./KPICard";
+import { Plus } from "lucide-react";
 
 const KPISection = () => {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -61,20 +62,15 @@ const KPISection = () => {
         >
           <div>
             <h2 style={{ margin: 0, lineHeight: "1.2" }}>
-              Welcome back, Admin 👋
+              Welcome back, Admin 
             </h2>
             <p
-              style={{
-                margin: "4px 0 0",
-                fontSize: "0.875rem",
-                color: "var(--text-muted)",
-              }}
             >
               Hotel operations overview for today
             </p>
           </div>
           <button className="btn-primary" style={{ height: "42px" }}>
-            ➕ Add Booking
+            <Plus/> Add Booking
           </button>
         </div>
       </div>

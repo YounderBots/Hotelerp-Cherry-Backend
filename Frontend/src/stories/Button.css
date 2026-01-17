@@ -38,7 +38,7 @@
 /* Button Variants */
 .btn--primary {
   background-color: var(--primary-color);
-  color: var(--text-bright);
+  color: var(--text-white);
   border: 1px solid var(--primary-color);
 }
 

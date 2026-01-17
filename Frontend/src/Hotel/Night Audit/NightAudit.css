@@ -1,0 +1,153 @@
+/* =====================================================
+   USER RESERVED / ACTIVITY LOG
+===================================================== */
+
+.userreserved-wrapper {
+  padding: 20px;
+  background: var(--primary-lightest);
+}
+
+/* ================= FILTER ================= */
+.userreserved-filter {
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-group label {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.filter-group input {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  font-size: 14px;
+}
+
+/* Filter button */
+.btn-filter {
+  padding: 10px 24px;
+  border-radius: 12px;
+  border: none;
+  background: #86efac;
+  color: #065f46;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ================= CARD ================= */
+.userreserved-card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 18px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Header */
+.userreserved-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.userreserved-card-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.btn-export {
+  background: var(--primary-color);
+  color: #ffffff;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+/* ================= TABLE CONTROLS ================= */
+.table-controls {
+  margin: 18px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.table-controls select,
+.table-controls input {
+  margin: 0 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+/* ================= TABLE ================= */
+.userreserved-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.userreserved-table thead th {
+  background: var(--primary-color);
+  color: #ffffff;
+  padding: 14px;
+  font-size: 14px;
+  text-align: left;
+}
+
+.userreserved-table tbody td {
+  padding: 18px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 14px;
+}
+
+.no-data {
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ================= FOOTER ================= */
+.table-footer {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.pagination button {
+  background: transparent;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  margin-left: 6px;
+  cursor: pointer;
+}
+
+/* ================= EMPTY TAB ================= */
+.empty-state {
+  background: #ffffff;
+  padding: 40px;
+  border-radius: 14px;
+  border: 1px dashed var(--border-color);
+  text-align: center;
+}
+
+.empty-state h3 {
+  margin: 0 0 8px;
+}

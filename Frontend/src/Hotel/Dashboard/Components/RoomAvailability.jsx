@@ -3,11 +3,11 @@ import React from "react";
 
 const RoomAvailability = () => {
   const rooms = [
-    { status: "Occupied", count: 286, color: "var(--primary-color)" },
-    { status: "Reserved", count: 87, color: "var(--secondary-color)" },
-    { status: "Available", count: 32, color: "var(--success-color)" },
-    { status: "Not Ready", count: 13, color: "var(--warning-color)" }
-  ];
+    { status: "Occupied", count: 286, color: "var(--primary-color)" },      // #850126 - Rich Maroon
+    { status: "Reserved", count: 87, color: "var(--primary-dark)" },        // #4a081b - Deep Wine
+    { status: "Available", count: 32, color: "var(--primary-mild)" },       // #db1b4b - Muted Maroon
+    { status: "Not Ready", count: 13, color: "var(--primary-light)" }       // #d88c9a - Soft Rose
+];
 
   return (
     <div className="card">

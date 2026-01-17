@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import './TableTemplate.css';
 import InputField from './InputField'; // Assuming you have this component
-import { ClipboardPaste, FileText, Printer, Settings, Table2 } from 'lucide-react';
-
+import { ClipboardPaste, FileText, Printer, Settings, Table2, Plus } from 'lucide-react';
 
 // Import existing cell components
 const AvatarCell = ({ src, name, email }) => (
@@ -150,6 +149,23 @@ const FilterModal = ({ columns, visibleColumns, onColumnToggle, onClose, isOpen,
   );
 };
 
+// Action Button Variant Component
+const TableActionButton = ({ 
+  onClick, 
+  label = "Add New", 
+  icon = <Plus size={18} />,
+  variant = "primary",
+  size = "medium" 
+}) => {
+  const buttonClass = `table-action-button table-action-button--${variant} table-action-button--${size}`;
+  
+  return (
+    <button className={buttonClass} onClick={onClick}>
+      {icon}
+      {label && <span>{label}</span>}
+    </button>
+  );
+};
 
 // Main TableTemplate Component
 const TableTemplate = ({
@@ -166,6 +182,9 @@ const TableTemplate = ({
   exportable = true,
   className = '',
   onRowClick,
+  // New props for action button variant
+  actionButton = null, // Object: { onClick, label, icon, variant, size }
+  hasActionButton = false,
   ...props
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
@@ -173,6 +192,7 @@ const TableTemplate = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [visibleColumns, setVisibleColumns] = useState(columns.map(col => col.key));
   const [showFilterModal, setShowFilterModal] = useState(false);
+  
   const formatCellValue = (value, colKey) => {
     if (value === null || value === undefined) return "";
 
@@ -189,6 +209,7 @@ const TableTemplate = ({
 
     return String(value);
   };
+  
   const resolveExportValue = (row, column) => {
     const value = row[column.key];
 
@@ -232,7 +253,6 @@ const TableTemplate = ({
       })
     );
   }, [data, searchTerm, columns]);
-
 
   // Sort data
   const sortedData = useMemo(() => {
@@ -298,7 +318,6 @@ const TableTemplate = ({
     window.URL.revokeObjectURL(url);
   };
 
-
   const getExportRows = () => {
     return sortedData.map(row =>
       visibleColumns
@@ -309,7 +328,6 @@ const TableTemplate = ({
         }, {})
     );
   };
-
 
   const handleDownloadPDF = () => {
     const table = document.getElementById('export-table-full');
@@ -371,9 +389,6 @@ const TableTemplate = ({
     }, 500);
   };
 
-
-
-
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
     const tableHtml = document.querySelector('.table-template').innerHTML;
@@ -424,6 +439,7 @@ const TableTemplate = ({
 
   // Filter visible columns
   const visibleColumnsData = columns.filter(col => visibleColumns.includes(col.key));
+  
   const tableClass = `
     table-template
     ${variant !== 'default' ? `table-${variant}` : ''}
@@ -431,12 +447,24 @@ const TableTemplate = ({
     ${loading ? 'table-loading' : ''}
     ${className}
   `.trim();
+
   return (
     <div className={tableClass} {...props}>
-      {/* Title Section */}
+      {/* Title Section with optional action button */}
       {title && (
         <div className="table-title-section">
-          <h2 className="table-title">{title}</h2>
+          <div className="table-title-wrapper">
+            <h2 className="table-title">{title}</h2>
+            {hasActionButton && actionButton && (
+              <TableActionButton
+                onClick={actionButton.onClick}
+                label={actionButton.label}
+                icon={actionButton.icon}
+                variant={actionButton.variant}
+                size={actionButton.size}
+              />
+            )}
+          </div>
         </div>
       )}
 
@@ -460,7 +488,7 @@ const TableTemplate = ({
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: '15px' }} >
+                <th >  
                   S.No
                 </th>
                 {visibleColumnsData.map((column) => (
@@ -472,7 +500,7 @@ const TableTemplate = ({
                       width: column.width,
                       textAlign: column.align || 'left',
                       cursor: 'pointer'
-                    }}
+                    }}  
                   >
                     {column.title}
                     {sortConfig.key === column.key && (
@@ -505,7 +533,7 @@ const TableTemplate = ({
                     onClick={() => onRowClick?.(item)}
                     style={{ cursor: onRowClick ? 'pointer' : 'default' }}
                   >
-                    <td>{index + 1}</td>
+                    <td >{index + 1}</td>
                     {visibleColumnsData.map((column) => (
                       <td
                         key={column.key}
@@ -608,7 +636,7 @@ const TableTemplate = ({
           <tbody>
             {sortedData.map((item, index) => (
               <tr key={item.id || index}>
-                <td>{index + 1}</td>
+                <td style={{ width: '200px' }}>{index + 1}</td>
                 {visibleColumnsData.map(column => (
                   <td key={column.key}>
                     {renderCell(item, column)}
@@ -624,4 +652,4 @@ const TableTemplate = ({
 };
 
 export default TableTemplate;
-export { AvatarCell, BadgeCell };
+export { AvatarCell, BadgeCell, TableActionButton };

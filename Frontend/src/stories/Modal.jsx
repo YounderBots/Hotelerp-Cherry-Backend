@@ -1,6 +1,5 @@
-// Modal.jsx - Enhanced with better UX
+// Modal.jsx - Updated with new theme styling
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import Button from './Button'
 import PropTypes from 'prop-types';
 import './Modal.css';
 
@@ -33,8 +32,9 @@ const Modal = ({
 
   // Body
   bodyPadding = true,
+  bodyLayout = 'single', // 'single' or 'grid' or 'custom'
+  viewMode = false, // For view-only forms
   compact = false,
-  showGradients = true,
 
   // Behavior
   closeOnBackdropClick = true,
@@ -71,7 +71,7 @@ const Modal = ({
     }
   }, [isOpen, isExiting]);
 
-  // Handle escape key with debounce
+  // Handle escape key
   const handleEscape = useCallback((e) => {
     if (e.key === 'Escape' && closeOnEscape && onClose && !isExiting) {
       e.preventDefault();
@@ -86,7 +86,7 @@ const Modal = ({
     }
   }, [isOpen, closeOnEscape, handleEscape]);
 
-  // Handle body scroll prevention with iOS support
+  // Handle body scroll prevention
   useEffect(() => {
     if (isOpen && preventScroll) {
       const scrollY = window.scrollY;
@@ -110,7 +110,7 @@ const Modal = ({
     }
   }, [isOpen, preventScroll]);
 
-  // Focus management with improved trap
+  // Focus management
   useEffect(() => {
     if (isOpen && !isExiting) {
       previousActiveElement.current = document.activeElement;
@@ -142,7 +142,6 @@ const Modal = ({
     setIsExiting(true);
     setIsActive(false);
 
-    // Match animation duration
     setTimeout(() => {
       setIsExiting(false);
       onClose();
@@ -167,25 +166,6 @@ const Modal = ({
       handleClose();
     }
   }, [closeOnBackdropClick, isExiting, handleClose]);
-
-  // Handle click outside for drawer and sheet
-  const handleClickOutside = useCallback((e) => {
-    if (
-      modalRef.current &&
-      !modalRef.current.contains(e.target) &&
-      closeOnBackdropClick &&
-      !isExiting
-    ) {
-      handleClose();
-    }
-  }, [closeOnBackdropClick, isExiting, handleClose]);
-
-  useEffect(() => {
-    if (isOpen && (type === 'drawer' || type === 'sheet')) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [isOpen, type, handleClickOutside]);
 
   if (!isOpen && !isExiting) return null;
 
@@ -215,6 +195,8 @@ const Modal = ({
   const bodyClasses = [
     'modal__body',
     !bodyPadding && 'modal__body--no-padding',
+    bodyLayout !== 'custom' && `modal__body--${bodyLayout}`,
+    viewMode && 'modal__body--view',
     compact && 'modal__body--compact'
   ].filter(Boolean).join(' ');
 
@@ -224,7 +206,7 @@ const Modal = ({
     !footerBorder && 'modal__footer--no-border'
   ].filter(Boolean).join(' ');
 
-  // Render icon with enhanced styling
+  // Render icon
   const renderIcon = () => {
     if (!icon) return null;
 
@@ -250,7 +232,7 @@ const Modal = ({
     return [
       {
         label: 'Cancel',
-        variant: 'ghost',
+        variant: 'secondary',
         onClick: handleClose,
         type: 'button'
       },
@@ -287,8 +269,6 @@ const Modal = ({
         data-testid="modal"
         {...props}
       >
-     
-
         {/* Header */}
         {showHeader && (
           <header className={headerClasses}>
@@ -323,8 +303,9 @@ const Modal = ({
           <footer className={footerClasses}>
             <div className="modal-actions">
               {modalActions.map((action, index) => (
-                <Button
-                  variant="primary"
+                <button
+                  key={action.key || index}
+                  className={`btn ${action.variant || 'primary'}`}
                   onClick={action.onClick}
                   disabled={action.disabled || isExiting}
                   autoFocus={action.autoFocus}
@@ -332,23 +313,9 @@ const Modal = ({
                   aria-label={action.ariaLabel}
                   data-testid={`modal-action-${index}`}
                 >
-                  {action.icon && <span className="btn__icon">{action.icon}</span>} {action.label} 
-                </Button>
-                // <button
-                //                 key={action.key || index}
-                //                 className={`btn btn--${action.variant || 'primary'} ${action.size ? `btn--${action.size}` : ''}`}
-                //                 onClick={action.onClick}
-                //                 disabled={action.disabled || isExiting}
-                //                 autoFocus={action.autoFocus}
-                //                 type={action.type || 'button'}
-                //                 aria-label={action.ariaLabel}
-                //                 data-testid={`modal-action-${index}`}
-                //               >
-                //                 {action.icon && <span className="btn__icon">{action.icon}</span>}
-                //                 {action.label} 
-                //               </button>
-
-
+                  {action.icon && <span className="btn__icon">{action.icon}</span>}
+                  {action.label}
+                </button>
               ))}
             </div>
           </footer>
@@ -390,7 +357,6 @@ Modal.propTypes = {
     label: PropTypes.string.isRequired,
     onClick: PropTypes.func.isRequired,
     variant: PropTypes.string,
-    size: PropTypes.string,
     disabled: PropTypes.bool,
     autoFocus: PropTypes.bool,
     icon: PropTypes.element,
@@ -400,8 +366,9 @@ Modal.propTypes = {
 
   // Body
   bodyPadding: PropTypes.bool,
+  bodyLayout: PropTypes.oneOf(['single', 'grid', 'custom']),
+  viewMode: PropTypes.bool,
   compact: PropTypes.bool,
-  showGradients: PropTypes.bool,
 
   // Behavior
   closeOnBackdropClick: PropTypes.bool,
@@ -447,7 +414,7 @@ export const AlertModal = ({
       actions={[
         {
           label: confirmText,
-          variant: confirmVariant || (type === 'error' ? 'danger' : 'primary'),
+          variant: confirmVariant || (type === 'error' ? 'error' : 'primary'),
           onClick: onConfirm || props.onClose,
           autoFocus: true
         }
@@ -469,7 +436,7 @@ export const ConfirmModal = ({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   confirmVariant = 'primary',
-  cancelVariant = 'ghost',
+  cancelVariant = 'secondary',
   onConfirm,
   destructive = false,
   ...props
@@ -486,7 +453,7 @@ export const ConfirmModal = ({
       },
       {
         label: confirmText,
-        variant: destructive ? 'danger' : confirmVariant,
+        variant: destructive ? 'error' : confirmVariant,
         onClick: onConfirm,
         autoFocus: true
       }
@@ -520,14 +487,12 @@ export const DialogModal = ({
 export const SheetModal = ({
   closeOnBackdropClick = true,
   size = 'medium',
-  showGradients = false,
   ...props
 }) => (
   <Modal
     {...props}
     type="sheet"
     size={size}
-    showGradients={showGradients}
     closeOnBackdropClick={closeOnBackdropClick}
   />
 );
@@ -535,57 +500,152 @@ export const SheetModal = ({
 export const DrawerModal = ({
   closeOnBackdropClick = true,
   size = 'medium',
-  showGradients = false,
   ...props
 }) => (
   <Modal
     {...props}
     type="drawer"
     size={size}
-    showGradients={showGradients}
     closeOnBackdropClick={closeOnBackdropClick}
   />
 );
 
-// Additional utility components
-export const LoadingModal = ({
-  title = 'Loading...',
-  message = 'Please wait while we process your request.',
-  showSpinner = true,
+// Form Modal for MasterData-like forms
+export const FormModal = ({
+  formData = {},
+  fields = [],
+  onSubmit,
+  onCancel,
+  title,
+  ...props
+}) => {
+  const [localData, setLocalData] = useState(formData);
+
+  const handleSubmit = () => {
+    if (onSubmit) {
+      onSubmit(localData);
+    }
+  };
+
+  const handleFieldChange = (fieldName, value) => {
+    setLocalData(prev => ({
+      ...prev,
+      [fieldName]: value
+    }));
+  };
+
+  return (
+    <Modal
+      {...props}
+      title={title}
+      showFooter={true}
+      bodyLayout="grid"
+      actions={[
+        {
+          label: 'Cancel',
+          variant: 'secondary',
+          onClick: onCancel
+        },
+        {
+          label: 'Submit',
+          variant: 'primary',
+          onClick: handleSubmit
+        }
+      ]}
+    >
+      {fields.map((field) => (
+        <div key={field.name} className="form-group">
+          <label htmlFor={field.name}>{field.label}</label>
+          {field.type === 'select' ? (
+            <select
+              id={field.name}
+              value={localData[field.name] || ''}
+              onChange={(e) => handleFieldChange(field.name, e.target.value)}
+            >
+              <option value="">Select {field.label}</option>
+              {field.options?.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id={field.name}
+              type={field.type || 'text'}
+              value={localData[field.name] || ''}
+              onChange={(e) => handleFieldChange(field.name, e.target.value)}
+              placeholder={field.placeholder}
+              disabled={field.disabled}
+            />
+          )}
+        </div>
+      ))}
+    </Modal>
+  );
+};
+
+FormModal.propTypes = {
+  formData: PropTypes.object,
+  fields: PropTypes.arrayOf(PropTypes.shape({
+    name: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    type: PropTypes.string,
+    placeholder: PropTypes.string,
+    disabled: PropTypes.bool,
+    options: PropTypes.arrayOf(PropTypes.shape({
+      value: PropTypes.string.isRequired,
+      label: PropTypes.string.isRequired
+    }))
+  })),
+  onSubmit: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
+  title: PropTypes.string
+};
+
+// View Modal for MasterData-like view mode
+export const ViewModal = ({
+  data = {},
+  fields = [],
+  title,
+  onClose,
   ...props
 }) => (
   <Modal
     {...props}
     title={title}
-    showCloseButton={false}
-    showFooter={false}
-    closeOnBackdropClick={false}
-    closeOnEscape={false}
+    showFooter={true}
+    bodyLayout="single"
+    viewMode={true}
+    actions={[
+      {
+        label: 'Close',
+        variant: 'secondary',
+        onClick: onClose
+      }
+    ]}
   >
-    <div style={{ textAlign: 'center', padding: 'var(--spacing-xl)' }}>
-      {showSpinner && (
-        <div
-          style={{
-            width: '48px',
-            height: '48px',
-            border: '3px solid var(--border-light)',
-            borderTopColor: 'var(--primary-color)',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto var(--spacing-lg)'
-          }}
-          aria-hidden="true"
+    {fields.map((field) => (
+      <div key={field.name} className="form-group">
+        <label>{field.label}</label>
+        <input
+          type="text"
+          value={data[field.name] || ''}
+          disabled
         />
-      )}
-      <p style={{ color: 'var(--text-secondary)', margin: 0 }}>{message}</p>
-    </div>
+      </div>
+    ))}
   </Modal>
 );
 
-LoadingModal.propTypes = {
-  title: PropTypes.string,
-  message: PropTypes.string,
-  showSpinner: PropTypes.bool
+ViewModal.propTypes = {
+  data: PropTypes.object,
+  fields: PropTypes.arrayOf(PropTypes.shape({
+    name: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired
+  })),
+  title: PropTypes.string.isRequired,
+  onClose: PropTypes.func.isRequired
 };
 
 export default Modal;

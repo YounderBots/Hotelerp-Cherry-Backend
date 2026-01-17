@@ -1,0 +1,233 @@
+/* =====================================================
+   MASTER DATA – COMMON STYLES
+   Used by: Room Type, Facilities, Floor, Amenities, etc.
+   ===================================================== */
+
+/* ================= ACTION BUTTONS ================= */
+.table-action-btn {
+  border: none;
+  padding: 7px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.table-action-btn.view {
+  background: linear-gradient(135deg, #e0f7fa, #ecfeff);
+  color: #0369a1;
+}
+
+.table-action-btn.edit {
+  background: linear-gradient(135deg, #dbeafe, #e0f2fe);
+  color: #1d4ed8;
+}
+
+.table-action-btn.delete {
+  background: linear-gradient(135deg, #fee2e2, #fecaca);
+  color: #b91c1c;
+}
+
+.table-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+}
+
+/* ================= MODAL OVERLAY ================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 1000;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+
+/* ================= MODAL CARD ================= */
+.modal-card {
+  background: #ffffff;
+  border-radius: 14px;
+  width: 720px;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
+  animation: modalScale 0.25s ease;
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ================= HEADER ================= */
+.modal-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(
+    to right,
+    var(--primary-lightest, #fff0f6),
+    #ffffff
+  );
+  border-radius: 14px 14px 0 0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  /* font-size: 18px; */
+  font-weight: 600;
+  color: #111827;
+}
+
+.modal-header button {
+  background: #f1f5f9;
+  border: none;
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+}
+
+/* ================= BODY ================= */
+.modal-body.grid {
+  padding: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px 20px;
+}
+
+/* ================= FORM GROUP ================= */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  /* font-size: 12px; */
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ================= INPUTS ================= */
+.form-group input,
+.form-group select {
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  /* font-size: 14px; */
+  background: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color, #610025);
+  box-shadow: 0 0 0 3px rgba(97, 0, 37, 0.15);
+}
+
+/* ================= VIEW MODE ================= */
+.modal-body.grid.view input {
+  background: #f8fafc;
+  border: 1px dashed #cbd5f5;
+  color: #334155;
+  cursor: not-allowed;
+}
+
+/* ================= FOOTER ================= */
+.modal-footer {
+  padding: 18px 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 0 0 14px 14px;
+}
+
+/* ================= BUTTONS ================= */
+.btn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  /* font-size: 14px; */
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.btn.primary {
+  background: linear-gradient(
+    135deg,
+    var(--primary-color, #610025),
+    var(--primary-mild, #94013a)
+  );
+  color: #ffffff;
+}
+
+.btn.primary:hover {
+  box-shadow: 0 6px 18px rgba(97, 0, 37, 0.35);
+}
+
+.btn.secondary {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.btn.secondary:hover {
+  background: #e2e8f0;
+}
+
+/* ================= ANIMATION ================= */
+@keyframes modalScale {
+  from {
+    transform: scale(0.96) translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ================= MODAL SIZES ================= */
+.modal-sm {
+  width: 360px;
+}
+
+.modal-md {
+  width: 420px;
+}
+
+/* ================= CLEAN BODY FOR SMALL DATA ================= */
+.modal-body.single {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* View mode input */
+.modal-body.single.view input {
+  background: #f8fafc;
+  border: 1px dashed #cbd5f5;
+  color: #334155;
+  cursor: not-allowed;
+}
+
+/* Edit mode input */
+.modal-body.single.edit input {
+  background: #ffffff;
+}
+
+.modal-body {
+  overflow-y: auto;
+}

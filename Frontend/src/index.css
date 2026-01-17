@@ -1,92 +1,111 @@
+/* =====================================================
+   GLOBAL RESET
+===================================================== */
 * {
   box-sizing: border-box;
 }
 
 body {
-  margin: 0px;
-  background: var(--primary-lightest);
+  margin: 0;
   overflow-x: hidden;
-  overflow-y: hidden;
+  overflow-y: auto;
+  background: var(--primary-lighter);
 }
 
+/* =====================================================
+   FONT SYSTEM
+===================================================== */
 :root {
   font-family: "Urbanist", sans-serif;
   font-optical-sizing: auto;
-  font-size: 16px;
+  font-size: 17px;
   font-style: normal;
 }
 
-
-/* Color Theme Variables - Based on Light Blue Primary & Navy Blue Secondary */
+/* =====================================================
+   PREMIUM MAROON • REFINED ADMIN THEME
+   Elegant • Corporate • Hotel ERP Ready
+===================================================== */
 :root {
-  /* Primary Colors - Light Blue */
-  --primary-color: #5b9bd5;
-  /* Light Blue */
-  --primary-dark: #0B1F3B;
-  --primary-mild: #7bb1e1;
-  --primary-light: #9cc7ea;
-  --primary-lighter: #c2ddf5;
-  --primary-lightest: #e8f1fb;
+  /* ================= PRIMARY — MAROON ================= */
+  --primary-color: #850126;
+  /* Rich Maroon */
+  --primary-dark: #4a081b;
+  /* Deep Wine */
+  --primary-mild: #db1b4b;
+  /* Muted Maroon */
+  --primary-light: #d88c9a;
+  /* Soft Rose */
+  --primary-lighter: #f3c9d2;
+  /* Blush Pink */
+  --primary-lightest: #fff1f4;
+  /* Very Soft Rose White */
+  --primary-pale: #FFF9F4;
 
-  /* Secondary Colors - Navy Blue */
-  --secondary-color: #1a365d;
-  /* Navy Blue */
-  --secondary-dark: #0d1f3d;
-  --secondary-light: #2c5282;
-  --secondary-lighter: #5a7ca3;
-  --secondary-lightest: #e8edf5;
+  /* ================= SECONDARY — CHARCOAL ================= */
+  --secondary-color: #1f2937;
+  /* Dark Slate */
+  --secondary-dark: #111827;
+  /* Deep Charcoal */
+  --secondary-light: #374151;
+  /* Slate Gray */
+  --secondary-lighter: #6b7280;
+  /* Neutral Gray */
+  --secondary-lightest: #f9fafb;
+  /* Cloud White */
 
-  /* Neutral Colors */
-  --white: #FFFFFF;
-  --gray-50: #F9FAFB;
-  --gray-100: #F3F4F6;
-  --gray-200: #E5E7EB;
-  --gray-300: #D1D5DB;
-  --gray-400: #9CA3AF;
-  --gray-500: #6B7280;
-  --gray-600: #4B5563;
+  /* ================= NEUTRAL COLORS ================= */
+  --white: #ffffff;
+
+  --gray-50: #fafafa;
+  --gray-100: #f4f4f5;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
   --gray-700: #374151;
-  --gray-800: #1F2937;
+  --gray-800: #1f2937;
   --gray-900: #111827;
 
-  /* Status Colors */
-  --success-color: #16A34A;
-  --success-light: #DCFCE7;
-  --warning-color: #F59E0B;
-  --warning-light: #FEF3C7;
-  --error-color: #DC2626;
-  --error-light: #FEE2E2;
-  --info-color: #2c5282;
-  --info-light: #e8edf5;
+  /* ================= STATUS COLORS ================= */
+  --success-color: #16a34a;
+  --success-light: #ecfdf3;
 
-  /* Text Colors */
-  --text-primary: #1a365d;
-  /* Navy Blue for readability */
-  --text-secondary: var(--gray-600);
-  --text-muted: var(--gray-500);
-  --text-white: var(--white);
-  --text-bright: var(--white);
+  --warning-color: #f59e0b;
+  --warning-light: #fffbeb;
 
-  /* Background Colors */
-  --bg-primary: var(--white);
-  --bg-secondary: #f7fafc;
-  --bg-tertiary: #e8f1fb;
-  --bg-dark: #1a365d;
-  /* Navy Blue for dark backgrounds */
+  --error-color: #dc2626;
+  --error-light: #fef2f2;
 
-  /* Border Colors */
-  --border-color: var(--gray-200);
-  --border-light: var(--gray-100);
-  --border-dark: var(--gray-300);
+  --info-color: #2563eb;
+  --info-light: #eff6ff;
 
-  /* Shadow - with cool blue tint */
-  --shadow-sm: 0 1px 2px 0 rgba(91, 155, 213, 0.08);
-  --shadow: 0 1px 3px 0 rgba(91, 155, 213, 0.12), 0 1px 2px 0 rgba(91, 155, 213, 0.08);
-  --shadow-md: 0 4px 6px -1px rgba(91, 155, 213, 0.18), 0 2px 4px -1px rgba(91, 155, 213, 0.12);
-  --shadow-lg: 0 10px 15px -3px rgba(91, 155, 213, 0.22), 0 4px 6px -2px rgba(91, 155, 213, 0.15);
-  --shadow-xl: 0 20px 25px -5px rgba(91, 155, 213, 0.28), 0 10px 10px -5px rgba(91, 155, 213, 0.18);
+  /* ================= TEXT COLORS ================= */
+  --text-primary: #111827;
+  --text-secondary: #374151;
+  --text-muted: #6b7280;
+  --text-white: #ffffff;
 
-  /* Spacing */
+  /* ================= BACKGROUNDS ================= */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --bg-dark: #1f2937;
+
+  /* ================= BORDERS ================= */
+  --border-color: #e5e7eb;
+  --border-light: #f3f4f6;
+  --border-dark: #d1d5db;
+
+  /* ================= SHADOWS ================= */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 18px rgba(0, 0, 0, 0.10);
+  --shadow-xl: 0 20px 30px rgba(0, 0, 0, 0.12);
+
+  /* ================= SPACING ================= */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
   --spacing-md: 1rem;
@@ -94,25 +113,25 @@ body {
   --spacing-xl: 2rem;
   --spacing-2xl: 3rem;
 
-  /* Border Radius */
+  /* ================= BORDER RADIUS ================= */
   --border-radius-sm: 0.25rem;
-  --border-radius: 2rem;
-  --border-radius-md: 0.5rem;
-  --border-radius-lg: 0.75rem;
-  --border-radius-xl: 1rem;
+  --border-radius: 0.5rem;
+  --border-radius-md: 0.625rem;
+  --border-radius-lg: 0.875rem;
+  --border-radius-xl: 1.25rem;
   --border-radius-full: 9999px;
 
-  /* Transitions */
+  /* ================= TRANSITIONS ================= */
   --transition-fast: 0.15s ease-in-out;
-  --transition: 0.2s ease-in-out;
-  --transition-slow: 0.3s ease-in-out;
+  --transition: 0.25s ease-in-out;
+  --transition-slow: 0.35s ease-in-out;
 
-  /* Layout */
+  /* ================= LAYOUT ================= */
   --sidebar-width: 240px;
-  --sidebar-collapsed-width: 100px;
+  --sidebar-collapsed-width: 96px;
   --navbar-height: 70px;
 
-  /* Z-index */
+  /* ================= Z-INDEX ================= */
   --z-dropdown: 10;
   --z-sticky: 20;
   --z-fixed: 30;
@@ -122,18 +141,23 @@ body {
   --z-tooltip: 70;
 }
 
-/* Chrome, Safari, Edge */
+/* =====================================================
+   SCROLLBAR — MAROON ACCENT
+===================================================== */
 ::-webkit-scrollbar {
-  width: 2px;
-  height: 6px;
+  display: none;
 }
 
 ::-webkit-scrollbar-track {
-  background: #e8f1fb;
+  background: var(--gray-100);
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #5b9bd5;
-  /* Light Blue for scrollbar thumb */
-  border-radius: 3px;
+  background-color: var(--primary-light);
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--primary-color);
 }
