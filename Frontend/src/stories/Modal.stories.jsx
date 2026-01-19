@@ -204,7 +204,7 @@
           isOpen={isOpen}
           onClose={() => setIsOpen(false)}
           title="View Currency"
-          size="small"
+          size="medium"
           bodyLayout="single"
           viewMode={true}
           showFooter={true}

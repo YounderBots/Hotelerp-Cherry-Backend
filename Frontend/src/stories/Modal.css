@@ -8,6 +8,7 @@
 /* Backdrop Styles */
 .modal-backdrop {
   position: fixed;
+  inset: 0;
   top: 0;
   left: 0;
   right: 0;
@@ -21,6 +22,9 @@
   opacity: 0;
   transition: opacity 0.25s ease;
   animation: backdropFadeIn 0.25s ease;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
 }
 
 .modal-backdrop--active {
@@ -62,15 +66,15 @@
 
 /* Modal Sizes */
 .modal--small {
-  width: 360px;
-}
-
-.modal--medium {
   width: 420px;
 }
 
+.modal--medium {
+  width: 520px;
+}
+
 .modal--large {
-  width: 720px;
+  width: 760px;
 }
 
 .modal--xlarge {
@@ -88,6 +92,7 @@
 .modal--sheet {
   border-radius: 14px 14px 0 0;
   margin-top: auto;
+  align-self: flex-end;
   max-height: 85vh;
   transform: translateY(100%);
   width: 100%;
@@ -106,6 +111,7 @@
   height: 100vh;
   max-height: 100vh;
   margin: 0;
+  align-self: stretch;
   margin-left: auto;
   transform: translateX(100%);
   max-width: 440px;
@@ -140,8 +146,8 @@
 
 .modal__title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
@@ -174,7 +180,7 @@
 
 /* Modal Body */
 .modal__body {
-  padding: 24px;
+  padding: 24px 32px;
   flex: 1;
   overflow-y: auto;
   background: var(--bg-primary);
@@ -200,7 +206,7 @@
 .modal__body--single {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 22px;
 }
 
 /* View mode inputs */
@@ -213,7 +219,7 @@
 
 /* Modal Footer */
 .modal__footer {
-  padding: 18px 24px;
+  padding: 20px 32px;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
@@ -256,16 +262,17 @@
 }
 
 .form-group label {
-  font-size: 12px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0.01em;
 }
 
 .form-group input,
 .form-group select {
-  padding: 11px 14px;
+  padding: 13px 16px;
+  min-height: 46px;
   border-radius: 10px;
   border: 1px solid var(--border-dark);
   font-size: 14px;
@@ -278,6 +285,12 @@
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(133, 1, 38, 0.15);
+}
+
+.modal__body--view .form-group {
+  background: #f9fafb;
+  padding: 14px 16px;
+  border-radius: 12px;
 }
 
 /* Modal Icon */
@@ -464,7 +477,7 @@
   }
   
   .modal__title {
-    font-size: 16px;
+    font-size: 18px;
   }
 }
 
@@ -497,8 +510,8 @@
   background: rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: center !important;
+  justify-content: center !important;
   z-index: var(--z-modal-backdrop, 1000);
 }
 
@@ -508,6 +521,7 @@
   border-radius: 14px;
   width: 720px;
   max-height: 90vh;
+  margin: auto;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -629,4 +643,10 @@
 .btn.secondary {
   background: #f1f5f9;
   color: #334155;
+}
+
+/* View modal should never feel small */
+.modal__body--view {
+  max-width: 680px;
+  margin: 0 auto;
 }

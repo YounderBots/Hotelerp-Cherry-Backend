@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { UserPlus, Eye, Pencil, Trash2, X } from "lucide-react";
-import "../../MasterData/MasterData.css";
 
 const GuestEnquiry = () => {
   const [data, setData] = useState([
