@@ -1,9 +1,22 @@
 import React, { useState } from "react";
 import Tabs, { Tab } from "../../stories/Tabs";
-import Card from "../../stories/Card";
+import RoomCard from "./Pages/Card";
 
 const AddNewReservation = () => {
   const [selectedRoom, setSelectedRoom] = useState(null);
+
+  const handleSelected = (room) => {
+    setSelectedRoom(room);
+
+  };
+
+  const rooms = [
+    { id: 1, roomNo: 201, adults: 2, children: 1, status: "Available" },
+    { id: 2, roomNo: 202, adults: 2, children: 3, status: "Available" },
+    { id: 3, roomNo: 203, adults: 1, children: 0, status: "Available" },
+    { id: 4, roomNo: 203, adults: 1, children: 0, status: "Available" },
+  ];
+
 
   return (
     <div>
@@ -11,8 +24,20 @@ const AddNewReservation = () => {
         <Tab label="Standard Room">
           <div>
             <h3>Standard Room</h3>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
+              {rooms.map((room) => (
+                <RoomCard
+                  key={room.id}
+                  room={room}
+                  isSelected={selectedRoom?.roomNo === room.roomNo}
+                  onSelect={handleSelected}
+                />
+              ))}
 
-            <div style={{ display: "flex", gap: "16px" }}>
+
+            </div>
+
+            {/* <div style={{ display: "flex", gap: "16px" }}>
               <Card
                 variant="room"
                 roomNo={202}
@@ -30,26 +55,68 @@ const AddNewReservation = () => {
                 selected={selectedRoom === 203}
                 onClick={() => setSelectedRoom(203)}
               />
-            </div>
+            </div> */}
           </div>
         </Tab>
 
         <Tab label="Deluxe Room">
           <h3>Deluxe Room</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
+            {rooms.map((room) => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                isSelected={selectedRoom?.roomNo === room.roomNo}
+                onSelect={handleSelected}
+              />
+            ))}
+          </div>
         </Tab>
 
         <Tab label="Suite Room">
           <h3>Suite Room</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
+            {rooms.map((room) => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                isSelected={selectedRoom?.roomNo === room.roomNo}
+                onSelect={handleSelected}
+              />
+            ))}
+          </div>
         </Tab>
 
         <Tab label="Family Room">
           <h3>Family Room</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
+            {rooms.map((room) => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                isSelected={selectedRoom?.roomNo === room.roomNo}
+                onSelect={handleSelected}
+              />
+            ))}
+          </div>
         </Tab>
 
         <Tab label="Executive Room">
           <h3>Executive Room</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
+
+            {rooms.map((room) => (
+              <RoomCard
+                key={room.id}
+                room={room}
+                isSelected={selectedRoom?.roomNo === room.roomNo}
+                onSelect={handleSelected}
+              />
+            ))}
+          </div>
         </Tab>
       </Tabs>
+
     </div>
   );
 };
