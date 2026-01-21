@@ -7,6 +7,7 @@ import useClickOutside from './hooks/useClickOutside';
 import findMenuByPath from './functions/locationFunctions';
 import { getMenuList, ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
+import ViewFloor from './Restaurant/Floor & Table Setup/FloorPageView';
 
 // Lazy load all page components
 const ForgotPassword = lazy(() => import('./Authentication/Pages/ForgotPassword'));
@@ -399,6 +400,7 @@ const App = () => {
                 <FloorLayout />
               </PageLoader>
             } />
+            <Route path="/view" element={<ViewFloor />} />
             <Route path="/table_master" element={
               <PageLoader>
                 <TableMaster />
