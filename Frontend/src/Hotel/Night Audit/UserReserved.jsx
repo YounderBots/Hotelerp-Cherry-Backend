@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import Tabs, { Tab } from "../../stories/Tabs";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, X } from "lucide-react";
+import { Download, Eye, X } from "lucide-react";
 import "./NightAudit.css";
 
 const UserReserved = () => {
@@ -40,7 +40,7 @@ const UserReserved = () => {
       {
         id: 2,
         reservationId: "RES-1002",
-        FirstName: "Madhu",
+        FirstName: "Madhu1",
         LastName: "Priya",
         phone: "9123456780",
         email: "madhu.priya@gmail.com",
@@ -63,10 +63,10 @@ const UserReserved = () => {
         commonComplementary: "Breakfast, WiFi",
       },
        {
-        id: 2,
+        id: 3,
         reservationId: "RES-1002",
-        FirstName: "Madhu",
-        LastName: "Priya",
+        FirstName: "Esha",
+        LastName: "Raj",
         phone: "9123456780",
         email: "madhu.priya@gmail.com",
         arrivalDate: "2026-01-15",
@@ -88,10 +88,10 @@ const UserReserved = () => {
         commonComplementary: "Breakfast, WiFi",
       },
        {
-        id: 2,
+        id: 4,
         reservationId: "RES-1002",
-        FirstName: "Madhu",
-        LastName: "Priya",
+        FirstName: "Sam",
+        LastName: "C",
         phone: "9123456780",
         email: "madhu.priya@gmail.com",
         arrivalDate: "2026-01-15",
@@ -113,10 +113,10 @@ const UserReserved = () => {
         commonComplementary: "Breakfast, WiFi",
       },
        {
-        id: 2,
+        id: 5,
         reservationId: "RES-1002",
-        FirstName: "Madhu",
-        LastName: "Priya",
+        FirstName: "Raj",
+        LastName: "Kumar",
         phone: "9123456780",
         email: "madhu.priya@gmail.com",
         arrivalDate: "2026-01-15",
@@ -138,10 +138,10 @@ const UserReserved = () => {
         commonComplementary: "Breakfast, WiFi",
       },
        {
-        id: 2,
+        id: 6,
         reservationId: "RES-1002",
-        FirstName: "Madhu",
-        LastName: "Priya",
+        FirstName: "Rakesh",
+        LastName: "Kumar",
         phone: "9123456780",
         email: "madhu.priya@gmail.com",
         arrivalDate: "2026-01-15",
@@ -163,10 +163,10 @@ const UserReserved = () => {
         commonComplementary: "Breakfast, WiFi",
       },
        {
-        id: 2,
+        id: 7,
         reservationId: "RES-1002",
-        FirstName: "Madhu",
-        LastName: "Priya",
+        FirstName: "Smith",
+        LastName: "J",
         phone: "9123456780",
         email: "madhu.priya@gmail.com",
         arrivalDate: "2026-01-15",
@@ -188,10 +188,10 @@ const UserReserved = () => {
         commonComplementary: "Breakfast, WiFi",
       },
        {
-        id: 2,
+        id: 8,
         reservationId: "RES-1002",
-        FirstName: "Madhu",
-        LastName: "Priya",
+        FirstName: "Bob",
+        LastName: "S",
         phone: "9123456780",
         email: "madhu.priya@gmail.com",
         arrivalDate: "2026-01-15",
@@ -213,10 +213,10 @@ const UserReserved = () => {
         commonComplementary: "Breakfast, WiFi",
       },
        {
-        id: 2,
+        id: 9,
         reservationId: "RES-1002",
-        FirstName: "Madhu",
-        LastName: "Priya",
+        FirstName: "Ram",
+        LastName: "Kumar",
         phone: "9123456780",
         email: "madhu.priya@gmail.com",
         arrivalDate: "2026-01-15",
@@ -302,6 +302,54 @@ const UserReserved = () => {
       specialInstruction: "Handle guest belongings carefully",
       status: "Active",
     },
+     {
+      id: 1,
+      employeeId: "EMP-101",
+      FirstName: "Smith",
+      LastName: "Kumar",
+      scheduleDate: "2026-01-12",
+      scheduleTime: "09:00 AM - 12:00 PM",
+      roomNumber: "202",
+      taskType: "Room Cleaning",
+      assignedStaff: "Ravi Kumar",
+      taskStatus: "Completed",
+      roomStatus: "Cleaned",
+      lostAndFound: "No",
+      specialInstruction: "Deep cleaning required",
+      status: "Active",
+    },
+     {
+      id: 1,
+      employeeId: "EMP-101",
+      FirstName: "Siva",
+      LastName: "Kumar",
+      scheduleDate: "2026-01-12",
+      scheduleTime: "09:00 AM - 12:00 PM",
+      roomNumber: "202",
+      taskType: "Room Cleaning",
+      assignedStaff: "Ravi Kumar",
+      taskStatus: "Completed",
+      roomStatus: "Cleaned",
+      lostAndFound: "No",
+      specialInstruction: "Deep cleaning required",
+      status: "Active",
+    },
+     {
+      id: 1,
+      employeeId: "EMP-101",
+      FirstName: "Raj",
+      LastName: "S",
+      scheduleDate: "2026-01-12",
+      scheduleTime: "09:00 AM - 12:00 PM",
+      roomNumber: "202",
+      taskType: "Room Cleaning",
+      assignedStaff: "Ravi Kumar",
+      taskStatus: "Completed",
+      roomStatus: "Cleaned",
+      lostAndFound: "No",
+      specialInstruction: "Deep cleaning required",
+      status: "Active",
+    },
   ];
 
   const houseKeeperColumns = [
@@ -340,23 +388,35 @@ const UserReserved = () => {
       <Tabs variant="default">
         <Tab label="User Activity Logs">
           <TableTemplate
-            title="User Activity Log"
-            searchable
+            actionButton={{
+              icon: <Download size={18} />,
+              label: 'Export Team',
+              onClick: () => {},
+              size: 'small',
+              variant: 'outline'
+            }}
+            columns=
+          {userActivityColumns}
+            data=
+          {userActivityData}
+            hasActionButton
+            pageSize={4}
             pagination
-            exportable
-            columns={userActivityColumns}
-            data={userActivityData}
-          />
+            searchable
+            title="User Activity Log"
+            // variant="striped"
+/>
         </Tab>
 
         <Tab label="House Keeper Details">
           <TableTemplate
             title="House Keeper Task"
-            searchable
-            pagination
-            exportable
             columns={houseKeeperColumns}
             data={houseKeeperData}
+            has ActionButton
+            pageSize={4}
+            searchable
+            pagination
           />
         </Tab>
       </Tabs>

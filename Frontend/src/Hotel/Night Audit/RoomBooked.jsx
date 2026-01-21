@@ -106,6 +106,31 @@ const RoomBooked = () => {
       roomComplementary: "Yes",
       commonComplementary: "Breakfast, WiFi",
     },
+    {
+      id: 3,
+      reservationId: "RES-1002",
+      FirstName: "Raj",
+      LastName: "Kumar",
+      phone: "9123456780",
+      email: "madhu.priya@gmail.com",
+      arrivalDate: "2026-01-15",
+      departureDate: "2026-01-18",
+      noOfRooms: 1,
+      noOfAdults: 2,
+      noOfChildren: 0,
+      paymentMode: "UPI",
+      extraBedCost: 0,
+      totalAmount: 3000,
+      taxAmount: 450,
+      discountAmount: 200,
+      overallAmount: 3250,
+      paidAmount: 2000,
+      balanceAmount: 1250,
+      bookingStatus: "Checked In",
+      reservationType: "Reservation",
+      roomComplementary: "Yes",
+      commonComplementary: "Breakfast, WiFi",
+    },
   ];
 
   return (
@@ -114,6 +139,8 @@ const RoomBooked = () => {
       title="Room Booked"
       columns={columns}
       data={data}
+      has ActionButton
+      pageSize={2}
       searchable
       pagination
       exportable
