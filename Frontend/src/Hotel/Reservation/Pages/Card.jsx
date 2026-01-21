@@ -1,19 +1,37 @@
-import React from 'react'
-import Card from "../../../stories/Card"
+import { Building2 } from "lucide-react";
+import '../Reservation.css'
 
-const Card = () => {
-    return (
-        <div><Card
-            variant="room"
-            roomNo={202}
-            available
-            adult={2}
-            child={3}
-            selected={false}
-            onClick={() => { }}
-        />
-        </div>
-    )
-}
+const RoomCard = ({ room, isSelected, onSelect }) => {
+  if (!room) return null;
 
-export default Card
+  const isAvailable = room.status === "Available";
+
+  return (
+    <div
+      className={`room-card ${isSelected ? "selected" : ""} ${!isAvailable ? "disabled" : ""}`}
+
+      onClick={() => {
+        if (!isAvailable) return;
+        onSelect(room);
+      }}
+    >
+      <div className="room-card-header">
+        <span>Room No: {room.roomNo}</span>
+        <span className={isAvailable ? "status-available" : "status-booked"}>
+          {room.status}
+        </span>
+      </div>
+
+      <div className="room-icon">
+        <Building2 size={18} />
+      </div>
+
+      <div className="room-card-footer">
+        <span>Adult : {room.adults}</span>
+        <span>Child : {room.children}</span>
+      </div>
+    </div>
+  );
+};
+
+export default RoomCard;

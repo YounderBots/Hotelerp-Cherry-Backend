@@ -1,9 +1,10 @@
-import React from "react";
+import React,{useState} from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye } from "lucide-react";
+import { Eye,X } from "lucide-react";
 import "../../MasterData/MasterData.css";
 
 const RoomBooked = () => {
+  const [viewReservation, setViewReservation] = useState(null);
   const columns = [
     {
       key: "reservationId",
@@ -11,8 +12,10 @@ const RoomBooked = () => {
       align: "center",
     },
     {
-      key: "guestName",
-      title: "Guest Name",
+      key: "Name",
+      title: "Name",
+      type: "custom",
+      render: (row) => [row.FirstName, row.LastName].filter(Boolean).join(" "),
     },
     {
       key: "phone",
@@ -30,13 +33,13 @@ const RoomBooked = () => {
       align: "center",
     },
     {
-      key: "reservationStatus",
+      key: "bookingStatus",
       title: "Reservation Status",
       align: "center",
       type: "badge",
     },
     {
-      key: "actions",
+      key: "action",
       title: "Action",
       align: "center",
       type: "custom",
@@ -44,7 +47,7 @@ const RoomBooked = () => {
         <button
           className="table-action-btn view"
           title={`View ${row.reservationId}`}
-          onClick={() => console.log("View reservation", row)}
+          onClick={() => setViewReservation(row)}
         >
           <Eye size={16} />
         </button>
@@ -56,51 +59,57 @@ const RoomBooked = () => {
     {
       id: 1,
       reservationId: "RES-1001",
-      guestName: "John Doe",
+      FirstName: "Anand",
+      LastName:"Kumar",
       phone: "9876543210",
-      arrivalDate: "2026-01-05",
-      departureDate: "2026-01-07",
-      reservationStatus: "Confirmed",
+      email: "anand.kumar@gmail.com",
+      arrivalDate: "2026-01-12",
+      departureDate: "2026-01-13",
+      noOfRooms: 1,
+      noOfAdults: 2,
+      noOfChildren: 1,
+      paymentMode: "Debit Card",
+      extraBedCost: 0,
+      totalAmount: 1000,
+      taxAmount: 150,
+      discountAmount: 0,
+      overallAmount: 1150,
+      paidAmount: 0,
+      balanceAmount: 1150,
+      bookingStatus: "Confirmed",
+      reservationType: "Reservation",
+      roomComplementary: "No",
+      commonComplementary: "Breakfast",
     },
     {
       id: 2,
       reservationId: "RES-1002",
-      guestName: "Jane Smith",
-      phone: "9123456789",
-      arrivalDate: "2026-01-06",
-      departureDate: "2026-01-08",
-      reservationStatus: "Checked In",
-    },
-    {
-      id: 3,
-      reservationId: "RES-1003",
-      guestName: "Mike Johnson",
-      phone: "9001122334",
-      arrivalDate: "2026-01-04",
-      departureDate: "2026-01-06",
-      reservationStatus: "Cancelled",
-    },
-    {
-      id: 4,
-      reservationId: "RES-1004",
-      guestName: "Sarah Wilson",
-      phone: "8899776655",
-      arrivalDate: "2026-01-07",
-      departureDate: "2026-01-10",
-      reservationStatus: "Pending",
-    },
-    {
-      id: 5,
-      reservationId: "RES-1005",
-      guestName: "Alex Chen",
-      phone: "9988776655",
-      arrivalDate: "2026-01-03",
-      departureDate: "2026-01-05",
-      reservationStatus: "Checked Out",
+      FirstName: "Madhu",
+      LastName: "Priya",
+      phone: "9123456780",
+      email: "madhu.priya@gmail.com",
+      arrivalDate: "2026-01-15",
+      departureDate: "2026-01-18",
+      noOfRooms: 1,
+      noOfAdults: 2,
+      noOfChildren: 0,
+      paymentMode: "UPI",
+      extraBedCost: 0,
+      totalAmount: 3000,
+      taxAmount: 450,
+      discountAmount: 200,
+      overallAmount: 3250,
+      paidAmount: 2000,
+      balanceAmount: 1250,
+      bookingStatus: "Checked In",
+      reservationType: "Reservation",
+      roomComplementary: "Yes",
+      commonComplementary: "Breakfast, WiFi",
     },
   ];
 
   return (
+    <>
     <TableTemplate
       title="Room Booked"
       columns={columns}
@@ -109,6 +118,41 @@ const RoomBooked = () => {
       pagination
       exportable
     />
+
+    {viewReservation && (
+        <div className="modal-overlay">
+          <div className="modal-card large">
+            <div className="modal-header">
+              <h3>Booking Details</h3>
+              <button onClick={() => setViewReservation(null)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body grid view">
+              {Object.entries(viewReservation).map(
+                ([key, value]) =>
+                  key !== "id" && (
+                    <div className="form-group" key={key}>
+                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
+                      <input value={value} disabled />
+                    </div>
+                  )
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button
+                className="btn secondary"
+                onClick={() => setViewReservation(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
