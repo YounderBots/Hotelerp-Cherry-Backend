@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { UserPlus, Eye, Pencil, Trash2, X } from "lucide-react";
+import { UserPlus, Eye, Pencil, Trash2, X,ToggleLeft,ToggleRight,User } from "lucide-react";
+import "./FloorTable.css";
+import {useNavigate} from "react-router-dom";
 
 const FloorTable = () => {
+  const Navigate=useNavigate();
   const [data, setData] = useState([
     {
       id: 1,
@@ -14,6 +17,10 @@ const FloorTable = () => {
       assignedServers: 10,
       currentOrders: 21,
       status: "Active",
+      operatingHours: "10:00 AM - 11:00 PM",
+      ActiveTables:17,
+      InactiveTables:7,
+      TotalOrder:45,
     },
     {
       id: 2,
@@ -25,6 +32,10 @@ const FloorTable = () => {
       assignedServers: 20,
       currentOrders: 20,
       status: "Active",
+      operatingHours: "11:09 AM - 11:00 PM",
+      ActiveTables:22,
+      InactiveTables:10,
+      TotalOrder:35,
     },
     {
       id: 3,
@@ -36,13 +47,28 @@ const FloorTable = () => {
       assignedServers: 0,
       currentOrders: 0,
       status: "Inactive",
+      operatingHours: "10:00 AM - 5:00 PM",
+      ActiveTables:55,
+      InactiveTables:2,
+      TotalOrder:78,
     },
   ]);
+
+  const serverList =
+    ["John Doe",
+    "Jane Smith",
+    "Michael Brown",
+    "Emily Davis",
+    ];
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [searchServer, setSearchServer] = useState("");
+  const [selectedServers, setSelectedServers] = useState([]);
+  const [selectedFloorId, setSelectedFloorId] = useState(null);
 
   const initialForm = {
     floorId: "",
@@ -61,16 +87,11 @@ const FloorTable = () => {
     setShowModal(true);
   };
 
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
+  const viewPage = (row) => {
+    Navigate('/view',{
+      state:row,
+    });
   };
-
-  const closeViewModal = () => {
-    setViewData(null);
-    setShowViewModal(false);
-  };
-
   const closeModal = () => {
     setEditId(null);
     setShowModal(false);
@@ -119,6 +140,54 @@ const FloorTable = () => {
     setShowModal(true);
   };
 
+  const StatusForFloor = (id) => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, status: item.status === "Active" ? "Inactive" : "Active" }
+          : item
+      )
+    );
+  };
+
+  const filteredServers = serverList.filter((name) =>
+    name.toLowerCase().includes(searchServer.toLowerCase())
+  );
+
+  const openAssignModal = (row) => {
+    setSearchServer("");
+    setSelectedFloorId(row.id);
+    setSelectedServers([]);
+    setShowAssignModal(true);
+  };
+
+  const closeAssignModal = () => {
+    setShowAssignModal(false);
+  };
+
+  const ServerNameSelection = (name) => {
+    setSelectedServers((prev) =>
+      prev.includes(name)
+        ? prev.filter((s) => s !== name)
+        : [...prev, name]             
+    );
+  };
+
+  const saveAssignedServers = () => {
+    setData((prev) =>
+      prev.map((item) =>
+        item.id === selectedFloorId
+          ? {
+              ...item,
+              assignedServers: selectedServers.length,
+            }
+          : item
+      )
+    );
+    closeAssignModal();
+  };
+
+
   const handleDelete = (id) => {
     setData((prev) => prev.filter((item) => item.id !== id));
   };
@@ -154,7 +223,7 @@ const FloorTable = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
+                <button className="table-action-btn view" onClick={() => viewPage(row)}>
                   <Eye size={16} />
                 </button>
                 <button className="table-action-btn edit" onClick={() => handleEdit(row)}>
@@ -163,6 +232,13 @@ const FloorTable = () => {
                 <button className="table-action-btn delete" onClick={() => handleDelete(row.id)}>
                   <Trash2 size={16} />
                 </button>
+                <button className="table-action-btn status" 
+                onClick={()=>StatusForFloor(row.id)}>
+                  {row.status === "Active" ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                </button>
+                <button className="table-action-btn assign" title="Assign Servers" onClick={()=>openAssignModal(row)}>
+                  <User size={16} />
+                </button>
               </div>
             ),
           },
@@ -170,37 +246,6 @@ const FloorTable = () => {
         data={data}
       />
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Floor</h3>
-              <button onClick={closeViewModal}><X size={18} /></button>
-            </div>
-
-            <div className="modal-body single view">
-              {[
-                ["Floor ID", viewData.floorId],
-                ["Floor Name", viewData.floorName],
-                ["Description", viewData.description],
-                ["Status", viewData.status],
-              ].map(([label, value]) => (
-                <div className="form-group" key={label}>
-                  <label>{label}</label>
-                  <input value={value || "-"} disabled />
-                </div>
-              ))}
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
@@ -253,6 +298,78 @@ const FloorTable = () => {
           </div>
         </div>
       )}
+
+      {showAssignModal && (
+      <div className="modal-overlay">
+        <div className="modal-card modal-md">
+          
+          <div className="modal-header">
+            <h3>Assign Servers</h3>
+            <button onClick={closeAssignModal}>
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="modal-body md-4">
+            <input
+              type="text"
+              placeholder="Search server..."
+              value={searchServer}
+              onChange={(e) => setSearchServer(e.target.value)}
+              style={{
+                width: "60%",
+                padding: "8px",
+                margin: "10px",
+              }}
+            />
+
+            <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+              {filteredServers.length > 0 ? (
+                filteredServers.map((name, index) => (
+                  <label
+                    key={index}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      padding: "6px",
+                      borderBottom: "1px solid #eee",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedServers.includes(name)}
+                      onChange={() => ServerNameSelection(name)}
+                    />
+                    {name}
+                  </label>
+                ))
+              ) : (
+                <p style={{ textAlign: "center", color: "#999" }}>
+                  No servers found
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="modal-footer">
+            <button className="btn secondary" onClick={closeAssignModal}>
+              Cancel
+            </button>
+            <button
+              className="btn primary"
+              onClick={saveAssignedServers}
+              disabled={selectedServers.length === 0}
+            >
+              Assign ({selectedServers.length})
+            </button>
+          </div>
+
+        </div>
+      </div>
+    )}
+
     </>
   );
 };

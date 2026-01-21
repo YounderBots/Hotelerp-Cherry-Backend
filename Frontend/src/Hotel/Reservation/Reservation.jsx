@@ -1,6 +1,6 @@
 import React from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Download, Eye, Pencil } from "lucide-react";
+import { Download, Eye, Pencil,Printer } from "lucide-react";
 
 const Reservation = () => {
   return (
@@ -53,6 +53,9 @@ const Reservation = () => {
           type: "custom",
           render: () => (
             <div style={{ display: "flex", justifyContent: "center", gap: "8px" }}>
+              <button className="table-action-btn print" title="Print">
+                <Printer size={16} />
+              </button>
               <button className="table-action-btn view" title="View">
                 <Eye size={16} />
               </button>
@@ -72,6 +75,11 @@ const Reservation = () => {
           arrivalDate: "2024-02-10",
           departureDate: "2024-02-12",
           status: "confirmed",
+          email:"john.doe@example.com",
+          phone:"9876543210",
+          NumberOfRooms:"1",
+          NumberOfNights:"2",
+          IdentityType:"1"
         },
         {
           id: 2,
