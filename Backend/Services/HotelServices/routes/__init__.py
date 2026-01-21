@@ -1,8 +1,6 @@
 from fastapi import APIRouter
 
-#==================================>Login Start<==================================
-from resources.loginController import router as loginRouter
-#==================================>Login End<==================================
+from fastapi import APIRouter
 
 #==================================>Dashboard Start<==================================
 from resources.dashboardController import router as dashboardRouter
@@ -19,10 +17,6 @@ from resources.hotel.front_office.inquiryController import router as inquiryRout
 #==================================>HRM Start<==================================
 from resources.hrm.employeeController import router as employeeRouter
 #==================================>HRM End<==================================
-
-#==================================>Master Data Start<==================================
-from resources.masterdata.masterController import router as hotelmasterRouter
-#==================================>Master Data End<==================================
 
 #==================================>House Keeping  Start<==================================
 from resources.hotel.front_office.house_keepingController import router as housekeepingRouter
@@ -45,14 +39,10 @@ from resources.restaurant.guestController import router as restaurantGuestRouter
 from resources.restaurant.reportsController import router as restaurantReportsRouter
 #==================================>Restaurant End<==================================
 
-from fastapi.templating import Jinja2Templates
 
 
 router = APIRouter()
 
-#==================================>Login Start<==================================
-router.include_router(loginRouter, prefix='', tags=['Login'])
-#==================================>Login End<==================================
 
 #==================================>Dashboard Start<==================================
 router.include_router(dashboardRouter, prefix='', tags=['Dashboard'])
@@ -67,10 +57,6 @@ router.include_router(inquiryRouter,prefix='', tags=['Hotel Inquiry'])
 #==================================>HRM Start<==================================
 router.include_router(employeeRouter, prefix='', tags=['HRM'])
 #==================================>HRM End<==================================
-
-#==================================>Master Data Start<==================================
-router.include_router(hotelmasterRouter, prefix='', tags=['Hotel Master Data'])
-#==================================>Master Data End<==================================
 
 #==================================>HouseKeeping Start<==================================
 router.include_router(housekeepingRouter,prefix='',tags=['Housekeeping'])
@@ -92,6 +78,3 @@ router.include_router(inventoryRouter, prefix='', tags=['Restaurant | Inventory'
 router.include_router(restaurantStaffRouter, prefix='', tags=['Restaurant | Staff'])
 router.include_router(restaurantGuestRouter, prefix='', tags=['Restaurant | Guest'])
 router.include_router(restaurantReportsRouter, prefix='', tags=['Restaurant | Reports'])
-#==================================>Restaurant End<==================================
-
-templates = Jinja2Templates(directory="templates")
