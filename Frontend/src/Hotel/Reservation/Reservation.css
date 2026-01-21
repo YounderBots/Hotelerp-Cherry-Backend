@@ -30,7 +30,9 @@
 
 /* ================= MODAL ================= */
 .modal-overlay {
-  position: fixed;
+  max-height: fit-content;
+
+  /* position: fixed; */
   inset: 0;
   background: rgba(15, 23, 42, 0.55);
   backdrop-filter: blur(4px);
@@ -41,8 +43,10 @@
 }
 
 .modal-card {
+
   background: #fff;
   width: 720px;
+  margin-top: 20px;
   border-radius: 14px;
   animation: modalScale 0.25s ease;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.25);
@@ -85,17 +89,23 @@
 .form-group label {
   font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  color: #475569;
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #4a5568;
 }
 
-.form-group input,
+label {
+  margin-top: 10px;
+}
+
+/* .form-group input,
 .form-group select {
   padding: 11px 14px;
   border-radius: 10px;
   border: 1px solid #d1d5db;
   font-size: 14px;
-}
+} */
 
 .modal-body.view input {
   background: #f8fafc;
@@ -134,6 +144,7 @@
     transform: scale(0.95);
     opacity: 0;
   }
+
   to {
     transform: scale(1);
     opacity: 1;
@@ -194,7 +205,7 @@
 }
 
 /* ================= ROOM GRID ================= */
-.room-card-grid {
+/* .room-card-grid {
   margin-top: 20px;
   background: var(--bg-primary, #ffffff);
   padding: 22px;
@@ -203,30 +214,30 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 22px;
-}
+} */
 
 /* ================= ROOM CARD ================= */
-.room-card {
+/* .room-card {
   background: var(--primary-lightest);
   border-radius: var(--border-radius-md, 12px);
   padding: 14px 18px;
   border: 1px solid var(--border-color);
   transition: all 0.25s ease;
-}
+} */
 
 /* ================= CARD TOP ================= */
-.room-card-top {
+/* .room-card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
+} */
+/* 
 .room-card-top h4 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-}
+} */
 
 /* ================= AVAILABILITY ================= */
 .availability {
@@ -258,10 +269,10 @@
 }
 
 /* ================= HOVER ================= */
-.room-card:hover {
+/* .room-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
-}
+} */
 
 /* ================= RESPONSIVE ================= */
 @media (max-width: 768px) {
@@ -535,6 +546,7 @@
     transform: scale(0.92);
     opacity: 0;
   }
+
   to {
     transform: scale(1);
     opacity: 1;
@@ -687,13 +699,29 @@
 /* Room Card */
 
 .room-card {
-  background-color: #edead6;
-  border-radius: 10px;
-  padding: 14px 16px;
+  background-color: #fdf2f8;
+  border: 4px solid transparent;
+  border-radius: 12px;
+  padding: 14px 18px;
   width: 320px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-  font-family: Arial, sans-serif;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  transition: all 0.25s ease;
+  cursor: pointer;
 }
+
+.room-card:hover {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+.room-card.selected {
+  border: 4px solid #4f46e5 !important;
+  background-color: #f3e8ff;
+  box-shadow: 0 0 0 5px rgba(79, 70, 229, 0.3);
+  transform: translateY(-4px);
+}
+
+
 
 .room-card-header {
   display: flex;
@@ -701,21 +729,10 @@
   align-items: center;
 }
 
-.room-title {
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.room-status {
-  font-weight: 500;
-  font-size: 14px;
-}
-
 .room-icon {
   text-align: center;
   margin: 8px 0;
   color: #6c6c6c;
-  font-size: 18px;
 }
 
 .room-card-footer {
@@ -725,31 +742,294 @@
   color: #6c6c6c;
 }
 
-
-.room-card {
+.nxt-btn {
+  padding: 5px;
+  width: 100px;
+  height: 30px;
+  border: 1px solid #6c6c6c;
+  background-color: var(--primary-mild);
   cursor: pointer;
-  transition: all 0.2s ease;
+  color: white;
+  border-radius: 5px;
+}
+
+
+.reservation-container {
+  max-width: 1000px;
+  /* margin: 20px auto; */
+
+}
+
+.reservation-header {
+  background: var(--primary-light);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px 8px 0 0;
+}
+
+.reservation-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.form-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 0 0 8px 8px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 24px 0 16px 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+
+
+.required {
+  color: #e53e3e;
+}
+
+input,
+select {
+  width: 100%;
   
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+strong {
+  white-space: nowrap;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.title-input {
+  display: flex;
+  gap: 3px;
+}
+
+.title-select {
+  width: 70px !important;
+
+  height: 40px;
+}
+
+.readonly-input {
+  background: #edf2f7;
+}
+
+.file-upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-upload input[type="file"] {
+  display: none;
+}
+
+.file-label {
+  background: #edf2f7;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.file-name {
+  color: #718096;
+  font-size: 14px;
+}
+
+/* Selected Rooms Card */
+.selected-rooms-section {
+
+  margin-top: 32px;
 
 }
 
-.room-card.selected {
-  border: 2px solid #4f46e5;
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+.selected-room-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
 
 }
 
-.room-card.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.room-info {
+  align-content: space-between;
+  display: flex;
+  gap: 20px;
+  align-items: end;
+  font-size: 10px;
 }
 
-.status-available {
-  color: #16a34a;
+
+.room-info label {
+  font-size: 12px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 5px;
   font-weight: 500;
+  color: #4a5568;
 }
 
-.status-booked {
-  color: #dc2626;
-  font-weight: 500;
+.small-input {
+  width: 80px !important;
+  
 }
+
+.rate-select {
+  
+  height: 40px;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 24px;
+  margin-left: 10px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e0;
+  transition: .3s;
+  border-radius: 34px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+}
+
+input:checked+.slider {
+  background-color: #48bb78;
+}
+
+input:checked+.slider:before {
+  transform: translateX(24px);
+}
+
+/* Save Button */
+.save-button-container {
+  text-align: right;
+  margin-top: 40px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+   gap: 10px;
+  margin-top: 10px;
+}
+
+.modal-footer Button.save-btn {
+  background-color: #48bb78;
+}
+
+.modal-footer Button.save-btn:hover {
+  background-color: #11c55c;
+}
+
+.modal-footer Button.close-btn {
+  background-color: #7e8380;
+}
+
+.modal-footer Button.close-btn:hover {
+  background-color: #454a47;
+}
+
+
+.custom-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.custom-modal {
+  background: #f8fafc;
+  width: 90%;
+  max-width: 750px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 12px;
+
+  outline: none;
+  animation: modalFade 0.25s ease-in-out;
+}
+
+.payment-Screen {
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+
+}
+
+.payment-Screen label {
+  grid-column: span 2;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.payment-Screen input,
+.payment-Screen select {
+  grid-column: span 2;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+  outline: none;
+  transition: border 0.2s ease;
+}
+
+.payment-Screen input:focus,
+.payment-Screen select:focus {
+  border-color: #4f46e5;
+}
+
