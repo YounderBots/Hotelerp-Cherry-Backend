@@ -130,6 +130,7 @@ const SettlementSummary = () => {
       columns={columns}
       data={data}
       searchable
+      pageSize={1}
       pagination
       exportable
     />

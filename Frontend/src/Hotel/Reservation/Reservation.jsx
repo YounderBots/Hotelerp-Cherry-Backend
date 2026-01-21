@@ -72,6 +72,11 @@ const Reservation = () => {
           arrivalDate: "2024-02-10",
           departureDate: "2024-02-12",
           status: "confirmed",
+          email:"john.doe@example.com",
+          phone:"9876543210",
+          NumberOfRooms:"1",
+          NumberOfNights:"2",
+          IdentityType:"1"
         },
         {
           id: 2,
