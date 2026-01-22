@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 #==================================>Master Data Start<==================================
-from resources.masterdata.masterController import router as hotelmasterRouter
+from resources.masterController import router as hotelmasterRouter
 #==================================>Master Data End<==================================
 
 router = APIRouter()
