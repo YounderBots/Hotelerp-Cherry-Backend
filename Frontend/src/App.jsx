@@ -63,6 +63,8 @@ const CurrencyCountry = lazy(() => import('./MasterData/CurrencyCountry'));
 const HskTaskType = lazy(() => import('./MasterData/HskTaskType'));
 const Complementary = lazy(() => import('./MasterData/Complementary'));
 const ReservationStatus = lazy(() => import('./MasterData/ReservationStatus'));
+const Department = lazy(() => import('./MasterData/Department'));
+const Designation = lazy(() => import('./MasterData/Designation'));
 
 // Error Boundary Component (optional but recommended)
 const ErrorBoundaryFallback = () => (
@@ -543,7 +545,19 @@ const App = () => {
                 <ReservationStatus />
               </PageLoader>
             } />
+            <Route path="/department" element={
+              <PageLoader>
+                <Department />
+              </PageLoader>
+            } />
+            <Route path="/designation" element={
+              <PageLoader>
+                <Designation />
+              </PageLoader>
+            } />
+
           </Route>
+
         </Routes>
       </Router>
     </div>
