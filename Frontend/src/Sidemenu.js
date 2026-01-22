@@ -204,7 +204,6 @@ export const MENU =
             icon: Layers,
             // path: "/master_data",
             children: [
-
                 {
                     label: "Facilities",
                     path: "/facilities"
@@ -268,6 +267,15 @@ export const MENU =
                 {
                     label: "Reservation Status",
                     path: "/reservation_status"
+                },
+                {
+                    label:"Deparment",
+                    path:"/department"
+                },
+                {
+                    label:"Designation",
+                    path:"/designation"
+                    
                 }
 
             ]

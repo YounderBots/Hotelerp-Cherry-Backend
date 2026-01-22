@@ -1,4 +1,4 @@
-
+import Button from "../../stories/Button"
 
 const Payment = () => {
 
@@ -58,38 +58,40 @@ const Payment = () => {
                     <input type="text"></input>
                 </div>
 
-                <label>Payment Details</label>
+            </div>
+           <label style={{padding:"10px",marginBottom:"10px"}}>Payment Details</label>
+            <div className="payment-Screen">
                 
-                    
-
-                    <div>
-                        <label>Payment Mode</label>
-                        <select>
-                            <option>Cash</option>
-                            <option>Credit Card</option>
-                            <option>Debit Card</option>
-                            <option>UPI / QR Payment</option>
-                            <option>Bank Transfer</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label>Paying Amount</label>
-                        <input type="text"></input>
-                    </div>
-                    <div>
-                        <label>Balance Amount</label>
-                        <input type="text"></input>
-                    </div>
-                    <div>
-                        <label>Extra Amount</label>
-                        <input type="text"></input>
-                    </div>
-
+                <div>
+                    <label>Payment Mode</label>
+                    <select>
+                        <option>Cash</option>
+                        <option>Credit Card</option>
+                        <option>Debit Card</option>
+                        <option>UPI / QR Payment</option>
+                        <option>Bank Transfer</option>
+                    </select>
                 </div>
+
+                <div>
+                    <label>Paying Amount</label>
+                    <input type="text"></input>
+                </div>
+                <div>
+                    <label>Balance Amount</label>
+                    <input type="text"></input>
+                </div>
+                <div>
+                    <label>Extra Amount</label>
+                    <input type="text"></input>
+                </div>
+
             </div>
 
-       
+            <Button className="sub-btn">Submit</Button>
+        </div>
+
+
 
 
     )
