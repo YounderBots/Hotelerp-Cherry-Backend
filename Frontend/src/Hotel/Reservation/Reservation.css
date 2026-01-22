@@ -1045,3 +1045,130 @@ input:checked+.slider:before {
 .reservation-container Button.sub-btn:hover{
   background-color: #11c55c;
 }
+
+.res{
+  font-size: 25px;
+  padding:10px;
+
+}
+
+.Reservation-form {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+}
+
+.Reservation-form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.Reservation-form-group label {
+  font-size: 14px;
+  color: #7c7ca1;
+  margin-bottom: 6px;
+}
+
+.Reservation-form-group input {
+  padding: 12px 14px;
+  border: 1px solid #dcdcdc;
+  border-radius: 10px;
+  font-size: 15px;
+  background: #ffffff;
+  color: #555;
+}
+
+.Reservation-form-group input:read-only {
+  background-color: #fff;
+}
+
+.Reservation-form-card {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 900px) {
+  .Reservation-form {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 550px) {
+  .Reservation-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.invoice-card {
+  background: #fff;
+  padding: 24px;
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+
+/* ROOM TABLE */
+.room-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 24px;
+}
+
+.room-table th {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 2px solid #777;
+  color: #666;
+}
+
+.room-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #eee;
+  color: #666;
+}
+
+/* SUMMARY */
+.summary-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 30px;
+}
+
+.summary {
+  width: 320px;
+}
+
+.summary div {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #666;
+}
+
+.summary .total {
+  font-weight: 700;
+  margin-top: 10px;
+}
+
+/* PAID INFO */
+.paid-title {
+  margin-bottom: 12px;
+  text-decoration: underline;
+}
+
+.paid-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.paid-table th {
+  padding: 12px;
+  border-bottom: 1px solid #ddd;
+  text-align: left;
+  color: #777;
+}
+
+.paid-table td {
+  padding: 14px;
+}

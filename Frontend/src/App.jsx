@@ -8,6 +8,7 @@ import findMenuByPath from './functions/locationFunctions';
 import { getMenuList, ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
 import ViewFloor from './Restaurant/Floor & Table Setup/FloorPageView';
+import ReservationModelView from './Hotel/Reservation/ReservationModelView';
 
 // Lazy load all page components
 const ForgotPassword = lazy(() => import('./Authentication/Pages/ForgotPassword'));
@@ -84,6 +85,8 @@ const PageLoader = ({ children }) => {
 };
 
 const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const navigate = useNavigate(); 
   return (
     <nav className="navbar">
       {/* LEFT */}
@@ -112,7 +115,11 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
         </button>
 
         {/* PROFILE */}
-        <div className="profile-box">
+        <div className="profile-container">
+        <div
+          className="profile-box"
+          onClick={() => setProfileOpen(prev => !prev)}
+        >
           <img
             src="https://images.unsplash.com/photo-1603415526960-f7e0328c63b1?w=80"
             alt="user"
@@ -124,6 +131,21 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
           </div>
           <ChevronDown size={16} />
         </div>
+
+        {profileOpen && (
+          <div className="profile-dropdown">
+            <div className="dropdown-item">Profile</div>
+            <div className="dropdown-item logout"
+            onClick={() => {
+              navigate("/");
+              setProfileOpen(false);
+            }}>
+              Logout</div>
+          </div>
+        )}
+      </div>
+
+
 
         {/* MOBILE MENU */}
         <button
@@ -340,6 +362,7 @@ const App = () => {
                 <Reservation />
               </PageLoader>
             } />
+            <Route path="/ReservationView" element={<ReservationModelView />} />
             <Route path="/add_new_reservation" element={
               <PageLoader>
                 <AddNewReservation />

@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "react-router";
+import { useLocation } from "react-router";
 import './FloorTable.css';
 import Tabs, { Tab } from "../../stories/Tabs";
 import TableTemplate from "../../stories/TableTemplate";

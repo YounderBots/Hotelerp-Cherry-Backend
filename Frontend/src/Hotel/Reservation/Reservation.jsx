@@ -1,8 +1,17 @@
 import React from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { Download, Eye, Pencil,Printer } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const Reservation = () => {
+  const Navigate = useNavigate()
+
+  const ViewModel=(row) =>{
+    Navigate('/ReservationView',{
+      state:row,
+    });
+  };
+
   return (
     <TableTemplate
       title="Reservation List"
@@ -51,12 +60,12 @@ const Reservation = () => {
           title: "Actions",
           align: "center",
           type: "custom",
-          render: () => (
+          render: (row) => (
             <div style={{ display: "flex", justifyContent: "center", gap: "8px" }}>
               <button className="table-action-btn print" title="Print">
                 <Printer size={16} />
               </button>
-              <button className="table-action-btn view" title="View">
+              <button className="table-action-btn view" title="View" onClick={()=>ViewModel(row)}>
                 <Eye size={16} />
               </button>
               <button className="table-action-btn edit" title="Edit">
