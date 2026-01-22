@@ -189,7 +189,7 @@ const ReportAnalytics = () => {
   return (
     <>
       {/* ================= REPORT TABS (SINGLE ROW) ================= */}
-      <div className="modal-card" style={{ marginBottom: 20 }}>
+      <div className="page-card" style={{ marginBottom: 20 }}>
         <div className="modal-body single">
           <div
             style={{

@@ -8,7 +8,7 @@ const Orders = () => {
       id: 1,
       orderId: "ORD-1001",
       tableId: "T01",
-      roomNo: "",
+      roomNo: "333",
       guestName: "Anand M",
       guests: 4,
       orderTime: "12:45 PM",

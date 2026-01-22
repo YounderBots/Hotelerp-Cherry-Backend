@@ -138,6 +138,7 @@ const TableMaster = () => {
         hasActionButton
         searchable
         pagination
+        pageSize={2}
         exportable
         actionButton={{
           label: "Add Table",
