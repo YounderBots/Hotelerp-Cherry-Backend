@@ -119,6 +119,7 @@ class Menus(Base):
     menu_name = Column(String(100), nullable=False, unique=True, index=True)
     menu_link = Column(String(255), nullable=False)
     menu_icon = Column(String(100), nullable=True)
+    order = Column(Integer, nullable=False)
     # ================= SYSTEM =================
     status = Column(String(100), nullable=False, index=True)
     created_by = Column(String(100), nullable=False, index=True)

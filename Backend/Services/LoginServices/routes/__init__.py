@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from sympy import use
 
 #==================================>Master Data Start<==================================
-from Backend.Services.LoginServices.resources.loginController import router as userRouter
+from resources.loginController import router as userRouter
 #==================================>Master Data End<==================================
 
 router = APIRouter()
