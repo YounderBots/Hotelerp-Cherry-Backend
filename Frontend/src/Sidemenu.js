@@ -92,7 +92,18 @@ export const MENU =
             id: "hrm",
             label: "HRM",
             icon: Users,
-            path: "/employee",
+            children:[
+                {
+                    label:"Employee",
+                     path: "/employee",
+                },
+                {
+                    label:"User",
+                     path: "/user",
+                },
+
+            ]
+           
         },
         {
             id: "restaurant",
