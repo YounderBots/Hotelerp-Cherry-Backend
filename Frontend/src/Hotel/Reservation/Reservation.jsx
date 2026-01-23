@@ -2,12 +2,18 @@ import React from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { Download, Eye, Pencil,Printer } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-
+import "./Reservation.css";
 const Reservation = () => {
   const Navigate = useNavigate()
 
   const ViewModel=(row) =>{
     Navigate('/ReservationView',{
+      state:row,
+    });
+  };
+
+  const EditModel=(row)=>{
+    Navigate('/ReservationEdit',{
       state:row,
     });
   };
@@ -68,7 +74,7 @@ const Reservation = () => {
               <button className="table-action-btn view" title="View" onClick={()=>ViewModel(row)}>
                 <Eye size={16} />
               </button>
-              <button className="table-action-btn edit" title="Edit">
+              <button className="table-action-btn edit" title="Edit" onClick={()=>EditModel(row)}>
                 <Pencil size={16} />
               </button>
             </div>

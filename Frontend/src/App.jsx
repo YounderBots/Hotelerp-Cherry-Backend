@@ -9,6 +9,7 @@ import { getMenuList, ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
 import ViewFloor from './Restaurant/Floor & Table Setup/FloorPageView';
 import ReservationModelView from './Hotel/Reservation/ReservationModelView';
+import ReservationListEdit from './Hotel/Reservation/ReservationListEdit';
 
 // Lazy load all page components
 const ForgotPassword = lazy(() => import('./Authentication/Pages/ForgotPassword'));
@@ -363,6 +364,7 @@ const App = () => {
               </PageLoader>
             } />
             <Route path="/ReservationView" element={<ReservationModelView />} />
+            <Route path="/ReservationEdit" element={<ReservationListEdit />} />
             <Route path="/add_new_reservation" element={
               <PageLoader>
                 <AddNewReservation />
