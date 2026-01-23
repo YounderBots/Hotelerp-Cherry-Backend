@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
  
+import bcrypt
 import httpx
 from configs import BaseConfig
 from jose import jwt
@@ -26,3 +27,9 @@ async def fetch_from_service(
         response.raise_for_status()
         return response.json()
  
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8")
+    )

@@ -36,7 +36,7 @@ class CommonWords():
 class ServiceURL:
 
     # ================= USER / AUTH =================
-    USER_SERVICE_URL = "http://127.0.0.1:8002"
+    USER_SERVICE_URL = "http://127.0.0.1:8020"
 
     # ================= MASTER DATA =================
     MASTER_SERVICE_URL = "http://127.0.0.1:8003"

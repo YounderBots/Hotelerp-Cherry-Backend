@@ -4,6 +4,7 @@ from sqlalchemy import func
 import bcrypt
 import uuid
 
+from resources.utils import verify_authentication
 from models import models
 from models import get_db
 from configs.base_config import CommonWords
@@ -12,89 +13,93 @@ router = APIRouter()
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 async def create_user(request: Request, db: Session = Depends(get_db)):
-    payload = await request.json()
+    try:
+        user_id, user_role, token = verify_authentication(request)
+        payload = await request.json()
 
-    required_fields = [
-        "username","first_name","last_name","personal_email","company_email",
-        "password","mobile","dob","gender","marital_status","address",
-        "city","state","postal_code","country","department_id","role_id",
-        "shift_id","date_of_joining","experience","salary_details",
-        "register_code","emergency_name","emergency_contact",
-        "emergency_relationship","created_by","company_id"
-    ]
+        required_fields = [
+            "username","first_name","last_name","personal_email","company_email",
+            "password","mobile","dob","gender","marital_status","address",
+            "city","state","postal_code","country","department_id","role_id",
+            "shift_id","date_of_joining","experience","salary_details",
+            "register_code","emergency_name","emergency_contact",
+            "emergency_relationship","created_by","company_id"
+        ]
 
-    for field in required_fields:
-        if not payload.get(field):
+        for field in required_fields:
+            if not payload.get(field):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{field} is required"
+                )
+
+        # Duplicate company email check
+        exists = db.query(models.Users).filter(
+            func.lower(models.Users.Company_Email) == payload["company_email"].lower(),
+            models.Users.status == CommonWords.STATUS
+        ).first()
+
+        if exists:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{field} is required"
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Company email already exists"
             )
 
-    # Duplicate company email check
-    exists = db.query(models.Users).filter(
-        func.lower(models.Users.Company_Email) == payload["company_email"].lower(),
-        models.Users.status == CommonWords.STATUS
-    ).first()
+        hashed_password = bcrypt.hashpw(
+            payload["password"].encode("utf-8"),
+            bcrypt.gensalt()
+        ).decode("utf-8")
 
-    if exists:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Company email already exists"
+        user_code = f"EMP-{uuid.uuid4().hex[:8].upper()}"
+
+        user = models.Users(
+            User_Code=user_code,
+            username=payload["username"],
+            First_Name=payload["first_name"],
+            Last_Name=payload["last_name"],
+            Personal_Email=payload["personal_email"],
+            Company_Email=payload["company_email"],
+            Password=hashed_password,
+            Mobile=payload["mobile"],
+            D_O_B=payload["dob"],
+            Gender=payload["gender"],
+            Marital_Status=payload["marital_status"],
+            Address=payload["address"],
+            City=payload["city"],
+            State=payload["state"],
+            Postal_Code=payload["postal_code"],
+            Country=payload["country"],
+            Department_ID=payload["department_id"],
+            Role_ID=payload["role_id"],
+            Shift_ID=payload["shift_id"],
+            Date_Of_Joining=payload["date_of_joining"],
+            Experience=payload["experience"],
+            Salary_Details=payload["salary_details"],
+            Register_Code=payload["register_code"],
+            Emergency_Name=payload["emergency_name"],
+            Emergency_Contact=payload["emergency_contact"],
+            Emergency_Relationship=payload["emergency_relationship"],
+            status=CommonWords.STATUS,
+            created_by=payload["created_by"],
+            company_id=payload["company_id"]
         )
 
-    hashed_password = bcrypt.hashpw(
-        payload["password"].encode("utf-8"),
-        bcrypt.gensalt()
-    ).decode("utf-8")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
-    user_code = f"EMP-{uuid.uuid4().hex[:8].upper()}"
-
-    user = models.Users(
-        User_Code=user_code,
-        username=payload["username"],
-        First_Name=payload["first_name"],
-        Last_Name=payload["last_name"],
-        Personal_Email=payload["personal_email"],
-        Company_Email=payload["company_email"],
-        Password=hashed_password,
-        Mobile=payload["mobile"],
-        D_O_B=payload["dob"],
-        Gender=payload["gender"],
-        Marital_Status=payload["marital_status"],
-        Address=payload["address"],
-        City=payload["city"],
-        State=payload["state"],
-        Postal_Code=payload["postal_code"],
-        Country=payload["country"],
-        Department_ID=payload["department_id"],
-        Role_ID=payload["role_id"],
-        Shift_ID=payload["shift_id"],
-        Date_Of_Joining=payload["date_of_joining"],
-        Experience=payload["experience"],
-        Salary_Details=payload["salary_details"],
-        Register_Code=payload["register_code"],
-        Emergency_Name=payload["emergency_name"],
-        Emergency_Contact=payload["emergency_contact"],
-        Emergency_Relationship=payload["emergency_relationship"],
-        status=CommonWords.STATUS,
-        created_by=payload["created_by"],
-        company_id=payload["company_id"]
-    )
-
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    return {
-        "status": "success",
-        "message": "User created successfully",
-        "data": {
-            "id": user.id,
-            "user_code": user.User_Code,
-            "username": user.username,
-            "company_email": user.Company_Email
+        return {
+            "status": "success",
+            "message": "User created successfully",
+            "data": {
+                "id": user.id,
+                "user_code": user.User_Code,
+                "username": user.username,
+                "company_email": user.Company_Email
+            }
         }
-    }
+    except HTTPException as http_exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
 
 @router.get("/users/{user_id}", status_code=status.HTTP_200_OK)
 def get_user_by_id(
@@ -128,6 +133,67 @@ def get_user_by_id(
             "last_name": user.Last_Name,
             "personal_email": user.Personal_Email,
             "company_email": user.Company_Email,
+            "mobile": user.Mobile,
+            "alternative_mobile": user.Alternative_Mobile,
+            "dob": user.D_O_B,
+            "gender": user.Gender,
+            "marital_status": user.Marital_Status,
+            "address": user.Address,
+            "city": user.City,
+            "state": user.State,
+            "postal_code": user.Postal_Code,
+            "country": user.Country,
+            "department_id": user.Department_ID,
+            "role_id": user.Role_ID,
+            "shift_id": user.Shift_ID,
+            "date_of_joining": user.Date_Of_Joining,
+            "experience": user.Experience,
+            "salary_details": user.Salary_Details,
+            "register_code": user.Register_Code,
+            "emergency_name": user.Emergency_Name,
+            "emergency_contact": user.Emergency_Contact,
+            "emergency_relationship": user.Emergency_Relationship,
+            "status": user.status,
+            "company_id": user.company_id,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at
+        }
+    }
+
+
+@router.get("/login_user/{usermail}", status_code=status.HTTP_200_OK)
+def get_user_by_mail(
+    usermail: str,
+    # company_id: str,
+    db: Session = Depends(get_db)
+):
+    user = (
+        db.query(models.Users)
+        .filter(
+            models.Users.Company_Email == usermail,
+            # models.Users.company_id == company_id,
+            models.Users.status == CommonWords.STATUS
+        )
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    return {
+        "status": "success",
+        "data": {
+            "id": user.id,
+            "user_code": user.User_Code,
+            "username": user.username,
+            "first_name": user.First_Name,
+            "last_name": user.Last_Name,
+            "personal_email": user.Personal_Email,
+            "company_email": user.Company_Email,
+            "password": user.Password,
             "mobile": user.Mobile,
             "alternative_mobile": user.Alternative_Mobile,
             "dob": user.D_O_B,
@@ -479,12 +545,12 @@ async def create_role_permission(request: Request, db: Session = Depends(get_db)
 @router.get("/role-permissions/{role_id}", status_code=status.HTTP_200_OK)
 def get_permissions_by_role(
     role_id: str,
-    company_id: str,
+    # company_id: str,
     db: Session = Depends(get_db)
 ):
     permissions = db.query(models.RolePermissions).filter(
         models.RolePermissions.role_id == role_id,
-        models.RolePermissions.company_id == company_id,
+        # models.RolePermissions.company_id == company_id,
         models.RolePermissions.status == CommonWords.STATUS
     ).all()
 
