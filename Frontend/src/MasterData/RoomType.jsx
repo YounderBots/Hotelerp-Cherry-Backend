@@ -116,6 +116,7 @@ const RoomType = () => {
         hasActionButton
         searchable
         pagination
+        pageSize={4}
         exportable
         actionButton={{ 
           label: "Add Room Type",

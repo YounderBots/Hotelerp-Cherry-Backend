@@ -1,0 +1,98 @@
+.user-container {
+  background: #ffffff;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.user-container h2 {
+  border-bottom: 2px solid #ccc;
+  padding: 10px;
+}
+
+/* .field {
+  margin-bottom: 20px;
+} */
+
+.field label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+
+}
+
+.field select {
+  width: 250px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+.permission-table {
+  width: 100%;
+  border-collapse: collapse;
+
+}
+
+/* .permission-table table {
+  width: 100%;
+
+  font-size: 1.8rem;
+} */
+
+
+.permission-table th {
+  background: var(--primary-lightest);
+  padding: 1rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.permission-table td {
+  padding: 1rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.permission-table td input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+ accent-color: green;
+  cursor: pointer;
+  margin: 0;
+  transform: scale(1.1);
+}
+
+.permission-table tr:hover {
+  background: var(--primary-lightest);
+}
+
+.actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.user-container button {
+  margin-top: 20px;
+  background-color: rgb(254, 5, 80);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  margin-right: 30px;
+
+}
+
+.user-container button:hover {
+  background-color: rgb(185, 6, 60);
+}

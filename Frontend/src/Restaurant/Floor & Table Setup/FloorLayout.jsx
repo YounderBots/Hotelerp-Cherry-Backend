@@ -62,9 +62,7 @@ const FloorTable = () => {
     ];
 
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [viewData, setViewData] = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [searchServer, setSearchServer] = useState("");
   const [selectedServers, setSelectedServers] = useState([]);

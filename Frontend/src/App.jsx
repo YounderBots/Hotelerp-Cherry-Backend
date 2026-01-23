@@ -9,6 +9,8 @@ import { getMenuList, ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
 import ViewFloor from './Restaurant/Floor & Table Setup/FloorPageView';
 import { useAuth } from './Context/AuthContext';
+import ReservationModelView from './Hotel/Reservation/ReservationModelView';
+import ReservationListEdit from './Hotel/Reservation/ReservationListEdit';
 
 // Lazy load all page components
 const ForgotPassword = lazy(() => import('./Authentication/Pages/ForgotPassword'));
@@ -29,6 +31,7 @@ const RoomBooked = lazy(() => import('./Hotel/Night Audit/RoomBooked'));
 const SettlementSummary = lazy(() => import('./Hotel/Night Audit/SettlementSummary'));
 const GuestEnquiry = lazy(() => import('./Hotel/Guest Enquiry/GuestEnquiry'));
 const Employee = lazy(() => import('./Hotel/HRM/Employee'));
+const User = lazy(() => import('./Hotel/HRM/User'));
 const TaskAssign = lazy(() => import('./Hotel/House Keeper/TaskAssign'));
 const RoomIncidentLog = lazy(() => import('./Hotel/House Keeper/RoomIncidentLog'));
 
@@ -85,6 +88,8 @@ const PageLoader = ({ children }) => {
 };
 
 const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const navigate = useNavigate(); 
   return (
     <nav className="navbar">
       {/* LEFT */}
@@ -113,7 +118,11 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
         </button>
 
         {/* PROFILE */}
-        <div className="profile-box">
+        <div className="profile-container">
+        <div
+          className="profile-box"
+          onClick={() => setProfileOpen(prev => !prev)}
+        >
           <img
             src="https://images.unsplash.com/photo-1603415526960-f7e0328c63b1?w=80"
             alt="user"
@@ -125,6 +134,21 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
           </div>
           <ChevronDown size={16} />
         </div>
+
+        {profileOpen && (
+          <div className="profile-dropdown">
+            <div className="dropdown-item">Profile</div>
+            <div className="dropdown-item logout"
+            onClick={() => {
+              navigate("/");
+              setProfileOpen(false);
+            }}>
+              Logout</div>
+          </div>
+        )}
+      </div>
+
+
 
         {/* MOBILE MENU */}
         <button
@@ -140,7 +164,7 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
 
 const RecursiveMenu = ({ items, activePath, setActivePath, level = 0 }) => {
   const navigate = useNavigate();
-  
+
   return (
     <>
       {items.map((item, index) => {
@@ -150,7 +174,7 @@ const RecursiveMenu = ({ items, activePath, setActivePath, level = 0 }) => {
           JSON.stringify(pathKey);
         const hasChildren = item.children?.length;
         const isExpanded = activePath[level] === index;
-        
+
         return (
           <div key={`${item.label}-${level}-${index}`}>
             <div
@@ -185,32 +209,33 @@ const RecursiveMenu = ({ items, activePath, setActivePath, level = 0 }) => {
   );
 };
 
-const AppContext = ({ 
-  menuList, 
-  activeMenu, 
-  setActiveMenu, 
-  activePath, 
-  setActivePath, 
-  children 
+const AppContext = ({
+  menuList,
+  activeMenu,
+  setActiveMenu,
+  activePath,
+  setActivePath,
+  children
 }) => {
   const navigate = useNavigate();
   console.log("menuList", menuList);
+
   return (
     <div className="app-body">
       <aside className="side-nav">
         {menuList.map((item) => {
           const Icon = ICON_MAP[item.icon];
           const isActive = item.id === activeMenu?.id;
-          
+
           return (
             <div
               key={item.id}
               className={`nav-item ${isActive ? "active" : ""}`}
               onClick={() => {
                 setActiveMenu(item);
-                if(item.path === undefined) {
+                if (item.path === undefined) {
                   return navigate(item.children[0].path);
-                } 
+                }
                 navigate(item.path);
               }}
             >
@@ -253,9 +278,13 @@ const AppLayout = () => {
     () => setIsMobileMenuOpen(false),
     isMobileMenuOpen
   );
-  
+
   useEffect(() => {
       setMenuList(menus);
+    getMenuList().then(data => {
+      console.log("MENU API RESPONSE:", data);
+      setMenuList(data.message ? data.message : data);
+    });
   }, []);
 
   useEffect(() => {
@@ -270,21 +299,21 @@ const AppLayout = () => {
 
   return (
     <>
-      <Navbar 
-        sidebarOutsideRef={sidebarOutsideRef} 
-        setIsMobileMenuOpen={setIsMobileMenuOpen} 
-        isMobileMenuOpen={isMobileMenuOpen} 
-        activeMenu={activeMenu} 
-        setActiveMenu={setActiveMenu} 
-        activePath={activePath} 
-        setActivePath={setActivePath} 
+      <Navbar
+        sidebarOutsideRef={sidebarOutsideRef}
+        setIsMobileMenuOpen={setIsMobileMenuOpen}
+        isMobileMenuOpen={isMobileMenuOpen}
+        activeMenu={activeMenu}
+        setActiveMenu={setActiveMenu}
+        activePath={activePath}
+        setActivePath={setActivePath}
       />
-      <AppContext 
-        menuList={menuList} 
-        isMobileMenuOpen={isMobileMenuOpen} 
-        activeMenu={activeMenu} 
-        setActiveMenu={setActiveMenu} 
-        activePath={activePath} 
+      <AppContext
+        menuList={menuList}
+        isMobileMenuOpen={isMobileMenuOpen}
+        activeMenu={activeMenu}
+        setActiveMenu={setActiveMenu}
+        activePath={activePath}
         setActivePath={setActivePath}
       >
         <Outlet />
@@ -332,13 +361,15 @@ const App = () => {
                 <AdminDashboard />
               </PageLoader>
             } />
-            
+
             {/* Hotel Routes */}
             <Route path="/reservation" element={
               <PageLoader>
                 <Reservation />
               </PageLoader>
             } />
+            <Route path="/ReservationView" element={<ReservationModelView />} />
+            <Route path="/ReservationEdit" element={<ReservationListEdit />} />
             <Route path="/add_new_reservation" element={
               <PageLoader>
                 <AddNewReservation />
@@ -382,6 +413,11 @@ const App = () => {
             <Route path="/employee" element={
               <PageLoader>
                 <Employee />
+              </PageLoader>
+            } />
+            <Route path="/user" element={
+              <PageLoader>
+                <User />
               </PageLoader>
             } />
             <Route path="/task_assign" element={
