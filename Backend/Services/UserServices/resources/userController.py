@@ -548,27 +548,96 @@ def get_permissions_by_role(
     # company_id: str,
     db: Session = Depends(get_db)
 ):
-    permissions = db.query(models.RolePermissions).filter(
-        models.RolePermissions.role_id == role_id,
-        # models.RolePermissions.company_id == company_id,
-        models.RolePermissions.status == CommonWords.STATUS
-    ).all()
+    permissions = (
+        db.query(models.RolePermissions)
+        .filter(
+            models.RolePermissions.role_id == role_id,
+            models.RolePermissions.status == CommonWords.STATUS,
+        )
+        .all()
+    )
+
+    menus: dict[int, dict] = {}
+
+    for permission in permissions:
+        # 🔴 Skip if user has no permission at all
+        if not any([
+            permission.view_permission,
+            permission.create_permission,
+            permission.edit_permission,
+            permission.delete_permission,
+        ]):
+            continue
+
+        # ------------------ MENU ------------------
+        menu = (
+            db.query(models.Menus)
+            .filter(
+                models.Menus.id == int(permission.menu_id),
+                models.Menus.status == CommonWords.STATUS,
+            )
+            .first()
+        )
+
+        if not menu:
+            continue
+
+        # Create menu if not exists
+        if menu.id not in menus:
+            menus[menu.id] = {
+                "id": menu.id,
+                "order_no": menu.order,
+                "label": menu.menu_name,
+                "path": menu.menu_link,
+                "icon": menu.menu_icon,
+                "permissions": {
+                    "add": permission.create_permission,
+                    "edit": permission.edit_permission,
+                    "delete": permission.delete_permission,
+                    "view": permission.view_permission,
+                },
+                "children": [],
+            }
+
+        # ------------------ SUBMENU ------------------
+        if permission.submenu_id:
+            submenu = (
+                db.query(models.Submenus)
+                .filter(
+                    models.Submenus.id == int(permission.submenu_id),
+                    models.Submenus.status == CommonWords.STATUS,
+                )
+                .first()
+            )
+
+            if submenu:
+                menus[menu.id]["children"].append({
+                    "id": submenu.id,
+                    "label": submenu.submenu_name,
+                    "path": submenu.submenu_link,
+                    "order_no": submenu.order,
+                    "permissions": {    
+                        "add": permission.create_permission,
+                        "edit": permission.edit_permission,
+                        "delete": permission.delete_permission,
+                        "view": permission.view_permission,
+                    },
+                })
+
+    # ------------------ SORT MENUS ------------------
+    for menu in menus.values():
+        menu["children"].sort(key=lambda x: x.get("order_no", 0))
+
+    sorted_menus = sorted(menus.values(), key=lambda x: x["order_no"])
+    print(sorted_menus)
 
     return {
         "status": "success",
-        "data": [
-            {
-                "id": p.id,
-                "menu_id": p.menu_id,
-                "submenu_id": p.submenu_id,
-                "view": p.view_permission,
-                "create": p.create_permission,
-                "edit": p.edit_permission,
-                "delete": p.delete_permission
-            }
-            for p in permissions
-        ]
+        "data": {
+        "menus": sorted_menus
     }
+    }
+
 
 @router.put("/role-permissions", status_code=status.HTTP_200_OK)
 async def update_role_permission(request: Request, db: Session = Depends(get_db)):

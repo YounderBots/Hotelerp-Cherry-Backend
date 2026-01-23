@@ -135,6 +135,7 @@ class Submenus(Base):
     menu_id = Column(String(100), nullable=False, index=True)
     submenu_name = Column(String(100), nullable=False, unique=True, index=True)
     submenu_link = Column(String(255), nullable=False)
+    order = Column(Integer, nullable=False)
     # ================= SYSTEM =================
     status = Column(String(100), nullable=False, index=True)
     created_by = Column(String(100), nullable=False, index=True)

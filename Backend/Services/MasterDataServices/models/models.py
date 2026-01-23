@@ -21,6 +21,7 @@ class Facility(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -46,6 +47,7 @@ class Room_Type(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -60,6 +62,7 @@ class Bed_Type(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -74,6 +77,7 @@ class TableHallNames(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -101,6 +105,7 @@ class Room(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -117,6 +122,7 @@ class Discount_Data(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -133,6 +139,7 @@ class Tax_type(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -147,6 +154,7 @@ class Payment_Methods(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -161,6 +169,7 @@ class Identity_Proofs(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -177,6 +186,7 @@ class Country_Courrency(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -192,6 +202,7 @@ class Task_Type(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -208,6 +219,7 @@ class Room_Complementry(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 
@@ -223,6 +235,7 @@ class Reservation_Status(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, onupdate=datetime.utcnow)
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 

@@ -8,14 +8,14 @@ router = APIRouter()
 
 @router.post("/login_post")
 async def login_post(
-    request: Request,
-    usermail: str = Form(...),
-    password: str = Form(...)
+    request: Request,payload: dict
 ):
     try:
+        email = payload.get("email")
+        password = payload.get("password")
         # 1️⃣ Fetch user from USER service
         user_response = await fetch_from_service(
-            f"{ServiceURL.USER_SERVICE_URL}/login_user/{usermail}"
+            f"{ServiceURL.USER_SERVICE_URL}/login_user/{email}"
         )
 
         user_data = user_response.get("data")
@@ -45,20 +45,22 @@ async def login_post(
         request.session["access_token"] = access_token
 
         # 4️⃣ Fetch role permissions
-        role_permission_response = await fetch_from_service(
+        response = await fetch_from_service(
             f"{ServiceURL.USER_SERVICE_URL}/role-permissions/{user_data.get('role_id')}",
             headers={"Authorization": f"Bearer {access_token}"}
         )
+
+        role_permission_response = response.get("data", {})
 
         # 5️⃣ Decide redirect URL
         redirect_url = "/dashboard"
 
         if role_permission_response and role_permission_response.get("menus"):
             first_menu = role_permission_response["menus"][0]
-            if first_menu.get("submenus"):
-                redirect_url = first_menu["submenus"][0]["submenu_link"]
+            if first_menu.get("children"):
+                redirect_url = first_menu["children"][0]["path"]
             else:
-                redirect_url = first_menu.get("menu_link", "/dashboard")
+                redirect_url = first_menu.get("path", "/dashboard")
 
         # 6️⃣ FINAL RESPONSE FOR FRONTEND
         return JSONResponse(
@@ -68,15 +70,16 @@ async def login_post(
                 "redirect_url": redirect_url,
                 "user": {
                     "id": user_data.get("id"),
-                    "email": user_data.get("company_email", usermail),
+                    "email": user_data.get("company_email", email),
                     "role_id": user_data.get("role_id")
                 },
-                "role_permissions": role_permission_response
+                "menus": role_permission_response.get("menus", [])
             },
             status_code=200
         )
 
     except Exception as e:
+        print(e)
         return JSONResponse(
             {"error": "Login failed"},
             status_code=500

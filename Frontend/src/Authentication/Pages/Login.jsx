@@ -2,17 +2,34 @@ import React, { useState } from "react";
 import "./Login.css";
 import logo from "../../assets/layout/Cherry.png";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../Context/AuthContext";
+import APICall from "../../APICalls/APICalls";
 
 const Login = () => {
+  const [error, setError] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const navigate = useNavigate();
-
-  const handleSubmit = (e) => {
+  const { login } = useAuth();
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    navigate("/dashboard");
-  };
+    setError("");
+    if (!email || !password) {
+      setError("Email and Password are required");
+      return;
+    }
+ 
+    const data = await APICall.postWT("/login_post", {
+      email,
+      password,
+    });
+
+    login(data);
+ 
+    const redirectPath = data.redirect_url || "/";
+    navigate(redirectPath);
+  }
 
   return (
     <div className="auth-page">

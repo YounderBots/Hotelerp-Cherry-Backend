@@ -39,13 +39,13 @@ class ServiceURL:
     USER_SERVICE_URL = "http://127.0.0.1:8020"
 
     # ================= MASTER DATA =================
-    MASTER_SERVICE_URL = "http://127.0.0.1:8003"
+    MASTER_SERVICE_URL = "http://127.0.0.1:8030"
 
     # ================= HOTEL =================
-    HOTEL_SERVICE_URL = "http://127.0.0.1:8004"
+    HOTEL_SERVICE_URL = "http://127.0.0.1:8040"
 
     # ================= RESTAURANT =================
-    RESTAURANT_SERVICE_URL = "http://127.0.0.1:8005"
+    RESTAURANT_SERVICE_URL = "http://127.0.0.1:8050"
 
     # ================= BAR =================
-    BAR_SERVICE_URL = "http://127.0.0.1:8006"
+    BAR_SERVICE_URL = "http://127.0.0.1:8060"

@@ -8,6 +8,7 @@ import findMenuByPath from './functions/locationFunctions';
 import { getMenuList, ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
 import ViewFloor from './Restaurant/Floor & Table Setup/FloorPageView';
+import { useAuth } from './Context/AuthContext';
 
 // Lazy load all page components
 const ForgotPassword = lazy(() => import('./Authentication/Pages/ForgotPassword'));
@@ -193,12 +194,12 @@ const AppContext = ({
   children 
 }) => {
   const navigate = useNavigate();
-  
+  console.log("menuList", menuList);
   return (
     <div className="app-body">
       <aside className="side-nav">
         {menuList.map((item) => {
-          const Icon = ICON_MAP[item.id];
+          const Icon = ICON_MAP[item.icon];
           const isActive = item.id === activeMenu?.id;
           
           return (
@@ -245,6 +246,7 @@ const AppLayout = () => {
   const [activePath, setActivePath] = useState([0]);
   const sidebarOutsideRef = useRef(null);
   const location = useLocation();
+  const { menus } = useAuth();
 
   useClickOutside(
     sidebarOutsideRef,
@@ -253,10 +255,7 @@ const AppLayout = () => {
   );
   
   useEffect(() => {
-    getMenuList().then(data => {
-      console.log("MENU API RESPONSE:", data);
-      setMenuList(data.message? data.message : data);
-    });
+      setMenuList(menus);
   }, []);
 
   useEffect(() => {
