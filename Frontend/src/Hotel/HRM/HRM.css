@@ -1,25 +1,25 @@
 .user-container {
   background: #ffffff;
-  padding: 14px;
-  border-radius: 10px;
-  max-width: auto;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 1.5rem;
+  padding: 1.5rem;
 }
 
-.user-container h2{
-    border-bottom:2px solid #ccc;
-    padding: 10px;
+.user-container h2 {
+  border-bottom: 2px solid #ccc;
+  padding: 10px;
 }
 
-.field {
+/* .field {
   margin-bottom: 20px;
-}
+} */
 
 .field label {
   display: block;
   font-weight: 600;
   margin-bottom: 6px;
- 
+
 }
 
 .field select {
@@ -32,17 +32,47 @@
 .permission-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 20px;
-  
+
 }
 
+/* .permission-table table {
+  width: 100%;
 
-.permission-table th,
+  font-size: 1.8rem;
+} */
+
+
+.permission-table th {
+  background: var(--primary-lightest);
+  padding: 1rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
 .permission-table td {
-  padding: 12px;
-  border-bottom: 2px solid #e0c3c3;
-  /* border: 1px solid black; */
-  text-align: center;
+  padding: 1rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.permission-table td input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+ accent-color: green;
+  cursor: pointer;
+  margin: 0;
+  transform: scale(1.1);
+}
+
+.permission-table tr:hover {
+  background: var(--primary-lightest);
 }
 
 .actions {
@@ -51,17 +81,18 @@
   flex-wrap: wrap;
 }
 
-.save-btn {
+.user-container button {
   margin-top: 20px;
-  background-color: #4f46e5;
+  background-color: rgb(254, 5, 80);
   color: white;
   padding: 10px 18px;
   border-radius: 8px;
   border: none;
   cursor: pointer;
-  left: 30px;
+  margin-right: 30px;
+
 }
 
-.save-btn:hover {
-  background-color: #4338ca;
+.user-container button:hover {
+  background-color: rgb(185, 6, 60);
 }

@@ -5,7 +5,7 @@ import './HRM.css'
 
 
 const User = () => {
-    const [selectedRole, setSelectedRole] = useState("User");
+    const [selectedRole, setSelectedRole] = useState();
     const [permissions, setPermissions] = useState({});
 
     const handlePermissionChange = (module, action) => {
@@ -30,15 +30,13 @@ const User = () => {
     ];
 
     const permission = ["View", "Edit", "Delete"];
+    const Roles = ["Admin", "Manager"]
 
     return (
 
+        <div className="user-container">
 
-        <div className="">
-            <div>
-                <TableTemplate title="User" />
-            </div>
-           
+            <h2>User</h2>
 
             <div className="field">
                 <label>User Role</label>
@@ -46,14 +44,16 @@ const User = () => {
                     value={selectedRole}
                     onChange={(e) => setSelectedRole(e.target.value)}
                 >
-                    <option>Manager</option>
-                    <option>Admin</option>
+                    {Roles.map((e) => (
+                        <option>{e}</option>
+                    ))}
                 </select>
             </div>
 
             <table className="permission-table">
                 <thead>
                     <tr>
+                        <th>S.no</th>
                         <th>Module</th>
                         {permission.map((e) => (
                             <th key={e}>{e}</th>
@@ -62,11 +62,14 @@ const User = () => {
                 </thead>
                 <tbody>
 
-                    {modules.map((module) => (
-                        <tr key={module}>
+                    {modules.map((module, index) => (
+                        <tr key={index}>
+                            <td>{index + 1}</td>
                             <td>{module}</td>
                             {permission.map((e) => (
-                                <td key={e}><input type="checkbox"></input></td>
+                                <td key={e}>
+                                    <input type="checkbox" checked={permissions?.[module]?.[e] || false}
+                                        onChange={() => handlePermissionChange(module, e)}></input></td>
                             ))
                             }
                         </tr>
@@ -75,18 +78,21 @@ const User = () => {
                 </tbody>
             </table>
 
-            <button
-                className="save-btn"
-                onClick={() =>
-                    console.log({
-                        role: selectedRole,
-                        permissions,
-                    })
-                }
-            >
-                Save User Permissions
-            </button>
+            <div className="save-btn">
+                <button
+                    onClick={() =>
+                        console.log({
+                            role: selectedRole,
+                            permissions,
+                        })
+                    }
+                >
+                    Save User Permissions
+                </button>
+            </div>
         </div>
+
+
     );
 };
 
