@@ -93,6 +93,8 @@ async def login_post(
 async def facilities_proxy(request: Request, path: str):
 
     auth_header = request.headers.get("Authorization")
+    company_id = request.headers.get("company_id")  # 👈 read incoming header
+
     if not auth_header:
         raise HTTPException(status_code=401, detail="Authorization header missing")
 
@@ -105,7 +107,8 @@ async def facilities_proxy(request: Request, path: str):
         url=f"{ServiceURL.MASTER_SERVICE_URL}/{path}",
         headers={
             "Authorization": auth_header,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "company_id":company_id
         },
         data=body,
         params=dict(request.query_params)

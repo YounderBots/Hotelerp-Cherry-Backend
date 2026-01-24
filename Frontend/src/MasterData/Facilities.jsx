@@ -5,9 +5,7 @@ import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const Facilities = () => {
-  const [data, setData] = useState([
- 
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -73,15 +71,13 @@ const Facilities = () => {
 
 
   const getFacilitiesData = async () => {
-    const companyId = "COMP001";
-    const AllFacilitesAPI =await APICall.getT('/masterdata/facilities',{company_id:companyId});
-    setData(AllFacilitesAPI);
-    console.log("All Facilities Data : ", AllFacilitesAPI);
-    
+    // const companyId = "COMP001";
+    const AllFacilitesAPI =await APICall.getT('/masterdata/facilities');
+    setData(AllFacilitesAPI.data);
   }
 
   useEffect(()=>{
-    getFacilitiesData();
+    getFacilitiesData();  
   },[])
 
 

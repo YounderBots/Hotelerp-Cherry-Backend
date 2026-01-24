@@ -2,6 +2,7 @@ export const baseURL = "http://127.0.0.1:8000";
 
 const getAuthHeader = () => ({
     Authorization: `Bearer ${localStorage.getItem("AuthToken")}`,
+    company_id : 'COMP001'
 });
 
 const handleResponse = async (response) => {

@@ -22,6 +22,8 @@ router = APIRouter()
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from fastapi import Header
+
 from models import models, get_db
 from resources.utils import verify_authentication
 from configs.base_config import CommonWords
@@ -34,7 +36,7 @@ router = APIRouter()
 @router.get("/facilities", status_code=status.HTTP_200_OK)
 def get_facilities(
     request: Request,
-    company_id: str,
+    company_id: str = Header(..., alias="company_id"),
     db: Session = Depends(get_db)
 ):
     try:
