@@ -5,7 +5,7 @@ import './HRM.css'
 
 
 const User = () => {
-    const [selectedRole, setSelectedRole] = useState();
+    const [selectedRole, setSelectedRole] = useState("");
     const [permissions, setPermissions] = useState({});
 
     const handlePermissionChange = (module, action) => {
@@ -37,17 +37,16 @@ const User = () => {
         <div className="user-container">
 
             <h2>User</h2>
-
             <div className="field">
                 <label>User Role</label>
-                <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                >
-                    {Roles.map((e) => (
-                        <option>{e}</option>
+                <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
+                    {Roles.map((role) => (
+                        <option key={role} value={role}>
+                            {role}
+                        </option>
                     ))}
                 </select>
+
             </div>
 
             <table className="permission-table">
