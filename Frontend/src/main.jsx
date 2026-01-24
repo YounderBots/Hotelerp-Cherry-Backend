@@ -3,10 +3,13 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 // import Playground from './Playground'
 import App from './App.jsx'
+import { AuthProvider } from './Context/AuthContext.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
+    <AuthProvider>
     <App />
+    </AuthProvider>
     {/* <Playground /> */}
   </StrictMode>,
 )

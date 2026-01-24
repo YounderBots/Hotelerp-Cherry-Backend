@@ -2,14 +2,14 @@ from enum import verify
 from fastapi import APIRouter, Depends, status, HTTPException, Request, UploadFile, File
 from fastapi.responses import JSONResponse
 from httpx import request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session 
 from sqlalchemy import func
 from typing import Optional
 import os
 import uuid
 import shutil
 
-from Backend.Services.UserServices.resources.utils import verify_authentication
+from resources.utils import verify_authentication
 from models import models
 from models import get_db
 from configs.base_config import CommonWords
