@@ -1,14 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { UserPlus, X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const Facilities = () => {
   const [data, setData] = useState([
-    { id: 1, name: "Swimming Pool" },
-    { id: 2, name: "Gym" },
-    { id: 3, name: "Spa" },
-    { id: 4, name: "Conference Hall" },
+ 
   ]);
 
   const [showModal, setShowModal] = useState(false);
@@ -16,6 +14,8 @@ const Facilities = () => {
   const [facilityName, setFacilityName] = useState("");
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+
+
 
   /* -------------------- HANDLERS -------------------- */
 
@@ -43,6 +43,7 @@ const Facilities = () => {
 
   const handleSave = () => {
     if (!facilityName.trim()) return;
+    
 
     if (editId) {
       setData((prev) =>
@@ -53,6 +54,9 @@ const Facilities = () => {
     } else {
       setData((prev) => [...prev, { id: Date.now(), name: facilityName }]);
     }
+
+
+    
 
     closeModal();
   };
@@ -66,6 +70,25 @@ const Facilities = () => {
   const handleDelete = (id) => {
     setData((prev) => prev.filter((item) => item.id !== id));
   };
+
+
+  const getFacilitiesData = async () => {
+    const companyId = "COMP001";
+    const AllFacilitesAPI =await APICall.getT('/masterdata/facilities',{company_id:companyId});
+    setData(AllFacilitesAPI);
+    console.log("All Facilities Data : ", AllFacilitesAPI);
+    
+  }
+
+  useEffect(()=>{
+    getFacilitiesData();
+  },[])
+
+
+
+
+
+
 
   /* -------------------- UI -------------------- */
 
@@ -84,7 +107,7 @@ const Facilities = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "name", title: "Facility Name", align: "center" },
+          { key: "Facility_Name", title: "Facility Name", align: "center" },
           {
             key: "actions",
             title: "Actions",
