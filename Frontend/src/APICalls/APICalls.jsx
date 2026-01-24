@@ -13,7 +13,7 @@ const handleResponse = async (response) => {
         throw new Error(result.detail || result.message || "API Error");
     }
 
-    return result.data;
+    return result;
 };
 
 const APICall = {
