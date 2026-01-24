@@ -233,7 +233,7 @@ const AppContext = ({
               className={`nav-item ${isActive ? "active" : ""}`}
               onClick={() => {
                 setActiveMenu(item);
-                if (item.path === undefined) {
+                if (item.path === undefined || item.path =='') {
                   return navigate(item.children[0].path);
                 }
                 navigate(item.path);
@@ -281,11 +281,8 @@ const AppLayout = () => {
 
   useEffect(() => {
       setMenuList(menus);
-    getMenuList().then(data => {
-      console.log("MENU API RESPONSE:", data);
-      setMenuList(data.message ? data.message : data);
-    });
-  }, []);
+      console.log("menus updated", menus);
+    }, []);
 
   useEffect(() => {
     if (!menuList.length) return;

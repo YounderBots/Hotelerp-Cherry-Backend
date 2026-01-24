@@ -20,6 +20,7 @@ const APICall = {
     // -------------------------
     postWT: async (endpoint, payload = {}) => {
         try {
+            
             const response = await fetch(`${baseURL}${endpoint}`, {
                 method: "POST",
                 headers: {
@@ -27,7 +28,7 @@ const APICall = {
                 },
                 body: JSON.stringify(payload),
             });
- 
+            
             return await handleResponse(response);
         } catch (err) {
             throw new Error(err.message || "POST request failed");

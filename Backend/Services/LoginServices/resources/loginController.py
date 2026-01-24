@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from resources.utils import create_access_token, fetch_from_service, verify_password
+from resources.utils import call_service, create_access_token, fetch_from_service, verify_password
 from configs.base_config import ServiceURL
 
 router = APIRouter()
@@ -10,6 +10,7 @@ router = APIRouter()
 async def login_post(
     request: Request,payload: dict
 ):
+    
     try:
         email = payload.get("email")
         password = payload.get("password")
@@ -84,3 +85,29 @@ async def login_post(
             {"error": "Login failed"},
             status_code=500
         )
+
+
+
+@router.post("/facilities")
+async def facilities(
+    request: Request,
+    payload: dict
+):
+    try:
+        access_token = request.headers.get("Authorization")
+
+        response = await call_service(
+            method="POST",
+            url=f"{ServiceURL.MASTER_SERVICE_URL}/facilities",
+            headers={
+                "Authorization": access_token,
+                "Content-Type": "application/json"
+            },
+            data=payload
+        )
+
+        return response
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

@@ -9,7 +9,6 @@ def verify_authentication(request: Request):
     1. Authorization header (Bearer token)
     2. Session (legacy / browser-based)
     """
- 
     token = None
  
     # ------------------ Authorization Header ------------------

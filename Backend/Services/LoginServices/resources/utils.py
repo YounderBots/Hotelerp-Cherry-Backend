@@ -33,3 +33,24 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         plain_password.encode("utf-8"),
         hashed_password.encode("utf-8")
     )
+
+
+async def call_service(
+    method: str,
+    url: str,
+    headers: dict = None,
+    data: dict = None,
+    params: dict = None,
+    timeout: float = 5.0
+):
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.request(
+            method=method,
+            url=url,
+            headers=headers,
+            json=data,
+            params=params
+        )
+        response.raise_for_status()
+        return response.json()
+

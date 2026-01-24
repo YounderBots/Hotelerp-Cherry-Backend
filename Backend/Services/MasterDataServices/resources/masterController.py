@@ -55,8 +55,9 @@ async def create_facility(
     db: Session = Depends(get_db)
 ):
     try:
+        print("Hi")
         user_id, user_role, token = verify_authentication(request)
-    
+        
         payload = await request.json()
 
         facility_name = payload.get("facility_name")
