@@ -628,8 +628,7 @@ def get_permissions_by_role(
     for menu in menus.values():
         menu["children"].sort(key=lambda x: x.get("order_no", 0))
 
-    sorted_menus = sorted(menus.values(), key=lambda x: x["order_no"])
-    print(sorted_menus)
+    sorted_menus = sorted(menus.values(), key=lambda x: x["order_no"]) 
 
     return {
         "status": "success",
@@ -866,6 +865,7 @@ async def create_submenu(request: Request, db: Session = Depends(get_db)):
     menu_id = payload.get("menu_id")
     submenu_name = payload.get("submenu_name")
     submenu_link = payload.get("submenu_link")
+    order = payload.get("order")
     created_by = payload.get("created_by")
     company_id = payload.get("company_id")
 
@@ -903,6 +903,7 @@ async def create_submenu(request: Request, db: Session = Depends(get_db)):
         menu_id=str(menu_id),
         submenu_name=submenu_name,
         submenu_link=submenu_link,
+        order=int(order),
         status=CommonWords.STATUS,
         created_by=created_by,
         company_id=company_id
