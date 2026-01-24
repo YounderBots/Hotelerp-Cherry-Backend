@@ -13,8 +13,6 @@ const Facilities = () => {
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
 
-
-
   /* -------------------- HANDLERS -------------------- */
 
   const openAddModal = () => {
@@ -38,29 +36,55 @@ const Facilities = () => {
     setViewData(null);
     setShowViewModal(false);
   };
+  const getFacilitiesData = async () => {
+    // const companyId = "COMP001";
+    const AllFacilitesAPI = await APICall.getT("/masterdata/facilities");
+    setData(AllFacilitesAPI.data);
+  };
+
+  const createNewFacility = async () => {
+    const formdata = {
+      facility_name: facilityName,
+      company_id: "COMP001",
+      created_by: "admin",
+    };
+    //     {
+    //   "facility_name": "Conference Hall",
+    //   "company_id": "COMP001",
+    //   "created_by": "admin"
+    // }
+
+    await APICall.postT("/masterdata/facilities", formdata);
+    getFacilitiesData();
+  };
+  const updateNewFacility = async () => {
+    const formdata = {
+      id: editId,
+      facility_name: facilityName,
+      company_id: "COMP001",
+    };
+
+  
+
+    await APICall.putT("/masterdata/facilities", formdata);
+    getFacilitiesData();
+  };
 
   const handleSave = () => {
     if (!facilityName.trim()) return;
-    
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, name: facilityName } : item
-        )
-      );
+      updateNewFacility();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), name: facilityName }]);
+      // setData((prev) => [...prev, { id: Date.now(), name: facilityName }]);
+      createNewFacility();
     }
-
-
-    
 
     closeModal();
   };
 
   const handleEdit = (row) => {
-    setFacilityName(row.name);
+    setFacilityName(row.Facility_Name);
     setEditId(row.id);
     setShowModal(true);
   };
@@ -69,22 +93,9 @@ const Facilities = () => {
     setData((prev) => prev.filter((item) => item.id !== id));
   };
 
-
-  const getFacilitiesData = async () => {
-    // const companyId = "COMP001";
-    const AllFacilitesAPI =await APICall.getT('/masterdata/facilities');
-    setData(AllFacilitesAPI.data);
-  }
-
-  useEffect(()=>{
-    getFacilitiesData();  
-  },[])
-
-
-
-
-
-
+  useEffect(() => {
+    getFacilitiesData();
+  }, []);
 
   /* -------------------- UI -------------------- */
 
@@ -96,7 +107,7 @@ const Facilities = () => {
         searchable
         pagination
         exportable
-        actionButton={{ 
+        actionButton={{
           label: "Add Facilities",
           onClick: openAddModal,
           size: "medium",
@@ -110,7 +121,13 @@ const Facilities = () => {
             align: "center",
             type: "custom",
             render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  justifyContent: "center",
+                }}
+              >
                 <button
                   className="table-action-btn view"
                   onClick={() => openViewModal(row)}
