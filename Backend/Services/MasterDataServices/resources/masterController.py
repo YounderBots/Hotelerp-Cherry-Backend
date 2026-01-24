@@ -19,16 +19,42 @@ os.makedirs(UPLOAD_PATH, exist_ok=True)
 
 router = APIRouter()
 
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.orm import Session
+
+from models import models, get_db
+from resources.utils import verify_authentication
+from configs.base_config import CommonWords
+
+router = APIRouter()
+
 # =====================================================
 # GET ALL FACILITIES
 # =====================================================
 @router.get("/facilities", status_code=status.HTTP_200_OK)
 def get_facilities(
+    request: Request,
     company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="company_id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH DATA
+        # -------------------------------------------------
         facilities = (
             db.query(models.Facility)
             .filter(
@@ -39,12 +65,24 @@ def get_facilities(
             .all()
         )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "data": facilities
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP status codes (400 / 401)
+        raise
+
+    except Exception as e:
+        # ❌ Only unexpected errors become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
     
 # =====================================================
 # CREATE FACILITY
@@ -55,26 +93,42 @@ async def create_facility(
     db: Session = Depends(get_db)
 ):
     try:
-        print("Hi")
-        user_id, user_role, token = verify_authentication(request)
-        
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # REQUEST BODY
+        # -------------------------------------------------
         payload = await request.json()
 
         facility_name = payload.get("facility_name")
         company_id = payload.get("company_id")
         created_by = payload.get("created_by")
 
-        if not all([facility_name, company_id, created_by]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not facility_name or not company_id or not created_by:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="facility_name, company_id and created_by are required"
             )
 
-        exists = db.query(models.Facility).filter(
-            func.lower(models.Facility.Facility_Name) == facility_name.lower(),
-            models.Facility.company_id == company_id,
-            models.Facility.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Facility)
+            .filter(
+                func.lower(models.Facility.Facility_Name)
+                == facility_name.lower(),
+                models.Facility.company_id == company_id,
+                models.Facility.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -82,41 +136,82 @@ async def create_facility(
                 detail="Facility already exists"
             )
 
+        # -------------------------------------------------
+        # CREATE FACILITY
+        # -------------------------------------------------
         facility = models.Facility(
             Facility_Name=facility_name,
-            status=CommonWords.STATUS,
+            company_id=company_id,
             created_by=created_by,
-            company_id=company_id
+            status=CommonWords.STATUS,
         )
 
         db.add(facility)
         db.commit()
         db.refresh(facility)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Facility created successfully",
-            "data": facility
+            "data": {
+                "id": facility.id,
+                "facility_name": facility.Facility_Name,
+                "company_id": facility.company_id,
+                "created_by": facility.created_by,
+            },
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
 
+    except HTTPException:
+        # ✅ keep correct HTTP status codes (400 / 401 / 409)
+        raise
+
+    except Exception as e:
+        # ❌ only unexpected errors become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+    
 # =====================================================
 # GET FACILITY BY ID
 # =====================================================
 @router.get("/facilities/{facility_id}", status_code=status.HTTP_200_OK)
 def get_facility_by_id(
+    request: Request,
     facility_id: int,
     company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        facility = db.query(models.Facility).filter(
-            models.Facility.id == facility_id,
-            models.Facility.company_id == company_id,
-            models.Facility.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="company_id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH FACILITY
+        # -------------------------------------------------
+        facility = (
+            db.query(models.Facility)
+            .filter(
+                models.Facility.id == facility_id,
+                models.Facility.company_id == company_id,
+                models.Facility.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if not facility:
             raise HTTPException(
@@ -124,12 +219,24 @@ def get_facility_by_id(
                 detail="Facility not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "data": facility
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ keep correct HTTP status codes (400 / 401 / 404)
+        raise
+
+    except Exception as e:
+        # ❌ only unexpected errors become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
     
 # =====================================================
 # UPDATE FACILITY
@@ -140,25 +247,43 @@ async def update_facility(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # REQUEST BODY
+        # -------------------------------------------------
         payload = await request.json()
 
         facility_id = payload.get("id")
         facility_name = payload.get("facility_name")
         company_id = payload.get("company_id")
 
-        if not all([facility_id, facility_name, company_id]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not facility_id or not facility_name or not company_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="id, facility_name and company_id are required"
             )
 
-        duplicate = db.query(models.Facility).filter(
-            models.Facility.id != facility_id,
-            func.lower(models.Facility.Facility_Name) == facility_name.lower(),
-            models.Facility.company_id == company_id,
-            models.Facility.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # DUPLICATE NAME CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Facility)
+            .filter(
+                models.Facility.id != facility_id,
+                func.lower(models.Facility.Facility_Name)
+                == facility_name.lower(),
+                models.Facility.company_id == company_id,
+                models.Facility.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -166,11 +291,18 @@ async def update_facility(
                 detail="Facility name already exists"
             )
 
-        facility = db.query(models.Facility).filter(
-            models.Facility.id == facility_id,
-            models.Facility.company_id == company_id,
-            models.Facility.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH FACILITY
+        # -------------------------------------------------
+        facility = (
+            db.query(models.Facility)
+            .filter(
+                models.Facility.id == facility_id,
+                models.Facility.company_id == company_id,
+                models.Facility.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if not facility:
             raise HTTPException(
@@ -178,34 +310,74 @@ async def update_facility(
                 detail="Facility not found"
             )
 
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
         facility.Facility_Name = facility_name
         db.commit()
         db.refresh(facility)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Facility updated successfully",
-            "data": facility
+            "data": {
+                "id": facility.id,
+                "facility_name": facility.Facility_Name,
+                "company_id": facility.company_id,
+            },
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ keep correct HTTP status codes (400 / 404 / 409)
+        raise
+
+    except Exception as e:
+        # ❌ only real crashes become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
 
 # =====================================================
 # DELETE FACILITY (SOFT DELETE)
 # =====================================================
 @router.delete("/facilities/{facility_id}", status_code=status.HTTP_200_OK)
 def delete_facility(
+    request: Request,
     facility_id: int,
     company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        facility = db.query(models.Facility).filter(
-            models.Facility.id == facility_id,
-            models.Facility.company_id == company_id,
-            models.Facility.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="company_id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH FACILITY
+        # -------------------------------------------------
+        facility = (
+            db.query(models.Facility)
+            .filter(
+                models.Facility.id == facility_id,
+                models.Facility.company_id == company_id,
+                models.Facility.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if not facility:
             raise HTTPException(
@@ -213,27 +385,58 @@ def delete_facility(
                 detail="Facility not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         facility.status = CommonWords.UNSTATUS
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Facility deleted successfully"
         }
-    
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ keep correct HTTP status codes (400 / 401 / 404)
+        raise
+
+    except Exception as e:
+        # ❌ only unexpected errors become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL ROOM TYPES
 # =====================================================
 @router.get("/room-types", status_code=status.HTTP_200_OK)
 def get_room_types(
+    request: Request,
     company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="company_id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH ROOM TYPES
+        # -------------------------------------------------
         room_types = (
             db.query(models.Room_Type)
             .filter(
@@ -244,12 +447,24 @@ def get_room_types(
             .all()
         )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "data": room_types
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ keep correct HTTP status codes (400 / 401)
+        raise
+
+    except Exception as e:
+        # ❌ only unexpected errors become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
     
 # =====================================================
 # CREATE ROOM TYPE
@@ -260,7 +475,14 @@ async def create_room_type(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # REQUEST BODY
+        # -------------------------------------------------
         payload = await request.json()
 
         type_name = payload.get("type_name")
@@ -277,17 +499,33 @@ async def create_room_type(
         half_board_rate = payload.get("half_board_rate")
         full_board_rate = payload.get("full_board_rate")
 
-        if not all([type_name, room_cost, bed_cost, complementry, company_id, created_by]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not type_name or company_id is None or created_by is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Required fields are missing"
+                detail="type_name, company_id and created_by are required"
             )
 
-        exists = db.query(models.Room_Type).filter(
-            func.lower(models.Room_Type.Type_Name) == type_name.lower(),
-            models.Room_Type.company_id == company_id,
-            models.Room_Type.status == CommonWords.STATUS
-        ).first()
+        if room_cost is None or bed_cost is None or complementry is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_cost, bed_cost and complementry are required"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Room_Type)
+            .filter(
+                func.lower(models.Room_Type.Type_Name) == type_name.lower(),
+                models.Room_Type.company_id == company_id,
+                models.Room_Type.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -295,6 +533,9 @@ async def create_room_type(
                 detail="Room type already exists"
             )
 
+        # -------------------------------------------------
+        # CREATE ROOM TYPE
+        # -------------------------------------------------
         room_type = models.Room_Type(
             Type_Name=type_name,
             Room_Cost=room_cost,
@@ -315,30 +556,70 @@ async def create_room_type(
         db.commit()
         db.refresh(room_type)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Room type created successfully",
-            "data": room_type
+            "data": {
+                "id": room_type.id,
+                "type_name": room_type.Type_Name,
+                "room_cost": room_type.Room_Cost,
+                "bed_cost": room_type.Bed_Cost,
+                "complementry": room_type.Complementry,
+                "company_id": room_type.company_id
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ preserve real HTTP errors (400 / 401 / 409)
+        raise
+
+    except Exception as e:
+        # ❌ only real crashes become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ROOM TYPE BY ID
 # =====================================================
 @router.get("/room-types/{room_type_id}", status_code=status.HTTP_200_OK)
 def get_room_type_by_id(
+    request: Request,
     room_type_id: int,
     company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        room_type = db.query(models.Room_Type).filter(
-            models.Room_Type.id == room_type_id,
-            models.Room_Type.company_id == company_id,
-            models.Room_Type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="company_id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH ROOM TYPE
+        # -------------------------------------------------
+        room_type = (
+            db.query(models.Room_Type)
+            .filter(
+                models.Room_Type.id == room_type_id,
+                models.Room_Type.company_id == company_id,
+                models.Room_Type.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if not room_type:
             raise HTTPException(
@@ -346,12 +627,24 @@ def get_room_type_by_id(
                 detail="Room type not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "data": room_type
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ keep correct HTTP status codes (400 / 401 / 404)
+        raise
+
+    except Exception as e:
+        # ❌ only unexpected errors become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE ROOM TYPE
@@ -362,7 +655,14 @@ async def update_room_type(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # REQUEST BODY
+        # -------------------------------------------------
         payload = await request.json()
 
         room_type_id = payload.get("id")
@@ -379,18 +679,34 @@ async def update_room_type(
         half_board_rate = payload.get("half_board_rate")
         full_board_rate = payload.get("full_board_rate")
 
-        if not all([room_type_id, type_name, room_cost, bed_cost, complementry, company_id]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not room_type_id or not type_name or not company_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Required fields are missing"
+                detail="id, type_name and company_id are required"
             )
 
-        duplicate = db.query(models.Room_Type).filter(
-            models.Room_Type.id != room_type_id,
-            func.lower(models.Room_Type.Type_Name) == type_name.lower(),
-            models.Room_Type.company_id == company_id,
-            models.Room_Type.status == CommonWords.STATUS
-        ).first()
+        if room_cost is None or bed_cost is None or complementry is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_cost, bed_cost and complementry are required"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Room_Type)
+            .filter(
+                models.Room_Type.id != room_type_id,
+                func.lower(models.Room_Type.Type_Name) == type_name.lower(),
+                models.Room_Type.company_id == company_id,
+                models.Room_Type.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -398,11 +714,18 @@ async def update_room_type(
                 detail="Room type name already exists"
             )
 
-        room_type = db.query(models.Room_Type).filter(
-            models.Room_Type.id == room_type_id,
-            models.Room_Type.company_id == company_id,
-            models.Room_Type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH ROOM TYPE
+        # -------------------------------------------------
+        room_type = (
+            db.query(models.Room_Type)
+            .filter(
+                models.Room_Type.id == room_type_id,
+                models.Room_Type.company_id == company_id,
+                models.Room_Type.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if not room_type:
             raise HTTPException(
@@ -410,6 +733,9 @@ async def update_room_type(
                 detail="Room type not found"
             )
 
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
         room_type.Type_Name = type_name
         room_type.Room_Cost = room_cost
         room_type.Bed_Cost = bed_cost
@@ -424,30 +750,70 @@ async def update_room_type(
         db.commit()
         db.refresh(room_type)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Room type updated successfully",
-            "data": room_type
+            "data": {
+                "id": room_type.id,
+                "type_name": room_type.Type_Name,
+                "room_cost": room_type.Room_Cost,
+                "bed_cost": room_type.Bed_Cost,
+                "complementry": room_type.Complementry,
+                "company_id": room_type.company_id
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ keep correct HTTP status codes (400 / 401 / 404 / 409)
+        raise
+
+    except Exception as e:
+        # ❌ only unexpected errors become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE ROOM TYPE (SOFT DELETE)
 # =====================================================
 @router.delete("/room-types/{room_type_id}", status_code=status.HTTP_200_OK)
 def delete_room_type(
+    request: Request,
     room_type_id: int,
     company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        room_type = db.query(models.Room_Type).filter(
-            models.Room_Type.id == room_type_id,
-            models.Room_Type.company_id == company_id,
-            models.Room_Type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, token = verify_authentication(request)
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="company_id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH ROOM TYPE
+        # -------------------------------------------------
+        room_type = (
+            db.query(models.Room_Type)
+            .filter(
+                models.Room_Type.id == room_type_id,
+                models.Room_Type.company_id == company_id,
+                models.Room_Type.status == CommonWords.STATUS,
+            )
+            .first()
+        )
 
         if not room_type:
             raise HTTPException(
@@ -455,15 +821,30 @@ def delete_room_type(
                 detail="Room type not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         room_type.status = CommonWords.UNSTATUS
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Room type deleted successfully"
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ keep correct HTTP status codes (400 / 401 / 404)
+        raise
+
+    except Exception as e:
+        # ❌ only unexpected errors become 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL BED TYPES

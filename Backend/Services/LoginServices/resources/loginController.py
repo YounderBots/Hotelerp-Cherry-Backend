@@ -86,28 +86,55 @@ async def login_post(
             status_code=500
         )
 
+@router.api_route(
+    "/masterdata/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE"]
+)
+async def facilities_proxy(request: Request, path: str):
+
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+
+    body = None
+    if request.method in ["POST", "PUT", "PATCH"]:
+        body = await request.json()
+
+    response = await call_service(
+        method=request.method,
+        url=f"{ServiceURL.MASTER_SERVICE_URL}/{path}",
+        headers={
+            "Authorization": auth_header,
+            "Content-Type": "application/json"
+        },
+        data=body,
+        params=dict(request.query_params)
+    )
+
+    return response
 
 
-@router.post("/facilities")
-async def facilities(
-    request: Request,
-    payload: dict
-):
-    try:
-        access_token = request.headers.get("Authorization")
 
-        response = await call_service(
-            method="POST",
-            url=f"{ServiceURL.MASTER_SERVICE_URL}/facilities",
-            headers={
-                "Authorization": access_token,
-                "Content-Type": "application/json"
-            },
-            data=payload
-        )
+# @router.post("/masterdata")
+# async def facilities(
+#     request: Request,
+#     payload: dict
+# ):
+#     try:
+#         access_token = request.headers.get("Authorization")
 
-        return response
+#         response = await call_service(
+#             method="POST",
+#             url=f"{ServiceURL.MASTER_SERVICE_URL}/facilities",
+#             headers={
+#                 "Authorization": access_token,
+#                 "Content-Type": "application/json"
+#             },
+#             data=payload
+#         )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+#         return response
+
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
 

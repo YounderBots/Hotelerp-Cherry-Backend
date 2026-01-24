@@ -1,15 +1,16 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
- 
+
 import bcrypt
 import httpx
+from fastapi import HTTPException
 from configs import BaseConfig
 from jose import jwt
  
  
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=1440))
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(
         to_encode, BaseConfig.SECRET_KEY, algorithm=BaseConfig.ALGORITHM
@@ -51,6 +52,19 @@ async def call_service(
             json=data,
             params=params
         )
-        response.raise_for_status()
-        return response.json()
+
+        # ✅ Success
+        if response.status_code < 400:
+            return response.json()
+
+        # ❌ Forward downstream error cleanly
+        try:
+            error_body = response.json()
+        except Exception:
+            error_body = {"detail": response.text}
+
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=error_body.get("detail", error_body)
+        )
 

@@ -10,11 +10,11 @@ def verify_authentication(request: Request):
     2. Session (legacy / browser-based)
     """
     token = None
- 
+
     # ------------------ Authorization Header ------------------
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ", 1)[1]
+        token = auth_header.split(" ", 1)[1] 
  
     # ------------------ Session Fallback ------------------
     elif "loginer_details" in request.session:
@@ -31,7 +31,7 @@ def verify_authentication(request: Request):
             token,
             BaseConfig.SECRET_KEY,
             algorithms=[BaseConfig.ALGORITHM],
-        )
+        ) 
     except JWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -39,12 +39,11 @@ def verify_authentication(request: Request):
         ) from exc
  
     user_id = payload.get("user_id")
-    user_role = payload.get("user_role")
- 
+    role_id = payload.get("role_id")
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session",
         )
- 
-    return user_id, user_role, token
+
+    return user_id, role_id, token
