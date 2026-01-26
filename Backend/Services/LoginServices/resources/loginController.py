@@ -38,7 +38,8 @@ async def login_post(
         access_token = create_access_token(
             data={
                 "user_id": user_data.get("id"),
-                "role_id": user_data.get("role_id")
+                "role_id": user_data.get("role_id"),
+                "company_id": user_data.get("company_id")
             }
         )
 

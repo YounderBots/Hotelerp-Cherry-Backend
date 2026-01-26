@@ -40,10 +40,11 @@ def verify_authentication(request: Request):
  
     user_id = payload.get("user_id")
     role_id = payload.get("role_id")
+    company_id = payload.get("company_id")
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session",
         )
 
-    return user_id, role_id, token
+    return user_id, role_id, company_id, token

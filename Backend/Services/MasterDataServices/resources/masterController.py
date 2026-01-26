@@ -30,32 +30,40 @@ from configs.base_config import CommonWords
 
 router = APIRouter()
 
+from fastapi import APIRouter, Depends, Request, HTTPException, status
+from sqlalchemy.orm import Session
+
+from models import models, get_db
+from configs.base_config import CommonWords
+from resources.utils import verify_authentication
+
+router = APIRouter()
+
 # =====================================================
 # GET ALL FACILITIES
 # =====================================================
 @router.get("/facilities", status_code=status.HTTP_200_OK)
 def get_facilities(
     request: Request,
-    company_id: str = Header(..., alias="company_id"),
     db: Session = Depends(get_db)
 ):
     try:
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
 
         # -------------------------------------------------
-        # VALIDATION
+        # SAFETY CHECK (AUTH SHOULD GUARANTEE THIS)
         # -------------------------------------------------
         if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="company_id is required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
         # -------------------------------------------------
-        # FETCH DATA
+        # FETCH FACILITIES
         # -------------------------------------------------
         facilities = (
             db.query(models.Facility)
@@ -68,24 +76,40 @@ def get_facilities(
         )
 
         # -------------------------------------------------
+        # FORMAT RESPONSE DATA
+        # -------------------------------------------------
+        data = [
+            {
+                "id": facility.id,
+                "facility_name": facility.Facility_Name,
+                "company_id": facility.company_id,
+                "created_by": facility.created_by,
+                "created_at": facility.created_at,
+                "updated_at": facility.updated_at,
+            }
+            for facility in facilities
+        ]
+
+        # -------------------------------------------------
         # RESPONSE
         # -------------------------------------------------
         return {
             "status": "success",
-            "data": facilities
+            "count": len(data),
+            "data": data
         }
 
     except HTTPException:
-        # ✅ Keep correct HTTP status codes (400 / 401)
+        # ✅ Keep expected HTTP errors
         raise
 
     except Exception as e:
-        # ❌ Only unexpected errors become 500
+        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-    
+
 # =====================================================
 # CREATE FACILITY
 # =====================================================
@@ -98,34 +122,43 @@ async def create_facility(
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
 
         # -------------------------------------------------
-        # REQUEST BODY
+        # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
-        facility_name = payload.get("facility_name")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
+        facility_name = payload.get("facility_name", "").strip()
 
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not facility_name or not company_id or not created_by:
+        if not facility_name:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="facility_name, company_id and created_by are required"
+                detail="facility_name is required"
+            )
+
+        if len(facility_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="facility_name must not exceed 100 characters"
             )
 
         # -------------------------------------------------
-        # DUPLICATE CHECK
+        # DUPLICATE CHECK (CASE-INSENSITIVE)
         # -------------------------------------------------
         exists = (
             db.query(models.Facility)
             .filter(
-                func.lower(models.Facility.Facility_Name)
-                == facility_name.lower(),
+                func.lower(models.Facility.Facility_Name) == facility_name.lower(),
                 models.Facility.company_id == company_id,
                 models.Facility.status == CommonWords.STATUS,
             )
@@ -144,7 +177,7 @@ async def create_facility(
         facility = models.Facility(
             Facility_Name=facility_name,
             company_id=company_id,
-            created_by=created_by,
+            created_by=user_id,
             status=CommonWords.STATUS,
         )
 
@@ -163,15 +196,16 @@ async def create_facility(
                 "facility_name": facility.Facility_Name,
                 "company_id": facility.company_id,
                 "created_by": facility.created_by,
+                "created_at": facility.created_at,
             },
         }
 
     except HTTPException:
-        # ✅ keep correct HTTP status codes (400 / 401 / 409)
+        # Keep intended HTTP errors
         raise
 
     except Exception as e:
-        # ❌ only unexpected errors become 500
+        # Unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
@@ -184,22 +218,27 @@ async def create_facility(
 def get_facility_by_id(
     request: Request,
     facility_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
 
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not company_id:
+        if facility_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="company_id is required"
+                detail="Invalid facility_id"
+            )
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
         # -------------------------------------------------
@@ -226,15 +265,22 @@ def get_facility_by_id(
         # -------------------------------------------------
         return {
             "status": "success",
-            "data": facility
+            "data": {
+                "id": facility.id,
+                "facility_name": facility.Facility_Name,
+                "company_id": facility.company_id,
+                "created_by": facility.created_by,
+                "created_at": facility.created_at,
+                "updated_at": facility.updated_at,
+            }
         }
 
     except HTTPException:
-        # ✅ keep correct HTTP status codes (400 / 401 / 404)
+        # ✅ Keep intended HTTP errors
         raise
 
     except Exception as e:
-        # ❌ only unexpected errors become 500
+        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -252,35 +298,57 @@ async def update_facility(
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
 
         # -------------------------------------------------
-        # REQUEST BODY
+        # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         facility_id = payload.get("id")
-        facility_name = payload.get("facility_name")
-        company_id = payload.get("company_id")
+        facility_name = payload.get("facility_name", "").strip()
 
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not facility_id or not facility_name or not company_id:
+        if not facility_id or not isinstance(facility_id, int) or facility_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, facility_name and company_id are required"
+                detail="Valid facility id is required"
+            )
+
+        if not facility_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="facility_name is required"
+            )
+
+        if len(facility_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="facility_name must not exceed 100 characters"
             )
 
         # -------------------------------------------------
-        # DUPLICATE NAME CHECK
+        # DUPLICATE NAME CHECK (CASE-INSENSITIVE)
         # -------------------------------------------------
         duplicate = (
             db.query(models.Facility)
             .filter(
                 models.Facility.id != facility_id,
-                func.lower(models.Facility.Facility_Name)
-                == facility_name.lower(),
+                func.lower(models.Facility.Facility_Name) == facility_name.lower(),
                 models.Facility.company_id == company_id,
                 models.Facility.status == CommonWords.STATUS,
             )
@@ -313,9 +381,11 @@ async def update_facility(
             )
 
         # -------------------------------------------------
-        # UPDATE
+        # UPDATE FACILITY
         # -------------------------------------------------
         facility.Facility_Name = facility_name
+        facility.updated_by = user_id if hasattr(facility, "updated_by") else None
+
         db.commit()
         db.refresh(facility)
 
@@ -329,15 +399,16 @@ async def update_facility(
                 "id": facility.id,
                 "facility_name": facility.Facility_Name,
                 "company_id": facility.company_id,
+                "updated_at": facility.updated_at,
             },
         }
 
     except HTTPException:
-        # ✅ keep correct HTTP status codes (400 / 404 / 409)
+        # ✅ Keep intended HTTP errors
         raise
 
     except Exception as e:
-        # ❌ only real crashes become 500
+        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
@@ -350,22 +421,27 @@ async def update_facility(
 def delete_facility(
     request: Request,
     facility_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
 
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not company_id:
+        if facility_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="company_id is required"
+                detail="Invalid facility_id"
             )
 
         # -------------------------------------------------
@@ -391,6 +467,8 @@ def delete_facility(
         # SOFT DELETE
         # -------------------------------------------------
         facility.status = CommonWords.UNSTATUS
+        facility.updated_by = user_id if hasattr(facility, "updated_by") else None
+
         db.commit()
 
         # -------------------------------------------------
@@ -402,11 +480,11 @@ def delete_facility(
         }
 
     except HTTPException:
-        # ✅ keep correct HTTP status codes (400 / 401 / 404)
+        # ✅ Keep expected HTTP errors
         raise
 
     except Exception as e:
-        # ❌ only unexpected errors become 500
+        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
