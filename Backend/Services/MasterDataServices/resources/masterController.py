@@ -493,7 +493,7 @@ def delete_facility(
 # =====================================================
 # GET ALL ROOM TYPES
 # =====================================================
-@router.get("/room-types", status_code=status.HTTP_200_OK)
+@router.get("/room_types", status_code=status.HTTP_200_OK)
 def get_room_types(
     request: Request,
     db: Session = Depends(get_db)
@@ -561,7 +561,7 @@ def get_room_types(
 # =====================================================
 # CREATE ROOM TYPE
 # =====================================================
-@router.post("/room-types", status_code=status.HTTP_201_CREATED)
+@router.post("/room_types", status_code=status.HTTP_201_CREATED)
 async def create_room_type(
     request: Request,
     db: Session = Depends(get_db)
@@ -698,7 +698,7 @@ async def create_room_type(
 # =====================================================
 # GET ROOM TYPE BY ID
 # =====================================================
-@router.get("/room-types/{room_type_id}", status_code=status.HTTP_200_OK)
+@router.get("/room_types/{room_type_id}", status_code=status.HTTP_200_OK)
 def get_room_type_by_id(
     request: Request,
     room_type_id: int,
@@ -782,7 +782,7 @@ def get_room_type_by_id(
 # =====================================================
 # UPDATE ROOM TYPE
 # =====================================================
-@router.put("/room-types", status_code=status.HTTP_200_OK)
+@router.put("/room_types", status_code=status.HTTP_200_OK)
 async def update_room_type(
     request: Request,
     db: Session = Depends(get_db)
@@ -944,7 +944,7 @@ async def update_room_type(
 # =====================================================
 # DELETE ROOM TYPE (SOFT DELETE)
 # =====================================================
-@router.delete("/room-types/{room_type_id}", status_code=status.HTTP_200_OK)
+@router.delete("/room_types/{room_type_id}", status_code=status.HTTP_200_OK)
 def delete_room_type(
     request: Request,
     room_type_id: int,
