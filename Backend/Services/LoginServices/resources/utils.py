@@ -44,11 +44,16 @@ async def call_service(
     params: dict = None,
     timeout: float = 5.0
 ):
+    # ✅ REMOVE NONE VALUES FROM HEADERS
+    clean_headers = {}
+    if headers:
+        clean_headers = {k: v for k, v in headers.items() if v is not None}
+
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.request(
             method=method,
             url=url,
-            headers=headers,
+            headers=clean_headers,
             json=data,
             params=params
         )
