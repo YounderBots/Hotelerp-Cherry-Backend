@@ -496,22 +496,18 @@ def delete_facility(
 @router.get("/room-types", status_code=status.HTTP_200_OK)
 def get_room_types(
     request: Request,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
         if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="company_id is required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
         # -------------------------------------------------
@@ -528,19 +524,35 @@ def get_room_types(
         )
 
         # -------------------------------------------------
+        # FORMAT RESPONSE
+        # -------------------------------------------------
+        data = [
+            {
+                "id": room_type.id,
+                "room_type_name": room_type.Type_Name,
+                "company_id": room_type.company_id,
+                "created_by": room_type.created_by,
+                "created_at": room_type.created_at,
+                "updated_at": room_type.updated_at,
+            }
+            for room_type in room_types
+        ]
+
+        # -------------------------------------------------
         # RESPONSE
         # -------------------------------------------------
         return {
             "status": "success",
-            "data": room_types
+            "count": len(data),
+            "data": data
         }
 
     except HTTPException:
-        # ✅ keep correct HTTP status codes (400 / 401)
+        # ✅ Keep intended HTTP errors
         raise
 
     except Exception as e:
-        # ❌ only unexpected errors become 500
+        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -558,19 +570,29 @@ async def create_room_type(
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
 
         # -------------------------------------------------
-        # REQUEST BODY
+        # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
-        type_name = payload.get("type_name")
+        type_name = payload.get("type_name", "").strip()
         room_cost = payload.get("room_cost")
         bed_cost = payload.get("bed_cost")
         complementry = payload.get("complementry")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
 
         daily_rate = payload.get("daily_rate")
         weekly_rate = payload.get("weekly_rate")
@@ -582,10 +604,16 @@ async def create_room_type(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not type_name or company_id is None or created_by is None:
+        if not type_name:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="type_name, company_id and created_by are required"
+                detail="type_name is required"
+            )
+
+        if len(type_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="type_name must not exceed 100 characters"
             )
 
         if room_cost is None or bed_cost is None or complementry is None:
@@ -594,8 +622,14 @@ async def create_room_type(
                 detail="room_cost, bed_cost and complementry are required"
             )
 
+        if room_cost < 0 or bed_cost < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_cost and bed_cost must be non-negative"
+            )
+
         # -------------------------------------------------
-        # DUPLICATE CHECK
+        # DUPLICATE CHECK (CASE-INSENSITIVE)
         # -------------------------------------------------
         exists = (
             db.query(models.Room_Type)
@@ -628,7 +662,7 @@ async def create_room_type(
             Half_Board_Rate=half_board_rate,
             Full_Board_Rate=full_board_rate,
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -648,16 +682,14 @@ async def create_room_type(
                 "room_cost": room_type.Room_Cost,
                 "bed_cost": room_type.Bed_Cost,
                 "complementry": room_type.Complementry,
-                "company_id": room_type.company_id
+                "company_id": room_type.company_id,
             }
         }
 
     except HTTPException:
-        # ✅ preserve real HTTP errors (400 / 401 / 409)
         raise
 
     except Exception as e:
-        # ❌ only real crashes become 500
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -670,22 +702,27 @@ async def create_room_type(
 def get_room_type_by_id(
     request: Request,
     room_type_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
 
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not company_id:
+        if room_type_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="company_id is required"
+                detail="Invalid room_type_id"
             )
 
         # -------------------------------------------------
@@ -712,15 +749,31 @@ def get_room_type_by_id(
         # -------------------------------------------------
         return {
             "status": "success",
-            "data": room_type
+            "data": {
+                "id": room_type.id,
+                "type_name": room_type.Type_Name,
+                "room_cost": room_type.Room_Cost,
+                "bed_cost": room_type.Bed_Cost,
+                "complementry": room_type.Complementry,
+                "daily_rate": room_type.Daily_Rate,
+                "weekly_rate": room_type.Weekly_Rate,
+                "bed_only_rate": room_type.Bed_Only_Rate,
+                "bed_breakfast_rate": room_type.Bed_And_Breakfast_Rate,
+                "half_board_rate": room_type.Half_Board_Rate,
+                "full_board_rate": room_type.Full_Board_Rate,
+                "company_id": room_type.company_id,
+                "created_by": room_type.created_by,
+                "created_at": room_type.created_at,
+                "updated_at": room_type.updated_at,
+            }
         }
 
     except HTTPException:
-        # ✅ keep correct HTTP status codes (400 / 401 / 404)
+        # ✅ Keep correct HTTP errors
         raise
 
     except Exception as e:
-        # ❌ only unexpected errors become 500
+        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -738,19 +791,30 @@ async def update_room_type(
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
 
         # -------------------------------------------------
-        # REQUEST BODY
+        # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         room_type_id = payload.get("id")
-        type_name = payload.get("type_name")
+        type_name = payload.get("type_name", "").strip()
         room_cost = payload.get("room_cost")
         bed_cost = payload.get("bed_cost")
         complementry = payload.get("complementry")
-        company_id = payload.get("company_id")
 
         daily_rate = payload.get("daily_rate")
         weekly_rate = payload.get("weekly_rate")
@@ -762,10 +826,22 @@ async def update_room_type(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not room_type_id or not type_name or not company_id:
+        if not room_type_id or not isinstance(room_type_id, int) or room_type_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, type_name and company_id are required"
+                detail="Valid room type id is required"
+            )
+
+        if not type_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="type_name is required"
+            )
+
+        if len(type_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="type_name must not exceed 100 characters"
             )
 
         if room_cost is None or bed_cost is None or complementry is None:
@@ -774,8 +850,14 @@ async def update_room_type(
                 detail="room_cost, bed_cost and complementry are required"
             )
 
+        if room_cost < 0 or bed_cost < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_cost and bed_cost must be non-negative"
+            )
+
         # -------------------------------------------------
-        # DUPLICATE CHECK
+        # DUPLICATE NAME CHECK (CASE-INSENSITIVE)
         # -------------------------------------------------
         duplicate = (
             db.query(models.Room_Type)
@@ -814,7 +896,7 @@ async def update_room_type(
             )
 
         # -------------------------------------------------
-        # UPDATE
+        # UPDATE ROOM TYPE
         # -------------------------------------------------
         room_type.Type_Name = type_name
         room_type.Room_Cost = room_cost
@@ -826,6 +908,7 @@ async def update_room_type(
         room_type.Bed_And_Breakfast_Rate = bed_breakfast_rate
         room_type.Half_Board_Rate = half_board_rate
         room_type.Full_Board_Rate = full_board_rate
+        room_type.updated_by = user_id if hasattr(room_type, "updated_by") else None
 
         db.commit()
         db.refresh(room_type)
@@ -842,16 +925,17 @@ async def update_room_type(
                 "room_cost": room_type.Room_Cost,
                 "bed_cost": room_type.Bed_Cost,
                 "complementry": room_type.Complementry,
-                "company_id": room_type.company_id
+                "company_id": room_type.company_id,
+                "updated_at": room_type.updated_at,
             }
         }
 
     except HTTPException:
-        # ✅ keep correct HTTP status codes (400 / 401 / 404 / 409)
+        # ✅ Preserve intended HTTP errors
         raise
 
     except Exception as e:
-        # ❌ only unexpected errors become 500
+        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -864,22 +948,27 @@ async def update_room_type(
 def delete_room_type(
     request: Request,
     room_type_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
         # -------------------------------------------------
         # AUTHENTICATION
         # -------------------------------------------------
-        user_id, role_id, token = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
 
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not company_id:
+        if room_type_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="company_id is required"
+                detail="Invalid room_type_id"
             )
 
         # -------------------------------------------------
@@ -905,6 +994,8 @@ def delete_room_type(
         # SOFT DELETE
         # -------------------------------------------------
         room_type.status = CommonWords.UNSTATUS
+        room_type.updated_by = user_id if hasattr(room_type, "updated_by") else None
+
         db.commit()
 
         # -------------------------------------------------
@@ -916,11 +1007,9 @@ def delete_room_type(
         }
 
     except HTTPException:
-        # ✅ keep correct HTTP status codes (400 / 401 / 404)
         raise
 
     except Exception as e:
-        # ❌ only unexpected errors become 500
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
