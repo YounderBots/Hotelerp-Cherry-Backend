@@ -12,6 +12,7 @@ const Facilities = () => {
   const [facilityName, setFacilityName] = useState("");
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [delId, setDelId] = useState(null)
 
   /* -------------------- HANDLERS -------------------- */
 
@@ -36,61 +37,70 @@ const Facilities = () => {
     setViewData(null);
     setShowViewModal(false);
   };
+
   const getFacilitiesData = async () => {
-    // const companyId = "COMP001";
     const AllFacilitesAPI = await APICall.getT("/masterdata/facilities");
     setData(AllFacilitesAPI.data);
   };
 
   const createNewFacility = async () => {
-    const formdata = {
+  try {
+    await APICall.postT("/masterdata/facilities", {
       facility_name: facilityName,
-      company_id: "COMP001",
-      created_by: "admin",
-    };
-    //     {
-    //   "facility_name": "Conference Hall",
-    //   "company_id": "COMP001",
-    //   "created_by": "admin"
-    // }
-
-    await APICall.postT("/masterdata/facilities", formdata);
+    });
     getFacilitiesData();
-  };
-  const updateNewFacility = async () => {
-    const formdata = {
+  } catch (error) {
+        return error, "Create facility"
+  }
+};
+
+
+const updateNewFacility = async () => {
+  try {
+    await APICall.putT("/masterdata/facilities", {
       id: editId,
       facility_name: facilityName,
-      company_id: "COMP001",
-    };
-
-  
-
-    await APICall.putT("/masterdata/facilities", formdata);
+    });
     getFacilitiesData();
-  };
+  } catch (error) {
+    return error, "Update facility"
+  }
+};
 
-  const handleSave = () => {
-    if (!facilityName.trim()) return;
 
-    if (editId) {
-      updateNewFacility();
-    } else {
-      // setData((prev) => [...prev, { id: Date.now(), name: facilityName }]);
-      createNewFacility();
-    }
+const deleteFacility = async (id) => {
+  try {
+    await APICall.deleteT(`/masterdata/facilities/${id}`);
+    getFacilitiesData();
+  } catch (error) {
+     return error, "Delete facility";
+  }
+};
 
-    closeModal();
-  };
+
+const handleSave = async () => {
+  if (!facilityName.trim()) return;
+
+  if (editId) {
+    await updateNewFacility();
+  } else {
+    await createNewFacility();
+  }
+
+  closeModal();
+};
+
+
 
   const handleEdit = (row) => {
-    setFacilityName(row.Facility_Name);
+    setFacilityName(row.facility_name);
     setEditId(row.id);
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+
+    deleteFacility(id);
   };
 
   useEffect(() => {
@@ -114,7 +124,7 @@ const Facilities = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "Facility_Name", title: "Facility Name", align: "center" },
+          { key: "facility_name", title: "Facility Name", align: "center" },
           {
             key: "actions",
             title: "Actions",
@@ -167,7 +177,7 @@ const Facilities = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Facility Name</label>
-                <input value={viewData.name} disabled />
+                <input value={viewData.facility_name} disabled />
               </div>
             </div>
 
@@ -214,6 +224,8 @@ const Facilities = () => {
           </div>
         </div>
       )}
+
+
     </>
   );
 };
