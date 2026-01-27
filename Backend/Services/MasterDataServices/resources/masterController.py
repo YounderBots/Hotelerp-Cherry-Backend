@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Form, status, HTTPException, Request, Up
 from fastapi.responses import JSONResponse
 from httpx import request
 from sqlalchemy.orm import Session 
-from sqlalchemy import func
+from sqlalchemy import func, Integer
 from typing import Optional
 import os
 import uuid
@@ -2968,17 +2968,16 @@ def get_taxes(
         taxes = (
             db.query(
                 models.Tax_type,
-                models.Country_Courrency.Country_Name
+                models.Country_Currency.Country_Name
             )
-            .join(
-                models.Country_Courrency,
-                models.Country_Courrency.id
-                == models.Tax_type.Country_ID
+            .outerjoin(
+                models.Country_Currency,
+                models.Country_Currency.id
+                == func.cast(models.Tax_type.Country_ID, Integer)
             )
             .filter(
                 models.Tax_type.company_id == company_id,
-                models.Tax_type.status == CommonWords.STATUS,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Tax_type.status == CommonWords.STATUS
             )
             .order_by(models.Tax_type.id.desc())
             .all()
@@ -2990,7 +2989,7 @@ def get_taxes(
         data = [
             {
                 "id": tax.id,
-                "country_id": tax.Country_ID,
+                "country_id": int(tax.Country_ID),
                 "country_name": country_name,
                 "tax_name": tax.Tax_Name,
                 "tax_percentage": tax.Tax_Percentage,
@@ -3094,11 +3093,11 @@ async def create_tax(
         # FETCH COUNTRY (MANDATORY)
         # -------------------------------------------------
         country = (
-            db.query(models.Country_Courrency)
+            db.query(models.Country_Currency)
             .filter(
-                models.Country_Courrency.id == country_id,
-                models.Country_Courrency.company_id == company_id,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.id == country_id,
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
             )
             .first()
         )
@@ -3209,18 +3208,18 @@ def get_tax_by_id(
         result = (
             db.query(
                 models.Tax_type,
-                models.Country_Courrency.Country_Name
+                models.Country_Currency.Country_Name
             )
             .join(
-                models.Country_Courrency,
-                models.Country_Courrency.id
+                models.Country_Currency,
+                models.Country_Currency.id
                 == models.Tax_type.Country_ID
             )
             .filter(
                 models.Tax_type.id == tax_id,
                 models.Tax_type.company_id == company_id,
                 models.Tax_type.status == CommonWords.STATUS,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.status == CommonWords.STATUS
             )
             .first()
         )
@@ -3343,11 +3342,11 @@ async def update_tax(
         # CHECK COUNTRY EXISTS
         # -------------------------------------------------
         country = (
-            db.query(models.Country_Courrency)
+            db.query(models.Country_Currency)
             .filter(
-                models.Country_Courrency.id == country_id,
-                models.Country_Courrency.company_id == company_id,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.id == country_id,
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
             )
             .first()
         )
