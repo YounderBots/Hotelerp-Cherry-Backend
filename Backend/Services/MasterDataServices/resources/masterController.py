@@ -3513,11 +3513,24 @@ def delete_tax(
 # =====================================================
 @router.get("/payment_methods", status_code=status.HTTP_200_OK)
 def get_payment_methods(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH PAYMENT METHODS
+        # -------------------------------------------------
         payments = (
             db.query(models.Payment_Methods)
             .filter(
@@ -3528,12 +3541,38 @@ def get_payment_methods(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE
+        # -------------------------------------------------
+        data = [
+            {
+                "id": payment.id,
+                "payment_method": payment.payment_method,
+                "company_id": payment.company_id,
+                "created_by": payment.created_by,
+                "created_at": payment.created_at,
+                "updated_at": payment.updated_at
+            }
+            for payment in payments
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": payments
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE PAYMENT METHOD
@@ -3544,24 +3583,54 @@ async def create_payment_method(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        payment_method = payload.get("payment_method")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
-
-        if not all([payment_method, company_id, created_by]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="payment_method, company_id and created_by are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        exists = db.query(models.Payment_Methods).filter(
-            func.lower(models.Payment_Methods.payment_method) == payment_method.lower(),
-            models.Payment_Methods.company_id == company_id,
-            models.Payment_Methods.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE PARSE)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        payment_method = payload.get("payment_method")
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not payment_method or not payment_method.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="payment_method is required"
+            )
+
+        payment_method = payment_method.strip()
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Payment_Methods)
+            .filter(
+                func.lower(models.Payment_Methods.payment_method)
+                == payment_method.lower(),
+                models.Payment_Methods.company_id == company_id,
+                models.Payment_Methods.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -3569,10 +3638,13 @@ async def create_payment_method(
                 detail="Payment method already exists"
             )
 
+        # -------------------------------------------------
+        # CREATE PAYMENT METHOD
+        # -------------------------------------------------
         payment = models.Payment_Methods(
             payment_method=payment_method,
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -3580,30 +3652,72 @@ async def create_payment_method(
         db.commit()
         db.refresh(payment)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Payment method created successfully",
-            "data": payment
+            "data": {
+                "id": payment.id,
+                "payment_method": payment.payment_method,
+                "company_id": payment.company_id,
+                "created_by": payment.created_by,
+                "created_at": payment.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET PAYMENT METHOD BY ID
 # =====================================================
 @router.get("/payment_methods/{payment_id}", status_code=status.HTTP_200_OK)
 def get_payment_method_by_id(
+    request: Request,
     payment_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payment = db.query(models.Payment_Methods).filter(
-            models.Payment_Methods.id == payment_id,
-            models.Payment_Methods.company_id == company_id,
-            models.Payment_Methods.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if payment_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid payment id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH PAYMENT METHOD
+        # -------------------------------------------------
+        payment = (
+            db.query(models.Payment_Methods)
+            .filter(
+                models.Payment_Methods.id == payment_id,
+                models.Payment_Methods.company_id == company_id,
+                models.Payment_Methods.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not payment:
             raise HTTPException(
@@ -3611,12 +3725,29 @@ def get_payment_method_by_id(
                 detail="Payment method not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": payment
+            "data": {
+                "id": payment.id,
+                "payment_method": payment.payment_method,
+                "company_id": payment.company_id,
+                "created_by": payment.created_by,
+                "created_at": payment.created_at,
+                "updated_at": payment.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE PAYMENT METHOD
@@ -3627,25 +3758,62 @@ async def update_payment_method(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE PARSE)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         payment_id = payload.get("id")
         payment_method = payload.get("payment_method")
-        company_id = payload.get("company_id")
 
-        if not all([payment_id, payment_method, company_id]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not payment_id or payment_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, payment_method and company_id are required"
+                detail="Valid payment id is required"
             )
 
-        duplicate = db.query(models.Payment_Methods).filter(
-            models.Payment_Methods.id != payment_id,
-            func.lower(models.Payment_Methods.payment_method) == payment_method.lower(),
-            models.Payment_Methods.company_id == company_id,
-            models.Payment_Methods.status == CommonWords.STATUS
-        ).first()
+        if not payment_method or not payment_method.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="payment_method is required"
+            )
+
+        payment_method = payment_method.strip()
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Payment_Methods)
+            .filter(
+                models.Payment_Methods.id != payment_id,
+                func.lower(models.Payment_Methods.payment_method)
+                == payment_method.lower(),
+                models.Payment_Methods.company_id == company_id,
+                models.Payment_Methods.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -3653,11 +3821,18 @@ async def update_payment_method(
                 detail="Payment method already exists"
             )
 
-        payment = db.query(models.Payment_Methods).filter(
-            models.Payment_Methods.id == payment_id,
-            models.Payment_Methods.company_id == company_id,
-            models.Payment_Methods.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH PAYMENT METHOD
+        # -------------------------------------------------
+        payment = (
+            db.query(models.Payment_Methods)
+            .filter(
+                models.Payment_Methods.id == payment_id,
+                models.Payment_Methods.company_id == company_id,
+                models.Payment_Methods.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not payment:
             raise HTTPException(
@@ -3665,34 +3840,81 @@ async def update_payment_method(
                 detail="Payment method not found"
             )
 
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
         payment.payment_method = payment_method
+        payment.updated_by = user_id
+
         db.commit()
         db.refresh(payment)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Payment method updated successfully",
-            "data": payment
+            "data": {
+                "id": payment.id,
+                "payment_method": payment.payment_method,
+                "company_id": payment.company_id,
+                "updated_by": payment.updated_by,
+                "updated_at": payment.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE PAYMENT METHOD (SOFT DELETE)
 # =====================================================
 @router.delete("/payment_methods/{payment_id}", status_code=status.HTTP_200_OK)
 def delete_payment_method(
+    request: Request,
     payment_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payment = db.query(models.Payment_Methods).filter(
-            models.Payment_Methods.id == payment_id,
-            models.Payment_Methods.company_id == company_id,
-            models.Payment_Methods.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if payment_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid payment id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH PAYMENT METHOD
+        # -------------------------------------------------
+        payment = (
+            db.query(models.Payment_Methods)
+            .filter(
+                models.Payment_Methods.id == payment_id,
+                models.Payment_Methods.company_id == company_id,
+                models.Payment_Methods.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not payment:
             raise HTTPException(
@@ -3700,15 +3922,35 @@ def delete_payment_method(
                 detail="Payment method not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         payment.status = CommonWords.UNSTATUS
+        payment.updated_by = user_id
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Payment method deleted successfully"
+            "message": "Payment method deleted successfully",
+            "data": {
+                "id": payment.id,
+                "payment_method": payment.payment_method,
+                "company_id": payment.company_id
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL IDENTITY PROOFS
