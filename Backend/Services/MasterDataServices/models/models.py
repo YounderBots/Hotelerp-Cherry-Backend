@@ -174,12 +174,12 @@ class Identity_Proofs(Base):
 
 
 # Country Currency
-class Country_Courrency(Base):
-    __tablename__ = "countries_courrency"
+class Country_Currency(Base):
+    __tablename__ = "countries_currency"
 
     id = Column(Integer, primary_key=True, index=True)
     Country_Name = Column(String(100), nullable=False, index=True)
-    Courrency_Name = Column(String(100), nullable=False, index=True)
+    Currency_Name = Column(String(100), nullable=False, index=True)
     Symbol = Column(String(100), nullable=False, index=True)
 
     status = Column(String(100), nullable=False, index=True)

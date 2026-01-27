@@ -3938,10 +3938,10 @@ def get_country_currency(
         countries = (
             db.query(models.Country_Courrency)
             .filter(
-                models.Country_Courrency.company_id == company_id,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
             )
-            .order_by(models.Country_Courrency.id.desc())
+            .order_by(models.Country_Currency.id.desc())
             .all()
         )
 
@@ -3952,7 +3952,7 @@ def get_country_currency(
             {
                 "id": c.id,
                 "country_name": c.Country_Name,
-                "currency_name": c.Courrency_Name,
+                "currency_name": c.Currency_Name,
                 "symbol": c.Symbol,
                 "company_id": c.company_id,
                 "created_by": c.created_by,
@@ -4040,12 +4040,12 @@ async def create_country_currency(
         # DUPLICATE CHECK
         # -------------------------------------------------
         exists = (
-            db.query(models.Country_Courrency)
+            db.query(models.Country_Currency)
             .filter(
-                func.lower(models.Country_Courrency.Country_Name)
+                func.lower(models.Country_Currency.Country_Name)
                 == country_name.strip().lower(),
-                models.Country_Courrency.company_id == company_id,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
             )
             .first()
         )
@@ -4059,7 +4059,7 @@ async def create_country_currency(
         # -------------------------------------------------
         # CREATE COUNTRY & CURRENCY
         # -------------------------------------------------
-        country_currency = models.Country_Courrency(
+        country_currency = models.Country_Currency(
             Country_Name=country_name.strip(),
             Courrency_Name=currency_name.strip(),
             Symbol=symbol.strip(),
@@ -4081,7 +4081,7 @@ async def create_country_currency(
             "data": {
                 "id": country_currency.id,
                 "country_name": country_currency.Country_Name,
-                "currency_name": country_currency.Courrency_Name,
+                "currency_name": country_currency.Currency_Name,
                 "symbol": country_currency.Symbol,
                 "company_id": country_currency.company_id,
                 "created_by": country_currency.created_by,
@@ -4132,11 +4132,11 @@ def get_country_currency_by_id(
         # FETCH COUNTRY & CURRENCY
         # -------------------------------------------------
         country = (
-            db.query(models.Country_Courrency)
+            db.query(models.Country_Currency)
             .filter(
-                models.Country_Courrency.id == country_id,
-                models.Country_Courrency.company_id == company_id,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.id == country_id,
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
             )
             .first()
         )
@@ -4155,7 +4155,7 @@ def get_country_currency_by_id(
             "data": {
                 "id": country.id,
                 "country_name": country.Country_Name,
-                "currency_name": country.Courrency_Name,
+                "currency_name": country.Currency_Name,
                 "symbol": country.Symbol,
                 "company_id": country.company_id,
                 "created_by": country.created_by,
@@ -4240,13 +4240,13 @@ async def update_country_currency(
         # DUPLICATE CHECK
         # -------------------------------------------------
         duplicate = (
-            db.query(models.Country_Courrency)
+            db.query(models.Country_Currency)
             .filter(
-                models.Country_Courrency.id != country_id,
-                func.lower(models.Country_Courrency.Country_Name)
+                models.Country_Currency.id != country_id,
+                func.lower(models.Country_Currency.Country_Name)
                 == country_name.strip().lower(),
-                models.Country_Courrency.company_id == company_id,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
             )
             .first()
         )
@@ -4261,11 +4261,11 @@ async def update_country_currency(
         # FETCH RECORD
         # -------------------------------------------------
         country = (
-            db.query(models.Country_Courrency)
+            db.query(models.Country_Currency)
             .filter(
-                models.Country_Courrency.id == country_id,
-                models.Country_Courrency.company_id == company_id,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.id == country_id,
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
             )
             .first()
         )
@@ -4280,7 +4280,7 @@ async def update_country_currency(
         # UPDATE
         # -------------------------------------------------
         country.Country_Name = country_name.strip()
-        country.Courrency_Name = currency_name.strip()
+        country.Currency_Name = currency_name.strip()
         country.Symbol = symbol.strip()
         country.updated_by = user_id
 
@@ -4296,7 +4296,7 @@ async def update_country_currency(
             "data": {
                 "id": country.id,
                 "country_name": country.Country_Name,
-                "currency_name": country.Courrency_Name,
+                "currency_name": country.Currency_Name,
                 "symbol": country.Symbol,
                 "company_id": country.company_id,
                 "updated_by": country.updated_by,
@@ -4349,11 +4349,11 @@ def delete_country_currency(
         # FETCH COUNTRY
         # -------------------------------------------------
         country = (
-            db.query(models.Country_Courrency)
+            db.query(models.Country_Currency)
             .filter(
-                models.Country_Courrency.id == country_id,
-                models.Country_Courrency.company_id == company_id,
-                models.Country_Courrency.status == CommonWords.STATUS
+                models.Country_Currency.id == country_id,
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
             )
             .first()
         )
