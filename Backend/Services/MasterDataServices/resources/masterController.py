@@ -3956,11 +3956,24 @@ def delete_payment_method(
 # =====================================================
 @router.get("/identity_proof", status_code=status.HTTP_200_OK)
 def get_identity_proofs(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH IDENTITY PROOFS
+        # -------------------------------------------------
         proofs = (
             db.query(models.Identity_Proofs)
             .filter(
@@ -3971,12 +3984,40 @@ def get_identity_proofs(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE (NO ORM OBJECTS)
+        # -------------------------------------------------
+        data = [
+            {
+                "id": proof.id,
+                "proof_name": proof.Proof_Name,
+                "company_id": proof.company_id,
+                "created_by": proof.created_by,
+                "created_at": proof.created_at,
+                "updated_at": proof.updated_at
+            }
+            for proof in proofs
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": proofs
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE IDENTITY PROOF
@@ -3987,24 +4028,57 @@ async def create_identity_proof(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        proof_name = payload.get("proof_name")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
-
-        if not all([proof_name, company_id, created_by]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="proof_name, company_id and created_by are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        exists = db.query(models.Identity_Proofs).filter(
-            func.lower(models.Identity_Proofs.Proof_Name) == proof_name.lower(),
-            models.Identity_Proofs.company_id == company_id,
-            models.Identity_Proofs.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        proof_name = payload.get("proof_name", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not proof_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="proof_name is required"
+            )
+
+        if len(proof_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="proof_name must not exceed 100 characters"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK (CASE INSENSITIVE)
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Identity_Proofs)
+            .filter(
+                func.lower(models.Identity_Proofs.Proof_Name) == proof_name.lower(),
+                models.Identity_Proofs.company_id == company_id,
+                models.Identity_Proofs.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -4012,10 +4086,13 @@ async def create_identity_proof(
                 detail="Identity proof already exists"
             )
 
+        # -------------------------------------------------
+        # CREATE IDENTITY PROOF
+        # -------------------------------------------------
         proof = models.Identity_Proofs(
             Proof_Name=proof_name,
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -4023,30 +4100,72 @@ async def create_identity_proof(
         db.commit()
         db.refresh(proof)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Identity proof created successfully",
-            "data": proof
+            "data": {
+                "id": proof.id,
+                "proof_name": proof.Proof_Name,
+                "company_id": proof.company_id,
+                "created_by": proof.created_by,
+                "created_at": proof.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET IDENTITY PROOF BY ID
 # =====================================================
 @router.get("/identity_proof/{proof_id}", status_code=status.HTTP_200_OK)
 def get_identity_proof_by_id(
+    request: Request,
     proof_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        proof = db.query(models.Identity_Proofs).filter(
-            models.Identity_Proofs.id == proof_id,
-            models.Identity_Proofs.company_id == company_id,
-            models.Identity_Proofs.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if proof_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid proof_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH IDENTITY PROOF
+        # -------------------------------------------------
+        proof = (
+            db.query(models.Identity_Proofs)
+            .filter(
+                models.Identity_Proofs.id == proof_id,
+                models.Identity_Proofs.company_id == company_id,
+                models.Identity_Proofs.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not proof:
             raise HTTPException(
@@ -4054,12 +4173,31 @@ def get_identity_proof_by_id(
                 detail="Identity proof not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE (NO ORM)
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": proof
+            "data": {
+                "id": proof.id,
+                "proof_name": proof.Proof_Name,
+                "company_id": proof.company_id,
+                "created_by": proof.created_by,
+                "created_at": proof.created_at,
+                "updated_at": proof.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE IDENTITY PROOF
@@ -4070,25 +4208,65 @@ async def update_identity_proof(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        proof_id = payload.get("id")
-        proof_name = payload.get("proof_name")
-        company_id = payload.get("company_id")
-
-        if not all([proof_id, proof_name, company_id]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, proof_name and company_id are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        duplicate = db.query(models.Identity_Proofs).filter(
-            models.Identity_Proofs.id != proof_id,
-            func.lower(models.Identity_Proofs.Proof_Name) == proof_name.lower(),
-            models.Identity_Proofs.company_id == company_id,
-            models.Identity_Proofs.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        proof_id = payload.get("id")
+        proof_name = payload.get("proof_name", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(proof_id, int) or proof_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid proof id is required"
+            )
+
+        if not proof_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="proof_name is required"
+            )
+
+        if len(proof_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="proof_name must not exceed 100 characters"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK (CASE INSENSITIVE)
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Identity_Proofs)
+            .filter(
+                models.Identity_Proofs.id != proof_id,
+                func.lower(models.Identity_Proofs.Proof_Name) == proof_name.lower(),
+                models.Identity_Proofs.company_id == company_id,
+                models.Identity_Proofs.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -4096,11 +4274,18 @@ async def update_identity_proof(
                 detail="Identity proof already exists"
             )
 
-        proof = db.query(models.Identity_Proofs).filter(
-            models.Identity_Proofs.id == proof_id,
-            models.Identity_Proofs.company_id == company_id,
-            models.Identity_Proofs.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH IDENTITY PROOF
+        # -------------------------------------------------
+        proof = (
+            db.query(models.Identity_Proofs)
+            .filter(
+                models.Identity_Proofs.id == proof_id,
+                models.Identity_Proofs.company_id == company_id,
+                models.Identity_Proofs.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not proof:
             raise HTTPException(
@@ -4108,34 +4293,83 @@ async def update_identity_proof(
                 detail="Identity proof not found"
             )
 
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
         proof.Proof_Name = proof_name
+        proof.updated_by = user_id
+
         db.commit()
         db.refresh(proof)
 
+        # -------------------------------------------------
+        # RESPONSE (NO ORM)
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Identity proof updated successfully",
-            "data": proof
+            "data": {
+                "id": proof.id,
+                "proof_name": proof.Proof_Name,
+                "company_id": proof.company_id,
+                "updated_by": proof.updated_by,
+                "updated_at": proof.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE IDENTITY PROOF (SOFT DELETE)
 # =====================================================
 @router.delete("/identity_proof/{proof_id}", status_code=status.HTTP_200_OK)
 def delete_identity_proof(
+    request: Request,
     proof_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        proof = db.query(models.Identity_Proofs).filter(
-            models.Identity_Proofs.id == proof_id,
-            models.Identity_Proofs.company_id == company_id,
-            models.Identity_Proofs.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if proof_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid proof_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH IDENTITY PROOF
+        # -------------------------------------------------
+        proof = (
+            db.query(models.Identity_Proofs)
+            .filter(
+                models.Identity_Proofs.id == proof_id,
+                models.Identity_Proofs.company_id == company_id,
+                models.Identity_Proofs.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not proof:
             raise HTTPException(
@@ -4143,15 +4377,32 @@ def delete_identity_proof(
                 detail="Identity proof not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         proof.status = CommonWords.UNSTATUS
+        proof.updated_by = user_id
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Identity proof deleted successfully"
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL COUNTRIES & CURRENCIES
@@ -4646,11 +4897,24 @@ def delete_country_currency(
 # =====================================================
 @router.get("/task_type", status_code=status.HTTP_200_OK)
 def get_task_types(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH TASK TYPES
+        # -------------------------------------------------
         task_types = (
             db.query(models.Task_Type)
             .filter(
@@ -4661,12 +4925,41 @@ def get_task_types(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE (NO ORM OBJECTS)
+        # -------------------------------------------------
+        data = [
+            {
+                "id": task.id,
+                "task_name": task.Type_Name,
+                "color": task.Color,
+                "company_id": task.company_id,
+                "created_by": task.created_by,
+                "created_at": task.created_at,
+                "updated_at": task.updated_at
+            }
+            for task in task_types
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": task_types
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE TASK TYPE
@@ -4677,25 +4970,64 @@ async def create_task_type(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        task_name = payload.get("task_name")
-        color = payload.get("color")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
-
-        if not all([task_name, color, company_id, created_by]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="task_name, color, company_id and created_by are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        exists = db.query(models.Task_Type).filter(
-            func.lower(models.Task_Type.Type_Name) == task_name.lower(),
-            models.Task_Type.company_id == company_id,
-            models.Task_Type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        task_name = payload.get("task_name", "").strip()
+        color = payload.get("color", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not task_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="task_name is required"
+            )
+
+        if not color:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color is required"
+            )
+
+        if len(task_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="task_name must not exceed 100 characters"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK (CASE INSENSITIVE)
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Task_Type)
+            .filter(
+                func.lower(models.Task_Type.Type_Name) == task_name.lower(),
+                models.Task_Type.company_id == company_id,
+                models.Task_Type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -4703,11 +5035,14 @@ async def create_task_type(
                 detail="Task type already exists"
             )
 
+        # -------------------------------------------------
+        # CREATE TASK TYPE
+        # -------------------------------------------------
         task_type = models.Task_Type(
             Type_Name=task_name,
             Color=color,
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -4715,30 +5050,75 @@ async def create_task_type(
         db.commit()
         db.refresh(task_type)
 
+        # -------------------------------------------------
+        # RESPONSE (NO ORM)
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Task type created successfully",
-            "data": task_type
+            "data": {
+                "id": task_type.id,
+                "task_name": task_type.Type_Name,
+                "color": task_type.Color,
+                "company_id": task_type.company_id,
+                "created_by": task_type.created_by,
+                "created_at": task_type.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep intended errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET TASK TYPE BY ID
 # =====================================================
 @router.get("/task_type/{task_type_id}", status_code=status.HTTP_200_OK)
 def get_task_type_by_id(
+    request: Request,
     task_type_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        task_type = db.query(models.Task_Type).filter(
-            models.Task_Type.id == task_type_id,
-            models.Task_Type.company_id == company_id,
-            models.Task_Type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if task_type_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid task_type_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH TASK TYPE
+        # -------------------------------------------------
+        task_type = (
+            db.query(models.Task_Type)
+            .filter(
+                models.Task_Type.id == task_type_id,
+                models.Task_Type.company_id == company_id,
+                models.Task_Type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not task_type:
             raise HTTPException(
@@ -4746,12 +5126,32 @@ def get_task_type_by_id(
                 detail="Task type not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE (NO ORM)
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": task_type
+            "data": {
+                "id": task_type.id,
+                "task_name": task_type.Type_Name,
+                "color": task_type.Color,
+                "company_id": task_type.company_id,
+                "created_by": task_type.created_by,
+                "created_at": task_type.created_at,
+                "updated_at": task_type.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE TASK TYPE
@@ -4762,26 +5162,72 @@ async def update_task_type(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        task_type_id = payload.get("id")
-        task_name = payload.get("task_name")
-        color = payload.get("color")
-        company_id = payload.get("company_id")
-
-        if not all([task_type_id, task_name, color, company_id]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, task_name, color and company_id are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        duplicate = db.query(models.Task_Type).filter(
-            models.Task_Type.id != task_type_id,
-            func.lower(models.Task_Type.Type_Name) == task_name.lower(),
-            models.Task_Type.company_id == company_id,
-            models.Task_Type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        task_type_id = payload.get("id")
+        task_name = payload.get("task_name", "").strip()
+        color = payload.get("color", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(task_type_id, int) or task_type_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid task type id is required"
+            )
+
+        if not task_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="task_name is required"
+            )
+
+        if not color:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color is required"
+            )
+
+        if len(task_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="task_name must not exceed 100 characters"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK (CASE INSENSITIVE)
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Task_Type)
+            .filter(
+                models.Task_Type.id != task_type_id,
+                func.lower(models.Task_Type.Type_Name) == task_name.lower(),
+                models.Task_Type.company_id == company_id,
+                models.Task_Type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -4789,11 +5235,18 @@ async def update_task_type(
                 detail="Task type already exists"
             )
 
-        task_type = db.query(models.Task_Type).filter(
-            models.Task_Type.id == task_type_id,
-            models.Task_Type.company_id == company_id,
-            models.Task_Type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH TASK TYPE
+        # -------------------------------------------------
+        task_type = (
+            db.query(models.Task_Type)
+            .filter(
+                models.Task_Type.id == task_type_id,
+                models.Task_Type.company_id == company_id,
+                models.Task_Type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not task_type:
             raise HTTPException(
@@ -4801,36 +5254,85 @@ async def update_task_type(
                 detail="Task type not found"
             )
 
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
         task_type.Type_Name = task_name
         task_type.Color = color
+        task_type.updated_by = user_id
 
         db.commit()
         db.refresh(task_type)
 
+        # -------------------------------------------------
+        # RESPONSE (NO ORM)
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Task type updated successfully",
-            "data": task_type
+            "data": {
+                "id": task_type.id,
+                "task_name": task_type.Type_Name,
+                "color": task_type.Color,
+                "company_id": task_type.company_id,
+                "updated_by": task_type.updated_by,
+                "updated_at": task_type.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE TASK TYPE (SOFT DELETE)
 # =====================================================
 @router.delete("/task_type/{task_type_id}", status_code=status.HTTP_200_OK)
 def delete_task_type(
+    request: Request,
     task_type_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        task_type = db.query(models.Task_Type).filter(
-            models.Task_Type.id == task_type_id,
-            models.Task_Type.company_id == company_id,
-            models.Task_Type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if task_type_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid task_type_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH TASK TYPE
+        # -------------------------------------------------
+        task_type = (
+            db.query(models.Task_Type)
+            .filter(
+                models.Task_Type.id == task_type_id,
+                models.Task_Type.company_id == company_id,
+                models.Task_Type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not task_type:
             raise HTTPException(
@@ -4838,15 +5340,32 @@ def delete_task_type(
                 detail="Task type not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         task_type.status = CommonWords.UNSTATUS
+        task_type.updated_by = user_id
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Task type deleted successfully"
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL ROOM COMPLEMENTARIES
@@ -5323,11 +5842,24 @@ def delete_room_complementry(
 # =====================================================
 @router.get("/reservation_status", status_code=status.HTTP_200_OK)
 def get_reservation_status(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH RESERVATION STATUSES
+        # -------------------------------------------------
         statuses = (
             db.query(models.Reservation_Status)
             .filter(
@@ -5338,12 +5870,41 @@ def get_reservation_status(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE (NO ORM OBJECTS)
+        # -------------------------------------------------
+        data = [
+            {
+                "id": status.id,
+                "reservation_status": status.Reservation_Status,
+                "color": status.Color,
+                "company_id": status.company_id,
+                "created_by": status.created_by,
+                "created_at": status.created_at,
+                "updated_at": status.updated_at
+            }
+            for status in statuses
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": statuses
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE RESERVATION STATUS
@@ -5354,25 +5915,65 @@ async def create_reservation_status(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        status_name = payload.get("status_name")
-        color = payload.get("color")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
-
-        if not all([status_name, color, company_id, created_by]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="status_name, color, company_id and created_by are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        exists = db.query(models.Reservation_Status).filter(
-            func.lower(models.Reservation_Status.Status_Name) == status_name.lower(),
-            models.Reservation_Status.company_id == company_id,
-            models.Reservation_Status.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        status_name = payload.get("status_name", "").strip()
+        color = payload.get("color", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not status_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="status_name is required"
+            )
+
+        if not color:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color is required"
+            )
+
+        if len(status_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="status_name must not exceed 100 characters"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK (CASE INSENSITIVE)
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Reservation_Status)
+            .filter(
+                func.lower(models.Reservation_Status.Reservation_Status)
+                == status_name.lower(),
+                models.Reservation_Status.company_id == company_id,
+                models.Reservation_Status.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -5380,11 +5981,14 @@ async def create_reservation_status(
                 detail="Reservation status already exists"
             )
 
+        # -------------------------------------------------
+        # CREATE RESERVATION STATUS
+        # -------------------------------------------------
         reservation_status = models.Reservation_Status(
-            Status_Name=status_name,
+            Reservation_Status=status_name,
             Color=color,
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -5392,29 +5996,73 @@ async def create_reservation_status(
         db.commit()
         db.refresh(reservation_status)
 
+        # -------------------------------------------------
+        # RESPONSE (UI FRIENDLY)
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Reservation status created successfully",
-            "data": reservation_status
+            "data": {
+                "id": reservation_status.id,
+                "reservation_status": reservation_status.Reservation_Status,
+                "color": reservation_status.Color,
+                "company_id": reservation_status.company_id,
+                "created_by": reservation_status.created_by,
+                "created_at": reservation_status.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    
 # =====================================================
 # GET RESERVATION STATUS BY ID
 # =====================================================
 @router.get("/reservation_status/{status_id}", status_code=status.HTTP_200_OK)
 def get_reservation_status_by_id(
+    request: Request,
     status_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        reservation_status = db.query(models.Reservation_Status).filter(
-            models.Reservation_Status.id == status_id,
-            models.Reservation_Status.company_id == company_id,
-            models.Reservation_Status.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if status_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH RESERVATION STATUS
+        # -------------------------------------------------
+        reservation_status = (
+            db.query(models.Reservation_Status)
+            .filter(
+                models.Reservation_Status.id == status_id,
+                models.Reservation_Status.company_id == company_id,
+                models.Reservation_Status.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not reservation_status:
             raise HTTPException(
@@ -5422,12 +6070,32 @@ def get_reservation_status_by_id(
                 detail="Reservation status not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE (NO ORM OBJECT)
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": reservation_status
+            "data": {
+                "id": reservation_status.id,
+                "reservation_status": reservation_status.Reservation_Status,
+                "color": reservation_status.Color,
+                "company_id": reservation_status.company_id,
+                "created_by": reservation_status.created_by,
+                "created_at": reservation_status.created_at,
+                "updated_at": reservation_status.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE RESERVATION STATUS
@@ -5438,26 +6106,73 @@ async def update_reservation_status(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        status_id = payload.get("id")
-        status_name = payload.get("status_name")
-        color = payload.get("color")
-        company_id = payload.get("company_id")
-
-        if not all([status_id, status_name, color, company_id]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, status_name, color and company_id are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        duplicate = db.query(models.Reservation_Status).filter(
-            models.Reservation_Status.id != status_id,
-            func.lower(models.Reservation_Status.Status_Name) == status_name.lower(),
-            models.Reservation_Status.company_id == company_id,
-            models.Reservation_Status.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        status_id = payload.get("id")
+        status_name = payload.get("status_name", "").strip()
+        color = payload.get("color", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(status_id, int) or status_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid id is required"
+            )
+
+        if not status_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="status_name is required"
+            )
+
+        if not color:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color is required"
+            )
+
+        if len(status_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="status_name must not exceed 100 characters"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK (CASE INSENSITIVE)
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Reservation_Status)
+            .filter(
+                models.Reservation_Status.id != status_id,
+                func.lower(models.Reservation_Status.Reservation_Status)
+                == status_name.lower(),
+                models.Reservation_Status.company_id == company_id,
+                models.Reservation_Status.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -5465,11 +6180,18 @@ async def update_reservation_status(
                 detail="Reservation status already exists"
             )
 
-        reservation_status = db.query(models.Reservation_Status).filter(
-            models.Reservation_Status.id == status_id,
-            models.Reservation_Status.company_id == company_id,
-            models.Reservation_Status.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH RESERVATION STATUS
+        # -------------------------------------------------
+        reservation_status = (
+            db.query(models.Reservation_Status)
+            .filter(
+                models.Reservation_Status.id == status_id,
+                models.Reservation_Status.company_id == company_id,
+                models.Reservation_Status.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not reservation_status:
             raise HTTPException(
@@ -5477,36 +6199,85 @@ async def update_reservation_status(
                 detail="Reservation status not found"
             )
 
-        reservation_status.Status_Name = status_name
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
+        reservation_status.Reservation_Status = status_name
         reservation_status.Color = color
+        reservation_status.updated_by = user_id
 
         db.commit()
         db.refresh(reservation_status)
 
+        # -------------------------------------------------
+        # RESPONSE (NO ORM)
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Reservation status updated successfully",
-            "data": reservation_status
+            "data": {
+                "id": reservation_status.id,
+                "reservation_status": reservation_status.Reservation_Status,
+                "color": reservation_status.Color,
+                "company_id": reservation_status.company_id,
+                "updated_by": reservation_status.updated_by,
+                "updated_at": reservation_status.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Keep correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE RESERVATION STATUS (SOFT DELETE)
 # =====================================================
 @router.delete("/reservation_status/{status_id}", status_code=status.HTTP_200_OK)
 def delete_reservation_status(
+    request: Request,
     status_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        reservation_status = db.query(models.Reservation_Status).filter(
-            models.Reservation_Status.id == status_id,
-            models.Reservation_Status.company_id == company_id,
-            models.Reservation_Status.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if status_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid status_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH RESERVATION STATUS
+        # -------------------------------------------------
+        reservation_status = (
+            db.query(models.Reservation_Status)
+            .filter(
+                models.Reservation_Status.id == status_id,
+                models.Reservation_Status.company_id == company_id,
+                models.Reservation_Status.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not reservation_status:
             raise HTTPException(
@@ -5514,12 +6285,29 @@ def delete_reservation_status(
                 detail="Reservation status not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         reservation_status.status = CommonWords.UNSTATUS
+        reservation_status.updated_by = user_id
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Reservation status deleted successfully"
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
