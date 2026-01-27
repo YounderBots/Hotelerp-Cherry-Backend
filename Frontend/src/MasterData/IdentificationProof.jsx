@@ -1,15 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const IdentificationProof = () => {
-  const [data, setData] = useState([
-    { id: 1, name: "Aadhaar Card" },
-    { id: 2, name: "Passport" },
-    { id: 3, name: "Driving License" },
-    { id: 4, name: "Voter ID" },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -45,6 +41,39 @@ const IdentificationProof = () => {
     setViewData(null);
   };
 
+  const getProof = async () => {
+  const res = await APICall.getT("/masterdata/identity_proof");
+  setData(res.data?.data || res.data || []);
+};
+
+  const createProof = async () =>{
+    try{
+      await APICall.postT("/masterdata/identity_proof",{
+        proof_name:formData.name
+      });
+      getProof();
+    } catch(error){
+      return error
+    }
+  }
+
+  const updateProof = async () =>{
+    try{
+      await APICall.putT("/masterdata/identity_proof",{
+        id:editId,
+        proof_name:formData.name
+      });
+      getProof();
+    } catch(error){
+      return error
+    }
+  };
+
+  const deleteProof = async(id)=>{
+    await APICall.deleteT(`/masterdata/identity_proof/${id}`);
+    getProof();
+  }
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -54,13 +83,9 @@ const IdentificationProof = () => {
     if (!formData.name.trim()) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updateProof();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createProof();
     }
 
     closeModal();
@@ -68,13 +93,17 @@ const IdentificationProof = () => {
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({name:row.proof_name});
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deleteProof(id)
   };
+
+  useEffect(()=>{
+    getProof();
+  },[])
 
   /* ================= UI ================= */
 
@@ -94,7 +123,7 @@ const IdentificationProof = () => {
         }}
         columns={[
           {
-            key: "name",
+            key: "proof_name",
             title: "Identification Proof Name",
             align: "center",
           },
@@ -150,7 +179,7 @@ const IdentificationProof = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Identification Proof Name</label>
-                <input value={viewData.name} disabled />
+                <input value={viewData.proof_name} disabled />
               </div>
             </div>
 
