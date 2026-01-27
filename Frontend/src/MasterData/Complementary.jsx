@@ -1,23 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const Complementary = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      name: "Breakfast",
-      description:
-        "Complimentary breakfast included with room stay including South Indian and Continental items",
-    },
-    {
-      id: 2,
-      name: "Wi-Fi",
-      description:
-        "Free high-speed internet access available throughout the hotel premises",
-    },
-  ]);
+
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -59,17 +48,62 @@ const Complementary = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = () => {
-    if (!formData.name.trim()) return;
+
+  const getAllData = async () => {
+    const AllData = await APICall.getT("/masterdata/complementry");
+    setData(AllData.data);
+
+  }
+
+  const createComplementary = async () => {
+    try {
+      await APICall.postT("/masterdata/complementry", {
+        complementry_name: formData.name,
+        description: formData.description,
+      });
+      getAllData();
+    }
+    catch (error) {
+      return error, " to create a Complementary";
+    }
+  }
+
+  const updateComplementary = async () => {
+    try {
+      await APICall.putT("/masterdata/complementry", {
+        id: editId,
+        complementry_name: formData.name,
+        description: formData.description,
+
+      })
+      getAllData();
+    }
+    catch (error) {
+      return error, "to update bedType"
+    }
+  }
+
+  const deleteComplementry = async(id) => {
+    try{
+      await APICall.deleteT(`/masterdata/complementry/${id}`)
+    }
+    catch(error){
+      return error
+    }
+  }
+
+  useEffect(() => {
+    getAllData();
+  }, []);
+
+
+  const handleSave = async () => {
+    if (!formData.name.trim() ) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updateComplementary();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createComplementary();
     }
 
     closeModal();
@@ -77,12 +111,15 @@ const Complementary = () => {
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+      name:row.complementry_name,
+      description : row.description
+    });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deleteComplementry(id);
   };
 
   /* ================= UI ================= */
@@ -103,7 +140,7 @@ const Complementary = () => {
         }}
         columns={[
           {
-            key: "name",
+            key: "complementry_name",
             title: "Complementary Name",
             align: "center",
           },
@@ -176,7 +213,7 @@ const Complementary = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Complementary Name</label>
-                <input value={viewData.name} disabled />
+                <input value={viewData.complementry_name} disabled />
               </div>
 
               <div className="form-group">

@@ -11,6 +11,7 @@
     const [showViewModal, setShowViewModal] = useState(false);
     const [editId, setEditId] = useState(null);
     const [viewData, setViewData] = useState(null);
+    const [complementary,setComplementary] = useState([])
 
     const initialForm = {
       roomType: "",
@@ -28,6 +29,11 @@
     const [formData, setFormData] = useState(initialForm);
 
     /* ================= HANDLERS ================= */
+
+  const getComplementary = async () =>{
+    const optionVal = await APICall.getT("/masterdata/complementry")
+    setComplementary(optionVal.data)
+  }
 
   const getRoomTypes = async () => {
     try {
@@ -158,6 +164,7 @@
 
     useEffect(() => {
     getRoomTypes();
+    getComplementary();
   }, []);
 
 
@@ -295,8 +302,9 @@
                     value={formData.complementary}
                     onChange={handleChange}
                   >
-                    <option value="Yes">Yes</option>
-                    <option value="No">No</option>
+                    {complementary.map((e)=>(
+                      <option key={e.id} value={e.id}>{e.complementry_name}</option>
+                    ))}
                   </select>
                 </div>
               </div>
