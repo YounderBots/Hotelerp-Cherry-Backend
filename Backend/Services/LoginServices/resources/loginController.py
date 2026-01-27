@@ -1,3 +1,4 @@
+import httpx
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -94,28 +95,92 @@ async def login_post(
 async def facilities_proxy(request: Request, path: str):
 
     auth_header = request.headers.get("Authorization")
-    company_id = request.headers.get("company_id")  # 👈 read incoming header
+    company_id = request.headers.get("company_id")
 
     if not auth_header:
         raise HTTPException(status_code=401, detail="Authorization header missing")
 
-    body = None
-    if request.method in ["POST", "PUT", "PATCH"]:
-        body = await request.json()
+    params = dict(request.query_params)
+    content_type = request.headers.get("content-type", "")
 
-    response = await call_service(
-        method=request.method,
-        url=f"{ServiceURL.MASTER_SERVICE_URL}/{path}",
-        headers={
-            "Authorization": auth_header,
-            "Content-Type": "application/json",
-            "company_id":company_id
-        },
-        data=body,
-        params=dict(request.query_params)
+    # -------------------------------------------------
+    # BUILD SAFE HEADERS
+    # -------------------------------------------------
+    forward_headers = {
+        "Authorization": auth_header
+    }
+
+    if company_id:
+        forward_headers["company_id"] = company_id
+
+    async with httpx.AsyncClient(timeout=60) as client:
+
+        # =================================================
+        # GET / DELETE (NO BODY)
+        # =================================================
+        if request.method in ["GET", "DELETE"]:
+            response = await client.request(
+                method=request.method,
+                url=f"{ServiceURL.MASTER_SERVICE_URL}/{path}",
+                headers=forward_headers,
+                params=params
+            )
+
+        # =================================================
+        # JSON REQUESTS
+        # =================================================
+        elif "application/json" in content_type:
+            body = await request.json()
+
+            response = await client.request(
+                method=request.method,
+                url=f"{ServiceURL.MASTER_SERVICE_URL}/{path}",
+                headers=forward_headers,
+                json=body,
+                params=params
+            )
+
+        # =================================================
+        # MULTIPART / FILE UPLOAD REQUESTS
+        # =================================================
+        elif "multipart/form-data" in content_type:
+            form = await request.form()
+            data = {}
+            files = []
+
+            for key, value in form.items():
+                if hasattr(value, "filename"):
+                    files.append(
+                        (
+                            key,
+                            (value.filename, await value.read(), value.content_type)
+                        )
+                    )
+                else:
+                    data[key] = value
+
+            response = await client.request(
+                method=request.method,
+                url=f"{ServiceURL.MASTER_SERVICE_URL}/{path}",
+                headers=forward_headers,
+                data=data,
+                files=files,
+                params=params
+            )
+
+        # =================================================
+        # UNSUPPORTED
+        # =================================================
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported Content-Type"
+            )
+
+    return JSONResponse(
+        status_code=response.status_code,
+        content=response.json()
     )
-
-    return response
 
 
 
