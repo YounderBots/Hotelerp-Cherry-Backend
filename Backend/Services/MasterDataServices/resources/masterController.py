@@ -2457,11 +2457,24 @@ def delete_room(
 # =====================================================
 @router.get("/discount", status_code=status.HTTP_200_OK)
 def get_discounts(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH DISCOUNTS
+        # -------------------------------------------------
         discounts = (
             db.query(models.Discount_Data)
             .filter(
@@ -2472,12 +2485,40 @@ def get_discounts(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE (MODEL SAFE)
+        # -------------------------------------------------
+        data = [
+            {
+                "id": discount.id,
+                "country_id": discount.Country_ID,
+                "discount_name": discount.Discount_Name,
+                "discount_percentage": discount.Discount_Percentage,
+                "company_id": discount.company_id,
+                "created_by": discount.created_by,
+                "created_at": discount.created_at,
+                "updated_at": discount.updated_at
+            }
+            for discount in discounts
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": discounts
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE DISCOUNT
@@ -2488,27 +2529,62 @@ async def create_discount(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY
+        # -------------------------------------------------
         payload = await request.json()
 
         country_id = payload.get("country_id")
         discount_name = payload.get("discount_name")
         discount_percentage = payload.get("discount_percentage")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
 
-        if not all([country_id, discount_name, discount_percentage, company_id, created_by]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not country_id or not discount_name or discount_percentage is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="country_id, discount_name, discount_percentage, company_id, created_by are required"
+                detail="country_id, discount_name and discount_percentage are required"
             )
 
-        exists = db.query(models.Discount_Data).filter(
-            func.lower(models.Discount_Data.Country_ID) == country_id.lower(),
-            func.lower(models.Discount_Data.Discount_Name) == discount_name.lower(),
-            models.Discount_Data.company_id == company_id,
-            models.Discount_Data.status == CommonWords.STATUS
-        ).first()
+        try:
+            discount_percentage = float(discount_percentage)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_percentage must be a number"
+            )
+
+        if not (0 < discount_percentage <= 100):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_percentage must be between 1 and 100"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Discount_Data)
+            .filter(
+                func.lower(models.Discount_Data.Country_ID) == country_id.lower(),
+                func.lower(models.Discount_Data.Discount_Name) == discount_name.lower(),
+                models.Discount_Data.company_id == company_id,
+                models.Discount_Data.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -2516,12 +2592,15 @@ async def create_discount(
                 detail="Discount already exists for this country"
             )
 
+        # -------------------------------------------------
+        # CREATE DISCOUNT
+        # -------------------------------------------------
         discount = models.Discount_Data(
             Country_ID=country_id,
             Discount_Name=discount_name,
-            Discount_Percentage=discount_percentage,
+            Discount_Percentage=str(discount_percentage),
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -2529,30 +2608,74 @@ async def create_discount(
         db.commit()
         db.refresh(discount)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Discount created successfully",
-            "data": discount
+            "data": {
+                "id": discount.id,
+                "country_id": discount.Country_ID,
+                "discount_name": discount.Discount_Name,
+                "discount_percentage": discount.Discount_Percentage,
+                "company_id": discount.company_id,
+                "created_by": discount.created_by,
+                "created_at": discount.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET DISCOUNT BY ID
 # =====================================================
 @router.get("/discount/{discount_id}", status_code=status.HTTP_200_OK)
 def get_discount_by_id(
+    request: Request,
     discount_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        discount = db.query(models.Discount_Data).filter(
-            models.Discount_Data.id == discount_id,
-            models.Discount_Data.company_id == company_id,
-            models.Discount_Data.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if discount_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid discount_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH DISCOUNT
+        # -------------------------------------------------
+        discount = (
+            db.query(models.Discount_Data)
+            .filter(
+                models.Discount_Data.id == discount_id,
+                models.Discount_Data.company_id == company_id,
+                models.Discount_Data.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not discount:
             raise HTTPException(
@@ -2560,12 +2683,31 @@ def get_discount_by_id(
                 detail="Discount not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": discount
+            "data": {
+                "id": discount.id,
+                "country_id": discount.Country_ID,
+                "discount_name": discount.Discount_Name,
+                "discount_percentage": discount.Discount_Percentage,
+                "company_id": discount.company_id,
+                "created_by": discount.created_by,
+                "created_at": discount.created_at,
+                "updated_at": discount.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE DISCOUNT
@@ -2576,28 +2718,88 @@ async def update_discount(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE PARSE)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         discount_id = payload.get("id")
         country_id = payload.get("country_id")
         discount_name = payload.get("discount_name")
         discount_percentage = payload.get("discount_percentage")
-        company_id = payload.get("company_id")
 
-        if not all([discount_id, country_id, discount_name, discount_percentage, company_id]):
+        # -------------------------------------------------
+        # VALIDATION (MANDATORY)
+        # -------------------------------------------------
+        if not isinstance(discount_id, int) or discount_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, country_id, discount_name, discount_percentage, company_id are required"
+                detail="Valid discount id is required"
             )
 
-        duplicate = db.query(models.Discount_Data).filter(
-            models.Discount_Data.id != discount_id,
-            func.lower(models.Discount_Data.Country_ID) == country_id.lower(),
-            func.lower(models.Discount_Data.Discount_Name) == discount_name.lower(),
-            models.Discount_Data.company_id == company_id,
-            models.Discount_Data.status == CommonWords.STATUS
-        ).first()
+        if not isinstance(country_id, str) or not country_id.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="country_id is required"
+            )
+
+        if not isinstance(discount_name, str) or not discount_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_name is required"
+            )
+
+        if discount_percentage is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_percentage is required"
+            )
+
+        try:
+            discount_percentage = float(discount_percentage)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_percentage must be a number"
+            )
+
+        if not (0 < discount_percentage <= 100):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_percentage must be between 1 and 100"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Discount_Data)
+            .filter(
+                models.Discount_Data.id != discount_id,
+                func.lower(models.Discount_Data.Country_ID) == country_id.lower(),
+                func.lower(models.Discount_Data.Discount_Name) == discount_name.lower(),
+                models.Discount_Data.company_id == company_id,
+                models.Discount_Data.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -2605,11 +2807,18 @@ async def update_discount(
                 detail="Discount already exists for this country"
             )
 
-        discount = db.query(models.Discount_Data).filter(
-            models.Discount_Data.id == discount_id,
-            models.Discount_Data.company_id == company_id,
-            models.Discount_Data.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH DISCOUNT
+        # -------------------------------------------------
+        discount = (
+            db.query(models.Discount_Data)
+            .filter(
+                models.Discount_Data.id == discount_id,
+                models.Discount_Data.company_id == company_id,
+                models.Discount_Data.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not discount:
             raise HTTPException(
@@ -2617,37 +2826,85 @@ async def update_discount(
                 detail="Discount not found"
             )
 
-        discount.Country_ID = country_id
-        discount.Discount_Name = discount_name
-        discount.Discount_Percentage = discount_percentage
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
+        discount.Country_ID = country_id.strip()
+        discount.Discount_Name = discount_name.strip()
+        discount.Discount_Percentage = str(discount_percentage)
+        discount.updated_by = user_id
 
         db.commit()
         db.refresh(discount)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Discount updated successfully",
-            "data": discount
+            "data": {
+                "id": discount.id,
+                "country_id": discount.Country_ID,
+                "discount_name": discount.Discount_Name,
+                "discount_percentage": discount.Discount_Percentage,
+                "company_id": discount.company_id,
+                "updated_by": discount.updated_by,
+                "updated_at": discount.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE DISCOUNT (SOFT DELETE)
 # =====================================================
 @router.delete("/discount/{discount_id}", status_code=status.HTTP_200_OK)
 def delete_discount(
+    request: Request,
     discount_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        discount = db.query(models.Discount_Data).filter(
-            models.Discount_Data.id == discount_id,
-            models.Discount_Data.company_id == company_id,
-            models.Discount_Data.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(discount_id, int) or discount_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid discount id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH DISCOUNT
+        # -------------------------------------------------
+        discount = (
+            db.query(models.Discount_Data)
+            .filter(
+                models.Discount_Data.id == discount_id,
+                models.Discount_Data.company_id == company_id,
+                models.Discount_Data.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not discount:
             raise HTTPException(
@@ -2655,15 +2912,35 @@ def delete_discount(
                 detail="Discount not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         discount.status = CommonWords.UNSTATUS
+        discount.updated_by = user_id
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Discount deleted successfully"
+            "message": "Discount deleted successfully",
+            "data": {
+                "id": discount.id,
+                "discount_name": discount.Discount_Name,
+                "company_id": discount.company_id
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL TAX TYPES

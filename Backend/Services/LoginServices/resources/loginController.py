@@ -103,13 +103,9 @@ async def facilities_proxy(request: Request, path: str):
     params = dict(request.query_params)
     content_type = request.headers.get("content-type", "")
 
-    # -------------------------------------------------
-    # BUILD SAFE HEADERS
-    # -------------------------------------------------
     forward_headers = {
         "Authorization": auth_header
     }
-
     if company_id:
         forward_headers["company_id"] = company_id
 
@@ -127,21 +123,7 @@ async def facilities_proxy(request: Request, path: str):
             )
 
         # =================================================
-        # JSON REQUESTS
-        # =================================================
-        elif "application/json" in content_type:
-            body = await request.json()
-
-            response = await client.request(
-                method=request.method,
-                url=f"{ServiceURL.MASTER_SERVICE_URL}/{path}",
-                headers=forward_headers,
-                json=body,
-                params=params
-            )
-
-        # =================================================
-        # MULTIPART / FILE UPLOAD REQUESTS
+        # MULTIPART (FILES)
         # =================================================
         elif "multipart/form-data" in content_type:
             form = await request.form()
@@ -151,10 +133,7 @@ async def facilities_proxy(request: Request, path: str):
             for key, value in form.items():
                 if hasattr(value, "filename"):
                     files.append(
-                        (
-                            key,
-                            (value.filename, await value.read(), value.content_type)
-                        )
+                        (key, (value.filename, await value.read(), value.content_type))
                     )
                 else:
                     data[key] = value
@@ -169,19 +148,26 @@ async def facilities_proxy(request: Request, path: str):
             )
 
         # =================================================
-        # UNSUPPORTED
+        # JSON (PUT / POST) — EVEN IF CONTENT-TYPE IS MISSING
         # =================================================
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="Unsupported Content-Type"
+            try:
+                body = await request.json()
+            except Exception:
+                body = None  # allow empty body
+
+            response = await client.request(
+                method=request.method,
+                url=f"{ServiceURL.MASTER_SERVICE_URL}/{path}",
+                headers=forward_headers,
+                json=body,
+                params=params
             )
 
     return JSONResponse(
         status_code=response.status_code,
         content=response.json()
     )
-
 
 
 # @router.post("/masterdata")
