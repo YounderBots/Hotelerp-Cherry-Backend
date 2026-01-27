@@ -1,5 +1,5 @@
 from enum import verify
-from fastapi import APIRouter, Depends, status, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, Form, status, HTTPException, Request, UploadFile, File
 from fastapi.responses import JSONResponse
 from httpx import request
 from sqlalchemy.orm import Session 
@@ -1054,7 +1054,7 @@ def get_bed_types(
         data = [
             {
                 "id": bed.id,
-                "bed_type_name": bed.Bed_Type_Name,
+                "bed_type_name": bed.Type_Name,
                 "company_id": bed.company_id,
                 "created_by": bed.created_by,
                 "created_at": bed.created_at,
@@ -1912,11 +1912,24 @@ def delete_hall_floor(
 # =====================================================
 @router.get("/room", status_code=status.HTTP_200_OK)
 def get_rooms(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH ROOMS
+        # -------------------------------------------------
         rooms = (
             db.query(models.Room)
             .filter(
@@ -1927,12 +1940,53 @@ def get_rooms(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE (NO RAW ORM)
+        # -------------------------------------------------
+        data = [
+            {
+                "id": room.id,
+                "room_no": room.Room_No,
+                "room_name": room.Room_Name,
+                "room_type_id": room.Room_Type_ID,
+                "bed_type_id": room.Bed_Type_ID,
+                "room_telephone": room.Room_Telephone,
+                "max_adult": room.Max_Adult_Occupy,
+                "max_child": room.Max_Child_Occupy,
+                "booking_status": room.Room_Booking_status,
+                "working_status": room.Room_Working_status,
+                "room_status": room.Room_Status,
+                "images": {
+                    "image_1": room.Room_Image_1,
+                    "image_2": room.Room_Image_2,
+                    "image_3": room.Room_Image_3,
+                    "image_4": room.Room_Image_4,
+                },
+                "company_id": room.company_id,
+                "created_by": room.created_by,
+                "created_at": room.created_at,
+                "updated_at": room.updated_at,
+            }
+            for room in rooms
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": rooms
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE ROOM
@@ -1940,28 +1994,63 @@ def get_rooms(
 @router.post("/room", status_code=status.HTTP_201_CREATED)
 async def create_room(
     request: Request,
-    room_no: str,
-    room_name: str,
-    room_type: str,
-    bed_type: str,
-    tele_no: str,
-    max_adult: str,
-    max_child: str,
-    company_id: str,
-    created_by: str,
-    image_1: UploadFile = File(...),
-    image_2: UploadFile = File(...),
-    image_3: UploadFile = File(...),
-    image_4: UploadFile = File(...),
+
+    # -------- FORM FIELDS --------
+    room_no: str = Form(...),
+    room_name: str = Form(...),
+    room_type_id: int = Form(...),
+    bed_type_id: int = Form(...),
+    tele_no: str = Form(None),
+    max_adult: int = Form(...),
+    max_child: int = Form(...),
+
+    # -------- IMAGES (OPTIONAL) --------
+    image_1: UploadFile = File(None),
+    image_2: UploadFile = File(None),
+    image_3: UploadFile = File(None),
+    image_4: UploadFile = File(None),
+
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        exists = db.query(models.Room).filter(
-            models.Room.Room_No == room_no,
-            models.Room.company_id == company_id,
-            models.Room.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION (JWT ONLY)
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not room_no or not room_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="room_no and room_name are required"
+            )
+
+        if max_adult < 0 or max_child < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="max_adult and max_child must be non-negative"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE ROOM CHECK
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Room)
+            .filter(
+                models.Room.Room_No == room_no,
+                models.Room.company_id == company_id,
+                models.Room.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -1969,8 +2058,13 @@ async def create_room(
                 detail="Room number already exists"
             )
 
-        def save_image(file: UploadFile):
-            ext = file.content_type.split("/")[-1]
+        # -------------------------------------------------
+        # IMAGE SAVE HELPER
+        # -------------------------------------------------
+        def save_image(file: UploadFile | None):
+            if not file:
+                return None
+            ext = file.filename.split(".")[-1]
             filename = f"{uuid.uuid4()}.{ext}"
             filepath = os.path.join(UPLOAD_PATH, filename)
             with open(filepath, "wb") as buffer:
@@ -1982,23 +2076,29 @@ async def create_room(
         img3 = save_image(image_3)
         img4 = save_image(image_4)
 
+        # -------------------------------------------------
+        # CREATE ROOM
+        # -------------------------------------------------
         room = models.Room(
             Room_No=room_no,
             Room_Name=room_name,
-            Room_Type_ID=room_type,
-            Bed_Type_ID=bed_type,
+            Room_Type_ID=room_type_id,
+            Bed_Type_ID=bed_type_id,
             Room_Telephone=tele_no,
             Max_Adult_Occupy=max_adult,
             Max_Child_Occupy=max_child,
+
             Room_Booking_status=CommonWords.AVAILABLE,
             Room_Working_status=CommonWords.WORK_STATUS,
             Room_Status=CommonWords.Room_Condition,
+
             Room_Image_1=img1,
             Room_Image_2=img2,
             Room_Image_3=img3,
             Room_Image_4=img4,
+
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -2006,30 +2106,74 @@ async def create_room(
         db.commit()
         db.refresh(room)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Room created successfully",
-            "data": room
+            "data": {
+                "id": room.id,
+                "room_no": room.Room_No,
+                "room_name": room.Room_Name,
+                "room_type_id": room.Room_Type_ID,
+                "bed_type_id": room.Bed_Type_ID,
+                "company_id": room.company_id,
+                "created_at": room.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ROOM BY ID
 # =====================================================
 @router.get("/room/{room_id}", status_code=status.HTTP_200_OK)
 def get_room_by_id(
+    request: Request,
     room_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        room = db.query(models.Room).filter(
-            models.Room.id == room_id,
-            models.Room.company_id == company_id,
-            models.Room.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if room_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid room_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH ROOM
+        # -------------------------------------------------
+        room = (
+            db.query(models.Room)
+            .filter(
+                models.Room.id == room_id,
+                models.Room.company_id == company_id,
+                models.Room.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not room:
             raise HTTPException(
@@ -2037,42 +2181,111 @@ def get_room_by_id(
                 detail="Room not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": room
+            "data": {
+                "id": room.id,
+                "room_no": room.Room_No,
+                "room_name": room.Room_Name,
+                "room_type_id": room.Room_Type_ID,
+                "bed_type_id": room.Bed_Type_ID,
+                "room_telephone": room.Room_Telephone,
+                "max_adult": room.Max_Adult_Occupy,
+                "max_child": room.Max_Child_Occupy,
+                "booking_status": room.Room_Booking_status,
+                "working_status": room.Room_Working_status,
+                "room_status": room.Room_Status,
+                "images": {
+                    "image_1": room.Room_Image_1,
+                    "image_2": room.Room_Image_2,
+                    "image_3": room.Room_Image_3,
+                    "image_4": room.Room_Image_4,
+                },
+                "company_id": room.company_id,
+                "created_by": room.created_by,
+                "created_at": room.created_at,
+                "updated_at": room.updated_at,
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE ROOM
 # =====================================================
 @router.put("/room", status_code=status.HTTP_200_OK)
 async def update_room(
-    room_id: int,
-    room_no: str,
-    room_name: str,
-    room_type: str,
-    bed_type: str,
-    tele_no: str,
-    max_adult: str,
-    max_child: str,
-    room_condition: str,
-    company_id: str,
+    request: Request,
+
+    # -------- FORM FIELDS --------
+    room_id: int = Form(...),
+    room_no: str = Form(...),
+    room_name: str = Form(...),
+    room_type_id: int = Form(...),
+    bed_type_id: int = Form(...),
+    tele_no: str = Form(None),
+    max_adult: int = Form(...),
+    max_child: int = Form(...),
+    room_condition: str = Form(...),
+
+    # -------- OPTIONAL IMAGES --------
     image_1: Optional[UploadFile] = File(None),
     image_2: Optional[UploadFile] = File(None),
     image_3: Optional[UploadFile] = File(None),
     image_4: Optional[UploadFile] = File(None),
+
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        duplicate = db.query(models.Room).filter(
-            models.Room.id != room_id,
-            models.Room.Room_No == room_no,
-            models.Room.company_id == company_id,
-            models.Room.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if room_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid room_id"
+            )
+
+        if max_adult < 0 or max_child < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="max_adult and max_child must be non-negative"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE ROOM NO CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Room)
+            .filter(
+                models.Room.id != room_id,
+                models.Room.Room_No == room_no,
+                models.Room.company_id == company_id,
+                models.Room.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -2080,11 +2293,18 @@ async def update_room(
                 detail="Room number already exists"
             )
 
-        room = db.query(models.Room).filter(
-            models.Room.id == room_id,
-            models.Room.company_id == company_id,
-            models.Room.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH ROOM
+        # -------------------------------------------------
+        room = (
+            db.query(models.Room)
+            .filter(
+                models.Room.id == room_id,
+                models.Room.company_id == company_id,
+                models.Room.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not room:
             raise HTTPException(
@@ -2092,59 +2312,114 @@ async def update_room(
                 detail="Room not found"
             )
 
-        def replace_image(file: UploadFile, old_name: str):
-            ext = file.content_type.split("/")[-1]
-            filename = f"{old_name.split('.')[0]}.{ext}"
+        # -------------------------------------------------
+        # IMAGE SAVE / REPLACE HELPER
+        # -------------------------------------------------
+        def save_or_replace_image(file: UploadFile, old_name: str | None):
+            ext = file.filename.split(".")[-1]
+            filename = (
+                f"{uuid.uuid4()}.{ext}"
+                if not old_name
+                else f"{old_name.split('.')[0]}.{ext}"
+            )
             filepath = os.path.join(UPLOAD_PATH, filename)
             with open(filepath, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
             return filename
 
         if image_1:
-            room.Room_Image_1 = replace_image(image_1, room.Room_Image_1)
+            room.Room_Image_1 = save_or_replace_image(image_1, room.Room_Image_1)
         if image_2:
-            room.Room_Image_2 = replace_image(image_2, room.Room_Image_2)
+            room.Room_Image_2 = save_or_replace_image(image_2, room.Room_Image_2)
         if image_3:
-            room.Room_Image_3 = replace_image(image_3, room.Room_Image_3)
+            room.Room_Image_3 = save_or_replace_image(image_3, room.Room_Image_3)
         if image_4:
-            room.Room_Image_4 = replace_image(image_4, room.Room_Image_4)
+            room.Room_Image_4 = save_or_replace_image(image_4, room.Room_Image_4)
 
+        # -------------------------------------------------
+        # UPDATE ROOM DATA
+        # -------------------------------------------------
         room.Room_No = room_no
         room.Room_Name = room_name
-        room.Room_Type_ID = room_type
-        room.Bed_Type_ID = bed_type
+        room.Room_Type_ID = room_type_id
+        room.Bed_Type_ID = bed_type_id
         room.Room_Telephone = tele_no
         room.Max_Adult_Occupy = max_adult
         room.Max_Child_Occupy = max_child
         room.Room_Status = room_condition
+        room.updated_by = user_id
 
         db.commit()
         db.refresh(room)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Room updated successfully",
-            "data": room
+            "data": {
+                "id": room.id,
+                "room_no": room.Room_No,
+                "room_name": room.Room_Name,
+                "room_type_id": room.Room_Type_ID,
+                "bed_type_id": room.Bed_Type_ID,
+                "room_status": room.Room_Status,
+                "updated_at": room.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE ROOM (SOFT DELETE)
 # =====================================================
 @router.delete("/room/{room_id}", status_code=status.HTTP_200_OK)
 def delete_room(
+    request: Request,
     room_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        room = db.query(models.Room).filter(
-            models.Room.id == room_id,
-            models.Room.company_id == company_id,
-            models.Room.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if room_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid room_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH ROOM
+        # -------------------------------------------------
+        room = (
+            db.query(models.Room)
+            .filter(
+                models.Room.id == room_id,
+                models.Room.company_id == company_id,
+                models.Room.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not room:
             raise HTTPException(
@@ -2152,15 +2427,30 @@ def delete_room(
                 detail="Room not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         room.status = CommonWords.UNSTATUS
+        room.updated_by = user_id
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Room deleted successfully"
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL DISCOUNTS
