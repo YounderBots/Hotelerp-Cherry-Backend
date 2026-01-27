@@ -3936,7 +3936,7 @@ def get_country_currency(
         # FETCH DATA
         # -------------------------------------------------
         countries = (
-            db.query(models.Country_Courrency)
+            db.query(models.Country_Currency)   # ✅ FIXED
             .filter(
                 models.Country_Currency.company_id == company_id,
                 models.Country_Currency.status == CommonWords.STATUS
@@ -4001,7 +4001,7 @@ async def create_country_currency(
             )
 
         # -------------------------------------------------
-        # REQUEST BODY (SAFE)
+        # REQUEST BODY (SAFE PARSE)
         # -------------------------------------------------
         try:
             payload = await request.json()
@@ -4018,23 +4018,27 @@ async def create_country_currency(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not country_name or not country_name.strip():
+        if not country_name or not isinstance(country_name, str):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="country_name is required"
             )
 
-        if not currency_name or not currency_name.strip():
+        if not currency_name or not isinstance(currency_name, str):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="currency_name is required"
             )
 
-        if not symbol or not symbol.strip():
+        if not symbol or not isinstance(symbol, str):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="symbol is required"
             )
+
+        country_name = country_name.strip()
+        currency_name = currency_name.strip()
+        symbol = symbol.strip()
 
         # -------------------------------------------------
         # DUPLICATE CHECK
@@ -4043,7 +4047,7 @@ async def create_country_currency(
             db.query(models.Country_Currency)
             .filter(
                 func.lower(models.Country_Currency.Country_Name)
-                == country_name.strip().lower(),
+                == country_name.lower(),
                 models.Country_Currency.company_id == company_id,
                 models.Country_Currency.status == CommonWords.STATUS
             )
@@ -4057,12 +4061,12 @@ async def create_country_currency(
             )
 
         # -------------------------------------------------
-        # CREATE COUNTRY & CURRENCY
+        # CREATE
         # -------------------------------------------------
         country_currency = models.Country_Currency(
-            Country_Name=country_name.strip(),
-            Courrency_Name=currency_name.strip(),
-            Symbol=symbol.strip(),
+            Country_Name=country_name,
+            Currency_Name=currency_name,   # ✅ FIXED
+            Symbol=symbol,
             status=CommonWords.STATUS,
             created_by=user_id,
             company_id=company_id
@@ -4212,7 +4216,7 @@ async def update_country_currency(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not isinstance(country_id, int) or country_id <= 0:
+        if not country_id or country_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Valid country id is required"
@@ -4236,6 +4240,10 @@ async def update_country_currency(
                 detail="symbol is required"
             )
 
+        country_name = country_name.strip()
+        currency_name = currency_name.strip()
+        symbol = symbol.strip()
+
         # -------------------------------------------------
         # DUPLICATE CHECK
         # -------------------------------------------------
@@ -4244,7 +4252,7 @@ async def update_country_currency(
             .filter(
                 models.Country_Currency.id != country_id,
                 func.lower(models.Country_Currency.Country_Name)
-                == country_name.strip().lower(),
+                == country_name.lower(),
                 models.Country_Currency.company_id == company_id,
                 models.Country_Currency.status == CommonWords.STATUS
             )
@@ -4279,9 +4287,9 @@ async def update_country_currency(
         # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
-        country.Country_Name = country_name.strip()
-        country.Currency_Name = currency_name.strip()
-        country.Symbol = symbol.strip()
+        country.Country_Name = country_name
+        country.Currency_Name = currency_name
+        country.Symbol = symbol
         country.updated_by = user_id
 
         db.commit()
@@ -4305,11 +4313,9 @@ async def update_country_currency(
         }
 
     except HTTPException:
-        # ✅ Preserve correct HTTP errors
         raise
 
     except Exception as e:
-        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -4339,7 +4345,7 @@ def delete_country_currency(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not isinstance(country_id, int) or country_id <= 0:
+        if country_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Valid country id is required"
@@ -4369,6 +4375,7 @@ def delete_country_currency(
         # -------------------------------------------------
         country.status = CommonWords.UNSTATUS
         country.updated_by = user_id
+
         db.commit()
 
         # -------------------------------------------------
@@ -4385,11 +4392,9 @@ def delete_country_currency(
         }
 
     except HTTPException:
-        # ✅ Preserve correct HTTP errors
         raise
 
     except Exception as e:
-        # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
@@ -4642,6 +4647,7 @@ def get_room_complementries(
             {
                 "id": comp.id,
                 "complementry_name": comp.Complementry_Name,
+                "description": comp.Description,
                 "company_id": comp.company_id,
                 "created_by": comp.created_by,
                 "created_at": comp.created_at,
