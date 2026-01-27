@@ -1,14 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { UserPlus, X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const HallFloor = () => {
-  const [data, setData] = useState([
-    { id: 1, name: "Ground Floor" },
-    { id: 2, name: "First Floor" },
-    { id: 3, name: "Second Floor" },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -44,6 +41,48 @@ const HallFloor = () => {
     setViewData(null);
   };
 
+  const getHallFloor = async () => {
+    const AllFloor = await APICall.getT("/masterdata/hall_floor");
+    setData(AllFloor.data);
+  };
+
+  const createNewHall = async () => {
+  try {
+    await APICall.postT("/masterdata/hall_floor", {
+      hall_name: formData.name,
+    });
+    getFacilitiesData();
+  } catch (error) {
+        return error, "Create facility"
+  }
+};
+
+const updatedHallFloor = async () => {
+  try {
+    await APICall.putT("/masterdata/hall_floor", {
+      id: editId,
+      hall_name: formData.name,
+    });
+    getHallFloor();
+  } catch (error) {
+    return error, "Update Hall Floor"
+  }
+};
+
+const deleteHallFloor = async (id) => {
+  try {
+    await APICall.deleteT(`/masterdata/hall_floor/${id}`);
+    getHallFloor();
+  } catch (error) {
+     return error, "Delete Hall Floor";
+  }
+};
+
+   useEffect(() => {
+      getHallFloor();
+    }, []);
+
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -53,13 +92,10 @@ const HallFloor = () => {
     if (!formData.name.trim()) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updatedHallFloor();
+
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createNewHall();
     }
 
     closeModal();
@@ -67,12 +103,14 @@ const HallFloor = () => {
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+    name: row.hall_name,
+  });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deleteHallFloor(id);
   };
 
   /* ================= UI ================= */
@@ -93,7 +131,7 @@ const HallFloor = () => {
         }}
         columns={[
           {
-            key: "name",
+            key: "hall_name",
             title: "Hall Floor Name",
             align: "center",
           },
@@ -149,7 +187,7 @@ const HallFloor = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Hall Floor Name</label>
-                <input value={viewData.name} disabled />
+                <input value={formData.name} disabled />
               </div>
             </div>
 
