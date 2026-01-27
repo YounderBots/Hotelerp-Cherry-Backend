@@ -1466,11 +1466,24 @@ def delete_bed_type(
 # =====================================================
 @router.get("/hall_floor", status_code=status.HTTP_200_OK)
 def get_hall_floors(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH HALL / FLOOR DATA
+        # -------------------------------------------------
         halls = (
             db.query(models.TableHallNames)
             .filter(
@@ -1481,12 +1494,40 @@ def get_hall_floors(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE
+        # -------------------------------------------------
+        data = [
+            {
+                "id": hall.id,
+                "hall_name": hall.hall_name,
+                "company_id": hall.company_id,
+                "created_by": hall.created_by,
+                "created_at": hall.created_at,
+                "updated_at": hall.updated_at
+            }
+            for hall in halls
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": halls
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE HALL / FLOOR
@@ -1497,24 +1538,57 @@ async def create_hall_floor(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        hall_name = payload.get("hall_name")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
-
-        if not all([hall_name, company_id, created_by]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="hall_name, company_id and created_by are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        exists = db.query(models.TableHallNames).filter(
-            func.lower(models.TableHallNames.hall_name) == hall_name.lower(),
-            models.TableHallNames.company_id == company_id,
-            models.TableHallNames.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        hall_name = payload.get("hall_name", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not hall_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="hall_name is required"
+            )
+
+        if len(hall_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="hall_name must not exceed 100 characters"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK (CASE-INSENSITIVE)
+        # -------------------------------------------------
+        exists = (
+            db.query(models.TableHallNames)
+            .filter(
+                func.lower(models.TableHallNames.hall_name) == hall_name.lower(),
+                models.TableHallNames.company_id == company_id,
+                models.TableHallNames.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -1522,10 +1596,13 @@ async def create_hall_floor(
                 detail="Hall / Floor already exists"
             )
 
+        # -------------------------------------------------
+        # CREATE HALL / FLOOR
+        # -------------------------------------------------
         hall = models.TableHallNames(
             hall_name=hall_name,
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -1533,30 +1610,72 @@ async def create_hall_floor(
         db.commit()
         db.refresh(hall)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Hall / Floor created successfully",
-            "data": hall
+            "data": {
+                "id": hall.id,
+                "hall_name": hall.hall_name,
+                "company_id": hall.company_id,
+                "created_by": hall.created_by,
+                "created_at": hall.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
     
 # =====================================================
 # GET HALL / FLOOR BY ID
 # =====================================================
 @router.get("/hall_floor/{hall_id}", status_code=status.HTTP_200_OK)
 def get_hall_floor_by_id(
+    request: Request,
     hall_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        hall = db.query(models.TableHallNames).filter(
-            models.TableHallNames.id == hall_id,
-            models.TableHallNames.company_id == company_id,
-            models.TableHallNames.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if hall_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid hall_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH HALL / FLOOR
+        # -------------------------------------------------
+        hall = (
+            db.query(models.TableHallNames)
+            .filter(
+                models.TableHallNames.id == hall_id,
+                models.TableHallNames.company_id == company_id,
+                models.TableHallNames.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not hall:
             raise HTTPException(
@@ -1564,12 +1683,29 @@ def get_hall_floor_by_id(
                 detail="Hall / Floor not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": hall
+            "data": {
+                "id": hall.id,
+                "hall_name": hall.hall_name,
+                "company_id": hall.company_id,
+                "created_by": hall.created_by,
+                "created_at": hall.created_at,
+                "updated_at": hall.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE HALL / FLOOR
@@ -1580,25 +1716,65 @@ async def update_hall_floor(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        hall_id = payload.get("id")
-        hall_name = payload.get("hall_name")
-        company_id = payload.get("company_id")
-
-        if not all([hall_id, hall_name, company_id]):
+        if not company_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, hall_name and company_id are required"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        duplicate = db.query(models.TableHallNames).filter(
-            models.TableHallNames.id != hall_id,
-            func.lower(models.TableHallNames.hall_name) == hall_name.lower(),
-            models.TableHallNames.company_id == company_id,
-            models.TableHallNames.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
+
+        hall_id = payload.get("id")
+        hall_name = payload.get("hall_name", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not hall_id or not isinstance(hall_id, int) or hall_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid hall id is required"
+            )
+
+        if not hall_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="hall_name is required"
+            )
+
+        if len(hall_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="hall_name must not exceed 100 characters"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE NAME CHECK (CASE-INSENSITIVE)
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.TableHallNames)
+            .filter(
+                models.TableHallNames.id != hall_id,
+                func.lower(models.TableHallNames.hall_name) == hall_name.lower(),
+                models.TableHallNames.company_id == company_id,
+                models.TableHallNames.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -1606,11 +1782,18 @@ async def update_hall_floor(
                 detail="Hall / Floor name already exists"
             )
 
-        hall = db.query(models.TableHallNames).filter(
-            models.TableHallNames.id == hall_id,
-            models.TableHallNames.company_id == company_id,
-            models.TableHallNames.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH HALL / FLOOR
+        # -------------------------------------------------
+        hall = (
+            db.query(models.TableHallNames)
+            .filter(
+                models.TableHallNames.id == hall_id,
+                models.TableHallNames.company_id == company_id,
+                models.TableHallNames.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not hall:
             raise HTTPException(
@@ -1618,34 +1801,80 @@ async def update_hall_floor(
                 detail="Hall / Floor not found"
             )
 
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
         hall.hall_name = hall_name
+        hall.updated_by = user_id if hasattr(hall, "updated_by") else None
+
         db.commit()
         db.refresh(hall)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Hall / Floor updated successfully",
-            "data": hall
+            "data": {
+                "id": hall.id,
+                "hall_name": hall.hall_name,
+                "company_id": hall.company_id,
+                "updated_at": hall.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE HALL / FLOOR (SOFT DELETE)
 # =====================================================
 @router.delete("/hall_floor/{hall_id}", status_code=status.HTTP_200_OK)
 def delete_hall_floor(
+    request: Request,
     hall_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        hall = db.query(models.TableHallNames).filter(
-            models.TableHallNames.id == hall_id,
-            models.TableHallNames.company_id == company_id,
-            models.TableHallNames.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if hall_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid hall_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH HALL / FLOOR
+        # -------------------------------------------------
+        hall = (
+            db.query(models.TableHallNames)
+            .filter(
+                models.TableHallNames.id == hall_id,
+                models.TableHallNames.company_id == company_id,
+                models.TableHallNames.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not hall:
             raise HTTPException(
@@ -1653,15 +1882,30 @@ def delete_hall_floor(
                 detail="Hall / Floor not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         hall.status = CommonWords.UNSTATUS
+        hall.updated_by = user_id if hasattr(hall, "updated_by") else None
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Hall / Floor deleted successfully"
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL ROOMS
