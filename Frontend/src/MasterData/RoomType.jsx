@@ -1,265 +1,319 @@
-import React, { useState } from "react";
-import TableTemplate from "../stories/TableTemplate";
-import { UserPlus, X, Pencil, Trash2, Eye } from "lucide-react";
-import "../MasterData/MasterData.css";
+  import React, { useState,useEffect } from "react";
+  import TableTemplate from "../stories/TableTemplate";
+  import { UserPlus, X, Pencil, Trash2, Eye } from "lucide-react";
+  import "../MasterData/MasterData.css";
+  import APICall from "../APICalls/APICalls";
 
-const RoomType = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      roomType: "Deluxe",
-      complementary: "Yes",
-      roomCost: 3500,
-      extraBedCost: 800,
-      dailyRate: 3500,
-      weeklyRate: 22000,
-      bedOnlyRate: 3000,
-      bedBreakfastRate: 3800,
-      halfBoardRate: 4200,
-      fullBoardRate: 4800,
-    },
-    {
-      id: 2,
-      roomType: "Executive",
+  const RoomType = () => {
+    const [data, setData] = useState([]);
+
+    const [showModal, setShowModal] = useState(false);
+    const [showViewModal, setShowViewModal] = useState(false);
+    const [editId, setEditId] = useState(null);
+    const [viewData, setViewData] = useState(null);
+
+    const initialForm = {
+      roomType: "",
       complementary: "No",
-      roomCost: 4500,
-      extraBedCost: 1000,
-      dailyRate: 4500,
-      weeklyRate: 28000,
-      bedOnlyRate: 4000,
-      bedBreakfastRate: 4800,
-      halfBoardRate: 5200,
-      fullBoardRate: 5800,
-    },
-  ]);
+      roomCost: "",
+      extraBedCost: "",
+      dailyRate: "",
+      weeklyRate: "",
+      bedOnlyRate: "",
+      bedBreakfastRate: "",
+      halfBoardRate: "",
+      fullBoardRate: "",
+    };
 
-  const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
-  const [editId, setEditId] = useState(null);
-  const [viewData, setViewData] = useState(null);
+    const [formData, setFormData] = useState(initialForm);
 
-  const initialForm = {
-    roomType: "",
-    complementary: "No",
-    roomCost: "",
-    extraBedCost: "",
-    dailyRate: "",
-    weeklyRate: "",
-    bedOnlyRate: "",
-    bedBreakfastRate: "",
-    halfBoardRate: "",
-    fullBoardRate: "",
+    /* ================= HANDLERS ================= */
+
+  const getRoomTypes = async () => {
+    try {
+      const res = await APICall.getT("/masterdata/room_types");
+      setData(res.data.data||res.data||[]);
+    } catch (error) {
+      console.error("Get room types error", error);
+    }
   };
 
-  const [formData, setFormData] = useState(initialForm);
 
-  /* ================= HANDLERS ================= */
+  const createRoomType = async () => {
+    try {
+    await APICall.postT("/masterdata/room_types", {
+      type_name: formData.roomType,        
+      room_cost: formData.roomCost,
+      bed_cost: formData.extraBedCost,        
+      complementry: formData.complementary === "Yes",
+      daily_rate: formData.dailyRate,
+      weekly_rate: formData.weeklyRate,
+      bed_only_rate: formData.bedOnlyRate,
+      bed_breakfast_rate: formData.bedBreakfastRate,
+      half_board_rate: formData.halfBoardRate,
+      full_board_rate: formData.fullBoardRate,
+  });
 
-  const openAddModal = () => {
-    setEditId(null);
-    setFormData(initialForm);
-    setShowModal(true);
+      getRoomTypes();
+    } catch (error) {
+      console.error("Create room type error", error);
+    }
   };
 
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
+  const updateRoomType = async () => {
+    try {
+      await APICall.putT("/masterdata/room_types", {
+      id: editId,
+      type_name: formData.roomType,     
+      room_cost: formData.roomCost,
+      bed_cost: formData.extraBedCost,         
+      complementry: formData.complementary === "Yes",
+      daily_rate: formData.dailyRate,
+      weekly_rate: formData.weeklyRate,
+      bed_only_rate: formData.bedOnlyRate,
+      bed_breakfast_rate: formData.bedBreakfastRate,
+      half_board_rate: formData.halfBoardRate,
+      full_board_rate: formData.fullBoardRate
+
+      });
+      getRoomTypes();
+    } catch (error) {
+      console.error("Update room type error", error);
+    }
   };
 
-  const closeModal = () => {
-    setShowModal(false);
-    setEditId(null);
+  const deleteRoomType = async (id) => {
+    try {
+      await APICall.deleteT(`/masterdata/room_types/${id}`);
+      getRoomTypes();
+    } catch (error) {
+      console.error("Delete room type error", error);
+    }
   };
 
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
 
-  const handleSave = () => {
+    const openAddModal = () => {
+      setEditId(null);
+      setFormData(initialForm);
+      setShowModal(true);
+    };
+
+    const openViewModal = (row) => {
+      setViewData(row);
+      setShowViewModal(true);
+    };
+
+    const closeModal = () => {
+      setShowModal(false);
+      setEditId(null);
+    };
+
+    const closeViewModal = () => {
+      setShowViewModal(false);
+      setViewData(null);
+    };
+
+    const handleChange = (e) => {
+      const { name, value } = e.target;
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    };
+
+    const handleSave = async () => {
     if (!formData.roomType.trim()) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      await updateRoomType();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      await createRoomType();
     }
 
     closeModal();
   };
 
-  const handleEdit = (row) => {
+
+    const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+      roomType: row.room_type_name,       
+      roomCost: row.room_cost,
+      extraBedCost: row.bed_cost,              
+      complementary: row.complementry ? "Yes" : "No",
+      dailyRate: row.daily_rate,
+      weeklyRate: row.weekly_rate,
+      bedOnlyRate: row.bed_only_rate,
+      bedBreakfastRate: row.bed_breakfast_rate,
+      halfBoardRate: row.half_board_rate,
+      fullBoardRate: row.full_board_rate,
+    });
     setShowModal(true);
   };
 
-  const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    const handleDelete = (id) => {
+    if (window.confirm("Delete this room type?")) {
+      deleteRoomType(id);
+    }
   };
 
-  /* ================= UI ================= */
 
-  return (
-    <>
-      <TableTemplate
-        title="Room Type List"
-        hasActionButton
-        searchable
-        pagination
-        pageSize={4}
-        exportable
-        actionButton={{ 
-          label: "Add Room Type",
-          onClick: openAddModal,
-          size: "medium",
-          variant: "primary",
-        }}
-        columns={[
-          { key: "roomType", title: "Room Type", align: "center" },
-          { key: "roomCost", title: "Room Cost", align: "center" },
-          { key: "extraBedCost", title: "Extra Bed Cost", align: "center" },
-          {
-            key: "complementary",
-            title: "Complementary",
-            align: "center",
-            type: "badge",
-          },
-          { key: "dailyRate", title: "Daily Rate", align: "center" },
-          { key: "weeklyRate", title: "Weekly Rate", align: "center" },
-          {
-            key: "actions",
-            title: "Action",
-            align: "center",
-            type: "custom",
-            render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button
-                  className="table-action-btn view"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handleDelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ),
-          },
-        ]}
-        data={data}
-      />
+    useEffect(() => {
+    getRoomTypes();
+  }, []);
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>View Room Type</h3>
-              <button onClick={closeViewModal}>
-                <X size={18} />
-              </button>
-            </div>
 
-            <div className="modal-body grid view">
-              {Object.entries(viewData).map(
-                ([key, value]) =>
-                  key !== "id" && (
-                    <div className="form-group" key={key}>
-                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                      <input value={value} disabled />
-                    </div>
-                  )
-              )}
-            </div>
+    /* ================= UI ================= */
 
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Room Type" : "Add Room Type"}</h3>
-              <button onClick={closeModal}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body grid">
-              {[
-                ["Room Type", "roomType"],
-                ["Room Cost", "roomCost"],
-                ["Extra Bed Cost", "extraBedCost"],
-                ["Daily Rate", "dailyRate"],
-                ["Weekly Rate", "weeklyRate"],
-                ["Bed Only Rate", "bedOnlyRate"],
-                ["Bed & Breakfast Rate", "bedBreakfastRate"],
-                ["Half Board Rate", "halfBoardRate"],
-                ["Full Board Rate", "fullBoardRate"],
-              ].map(([label, name]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input
-                    type={name === "roomType" ? "text" : "number"}
-                    name={name}
-                    value={formData[name]}
-                    onChange={handleChange}
-                  />
+    return (
+      <>
+        <TableTemplate
+          title="Room Type List"
+          hasActionButton
+          searchable
+          pagination
+          pageSize={4}
+          exportable
+          actionButton={{ 
+            label: "Add Room Type",
+            onClick: openAddModal,
+            size: "medium",
+            variant: "primary",
+          }}
+          columns={[
+            { key: "room_type_name", title: "Room Type", align: "center" },
+            { key: "room_cost", title: "Room Cost", align: "center" },
+            { key: "bed_cost", title: "Extra Bed Cost", align: "center" },
+            {
+              key: "complementry",
+              title: "Complementary",
+              align: "center",
+              type: "badge",
+            },
+            { key: "daily_rate", title: "Daily Rate", align: "center" },
+            { key: "weekly_rate", title: "Weekly Rate", align: "center" },
+            {
+              key: "actions",
+              title: "Action",
+              align: "center",
+              type: "custom",
+              render: (row) => (
+                <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+                  <button
+                    className="table-action-btn view"
+                    onClick={() => openViewModal(row)}
+                  >
+                    <Eye size={16} />
+                  </button>
+                  <button
+                    className="table-action-btn edit"
+                    onClick={() => handleEdit(row)}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    className="table-action-btn delete"
+                    onClick={() => handleDelete(row.id)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
-              ))}
+              ),
+            },
+          ]}
+          data={data}
+        />
 
-              <div className="form-group">
-                <label>Complementary</label>
-                <select
-                  name="complementary"
-                  value={formData.complementary}
-                  onChange={handleChange}
-                >
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
+        {/* ================= VIEW MODAL ================= */}
+        {showViewModal && viewData && (
+          <div className="modal-overlay">
+            <div className="modal-card">
+              <div className="modal-header">
+                <h3>View Room Type</h3>
+                <button onClick={closeViewModal}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="modal-body grid view">
+                {Object.entries(viewData).map(
+                  ([key, value]) =>
+                    key !== "id" && (
+                      <div className="form-group" key={key}>
+                        <label>{key.replace(/([A-Z])/g, " $1")}</label>
+                        <input value={value} disabled />
+                      </div>
+                    )
+                )}
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn secondary" onClick={closeViewModal}>
+                  Close
+                </button>
               </div>
             </div>
+          </div>
+        )}
 
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
+        {/* ================= ADD / EDIT MODAL ================= */}
+        {showModal && (
+          <div className="modal-overlay">
+            <div className="modal-card">
+              <div className="modal-header">
+                <h3>{editId ? "Edit Room Type" : "Add Room Type"}</h3>
+                <button onClick={closeModal}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="modal-body grid">
+                {[
+                  ["Room Type", "roomType"],
+                  ["Room Cost", "roomCost"],
+                  ["Extra Bed Cost", "extraBedCost"],
+                  ["Daily Rate", "dailyRate"],
+                  ["Weekly Rate", "weeklyRate"],
+                  ["Bed Only Rate", "bedOnlyRate"],
+                  ["Bed & Breakfast Rate", "bedBreakfastRate"],
+                  ["Half Board Rate", "halfBoardRate"],
+                  ["Full Board Rate", "fullBoardRate"],
+                ].map(([label, name]) => (
+                  <div className="form-group" key={name}>
+                    <label>{label}</label>
+                    <input
+                      type={name === "roomType" ? "text" : "number"}
+                      name={name}
+                      value={formData[name]}
+                      onChange={handleChange}
+                    />
+                  </div>
+                ))}
+
+                <div className="form-group">
+                  <label>Complementary</label>
+                  <select
+                    name="complementary"
+                    value={formData.complementary}
+                    onChange={handleChange}
+                  >
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn secondary" onClick={closeModal}>
+                  Close
+                </button>
+                <button className="btn primary" onClick={handleSave}>
+                  Submit
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </>
-  );
-};
+        )}
+      </>
+    );
+  };
 
-export default RoomType;
+  export default RoomType;

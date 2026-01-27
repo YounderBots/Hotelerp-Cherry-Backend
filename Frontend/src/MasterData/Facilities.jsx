@@ -12,7 +12,6 @@ const Facilities = () => {
   const [facilityName, setFacilityName] = useState("");
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
-  const [delId, setDelId] = useState(null)
 
   /* -------------------- HANDLERS -------------------- */
 
@@ -44,53 +43,51 @@ const Facilities = () => {
   };
 
   const createNewFacility = async () => {
-  try {
-    await APICall.postT("/masterdata/facilities", {
-      facility_name: facilityName,
-    });
-    getFacilitiesData();
-  } catch (error) {
-        return error, "Create facility"
-  }
-};
+    try {
+      await APICall.postT("/masterdata/facilities", {
+        facility_name: facilityName,
+      });
+      getFacilitiesData();
+    } catch (error) {
+      return error, "Create facility"
+    }
+  };
 
 
-const updateNewFacility = async () => {
-  try {
-    await APICall.putT("/masterdata/facilities", {
-      id: editId,
-      facility_name: facilityName,
-    });
-    getFacilitiesData();
-  } catch (error) {
-    return error, "Update facility"
-  }
-};
+  const updateNewFacility = async () => {
+    try {
+      await APICall.putT("/masterdata/facilities", {
+        id: editId,
+        facility_name: facilityName,
+      });
+      getFacilitiesData();
+    } catch (error) {
+      return error, "Update facility"
+    }
+  };
 
 
-const deleteFacility = async (id) => {
-  try {
-    await APICall.deleteT(`/masterdata/facilities/${id}`);
-    getFacilitiesData();
-  } catch (error) {
-     return error, "Delete facility";
-  }
-};
+  const deleteFacility = async (id) => {
+    try {
+      await APICall.deleteT(`/masterdata/facilities/${id}`);
+      getFacilitiesData();
+    } catch (error) {
+      return error, "Delete facility";
+    }
+  };
 
 
-const handleSave = async () => {
-  if (!facilityName.trim()) return;
+  const handleSave = async () => {
+    if (!facilityName.trim()) return;
 
-  if (editId) {
-    await updateNewFacility();
-  } else {
-    await createNewFacility();
-  }
+    if (editId) {
+      await updateNewFacility();
+    } else {
+      await createNewFacility();
+    }
 
-  closeModal();
-};
-
-
+    closeModal();
+  };
 
   const handleEdit = (row) => {
     setFacilityName(row.facility_name);
