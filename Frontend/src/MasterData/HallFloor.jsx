@@ -51,7 +51,7 @@ const HallFloor = () => {
     await APICall.postT("/masterdata/hall_floor", {
       hall_name: formData.name,
     });
-    getFacilitiesData();
+    getHallFloor();
   } catch (error) {
         return error, "Create facility"
   }

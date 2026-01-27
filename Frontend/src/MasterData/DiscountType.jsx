@@ -1,23 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const DiscountType = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      discountCountry: "India",
-      discountName: "Festival Offer",
-      discountPercentage: 10,
-    },
-    {
-      id: 2,
-      discountCountry: "UAE",
-      discountName: "Seasonal Discount",
-      discountPercentage: 15,
-    },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -55,6 +43,52 @@ const DiscountType = () => {
     setViewData(null);
   };
 
+  const getDiscountType = async () => {
+    const AllDiscount = await APICall.getT("/masterdata/discount")
+    setData(AllDiscount.data)
+  }
+
+  const createDiscount = async () =>{
+    try{
+      await APICall.postT("/masterdata/discount",{
+      country_id : formData.discountCountry,
+      discount_name : formData.discountName,
+      discount_percentage : formData.discountPercentage,
+    });
+    getDiscountType();
+    } catch (error){
+      return error ,"Create Discount"
+    }
+  }
+
+  const updatedDiscount = async () =>{
+    try{
+      await APICall.putT("/masterdata/discount",{
+        id: editId,
+        country_id : formData.discountCountry,
+        discount_name: formData.discountName,
+        discount_percentage: formData.discountPercentage
+      });
+      getDiscountType();
+    }catch(error){
+      return error,"Update Discount"
+    }
+  };
+
+  const deleteDiscount = async (id) =>{
+    try{
+    await APICall.deleteT(`/masterdata/discount/${id}`);
+    getDiscountType();
+    } catch (error) {
+      return error,"Delete discount"
+    }
+  };
+
+  useEffect(()=>{
+    getDiscountType();
+  },[]);
+
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -69,13 +103,9 @@ const DiscountType = () => {
       return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updatedDiscount();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createDiscount();
     }
 
     closeModal();
@@ -83,12 +113,16 @@ const DiscountType = () => {
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+      discountCountry:row.country_id,
+      discountName:row.discount_name,
+      discountPercentage:row.discount_percentage,
+    });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deleteDiscount(id);
   };
 
   /* ================= UI ================= */
@@ -109,17 +143,17 @@ const DiscountType = () => {
         }}
         columns={[
           {
-            key: "discountCountry",
+            key: "country_id",
             title: "Discount Country",
             align: "center",
           },
           {
-            key: "discountName",
+            key: "discount_name",
             title: "Discount Name",
             align: "center",
           },
           {
-            key: "discountPercentage",
+            key: "discount_percentage",
             title: "Discount Percentage (%)",
             align: "center",
           },
@@ -175,17 +209,17 @@ const DiscountType = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Discount Country</label>
-                <input value={viewData.discountCountry} disabled />
+                <input value={viewData.country_id} disabled />
               </div>
 
               <div className="form-group">
                 <label>Discount Name</label>
-                <input value={viewData.discountName} disabled />
+                <input value={viewData.discount_name} disabled />
               </div>
 
               <div className="form-group">
                 <label>Discount Percentage</label>
-                <input value={viewData.discountPercentage} disabled />
+                <input value={viewData.discount_percentage} disabled />
               </div>
             </div>
 
