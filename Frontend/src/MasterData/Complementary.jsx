@@ -52,7 +52,6 @@ const Complementary = () => {
   const getAllData = async () => {
     const AllData = await APICall.getT("/masterdata/complementry");
     setData(AllData.data);
-
   }
 
   const createComplementary = async () => {
