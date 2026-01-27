@@ -1,28 +1,17 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const TaxTypes = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      taxCountry: "India",
-      taxName: "GST",
-      taxPercentage: 18,
-    },
-    {
-      id: 2,
-      taxCountry: "UAE",
-      taxName: "VAT",
-      taxPercentage: 5,
-    },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const[taxcountry,setTaxNewCountry]= useState([])
 
   const initialForm = {
     taxCountry: "",
@@ -55,37 +44,90 @@ const TaxTypes = () => {
     setViewData(null);
   };
 
+const getCountry = async () => {
+  try {
+    const res = await APICall.getT("/masterdata/country_currency")
+
+    setTaxNewCountry(res.data);
+
+  } catch (error) {
+    console.error("Get country error", error);
+  }
+};
+
+
+  const getTax = async () => {
+  const res = await APICall.getT("/masterdata/tax");
+  setData(Array.isArray(res.data) ? res.data : res.data?.data || []);
+};
+
+  const createTax = async () => {
+  await APICall.postT("/masterdata/tax", {
+    country_id: Number(formData.taxCountry), // ensure number
+    tax_name: formData.taxName,
+    tax_percentage: Number(formData.taxPercentage),
+  });
+};
+
+const updateTax = async () => {
+  await APICall.putT("/masterdata/tax", {
+    id: editId,
+    country_id: Number(formData.taxCountry),
+    tax_name: formData.taxName,
+    tax_percentage: Number(formData.taxPercentage),
+  });
+};
+
+const deleteTax = async (id) => {
+  await APICall.deleteT(`/masterdata/tax/${id}`);
+};
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = () => {
+  const handleSave = async() => {
     if (!formData.taxCountry || !formData.taxName || !formData.taxPercentage)
       return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updateTax();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      await createTax();
     }
+    await getTax();
 
     closeModal();
   };
 
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData(row);
-    setShowModal(true);
+ const handleEdit = (row) => {
+  setEditId(row.id);
+  setFormData({
+    taxCountry: row.country_id,
+    taxName: row.tax_name,
+    taxPercentage: row.tax_percentage,
+  });
+  setShowModal(true);
+};
+
+
+const countryMap = taxcountry.reduce((map, c) => {
+  map[c.id] = c.country_name;
+  return map;
+}, {});
+
+
+
+  const handleDelete = async (id) => {
+    await deleteTax(id);
+    await getTax();
   };
 
-  const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
-  };
+  useEffect(()=>{
+    getTax();
+    getCountry();
+  },[]);
 
   /* ================= UI ================= */
 
@@ -105,17 +147,20 @@ const TaxTypes = () => {
         }}
         columns={[
           {
-            key: "taxCountry",
+            key: "country_id",
             title: "Tax Country",
             align: "center",
+            type: "custom",
+            render: (row) => countryMap[row.country_id] || "—",
           },
+
           {
-            key: "taxName",
+            key: "tax_name",
             title: "Tax Name",
             align: "center",
           },
           {
-            key: "taxPercentage",
+            key: "tax_percentage",
             title: "Tax Percentage (%)",
             align: "center",
           },
@@ -156,6 +201,7 @@ const TaxTypes = () => {
         ]}
         data={data}
       />
+      <p>Countries loaded: {taxcountry.length}</p>
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
@@ -171,17 +217,17 @@ const TaxTypes = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Tax Country</label>
-                <input value={viewData.taxCountry} disabled />
+                <input value={countryMap[viewData.country_id]} disabled />
               </div>
 
               <div className="form-group">
                 <label>Tax Name</label>
-                <input value={viewData.taxName} disabled />
+                <input value={viewData.tax_name} disabled />
               </div>
 
               <div className="form-group">
                 <label>Tax Percentage</label>
-                <input value={viewData.taxPercentage} disabled />
+                <input value={viewData.tax_percentage} disabled />
               </div>
             </div>
 
@@ -208,11 +254,16 @@ const TaxTypes = () => {
             <div className="modal-body single">
               <div className="form-group">
                 <label>Country Name</label>
-                <input
+                <select
                   name="taxCountry"
                   value={formData.taxCountry}
                   onChange={handleChange}
-                />
+                >
+                   <option value="">Select Country</option>
+                  {taxcountry.map((e)=>(
+                    <option key={e.id} value={e.id}>{e.country_name}</option>
+                  ))}
+                  </select>
               </div>
 
               <div className="form-group">
