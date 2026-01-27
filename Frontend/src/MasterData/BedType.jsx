@@ -1,31 +1,25 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { UserPlus, X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const BedType = () => {
-  const [data, setData] = useState([
-    { id: 1, bedType: "Single Bed" },
-    { id: 2, bedType: "Double Bed" },
-    { id: 3, bedType: "King Size Bed" },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [bedName, setbedNmae] = useState("")
 
-  const initialForm = {
-    bedType: "",
-  };
 
-  const [formData, setFormData] = useState(initialForm);
 
   /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
     setEditId(null);
-    setFormData(initialForm);
+    setbedNmae("");
     setShowModal(true);
   };
 
@@ -35,6 +29,7 @@ const BedType = () => {
   };
 
   const closeModal = () => {
+    setbedNmae("")
     setShowModal(false);
     setEditId(null);
   };
@@ -44,35 +39,71 @@ const BedType = () => {
     setViewData(null);
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
 
-  const handleSave = () => {
-    if (!formData.bedType.trim()) return;
+  const getBedData = async () => {
+    const AllBedData = await APICall.getT("/masterdata/bed_types");
+    setData(AllBedData.data);
+  }
+
+  const createBedType = async () => {
+    try {
+      await APICall.postT("/masterdata/bed_type", {
+        bed_type: bedName
+      });
+      getBedData();
+    }
+    catch (error) {
+      return error, " to create a BedType";
+    }
+  }
+
+  const updateBedType = async () => {
+    try {
+      await APICall.putT("/masterdata/bed_type", {
+        id: editId,
+        bed_type: bedName
+      })
+      getBedData();
+    }
+    catch (error) {
+      return error, "to update bedType"
+    }
+  }
+
+  const deleteBedType = async (id) => {
+    try {
+      await APICall.deleteT(`/masterdata/bed_type/${id}`)
+      getBedData();
+    }
+    catch (error) {
+      return error, "to Delete BedType"
+    }
+  }
+
+  useEffect(() => {
+    getBedData();
+  }, []);
+
+  const handleSave = async () => {
+    if (!bedName.trim()) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updateBedType();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      await createBedType();
     }
 
     closeModal();
   };
 
   const handleEdit = (row) => {
+    setbedNmae(row.bed_type_name)
     setEditId(row.id);
-    setFormData(row);
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deleteBedType(id);
   };
 
   /* ================= UI ================= */
@@ -93,7 +124,7 @@ const BedType = () => {
         }}
         columns={[
           {
-            key: "bedType",
+            key: "bed_type_name",
             title: "Bed Type",
             align: "center",
           },
@@ -149,7 +180,7 @@ const BedType = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Bed Type</label>
-                <input value={viewData.bedType} disabled />
+                <input value={viewData.bed_type_name} disabled />
               </div>
             </div>
 
@@ -179,8 +210,8 @@ const BedType = () => {
                 <input
                   type="text"
                   name="bedType"
-                  value={formData.bedType}
-                  onChange={handleChange}
+                  value={bedName}
+                  onChange={(e) => setbedNmae(e.target.value)}
                 />
               </div>
             </div>
