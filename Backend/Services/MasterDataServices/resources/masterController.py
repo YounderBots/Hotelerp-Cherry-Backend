@@ -3982,11 +3982,24 @@ def delete_task_type(
 # =====================================================
 @router.get("/complementry", status_code=status.HTTP_200_OK)
 def get_room_complementries(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH COMPLEMENTARIES
+        # -------------------------------------------------
         complementries = (
             db.query(models.Room_Complementry)
             .filter(
@@ -3997,12 +4010,40 @@ def get_room_complementries(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE
+        # -------------------------------------------------
+        data = [
+            {
+                "id": comp.id,
+                "complementry_name": comp.Complementry_Name,
+                "company_id": comp.company_id,
+                "created_by": comp.created_by,
+                "created_at": comp.created_at,
+                "updated_at": comp.updated_at
+            }
+            for comp in complementries
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": complementries
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP status codes
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE ROOM COMPLEMENTARY
@@ -4013,37 +4054,74 @@ async def create_room_complementry(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE PARSE)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         complementry_name = payload.get("complementry_name")
         description = payload.get("description")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
 
-        if not all([complementry_name, description, company_id, created_by]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not complementry_name or not complementry_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="complementry_name, description, company_id and created_by are required"
+                detail="complementry_name is required"
             )
 
-        exists = db.query(models.Room_Complementry).filter(
-            func.lower(models.Room_Complementry.Complementry_Name) == complementry_name.lower(),
-            models.Room_Complementry.company_id == company_id,
-            models.Room_Complementry.status == CommonWords.STATUS
-        ).first()
+        if not description or not description.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="description is required"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Room_Complementry)
+            .filter(
+                func.lower(models.Room_Complementry.Complementry_Name)
+                == complementry_name.strip().lower(),
+                models.Room_Complementry.company_id == company_id,
+                models.Room_Complementry.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Room complementry already exists"
+                detail="Room complementary already exists"
             )
 
+        # -------------------------------------------------
+        # CREATE COMPLEMENTARY
+        # -------------------------------------------------
         complementry = models.Room_Complementry(
-            Complementry_Name=complementry_name,
-            Description=description,
+            Complementry_Name=complementry_name.strip(),
+            Description=description.strip(),
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -4051,43 +4129,108 @@ async def create_room_complementry(
         db.commit()
         db.refresh(complementry)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Room complementry created successfully",
-            "data": complementry
+            "message": "Room complementary created successfully",
+            "data": {
+                "id": complementry.id,
+                "complementry_name": complementry.Complementry_Name,
+                "description": complementry.Description,
+                "company_id": complementry.company_id,
+                "created_by": complementry.created_by,
+                "created_at": complementry.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve real HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ROOM COMPLEMENTARY BY ID
 # =====================================================
 @router.get("/complementry/{complementry_id}", status_code=status.HTTP_200_OK)
 def get_room_complementry_by_id(
+    request: Request,
     complementry_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        complementry = db.query(models.Room_Complementry).filter(
-            models.Room_Complementry.id == complementry_id,
-            models.Room_Complementry.company_id == company_id,
-            models.Room_Complementry.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(complementry_id, int) or complementry_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid complementry id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH COMPLEMENTARY
+        # -------------------------------------------------
+        complementry = (
+            db.query(models.Room_Complementry)
+            .filter(
+                models.Room_Complementry.id == complementry_id,
+                models.Room_Complementry.company_id == company_id,
+                models.Room_Complementry.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not complementry:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Room complementry not found"
+                detail="Room complementary not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": complementry
+            "data": {
+                "id": complementry.id,
+                "complementry_name": complementry.Complementry_Name,
+                "description": complementry.Description,
+                "company_id": complementry.company_id,
+                "created_by": complementry.created_by,
+                "created_at": complementry.created_at,
+                "updated_at": complementry.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve real HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE ROOM COMPLEMENTARY
@@ -4098,91 +4241,210 @@ async def update_room_complementry(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE PARSE)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         complementry_id = payload.get("id")
         complementry_name = payload.get("complementry_name")
         description = payload.get("description")
-        company_id = payload.get("company_id")
 
-        if not all([complementry_id, complementry_name, description, company_id]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(complementry_id, int) or complementry_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, complementry_name, description and company_id are required"
+                detail="Valid complementry id is required"
             )
 
-        duplicate = db.query(models.Room_Complementry).filter(
-            models.Room_Complementry.id != complementry_id,
-            func.lower(models.Room_Complementry.Complementry_Name) == complementry_name.lower(),
-            models.Room_Complementry.company_id == company_id,
-            models.Room_Complementry.status == CommonWords.STATUS
-        ).first()
+        if not complementry_name or not complementry_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="complementry_name is required"
+            )
+
+        if not description or not description.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="description is required"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Room_Complementry)
+            .filter(
+                models.Room_Complementry.id != complementry_id,
+                func.lower(models.Room_Complementry.Complementry_Name)
+                == complementry_name.strip().lower(),
+                models.Room_Complementry.company_id == company_id,
+                models.Room_Complementry.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Room complementry already exists"
+                detail="Room complementary already exists"
             )
 
-        complementry = db.query(models.Room_Complementry).filter(
-            models.Room_Complementry.id == complementry_id,
-            models.Room_Complementry.company_id == company_id,
-            models.Room_Complementry.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH COMPLEMENTARY
+        # -------------------------------------------------
+        complementry = (
+            db.query(models.Room_Complementry)
+            .filter(
+                models.Room_Complementry.id == complementry_id,
+                models.Room_Complementry.company_id == company_id,
+                models.Room_Complementry.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not complementry:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Room complementry not found"
+                detail="Room complementary not found"
             )
 
-        complementry.Complementry_Name = complementry_name
-        complementry.Description = description
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
+        complementry.Complementry_Name = complementry_name.strip()
+        complementry.Description = description.strip()
+        complementry.updated_by = user_id
 
         db.commit()
         db.refresh(complementry)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Room complementry updated successfully",
-            "data": complementry
+            "message": "Room complementary updated successfully",
+            "data": {
+                "id": complementry.id,
+                "complementry_name": complementry.Complementry_Name,
+                "description": complementry.Description,
+                "company_id": complementry.company_id,
+                "updated_by": complementry.updated_by,
+                "updated_at": complementry.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE ROOM COMPLEMENTARY (SOFT DELETE)
 # =====================================================
 @router.delete("/complementry/{complementry_id}", status_code=status.HTTP_200_OK)
 def delete_room_complementry(
+    request: Request,
     complementry_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        complementry = db.query(models.Room_Complementry).filter(
-            models.Room_Complementry.id == complementry_id,
-            models.Room_Complementry.company_id == company_id,
-            models.Room_Complementry.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(complementry_id, int) or complementry_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid complementry id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH COMPLEMENTARY
+        # -------------------------------------------------
+        complementry = (
+            db.query(models.Room_Complementry)
+            .filter(
+                models.Room_Complementry.id == complementry_id,
+                models.Room_Complementry.company_id == company_id,
+                models.Room_Complementry.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not complementry:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Room complementry not found"
+                detail="Room complementary not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         complementry.status = CommonWords.UNSTATUS
+        complementry.updated_by = user_id
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Room complementry deleted successfully"
+            "message": "Room complementary deleted successfully",
+            "data": {
+                "id": complementry.id,
+                "complementry_name": complementry.Complementry_Name,
+                "company_id": complementry.company_id
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL RESERVATION STATUSES
