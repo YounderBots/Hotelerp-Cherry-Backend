@@ -1,23 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const CurrencyCountry = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      countryName: "India",
-      currencySymbol: "₹",
-      currencyName: "Indian Rupee",
-    },
-    {
-      id: 2,
-      countryName: "United States",
-      currencySymbol: "$",
-      currencyName: "US Dollar",
-    },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -55,6 +43,47 @@ const CurrencyCountry = () => {
     setViewData(null);
   };
 
+  const getCurrency = async () =>{
+    const AllCurrency = await APICall.getT("/masterdata/country_currency")
+    setData(AllCurrency.data)
+  }
+
+  const createCurrency = async () =>{
+    try{
+      await APICall.postT("/masterdata/country_currency",{
+        country_name:formData.countryName,
+        symbol:formData.currencySymbol,
+        currency_name:formData.currencyName,
+      });
+      getCurrency();
+    } catch(error){
+      return error,"Create Currency"
+    }
+  };
+
+  const updatedCurrency = async ()=>{
+    try{
+      await APICall.putT("/masterdata/country_currency",{
+        id:editId,
+        country_name:formData.countryName,
+        symbol:formData.currencySymbol,
+        currency_name:formData.countryName
+      });
+      getCurrency();
+    }catch(error){
+      return error
+    }
+  };
+  
+  const deleteCurrency = async (id) =>{
+    try{
+      await APICall.deleteT(`/masterdata/country_currency/${id}`)
+      getCurrency();
+    } catch(error){
+      return error;
+    }
+  }
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -69,26 +98,30 @@ const CurrencyCountry = () => {
       return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updatedCurrency();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createCurrency();
     }
 
     closeModal();
   };
+  
+  useEffect(()=>{
+    getCurrency();
+  },[]);
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+      countryName:row.country_name,
+      currencySymbol:row.symbol,
+      currencyName:row.currency_name
+    });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deleteCurrency(id);
   };
 
   /* ================= UI ================= */
@@ -109,17 +142,17 @@ const CurrencyCountry = () => {
         }}
         columns={[
           {
-            key: "countryName",
+            key: "country_name",
             title: "Country Name",
             align: "center",
           },
           {
-            key: "currencySymbol",
+            key: "symbol",
             title: "Currency Symbol",
             align: "center",
           },
           {
-            key: "currencyName",
+            key: "currency_name",
             title: "Currency Name",
             align: "center",
           },
@@ -175,17 +208,17 @@ const CurrencyCountry = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Country Name</label>
-                <input value={viewData.countryName} disabled />
+                <input value={viewData.country_name} disabled />
               </div>
 
               <div className="form-group">
                 <label>Currency Symbol</label>
-                <input value={viewData.currencySymbol} disabled />
+                <input value={viewData.symbol} disabled />
               </div>
 
               <div className="form-group">
                 <label>Currency Name</label>
-                <input value={viewData.currencyName} disabled />
+                <input value={viewData.currency_name} disabled />
               </div>
             </div>
 
