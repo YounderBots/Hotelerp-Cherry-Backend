@@ -2947,27 +2947,78 @@ def delete_discount(
 # =====================================================
 @router.get("/tax", status_code=status.HTTP_200_OK)
 def get_taxes(
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH TAX TYPES + COUNTRY
+        # -------------------------------------------------
         taxes = (
-            db.query(models.Tax_type)
+            db.query(
+                models.Tax_type,
+                models.Country_Courrency.Country_Name
+            )
+            .join(
+                models.Country_Courrency,
+                models.Country_Courrency.id
+                == models.Tax_type.Country_ID
+            )
             .filter(
                 models.Tax_type.company_id == company_id,
-                models.Tax_type.status == CommonWords.STATUS
+                models.Tax_type.status == CommonWords.STATUS,
+                models.Country_Courrency.status == CommonWords.STATUS
             )
             .order_by(models.Tax_type.id.desc())
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE
+        # -------------------------------------------------
+        data = [
+            {
+                "id": tax.id,
+                "country_id": tax.Country_ID,
+                "country_name": country_name,
+                "tax_name": tax.Tax_Name,
+                "tax_percentage": tax.Tax_Percentage,
+                "company_id": tax.company_id,
+                "created_by": tax.created_by,
+                "created_at": tax.created_at,
+                "updated_at": tax.updated_at
+            }
+            for tax, country_name in taxes
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": taxes
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE TAX
@@ -2978,27 +3029,100 @@ async def create_tax(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         country_id = payload.get("country_id")
         tax_name = payload.get("tax_name")
         tax_percentage = payload.get("tax_percentage")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
 
-        if not all([country_id, tax_name, tax_percentage, company_id, created_by]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(country_id, int) or country_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="country_id, tax_name, tax_percentage, company_id, created_by are required"
+                detail="Valid country_id is required"
             )
 
-        exists = db.query(models.Tax_type).filter(
-            func.lower(models.Tax_type.Country_ID) == country_id.lower(),
-            func.lower(models.Tax_type.Tax_Name) == tax_name.lower(),
-            models.Tax_type.company_id == company_id,
-            models.Tax_type.status == CommonWords.STATUS
-        ).first()
+        if not tax_name or not tax_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_name is required"
+            )
+
+        if tax_percentage is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_percentage is required"
+            )
+
+        try:
+            tax_percentage = float(tax_percentage)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_percentage must be a number"
+            )
+
+        if not (0 < tax_percentage <= 100):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_percentage must be between 1 and 100"
+            )
+
+        # -------------------------------------------------
+        # FETCH COUNTRY (MANDATORY)
+        # -------------------------------------------------
+        country = (
+            db.query(models.Country_Courrency)
+            .filter(
+                models.Country_Courrency.id == country_id,
+                models.Country_Courrency.company_id == company_id,
+                models.Country_Courrency.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if not country:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Country not found or inactive"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK (COUNTRY + TAX NAME)
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Tax_type)
+            .filter(
+                models.Tax_type.Country_ID == str(country.id),
+                func.lower(models.Tax_type.Tax_Name)
+                == tax_name.strip().lower(),
+                models.Tax_type.company_id == company_id,
+                models.Tax_type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -3006,12 +3130,15 @@ async def create_tax(
                 detail="Tax already exists for this country"
             )
 
+        # -------------------------------------------------
+        # CREATE TAX
+        # -------------------------------------------------
         tax = models.Tax_type(
-            Country_ID=country_id,
-            Tax_Name=tax_name,
-            Tax_Percentage=tax_percentage,
+            Country_ID=str(country.id),   # 🔥 FK stored safely
+            Tax_Name=tax_name.strip(),
+            Tax_Percentage=str(tax_percentage),
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
@@ -3019,13 +3146,32 @@ async def create_tax(
         db.commit()
         db.refresh(tax)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Tax created successfully",
-            "data": tax
+            "data": {
+                "id": tax.id,
+                "country_id": country.id,
+                "country_name": country.Country_Name,
+                "tax_name": tax.Tax_Name,
+                "tax_percentage": tax.Tax_Percentage,
+                "company_id": tax.company_id,
+                "created_by": tax.created_by,
+                "created_at": tax.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET TAX BY ID
@@ -3033,29 +3179,88 @@ async def create_tax(
 @router.get("/tax/{tax_id}", status_code=status.HTTP_200_OK)
 def get_tax_by_id(
     tax_id: int,
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        tax = db.query(models.Tax_type).filter(
-            models.Tax_type.id == tax_id,
-            models.Tax_type.company_id == company_id,
-            models.Tax_type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        if not tax:
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if tax_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid tax id"
+            )
+
+        # -------------------------------------------------
+        # FETCH TAX + COUNTRY
+        # -------------------------------------------------
+        result = (
+            db.query(
+                models.Tax_type,
+                models.Country_Courrency.Country_Name
+            )
+            .join(
+                models.Country_Courrency,
+                models.Country_Courrency.id
+                == models.Tax_type.Country_ID
+            )
+            .filter(
+                models.Tax_type.id == tax_id,
+                models.Tax_type.company_id == company_id,
+                models.Tax_type.status == CommonWords.STATUS,
+                models.Country_Courrency.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Tax not found"
             )
 
+        tax, country_name = result
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": tax
+            "data": {
+                "id": tax.id,
+                "country_id": tax.Country_ID,
+                "country_name": country_name,
+                "tax_name": tax.Tax_Name,
+                "tax_percentage": tax.Tax_Percentage,
+                "company_id": tax.company_id,
+                "created_by": tax.created_by,
+                "created_at": tax.created_at,
+                "updated_at": tax.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Expected errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )   
 
 # =====================================================
 # UPDATE TAX
@@ -3066,28 +3271,107 @@ async def update_tax(
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         tax_id = payload.get("id")
         country_id = payload.get("country_id")
         tax_name = payload.get("tax_name")
         tax_percentage = payload.get("tax_percentage")
-        company_id = payload.get("company_id")
 
-        if not all([tax_id, country_id, tax_name, tax_percentage, company_id]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(tax_id, int) or tax_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, country_id, tax_name, tax_percentage, company_id are required"
+                detail="Valid tax id is required"
             )
 
-        duplicate = db.query(models.Tax_type).filter(
-            models.Tax_type.id != tax_id,
-            func.lower(models.Tax_type.Country_ID) == country_id.lower(),
-            func.lower(models.Tax_type.Tax_Name) == tax_name.lower(),
-            models.Tax_type.company_id == company_id,
-            models.Tax_type.status == CommonWords.STATUS
-        ).first()
+        if not isinstance(country_id, int) or country_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid country_id is required"
+            )
+
+        if not tax_name or not isinstance(tax_name, str):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_name is required"
+            )
+
+        if tax_percentage is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_percentage is required"
+            )
+
+        try:
+            tax_percentage = float(tax_percentage)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_percentage must be a number"
+            )
+
+        if not (0 < tax_percentage <= 100):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_percentage must be between 1 and 100"
+            )
+
+        # -------------------------------------------------
+        # CHECK COUNTRY EXISTS
+        # -------------------------------------------------
+        country = (
+            db.query(models.Country_Courrency)
+            .filter(
+                models.Country_Courrency.id == country_id,
+                models.Country_Courrency.company_id == company_id,
+                models.Country_Courrency.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if not country:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Country not found"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Tax_type)
+            .filter(
+                models.Tax_type.id != tax_id,
+                models.Tax_type.Country_ID == str(country_id),
+                func.lower(models.Tax_type.Tax_Name) == tax_name.lower(),
+                models.Tax_type.company_id == company_id,
+                models.Tax_type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -3095,11 +3379,18 @@ async def update_tax(
                 detail="Tax already exists for this country"
             )
 
-        tax = db.query(models.Tax_type).filter(
-            models.Tax_type.id == tax_id,
-            models.Tax_type.company_id == company_id,
-            models.Tax_type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH TAX
+        # -------------------------------------------------
+        tax = (
+            db.query(models.Tax_type)
+            .filter(
+                models.Tax_type.id == tax_id,
+                models.Tax_type.company_id == company_id,
+                models.Tax_type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not tax:
             raise HTTPException(
@@ -3107,20 +3398,41 @@ async def update_tax(
                 detail="Tax not found"
             )
 
-        tax.Country_ID = country_id
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
+        tax.Country_ID = str(country_id)
         tax.Tax_Name = tax_name
-        tax.Tax_Percentage = tax_percentage
+        tax.Tax_Percentage = str(tax_percentage)
+        tax.updated_by = user_id
 
         db.commit()
         db.refresh(tax)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Tax updated successfully",
-            "data": tax
+            "data": {
+                "id": tax.id,
+                "country_id": tax.Country_ID,
+                "tax_name": tax.Tax_Name,
+                "tax_percentage": tax.Tax_Percentage,
+                "updated_by": tax.updated_by,
+                "updated_at": tax.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE TAX (SOFT DELETE)
@@ -3128,16 +3440,42 @@ async def update_tax(
 @router.delete("/tax/{tax_id}", status_code=status.HTTP_200_OK)
 def delete_tax(
     tax_id: int,
-    company_id: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        tax = db.query(models.Tax_type).filter(
-            models.Tax_type.id == tax_id,
-            models.Tax_type.company_id == company_id,
-            models.Tax_type.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if tax_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid tax_id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH TAX
+        # -------------------------------------------------
+        tax = (
+            db.query(models.Tax_type)
+            .filter(
+                models.Tax_type.id == tax_id,
+                models.Tax_type.company_id == company_id,
+                models.Tax_type.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not tax:
             raise HTTPException(
@@ -3145,15 +3483,30 @@ def delete_tax(
                 detail="Tax not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         tax.status = CommonWords.UNSTATUS
+        tax.updated_by = user_id
+
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Tax deleted successfully"
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL PAYMENT METHODS
@@ -3562,13 +3915,26 @@ def delete_identity_proof(
 # =====================================================
 # GET ALL COUNTRIES & CURRENCIES
 # =====================================================
-@router.get("/country_courrency", status_code=status.HTTP_200_OK)
-def get_country_courrency(
-    company_id: str,
+@router.get("/country_currency", status_code=status.HTTP_200_OK)
+def get_country_currency(
+    request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH DATA
+        # -------------------------------------------------
         countries = (
             db.query(models.Country_Courrency)
             .filter(
@@ -3579,42 +3945,110 @@ def get_country_courrency(
             .all()
         )
 
+        # -------------------------------------------------
+        # FORMAT RESPONSE
+        # -------------------------------------------------
+        data = [
+            {
+                "id": c.id,
+                "country_name": c.Country_Name,
+                "currency_name": c.Courrency_Name,
+                "symbol": c.Symbol,
+                "company_id": c.company_id,
+                "created_by": c.created_by,
+                "created_at": c.created_at,
+                "updated_at": c.updated_at
+            }
+            for c in countries
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": countries
+            "count": len(data),
+            "data": data
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE COUNTRY & CURRENCY
 # =====================================================
-@router.post("/country_courrency", status_code=status.HTTP_201_CREATED)
-async def create_country_courrency(
+@router.post("/country_currency", status_code=status.HTTP_201_CREATED)
+async def create_country_currency(
     request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         country_name = payload.get("country_name")
         currency_name = payload.get("currency_name")
         symbol = payload.get("symbol")
-        company_id = payload.get("company_id")
-        created_by = payload.get("created_by")
 
-        if not all([country_name, currency_name, symbol, company_id, created_by]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not country_name or not country_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="country_name, currency_name, symbol, company_id and created_by are required"
+                detail="country_name is required"
             )
 
-        exists = db.query(models.Country_Courrency).filter(
-            func.lower(models.Country_Courrency.Country_Name) == country_name.lower(),
-            models.Country_Courrency.company_id == company_id,
-            models.Country_Courrency.status == CommonWords.STATUS
-        ).first()
+        if not currency_name or not currency_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="currency_name is required"
+            )
+
+        if not symbol or not symbol.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="symbol is required"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        exists = (
+            db.query(models.Country_Courrency)
+            .filter(
+                func.lower(models.Country_Courrency.Country_Name)
+                == country_name.strip().lower(),
+                models.Country_Courrency.company_id == company_id,
+                models.Country_Courrency.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if exists:
             raise HTTPException(
@@ -3622,43 +4056,90 @@ async def create_country_courrency(
                 detail="Country already exists"
             )
 
-        country = models.Country_Courrency(
-            Country_Name=country_name,
-            Courrency_Name=currency_name,
-            Symbol=symbol,
+        # -------------------------------------------------
+        # CREATE COUNTRY & CURRENCY
+        # -------------------------------------------------
+        country_currency = models.Country_Courrency(
+            Country_Name=country_name.strip(),
+            Courrency_Name=currency_name.strip(),
+            Symbol=symbol.strip(),
             status=CommonWords.STATUS,
-            created_by=created_by,
+            created_by=user_id,
             company_id=company_id
         )
 
-        db.add(country)
+        db.add(country_currency)
         db.commit()
-        db.refresh(country)
+        db.refresh(country_currency)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Country & currency created successfully",
-            "data": country
+            "data": {
+                "id": country_currency.id,
+                "country_name": country_currency.Country_Name,
+                "currency_name": country_currency.Courrency_Name,
+                "symbol": country_currency.Symbol,
+                "company_id": country_currency.company_id,
+                "created_by": country_currency.created_by,
+                "created_at": country_currency.created_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET COUNTRY & CURRENCY BY ID
 # =====================================================
-@router.get("/country_courrency/{country_id}", status_code=status.HTTP_200_OK)
-def get_country_courrency_by_id(
+@router.get("/country_currency/{country_id}", status_code=status.HTTP_200_OK)
+def get_country_currency_by_id(
+    request: Request,
     country_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        country = db.query(models.Country_Courrency).filter(
-            models.Country_Courrency.id == country_id,
-            models.Country_Courrency.company_id == company_id,
-            models.Country_Courrency.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(country_id, int) or country_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid country id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH COUNTRY & CURRENCY
+        # -------------------------------------------------
+        country = (
+            db.query(models.Country_Courrency)
+            .filter(
+                models.Country_Courrency.id == country_id,
+                models.Country_Courrency.company_id == company_id,
+                models.Country_Courrency.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not country:
             raise HTTPException(
@@ -3666,43 +4147,109 @@ def get_country_courrency_by_id(
                 detail="Country not found"
             )
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": country
+            "data": {
+                "id": country.id,
+                "country_name": country.Country_Name,
+                "currency_name": country.Courrency_Name,
+                "symbol": country.Symbol,
+                "company_id": country.company_id,
+                "created_by": country.created_by,
+                "created_at": country.created_at,
+                "updated_at": country.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE COUNTRY & CURRENCY
 # =====================================================
-@router.put("/country_courrency", status_code=status.HTTP_200_OK)
-async def update_country_courrency(
+@router.put("/country_currency", status_code=status.HTTP_200_OK)
+async def update_country_currency(
     request: Request,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        payload = await request.json()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE PARSE)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         country_id = payload.get("id")
         country_name = payload.get("country_name")
         currency_name = payload.get("currency_name")
         symbol = payload.get("symbol")
-        company_id = payload.get("company_id")
 
-        if not all([country_id, country_name, currency_name, symbol, company_id]):
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(country_id, int) or country_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="id, country_name, currency_name, symbol and company_id are required"
+                detail="Valid country id is required"
             )
 
-        duplicate = db.query(models.Country_Courrency).filter(
-            models.Country_Courrency.id != country_id,
-            func.lower(models.Country_Courrency.Country_Name) == country_name.lower(),
-            models.Country_Courrency.company_id == company_id,
-            models.Country_Courrency.status == CommonWords.STATUS
-        ).first()
+        if not country_name or not country_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="country_name is required"
+            )
+
+        if not currency_name or not currency_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="currency_name is required"
+            )
+
+        if not symbol or not symbol.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="symbol is required"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Country_Courrency)
+            .filter(
+                models.Country_Courrency.id != country_id,
+                func.lower(models.Country_Courrency.Country_Name)
+                == country_name.strip().lower(),
+                models.Country_Courrency.company_id == company_id,
+                models.Country_Courrency.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if duplicate:
             raise HTTPException(
@@ -3710,11 +4257,18 @@ async def update_country_courrency(
                 detail="Country already exists"
             )
 
-        country = db.query(models.Country_Courrency).filter(
-            models.Country_Courrency.id == country_id,
-            models.Country_Courrency.company_id == company_id,
-            models.Country_Courrency.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # FETCH RECORD
+        # -------------------------------------------------
+        country = (
+            db.query(models.Country_Courrency)
+            .filter(
+                models.Country_Courrency.id == country_id,
+                models.Country_Courrency.company_id == company_id,
+                models.Country_Courrency.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not country:
             raise HTTPException(
@@ -3722,37 +4276,87 @@ async def update_country_courrency(
                 detail="Country not found"
             )
 
-        country.Country_Name = country_name
-        country.Courrency_Name = currency_name
-        country.Symbol = symbol
+        # -------------------------------------------------
+        # UPDATE
+        # -------------------------------------------------
+        country.Country_Name = country_name.strip()
+        country.Courrency_Name = currency_name.strip()
+        country.Symbol = symbol.strip()
+        country.updated_by = user_id
 
         db.commit()
         db.refresh(country)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Country & currency updated successfully",
-            "data": country
+            "data": {
+                "id": country.id,
+                "country_name": country.Country_Name,
+                "currency_name": country.Courrency_Name,
+                "symbol": country.Symbol,
+                "company_id": country.company_id,
+                "updated_by": country.updated_by,
+                "updated_at": country.updated_at
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE COUNTRY & CURRENCY (SOFT DELETE)
 # =====================================================
-@router.delete("/country_courrency/{country_id}", status_code=status.HTTP_200_OK)
-def delete_country_courrency(
+@router.delete("/country_currency/{country_id}", status_code=status.HTTP_200_OK)
+def delete_country_currency(
+    request: Request,
     country_id: int,
-    company_id: str,
     db: Session = Depends(get_db)
 ):
     try:
-        user_id, user_role, token = verify_authentication(request)
-        country = db.query(models.Country_Courrency).filter(
-            models.Country_Courrency.id == country_id,
-            models.Country_Courrency.company_id == company_id,
-            models.Country_Courrency.status == CommonWords.STATUS
-        ).first()
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not isinstance(country_id, int) or country_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid country id is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH COUNTRY
+        # -------------------------------------------------
+        country = (
+            db.query(models.Country_Courrency)
+            .filter(
+                models.Country_Courrency.id == country_id,
+                models.Country_Courrency.company_id == company_id,
+                models.Country_Courrency.status == CommonWords.STATUS
+            )
+            .first()
+        )
 
         if not country:
             raise HTTPException(
@@ -3760,15 +4364,36 @@ def delete_country_courrency(
                 detail="Country not found"
             )
 
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
         country.status = CommonWords.UNSTATUS
+        country.updated_by = user_id
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Country & currency deleted successfully"
+            "message": "Country & currency deleted successfully",
+            "data": {
+                "id": country.id,
+                "country_name": country.Country_Name,
+                "company_id": country.company_id
+            }
         }
-    except HTTPException as http_exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(http_exc.detail)) from http_exc
+
+    except HTTPException:
+        # ✅ Preserve correct HTTP errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors only
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # GET ALL TASK TYPES
