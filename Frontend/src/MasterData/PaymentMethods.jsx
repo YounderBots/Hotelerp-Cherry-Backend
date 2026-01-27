@@ -1,15 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const PaymentMethods = () => {
-  const [data, setData] = useState([
-    { id: 1, name: "Cash" },
-    { id: 2, name: "Credit Card" },
-    { id: 3, name: "Debit Card" },
-    { id: 4, name: "UPI" },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -50,17 +46,59 @@ const PaymentMethods = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const getAllpayMethod = async () => {
+    const AllpayMethod = await APICall.getT("/masterdata/payment_methods");
+    setData(AllpayMethod.data);
+  }
+
+  const createPaymentMethod = async () => {
+    try {
+      await APICall.postT("/masterdata/payment_methods", {
+        payment_method: formData.name,
+
+      });
+      getAllpayMethod();
+    }
+    catch (error) {
+      return error, " to create a Complementary";
+    }
+  }
+  const updatePaymentMethod = async () => {
+    try {
+      await APICall.putT("/masterdata/payment_methods", {
+        id: editId,
+        payment_method: formData.name,
+
+      });
+      getAllpayMethod();
+    }
+    catch (error) {
+      return error, " to create a Complementary";
+    }
+  }
+
+  
+  const deletePaymentMethod = async(id) => {
+    try{
+      await APICall.deleteT(`/masterdata/payment_methods/${id}`)
+    }
+    catch(error){
+      return error
+    }
+  }
+  useEffect(() => {
+    getAllpayMethod();
+    
+  },[])
+
   const handleSave = () => {
     if (!formData.name.trim()) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updatePaymentMethod();
+
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createPaymentMethod();
     }
 
     closeModal();
@@ -68,12 +106,14 @@ const PaymentMethods = () => {
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+      name:row.payment_method
+    });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deletePaymentMethod(id);
   };
 
   /* ================= UI ================= */
@@ -94,7 +134,7 @@ const PaymentMethods = () => {
         }}
         columns={[
           {
-            key: "name",
+            key: "payment_method",
             title: "Payment Method Name",
             align: "center",
           },
@@ -150,7 +190,7 @@ const PaymentMethods = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Payment Method Name</label>
-                <input value={viewData.name} disabled />
+                <input value={viewData.payment_method} disabled />
               </div>
             </div>
 
