@@ -238,5 +238,32 @@ class Reservation_Status(Base):
     updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
+#Department
+class Department(Base):
+    __tablename__ = "department"
+
+    id = Column(Integer, primary_key=True, index=True)
+    Department_Name = Column(String(100), nullable=False, index=True)
+
+    status = Column(String(100), nullable=False, index=True)
+    created_by = Column(String(100), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
+    company_id = Column(String(100), nullable=False, index=True)
+
+#Designation
+class Designation(Base):
+    __tablename__ = "designation"
+
+    id = Column(Integer, primary_key=True, index=True)
+    Designation_Name = Column(String(100), nullable=False, index=True)
+
+    status = Column(String(100), nullable=False, index=True)
+    created_by = Column(String(100), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
+    company_id = Column(String(100), nullable=False, index=True)
 
 Base.metadata.create_all(bind=engine)

@@ -144,6 +144,24 @@ class Submenus(Base):
     updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
+# Submenu -> menus
+class submenu_menus(Base):
+    __tablename__ = "submenu_menus"
+
+    id = Column(Integer, primary_key=True, index=True)
+    submenu_id = Column(String(100), nullable=False, index=True)
+    menu_id = Column(String(100), nullable=False, index=True)
+    submenu_sub_name = Column(String(100), nullable=False, index=True)
+    submenu_sub_link = Column(String(255), nullable=False)
+    order = Column(Integer, nullable=False)
+    # ================= SYSTEM =================
+    status = Column(String(100), nullable=False, index=True)
+    created_by = Column(String(100), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
+    company_id = Column(String(100), nullable=False, index=True)
+    
 # =====================================================
 # CREATE TABLE
 # =====================================================
