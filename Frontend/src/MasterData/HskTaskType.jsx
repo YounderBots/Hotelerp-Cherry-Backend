@@ -1,14 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const HskTaskType = () => {
-  const [data, setData] = useState([
-    { id: 1, taskType: "Room Cleaning", color: "#22c55e" },
-    { id: 2, taskType: "Bathroom Cleaning", color: "#3b82f6" },
-    { id: 3, taskType: "Maintenance Check", color: "#f97316" },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -45,6 +42,18 @@ const HskTaskType = () => {
     setViewData(null);
   };
 
+  const getTask= async()=>{
+    const AllTask=await APICall.getT("/masterdata/task_type");
+    setData(AllTask);
+  }
+
+  const createTask = async () =>{
+    await APICall.getT("/masterdata/task_type",{
+      task_name:formData.taskType,
+      color:formData.color
+    })
+  }
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -60,8 +69,9 @@ const HskTaskType = () => {
         )
       );
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createTask();
     }
+    getTask();
 
     closeModal();
   };
@@ -75,6 +85,10 @@ const HskTaskType = () => {
   const handleDelete = (id) => {
     setData((prev) => prev.filter((item) => item.id !== id));
   };
+
+  useEffect(()=>{
+    getTask();
+  },[]);
 
   /* ================= UI ================= */
 
