@@ -169,27 +169,83 @@ async def facilities_proxy(request: Request, path: str):
         content=response.json()
     )
 
+@router.api_route(
+    "/hotel/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE"]
+)
+async def facilities_proxy(request: Request, path: str):
 
-# @router.post("/masterdata")
-# async def facilities(
-#     request: Request,
-#     payload: dict
-# ):
-#     try:
-#         access_token = request.headers.get("Authorization")
+    auth_header = request.headers.get("Authorization")
+    company_id = request.headers.get("company_id")
 
-#         response = await call_service(
-#             method="POST",
-#             url=f"{ServiceURL.MASTER_SERVICE_URL}/facilities",
-#             headers={
-#                 "Authorization": access_token,
-#                 "Content-Type": "application/json"
-#             },
-#             data=payload
-#         )
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
 
-#         return response
+    params = dict(request.query_params)
+    content_type = request.headers.get("content-type", "")
 
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
+    forward_headers = {
+        "Authorization": auth_header
+    }
+    if company_id:
+        forward_headers["company_id"] = company_id
 
+    async with httpx.AsyncClient(timeout=60) as client:
+
+        # =================================================
+        # GET / DELETE (NO BODY)
+        # =================================================
+        if request.method in ["GET", "DELETE"]:
+            response = await client.request(
+                method=request.method,
+                url=f"{ServiceURL.HOTEL_SERVICE_URL}/{path}",
+                headers=forward_headers,
+                params=params
+            )
+
+        # =================================================
+        # MULTIPART (FILES)
+        # =================================================
+        elif "multipart/form-data" in content_type:
+            form = await request.form()
+            data = {}
+            files = []
+
+            for key, value in form.items():
+                if hasattr(value, "filename"):
+                    files.append(
+                        (key, (value.filename, await value.read(), value.content_type))
+                    )
+                else:
+                    data[key] = value
+
+            response = await client.request(
+                method=request.method,
+                url=f"{ServiceURL.HOTEL_SERVICE_URL}/{path}",
+                headers=forward_headers,
+                data=data,
+                files=files,
+                params=params
+            )
+
+        # =================================================
+        # JSON (PUT / POST) — EVEN IF CONTENT-TYPE IS MISSING
+        # =================================================
+        else:
+            try:
+                body = await request.json()
+            except Exception:
+                body = None  # allow empty body
+
+            response = await client.request(
+                method=request.method,
+                url=f"{ServiceURL.HOTEL_SERVICE_URL}/{path}",
+                headers=forward_headers,
+                json=body,
+                params=params
+            )
+
+    return JSONResponse(
+        status_code=response.status_code,
+        content=response.json()
+    )

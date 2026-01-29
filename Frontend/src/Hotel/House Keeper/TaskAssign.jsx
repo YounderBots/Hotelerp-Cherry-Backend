@@ -231,9 +231,8 @@ const TaskAssign = () => {
               <div className="form-group">
                 <label>Room Status</label>
                 <select name="roomStatus" value={formData.roomStatus} onChange={handleChange}>
-                  <option>Clean</option>
-                  <option>Dirty</option>
-                  <option>Under Maintenance</option>
+                  <option>Blocking</option>
+                  <option>Unblocking</option> 
                 </select>
               </div>
 

@@ -1,12 +1,12 @@
 # =============================== Inquiry APIs ==============================
 
-from fastapi import APIRouter, Depends, Request, status, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Form
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 from jose import jwt, JWTError
-
+from resources.utils import verify_authentication
 from models import get_db, models
 from configs.base_config import BaseConfig, CommonWords
 
@@ -52,59 +52,103 @@ def get_inquiries(
 
 
 # =====================================================
-# CREATE INQUIRY
+# CREATE GUEST INQUIRY
 # =====================================================
 @router.post("/inquiry", status_code=status.HTTP_201_CREATED)
-def create_inquiry(
+async def create_inquiry(
     request: Request,
-    inquiry_mode: str = Form(...),
-    guest_name: Optional[str] = Form(None),
-    response: Optional[str] = Form(None),
-    followup: Optional[str] = Form(None),
-    incidents: Optional[str] = Form(None),
-    inquiry_status: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    if "sessid" not in request.session:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-
     try:
-        payload = jwt.decode(
-            request.session["sessid"],
-            BaseConfig.SECRET_KEY,
-            algorithms=[BaseConfig.ALGORITHM]
-        )
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        created_by = payload.get("user_id")
-        company_id = payload.get("company_id")
+        if not user_id or not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
 
-        if not created_by or not company_id:
-            return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        # -------------------------------------------------
+        # REQUEST BODY (RAW JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
-        new_inquiry = models.Inquiry(
+        inquiry_mode = payload.get("inquiry_mode", "").strip()
+        inquiry_status = payload.get("inquiry_status", "").strip()
+        guest_name = payload.get("guest_name", "").strip()
+        response = payload.get("response", "").strip()
+        followup = payload.get("followup", "").strip()
+        incidents = payload.get("incidents", "").strip()
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not inquiry_mode:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="inquiry_mode is required"
+            )
+
+        if not inquiry_status:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="inquiry_status is required"
+            )
+
+        # -------------------------------------------------
+        # CREATE INQUIRY
+        # -------------------------------------------------
+        inquiry = models.Inquiry(
             inquiry_mode=inquiry_mode,
-            guest_name=guest_name or "",
-            response=response or "",
-            followup=followup or "",
-            incidents=incidents or "",
+            guest_name=guest_name,
+            response=response,
+            followup=followup,
+            incidents=incidents,
             inquiry_status=inquiry_status,
             status=CommonWords.STATUS,
-            created_by=created_by,
-            updated_by="",
+            created_by=user_id,
+            updated_by=None,
             company_id=company_id
         )
 
-        db.add(new_inquiry)
+        db.add(inquiry)
         db.commit()
-        db.refresh(new_inquiry)
+        db.refresh(inquiry)
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Inquiry created successfully"
+            "message": "Guest inquiry created successfully",
+            "data": {
+                "id": inquiry.id,
+                "inquiry_mode": inquiry.inquiry_mode,
+                "guest_name": inquiry.guest_name,
+                "inquiry_status": inquiry.inquiry_status,
+                "company_id": inquiry.company_id,
+                "created_by": inquiry.created_by,
+                "created_at": inquiry.created_at
+            }
         }
 
-    except JWTError:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 
 # =====================================================
