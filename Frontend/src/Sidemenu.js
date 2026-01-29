@@ -95,13 +95,29 @@ export const MENU =
             children:[
                 {
                     label:"Employee",
-                     path: "/employee",
+                    path: "/employee",
                 },
                 {
                     label:"User",
-                     path: "/user",
+                    path: "/user",
                 },
-
+                {
+                    label:"Roles",
+                    path: "/roles",
+                },
+                {
+                    label:"Deparment",
+                    path:"/department"
+                },
+                {
+                    label:"Designation",
+                    path:"/designation"
+                    
+                },
+                {
+                    label:"Shift",
+                    path:"/shift"
+                }
             ]
            
         },
@@ -279,15 +295,6 @@ export const MENU =
                     label: "Reservation Status",
                     path: "/reservation_status"
                 },
-                {
-                    label:"Deparment",
-                    path:"/department"
-                },
-                {
-                    label:"Designation",
-                    path:"/designation"
-                    
-                }
 
             ]
         },

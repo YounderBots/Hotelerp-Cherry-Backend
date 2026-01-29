@@ -56,6 +56,7 @@ class Users(Base):
 
     # ================= ORGANIZATION =================
     Department_ID = Column(String(100), nullable=False, index=True)  # dept
+    Designation_ID = Column(String(100), nullable=False, index=True)  # designation
     Role_ID = Column(String(100), nullable=False, index=True)        # role
     Shift_ID = Column(String(100), nullable=False, index=True)       # shift
 
@@ -91,6 +92,51 @@ class Roles(Base):
     created_by = Column(String(100), nullable=False, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
+    company_id = Column(String(100), nullable=False, index=True)
+
+#Department
+class Department(Base):
+    __tablename__ = "department"
+
+    id = Column(Integer, primary_key=True, index=True)
+    Department_Name = Column(String(100), nullable=False, index=True)
+
+    status = Column(String(100), nullable=False, index=True)
+    created_by = Column(String(100), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
+    company_id = Column(String(100), nullable=False, index=True)
+
+#Designation
+class Designation(Base):
+    __tablename__ = "designation"
+
+    id = Column(Integer, primary_key=True, index=True)
+    Designation_Name = Column(String(100), nullable=False, index=True)
+
+    status = Column(String(100), nullable=False, index=True)
+    created_by = Column(String(100), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
+    company_id = Column(String(100), nullable=False, index=True)
+
+# Shift 
+class Shift(Base):
+    __tablename__ = "shift"
+
+    id = Column(Integer, primary_key=True, index=True)
+    Shift_Name = Column(String(100), nullable=False, index=True)
+    Start_Time = Column(String(20), nullable=False)
+    End_Time = Column(String(20), nullable=False)
+
+    status = Column(String(100), nullable=False, index=True)
+    created_by = Column(String(100), nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
 class RolePermissions(Base):
@@ -133,7 +179,7 @@ class Submenus(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     menu_id = Column(String(100), nullable=False, index=True)
-    submenu_name = Column(String(100), nullable=False, unique=True, index=True)
+    submenu_name = Column(String(100), nullable=False, index=True)
     submenu_link = Column(String(255), nullable=False)
     order = Column(Integer, nullable=False)
     # ================= SYSTEM =================
@@ -143,26 +189,5 @@ class Submenus(Base):
     updated_at = Column(DateTime, onupdate=func.now())
     updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
-
-# Submenu -> menus
-class submenu_menus(Base):
-    __tablename__ = "submenu_menus"
-
-    id = Column(Integer, primary_key=True, index=True)
-    submenu_id = Column(String(100), nullable=False, index=True)
-    menu_id = Column(String(100), nullable=False, index=True)
-    submenu_sub_name = Column(String(100), nullable=False, index=True)
-    submenu_sub_link = Column(String(255), nullable=False)
-    order = Column(Integer, nullable=False)
-    # ================= SYSTEM =================
-    status = Column(String(100), nullable=False, index=True)
-    created_by = Column(String(100), nullable=False, index=True)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, onupdate=func.now())
-    updated_by = Column(String(100), nullable=True, index=True)
-    company_id = Column(String(100), nullable=False, index=True)
     
-# =====================================================
-# CREATE TABLE
-# =====================================================
 Base.metadata.create_all(bind=engine)

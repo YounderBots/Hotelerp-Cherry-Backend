@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import TableTemplate from "../stories/TableTemplate";
+import TableTemplate from "../../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
-import "../MasterData/MasterData.css";
+import "../../MasterData/MasterData.css";
 
 const Designation = () => {
     const [data, setData] = useState([

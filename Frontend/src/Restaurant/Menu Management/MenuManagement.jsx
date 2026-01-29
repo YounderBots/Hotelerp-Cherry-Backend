@@ -134,7 +134,6 @@ const MenuManagement = () => {
         pagination
         exportable
         actionButton={{
-          icon: <UserPlus size={18} />,
           label: "Add Item",
           onClick: openAddModal,
           size: "medium",

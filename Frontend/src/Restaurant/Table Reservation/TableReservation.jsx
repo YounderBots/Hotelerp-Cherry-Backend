@@ -123,7 +123,6 @@ const TableReservation = () => {
         pagination
         exportable
         actionButton={{
-          icon: <UserPlus size={18} />,
           label: "Add Reservation",
           onClick: openAddModal,
           size: "medium",

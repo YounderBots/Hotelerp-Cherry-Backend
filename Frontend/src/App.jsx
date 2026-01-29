@@ -11,6 +11,10 @@ import ViewFloor from './Restaurant/Floor & Table Setup/FloorPageView';
 import { useAuth } from './Context/AuthContext';
 import ReservationModelView from './Hotel/Reservation/ReservationModelView';
 import ReservationListEdit from './Hotel/Reservation/ReservationListEdit';
+import Roles from './Hotel/HRM/Roles';
+import Department from './Hotel/HRM/Department';
+import Designation from './Hotel/HRM/Designation';
+import Shift from './Hotel/HRM/Shift';
 
 // Lazy load all page components
 const ForgotPassword = lazy(() => import('./Authentication/Pages/ForgotPassword'));
@@ -67,8 +71,6 @@ const CurrencyCountry = lazy(() => import('./MasterData/CurrencyCountry'));
 const HskTaskType = lazy(() => import('./MasterData/HskTaskType'));
 const Complementary = lazy(() => import('./MasterData/Complementary'));
 const ReservationStatus = lazy(() => import('./MasterData/ReservationStatus'));
-const Department = lazy(() => import('./MasterData/Department'));
-const Designation = lazy(() => import('./MasterData/Designation'));
 
 // Error Boundary Component (optional but recommended)
 const ErrorBoundaryFallback = () => (
@@ -89,7 +91,7 @@ const PageLoader = ({ children }) => {
 
 const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
   const [profileOpen, setProfileOpen] = useState(false);
-  const navigate = useNavigate(); 
+  const navigate = useNavigate();
   return (
     <nav className="navbar">
       {/* LEFT */}
@@ -119,34 +121,34 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
 
         {/* PROFILE */}
         <div className="profile-container">
-        <div
-          className="profile-box"
-          onClick={() => setProfileOpen(prev => !prev)}
-        >
-          <img
-            src="https://images.unsplash.com/photo-1603415526960-f7e0328c63b1?w=80"
-            alt="user"
-            className="profile-avatar"
-          />
-          <div className="profile-info">
-            <span className="profile-name">Johan Abraham</span>
-            <span className="profile-role">Senior Staff</span>
+          <div
+            className="profile-box"
+            onClick={() => setProfileOpen(prev => !prev)}
+          >
+            <img
+              src="https://images.unsplash.com/photo-1603415526960-f7e0328c63b1?w=80"
+              alt="user"
+              className="profile-avatar"
+            />
+            <div className="profile-info">
+              <span className="profile-name">Johan Abraham</span>
+              <span className="profile-role">Senior Staff</span>
+            </div>
+            <ChevronDown size={16} />
           </div>
-          <ChevronDown size={16} />
-        </div>
 
-        {profileOpen && (
-          <div className="profile-dropdown">
-            <div className="dropdown-item">Profile</div>
-            <div className="dropdown-item logout"
-            onClick={() => {
-              navigate("/");
-              setProfileOpen(false);
-            }}>
-              Logout</div>
-          </div>
-        )}
-      </div>
+          {profileOpen && (
+            <div className="profile-dropdown">
+              <div className="dropdown-item">Profile</div>
+              <div className="dropdown-item logout"
+                onClick={() => {
+                  navigate("/");
+                  setProfileOpen(false);
+                }}>
+                Logout</div>
+            </div>
+          )}
+        </div>
 
 
 
@@ -233,7 +235,7 @@ const AppContext = ({
               className={`nav-item ${isActive ? "active" : ""}`}
               onClick={() => {
                 setActiveMenu(item);
-                if (item.path === undefined || item.path =='') {
+                if (item.path === undefined || item.path == '') {
                   return navigate(item.children[0].path);
                 }
                 navigate(item.path);
@@ -280,9 +282,9 @@ const AppLayout = () => {
   );
 
   useEffect(() => {
-      setMenuList(menus);
-      console.log("menus updated", menus);
-    }, []);
+    setMenuList(menus);
+    console.log("menus updated", menus);
+  }, []);
 
   useEffect(() => {
     if (!menuList.length) return;
@@ -415,6 +417,26 @@ const App = () => {
             <Route path="/user" element={
               <PageLoader>
                 <User />
+              </PageLoader>
+            } />
+            <Route path="/department" element={
+              <PageLoader>
+                <Department />
+              </PageLoader>
+            } />
+            <Route path="/designation" element={
+              <PageLoader>
+                <Designation />
+              </PageLoader>
+            } />
+            <Route path="/roles" element={
+              <PageLoader>
+                <Roles />
+              </PageLoader>
+            } />
+            <Route path="/shift" element={
+              <PageLoader>
+                <Shift />
               </PageLoader>
             } />
             <Route path="/task_assign" element={
@@ -575,16 +597,6 @@ const App = () => {
             <Route path="/reservation_status" element={
               <PageLoader>
                 <ReservationStatus />
-              </PageLoader>
-            } />
-            <Route path="/department" element={
-              <PageLoader>
-                <Department />
-              </PageLoader>
-            } />
-            <Route path="/designation" element={
-              <PageLoader>
-                <Designation />
               </PageLoader>
             } />
 
