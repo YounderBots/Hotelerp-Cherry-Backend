@@ -7,7 +7,8 @@ const Role = () => {
     const [data, setData] = useState([
         {
             id: 1,
-            roleName: "Store"
+            roleName: "Admin",
+            description: "Handles Entire System",
         },
     ]);
 
@@ -18,10 +19,12 @@ const Role = () => {
 
     const initialForm = {
         roleName: "",
+        description: "",
     };
 
     const [formData, setFormData] = useState(initialForm);
 
+    // ---------------- OPEN / CLOSE ----------------
     const openAddModal = () => {
         setEditId(null);
         setFormData(initialForm);
@@ -36,6 +39,7 @@ const Role = () => {
     const closeModal = () => {
         setShowModal(false);
         setEditId(null);
+        setFormData(initialForm);
     };
 
     const closeViewModal = () => {
@@ -43,22 +47,28 @@ const Role = () => {
         setViewData(null);
     };
 
+    // ---------------- FORM HANDLING ----------------
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleSave = () => {
-        if (!formData.roleName) return;
+        if (!formData.roleName || !formData.description) return;
 
         if (editId) {
             setData((prev) =>
                 prev.map((item) =>
-                    item.id === editId ? { ...item, ...formData } : item
+                    item.id === editId
+                        ? { ...item, ...formData }
+                        : item
                 )
             );
         } else {
-            setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+            setData((prev) => [
+                ...prev,
+                { id: Date.now(), ...formData },
+            ]);
         }
 
         closeModal();
@@ -66,7 +76,10 @@ const Role = () => {
 
     const handleEdit = (row) => {
         setEditId(row.id);
-        setFormData(row);
+        setFormData({
+            roleName: row.roleName,
+            description: row.description,
+        });
         setShowModal(true);
     };
 
@@ -92,6 +105,11 @@ const Role = () => {
                     {
                         key: "roleName",
                         title: "Role Name",
+                        align: "center",
+                    },
+                    {
+                        key: "description",
+                        title: "Description",
                         align: "center",
                     },
                     {
@@ -148,10 +166,21 @@ const Role = () => {
                                 <label>Role Name</label>
                                 <input value={viewData.roleName} disabled />
                             </div>
+
+                            <div className="form-group">
+                                <label>Description</label>
+                                <textarea
+                                    value={viewData.description}
+                                    disabled
+                                />
+                            </div>
                         </div>
 
                         <div className="modal-footer">
-                            <button className="btn secondary" onClick={closeViewModal}>
+                            <button
+                                className="btn secondary"
+                                onClick={closeViewModal}
+                            >
                                 Close
                             </button>
                         </div>
@@ -179,13 +208,28 @@ const Role = () => {
                                     onChange={handleChange}
                                 />
                             </div>
+
+                            <div className="form-group">
+                                <label>Description</label>
+                                <textarea
+                                    name="description"
+                                    value={formData.description}
+                                    onChange={handleChange}
+                                />
+                            </div>
                         </div>
 
                         <div className="modal-footer">
-                            <button className="btn secondary" onClick={closeModal}>
+                            <button
+                                className="btn secondary"
+                                onClick={closeModal}
+                            >
                                 Close
                             </button>
-                            <button className="btn primary" onClick={handleSave}>
+                            <button
+                                className="btn primary"
+                                onClick={handleSave}
+                            >
                                 Submit
                             </button>
                         </div>
