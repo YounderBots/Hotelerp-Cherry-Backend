@@ -524,18 +524,30 @@ def get_room_types(
         )
 
         # -------------------------------------------------
-        # FORMAT RESPONSE
+        # FORMAT RESPONSE (NO ORM OBJECTS)
         # -------------------------------------------------
         data = [
             {
-                "id": room_type.id,
-                "room_type_name": room_type.Type_Name,
-                "company_id": room_type.company_id,
-                "created_by": room_type.created_by,
-                "created_at": room_type.created_at,
-                "updated_at": room_type.updated_at,
+                "id": rt.id,
+                "room_type_name": rt.Type_Name,
+                "room_cost": rt.Room_Cost,
+                "bed_cost": rt.Bed_Cost,
+                "complementry": rt.Complementry,
+
+                "daily_rate": rt.Daily_Rate,
+                "weekly_rate": rt.Weekly_Rate,
+                "bed_only_rate": rt.Bed_Only_Rate,
+                "bed_and_breakfast_rate": rt.Bed_And_Breakfast_Rate,
+                "half_board_rate": rt.Half_Board_Rate,
+                "full_board_rate": rt.Full_Board_Rate,
+
+                "status": rt.status,
+                "created_by": rt.created_by,
+                "created_at": rt.created_at,
+                "updated_at": rt.updated_at,
+                "company_id": rt.company_id
             }
-            for room_type in room_types
+            for rt in room_types
         ]
 
         # -------------------------------------------------
@@ -548,7 +560,7 @@ def get_room_types(
         }
 
     except HTTPException:
-        # ✅ Keep intended HTTP errors
+        # ✅ Preserve intended HTTP errors
         raise
 
     except Exception as e:
