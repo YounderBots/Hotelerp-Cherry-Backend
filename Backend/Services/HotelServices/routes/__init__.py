@@ -2,13 +2,9 @@ from fastapi import APIRouter
 
 from fastapi import APIRouter
 
-from resources.frontOffice.guestController import router as guestRouter
-
-
-
-
+from resources.frontOffice.housekeepingController import router as housekeepingRouter
 
 router = APIRouter()
 
 
-router.include_router(guestRouter, prefix='', tags=['Guest'])
+router.include_router(housekeepingRouter, prefix='', tags=['Housekeeping'])

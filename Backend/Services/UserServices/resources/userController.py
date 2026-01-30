@@ -14,6 +14,45 @@ from configs.base_config import CommonWords
 
 router = APIRouter()
 
+# =====================================================
+# HELPER FUNCTION: GENERATE USER CODE
+# =====================================================
+def generate_user_code(db: Session, company_id: str) -> str:
+    """
+    Generate a unique user code for a company.
+    Format: EMP_YYYY_0001, EMP_YYYY_0002, etc.
+    """
+    from datetime import datetime
+    
+    year = datetime.now().year
+    prefix = f"EMP_{year}"
+    
+    # Get the last user code for this company and year
+    last_user = (
+        db.query(models.Users)
+        .filter(
+            models.Users.company_id == company_id,
+            models.Users.User_Code.like(f"{prefix}%")
+        )
+        .order_by(models.Users.User_Code.desc())
+        .first()
+    )
+    
+    if last_user and last_user.User_Code:
+        # Extract the number from the last code
+        try:
+            last_number = int(last_user.User_Code.split("_")[-1])
+            next_number = last_number + 1
+        except (ValueError, IndexError):
+            next_number = 1
+    else:
+        next_number = 1
+    
+    # Format with leading zeros (4 digits)
+    user_code = f"{prefix}_{next_number:04d}"
+    
+    return user_code
+
 UPLOAD_DIR = "templates/static/users"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -155,7 +194,7 @@ async def create_user(
         # -------------------------------------------------
         # USER CODE
         # -------------------------------------------------
-        user_code = f"EMP-{uuid.uuid4().hex[:8].upper()}"
+        user_code = generate_user_code(db, company_id)
 
         # -------------------------------------------------
         # CREATE USER
