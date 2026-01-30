@@ -1,34 +1,22 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { Eye, Pencil, Trash2, X, UserPlus } from "lucide-react";
 import "../../MasterData/MasterData.css";
-
+import APICall from "../../APICalls/APICalls";
 const Employee = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      name: "Ravi Kumar",
-      companyMail: "ravi@hotel.com",
-      mobile: "9876543210",
-      gender: "Male",
-      department: "Housekeeping",
-    },
-    {
-      id: 2,
-      name: "Anitha S",
-      companyMail: "anitha@hotel.com",
-      mobile: "9123456789",
-      gender: "Female",
-      department: "Front Office",
-    },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [roles, setRoles] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [designations, setDesignations] = useState([]);
+
 
   const initialForm = {
+    photo: "",
     firstName: "",
     lastName: "",
     email: "",
@@ -88,6 +76,16 @@ const Employee = () => {
     }));
   };
 
+  const getEmployee = async () => {
+    const AllRoles = await APICall.getT("/user/users");
+    setData(AllRoles.data);
+  }
+
+  useEffect(() => {
+    getEmployee();
+  }, [])
+
+
   const handleSave = () => {
     if (!formData.firstName || !formData.email || !formData.mobile) return;
 
@@ -144,8 +142,8 @@ const Employee = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "name", title: "Name", align: "center" },
-          { key: "companyMail", title: "Company Mail", align: "center" },
+          { key: "username", title: "Name", align: "center" },
+          { key: "company_email", title: "Company Mail", align: "center" },
           { key: "mobile", title: "Mobile", align: "center" },
           { key: "gender", title: "Gender", align: "center" },
           { key: "department", title: "Department", align: "center" },
@@ -210,6 +208,15 @@ const Employee = () => {
             </div>
 
             <div className="modal-body grid">
+              <div className="form-group">
+                <label>Image</label>
+                <input
+                  type="file"
+                  name="photo"
+                  value={formData.photo}
+                  onChange={handleChange}
+                />
+              </div>
               {[
                 ["First Name", "firstName"],
                 ["Last Name", "lastName"],

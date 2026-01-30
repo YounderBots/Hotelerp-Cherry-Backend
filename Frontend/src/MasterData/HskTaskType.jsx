@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import { X, Pencil, Trash2, Eye } from "lucide-react";
+import { X, Pencil, Trash2, Eye, ConciergeBell } from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
@@ -42,16 +42,45 @@ const HskTaskType = () => {
     setViewData(null);
   };
 
-  const getTask= async()=>{
-    const AllTask=await APICall.getT("/masterdata/task_type");
-    setData(AllTask);
+  const getTask = async () => {
+    const AllTask = await APICall.getT("/masterdata/task_type");
+    setData(AllTask.data);
   }
 
-  const createTask = async () =>{
-    await APICall.getT("/masterdata/task_type",{
-      task_name:formData.taskType,
-      color:formData.color
-    })
+  const createTask = async () => {
+    try {
+      await APICall.postT("/masterdata/task_type", {
+        task_name: formData.taskType,
+        color: formData.color
+      });
+      getTask();
+    } catch (error) {
+      return error
+    }
+  }
+
+  const updateTask = async () => {
+    try {
+      await APICall.putT("/masterdata/task_type", {
+        id: editId,
+        task_name: formData.taskType,
+        color: formData.color
+
+      });
+      getTask();
+    }
+    catch (error) {
+      return error;
+    }
+  }
+
+  const deleteTask = async (id)=>{
+    try{
+      await APICall.deleteT(`/masterdata/task_type/${id}`)
+    }
+    catch(error){
+      return error
+    }
   }
 
   const handleChange = (e) => {
@@ -63,11 +92,7 @@ const HskTaskType = () => {
     if (!formData.taskType.trim()) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updateTask();
     } else {
       createTask();
     }
@@ -78,17 +103,21 @@ const HskTaskType = () => {
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+      taskType: row.task_name,
+      color: row.color,
+    });
     setShowModal(true);
   };
 
+
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+   deleteTask(id)
   };
 
-  useEffect(()=>{
+  useEffect(() => {
     getTask();
-  },[]);
+  }, []);
 
   /* ================= UI ================= */
 
@@ -108,7 +137,7 @@ const HskTaskType = () => {
         }}
         columns={[
           {
-            key: "taskType",
+            key: "task_name",
             title: "Task Type",
             align: "center",
           },
@@ -177,13 +206,14 @@ const HskTaskType = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Task Type</label>
-                <input value={viewData.taskType} disabled />
+                <input value={viewData.task_name} disabled />
               </div>
 
               <div className="form-group">
                 <label>Color</label>
                 <div style={{ display: "flex", justifyContent: "left" }}>
                   <span
+
                     style={{
                       width: "28px",
                       height: "28px",

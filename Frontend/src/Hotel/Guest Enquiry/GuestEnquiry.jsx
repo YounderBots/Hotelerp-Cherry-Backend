@@ -1,28 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { UserPlus, Eye, Pencil, Trash2, X } from "lucide-react";
+import APICall from "../../APICalls/APICalls";
 
 const GuestEnquiry = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      inquiryMode: "Phone",
-      guestName: "Anand M",
-      responseDate: "2026-01-05",
-      followUpDate: "2026-01-07",
-      incidents: "Room availability",
-      status: "Open",
-    },
-    {
-      id: 2,
-      inquiryMode: "Email",
-      guestName: "Madhu M",
-      responseDate: "2026-01-04",
-      followUpDate: "2026-01-06",
-      incidents: "Pricing enquiry",
-      status: "In Progress",
-    },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -67,6 +49,16 @@ const GuestEnquiry = () => {
     const { name, value } = e.target;
     setFormData((p) => ({ ...p, [name]: value }));
   };
+
+  // const getGuestEnquiry = async () => {
+  //   const AllEnquiry = await APICall.getT("/hotel/inquiry");
+  //   setData(AllEnquiry.data);
+  // }
+
+  // useEffect(() => {
+  //   getGuestEnquiry();
+  // },[])
+
 
   const handleSave = () => {
     if (!formData.inquiryMode || !formData.guestName) return;

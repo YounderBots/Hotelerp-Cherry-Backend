@@ -1,14 +1,11 @@
-import React, { useState } from "react";
+import React, { useState,useEffect } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../MasterData/MasterData.css";
+import APICall from "../APICalls/APICalls";
 
 const ReservationStatus = () => {
-  const [data, setData] = useState([
-    { id: 1, statusName: "Confirmed", color: "#22c55e" },
-    { id: 2, statusName: "Pending", color: "#facc15" },
-    { id: 3, statusName: "Cancelled", color: "#ef4444" },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -50,32 +47,75 @@ const ReservationStatus = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+   const getReserveStatus = async () => {
+    const AllReserveStatus = await APICall.getT("/masterdata/reservation_status");
+    setData(AllReserveStatus.data);
+  }
+
+  const createReserveStatus = async () => {
+    try {
+      await APICall.postT("/masterdata/reservation_status", {
+        status_name: formData.statusName,
+        color: formData.color
+      });
+      getReserveStatus();
+    } catch (error) {
+      return error
+    }
+  }
+
+   const updateReserveStatus = async () => {
+    try {
+      await APICall.putT("/masterdata/reservation_status", {
+        id: editId,
+        status_name: formData.statusName,
+        color: formData.color
+
+      });
+      getReserveStatus();
+    }
+    catch (error) {
+      return error ;
+    }
+  }
+
+   const deleteReserveStatus = async (id)=>{
+    try{
+      await APICall.deleteT(`/masterdata/reservation_status/${id}`)
+    }
+    catch(error){
+      return error
+    }
+  }
+
   const handleSave = () => {
     if (!formData.statusName.trim()) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+     updateReserveStatus();
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createReserveStatus();
     }
-
+   
     closeModal();
   };
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+      statusName:row.reservation_status,
+       color: row.color,
+    });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deleteReserveStatus(id);
   };
 
+  useEffect(()=>{
+    getReserveStatus();
+  },[])
   /* ================= UI ================= */
 
   return (
@@ -94,7 +134,7 @@ const ReservationStatus = () => {
         }}
         columns={[
           {
-            key: "statusName",
+            key: "reservation_status",
             title: "Reservation Status",
             align: "center",
           },
@@ -169,7 +209,7 @@ const ReservationStatus = () => {
             <div className="modal-body single view">
               <div className="form-group">
                 <label>Reservation Status</label>
-                <input value={viewData.statusName} disabled />
+                <input value={viewData.reservation_status} disabled />
               </div>
 
               <div className="form-group">
