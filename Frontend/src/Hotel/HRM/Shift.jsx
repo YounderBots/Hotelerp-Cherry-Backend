@@ -1,17 +1,11 @@
-import React, { useState } from "react";
+import React, { use, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../../MasterData/MasterData.css";
+import APICall from "../../APICalls/APICalls";
 
 const Shift = () => {
-    const [data, setData] = useState([
-        {
-            id: 1,
-            shiftName: "Morning Shift",
-            startTime: "06:00 AM",
-            endTime: "02:00 PM",
-        },
-    ]);
+    const [data, setData] = useState([]);
 
     const [showModal, setShowModal] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
@@ -19,9 +13,9 @@ const Shift = () => {
     const [viewData, setViewData] = useState(null);
 
     const initialForm = {
-        shiftName: "",
-        startTime: "",
-        endTime: "",
+        shift_name: "",
+        start_time: "",
+        end_time: "",
     };
 
     const [formData, setFormData] = useState(initialForm);
@@ -51,19 +45,56 @@ const Shift = () => {
         const { name, value } = e.target;
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
+    const getAllData = async () => {
+        const getAllData = await APICall.getT("/user/shifts");
+        setData(getAllData.data);
+    }
+    useState(() => {
+        getAllData();
+    }, []);
 
-    const handleSave = () => {
-        if (!formData.shiftName || !formData.startTime || !formData.endTime)
+    const createShift = async () => {
+        try {
+            await APICall.postT("/user/shifts", {
+                shift_name: formData.shift_name,
+                start_time: formData.start_time,
+                end_time: formData.end_time,
+            });
+            getAllData();
+        } catch (error) {
+            return error, " to create a Shift";
+        }
+    };
+    const updateShift = async () => {
+        try {
+            await APICall.putT("/user/shifts", {
+                id: editId,
+                shift_name: formData.shift_name,
+                start_time: formData.start_time,
+                end_time: formData.end_time,
+            });
+            getAllData();
+        } catch (error) {
+            return error, " to update a Shift";
+        }
+    };
+    const deleteShift = async (id) => {
+        try {
+            await APICall.deleteT(`/user/shifts/${id}`);
+            getAllData();
+        } catch (error) {
+            return error, " to delete a Shift";
+        }
+    };
+
+    const handleSave = async() => {
+        if (!formData.shift_name || !formData.start_time || !formData.end_time)
             return;
 
         if (editId) {
-            setData((prev) =>
-                prev.map((item) =>
-                    item.id === editId ? { ...item, ...formData } : item
-                )
-            );
+            updateShift();
         } else {
-            setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+            await createShift();
         }
 
         closeModal();
@@ -76,7 +107,7 @@ const Shift = () => {
     };
 
     const handleDelete = (id) => {
-        setData((prev) => prev.filter((item) => item.id !== id));
+        deleteShift(id);
     };
 
     return (
@@ -95,17 +126,17 @@ const Shift = () => {
                 }}
                 columns={[
                     {
-                        key: "shiftName",
+                        key: "shift_name",
                         title: "Shift Name",
                         align: "center",
                     },
                     {
-                        key: "startTime",
+                        key: "start_time",
                         title: "Start Time",
                         align: "center",
                     },
                     {
-                        key: "endTime",
+                        key: "end_time",
                         title: "End Time",
                         align: "center",
                     },
@@ -161,15 +192,15 @@ const Shift = () => {
                         <div className="modal-body single view">
                             <div className="form-group">
                                 <label>Shift Name</label>
-                                <input value={viewData.shiftName} disabled />
+                                <input value={viewData.shift_name} disabled />
                             </div>
                             <div className="form-group">
                                 <label>Start Time</label>
-                                <input value={viewData.startTime} disabled />
+                                <input value={viewData.start_time} disabled />
                             </div>
                             <div className="form-group">
                                 <label>End Time</label>
-                                <input value={viewData.endTime} disabled />
+                                <input value={viewData.end_time} disabled />
                             </div>
                         </div>
 
@@ -197,8 +228,8 @@ const Shift = () => {
                             <div className="form-group">
                                 <label>Shift Name</label>
                                 <input
-                                    name="shiftName"
-                                    value={formData.shiftName}
+                                    name="shift_name"
+                                    value={formData.shift_name}
                                     onChange={handleChange}
                                 />
                             </div>
@@ -207,8 +238,8 @@ const Shift = () => {
                                 <label>Start Time</label>
                                 <input
                                     type="time"
-                                    name="startTime"
-                                    value={formData.startTime}
+                                    name="start_time"
+                                    value={formData.start_time}
                                     onChange={handleChange}
                                 />
                             </div>
@@ -217,8 +248,8 @@ const Shift = () => {
                                 <label>End Time</label>
                                 <input
                                     type="time"
-                                    name="endTime"
-                                    value={formData.endTime}
+                                    name="end_time"
+                                    value={formData.end_time}
                                     onChange={handleChange}
                                 />
                             </div>
