@@ -12,7 +12,6 @@ from configs.base_config import BaseConfig, CommonWords
 
 router = APIRouter()
 
-
 # =====================================================
 # GET ALL INQUIRIES
 # =====================================================
@@ -21,35 +20,70 @@ def get_inquiries(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    if "sessid" not in request.session:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-
     try:
-        payload = jwt.decode(
-            request.session["sessid"],
-            BaseConfig.SECRET_KEY,
-            algorithms=[BaseConfig.ALGORITHM]
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not user_id or not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH INQUIRIES
+        # -------------------------------------------------
+        inquiries = (
+            db.query(models.Inquiry)
+            .filter(
+                models.Inquiry.company_id == company_id,
+                models.Inquiry.status == CommonWords.STATUS
+            )
+            .order_by(models.Inquiry.id.desc())
+            .all()
         )
 
-        created_by = payload.get("user_id")
-        company_id = payload.get("company_id")
+        # -------------------------------------------------
+        # FORMAT RESPONSE DATA
+        # -------------------------------------------------
+        data = [
+            {
+                "id": inquiry.id,
+                "inquiry_mode": inquiry.inquiry_mode,
+                "guest_name": inquiry.guest_name,
+                "response": inquiry.response,
+                "follow_up": inquiry.follow_up,
+                "incidents": inquiry.incidents,
+                "inquiry_status": inquiry.inquiry_status,
+                "created_by": inquiry.created_by,
+                "created_at": inquiry.created_at,
+                "updated_at": inquiry.updated_at,
+                "company_id": inquiry.company_id
+            }
+            for inquiry in inquiries
+        ]
 
-        if not created_by or not company_id:
-            return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-
-        inquiries = db.query(models.Inquiry).filter(
-            models.Inquiry.company_id == company_id,
-            models.Inquiry.status == CommonWords.STATUS
-        ).order_by(models.Inquiry.id.desc()).all()
-
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": inquiries
+            "count": len(data),
+            "data": data
         }
 
-    except JWTError:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    except HTTPException:
+        # ✅ Expected errors
+        raise
 
+    except Exception as e:
+        # ❌ Unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # CREATE GUEST INQUIRY
@@ -72,7 +106,7 @@ async def create_inquiry(
             )
 
         # -------------------------------------------------
-        # REQUEST BODY (RAW JSON)
+        # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
         try:
             payload = await request.json()
@@ -83,11 +117,12 @@ async def create_inquiry(
             )
 
         inquiry_mode = payload.get("inquiry_mode", "").strip()
-        inquiry_status = payload.get("inquiry_status", "").strip()
         guest_name = payload.get("guest_name", "").strip()
-        response = payload.get("response", "").strip()
-        followup = payload.get("followup", "").strip()
-        incidents = payload.get("incidents", "").strip()
+        inquiry_status = payload.get("inquiry_status", "").strip()
+
+        response = payload.get("response", "").strip() or None
+        follow_up = payload.get("follow_up", "").strip() or None
+        incidents = payload.get("incidents", "").strip() or None
 
         # -------------------------------------------------
         # VALIDATION
@@ -96,6 +131,12 @@ async def create_inquiry(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="inquiry_mode is required"
+            )
+
+        if not guest_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="guest_name is required"
             )
 
         if not inquiry_status:
@@ -111,12 +152,11 @@ async def create_inquiry(
             inquiry_mode=inquiry_mode,
             guest_name=guest_name,
             response=response,
-            followup=followup,
+            follow_up=follow_up,
             incidents=incidents,
             inquiry_status=inquiry_status,
             status=CommonWords.STATUS,
             created_by=user_id,
-            updated_by=None,
             company_id=company_id
         )
 
@@ -150,7 +190,6 @@ async def create_inquiry(
             detail=str(e)
         )
 
-
 # =====================================================
 # GET INQUIRY BY ID
 # =====================================================
@@ -160,97 +199,202 @@ def get_inquiry_by_id(
     inquiry_id: int,
     db: Session = Depends(get_db)
 ):
-    if "sessid" not in request.session:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-
     try:
-        payload = jwt.decode(
-            request.session["sessid"],
-            BaseConfig.SECRET_KEY,
-            algorithms=[BaseConfig.ALGORITHM]
-        )
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        company_id = payload.get("company_id")
-
-        inquiry = db.query(models.Inquiry).filter(
-            models.Inquiry.id == inquiry_id,
-            models.Inquiry.company_id == company_id,
-            models.Inquiry.status == CommonWords.STATUS
-        ).first()
-
-        if not inquiry:
-            return JSONResponse(
-                content={"status": "error", "message": "Inquiry not found"},
-                status_code=status.HTTP_404_NOT_FOUND
+        if not user_id or not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if inquiry_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid inquiry_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH INQUIRY
+        # -------------------------------------------------
+        inquiry = (
+            db.query(models.Inquiry)
+            .filter(
+                models.Inquiry.id == inquiry_id,
+                models.Inquiry.company_id == company_id,
+                models.Inquiry.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if not inquiry:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Inquiry not found"
+            )
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "data": inquiry
+            "data": {
+                "id": inquiry.id,
+                "inquiry_mode": inquiry.inquiry_mode,
+                "guest_name": inquiry.guest_name,
+                "response": inquiry.response,
+                "follow_up": inquiry.follow_up,
+                "incidents": inquiry.incidents,
+                "inquiry_status": inquiry.inquiry_status,
+                "created_by": inquiry.created_by,
+                "created_at": inquiry.created_at,
+                "updated_at": inquiry.updated_at,
+                "company_id": inquiry.company_id
+            }
         }
 
-    except JWTError:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    except HTTPException:
+        # ✅ Expected errors
+        raise
 
+    except Exception as e:
+        # ❌ Unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # UPDATE INQUIRY
 # =====================================================
 @router.put("/inquiry", status_code=status.HTTP_200_OK)
-def update_inquiry(
+async def update_inquiry(
     request: Request,
-    edit_id: int = Form(...),
-    edit_inquiry_mode: str = Form(...),
-    edit_guest_name: str = Form(...),
-    edit_response: Optional[str] = Form(None),
-    edit_followup: Optional[str] = Form(None),
-    edit_incidents: Optional[str] = Form(None),
-    edit_inquiry_status: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    if "sessid" not in request.session:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-
     try:
-        payload = jwt.decode(
-            request.session["sessid"],
-            BaseConfig.SECRET_KEY,
-            algorithms=[BaseConfig.ALGORITHM]
-        )
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
 
-        created_by = payload.get("user_id")
-        company_id = payload.get("company_id")
-
-        updated = db.query(models.Inquiry).filter(
-            models.Inquiry.id == edit_id,
-            models.Inquiry.company_id == company_id,
-            models.Inquiry.status == CommonWords.STATUS
-        ).update({
-            "inquiry_mode": edit_inquiry_mode,
-            "guest_name": edit_guest_name,
-            "response": edit_response or "",
-            "followup": edit_followup or "",
-            "incidents": edit_incidents or "",
-            "inquiry_status": edit_inquiry_status,
-            "updated_by": created_by
-        })
-
-        if not updated:
-            return JSONResponse(
-                content={"status": "error", "message": "Inquiry not found"},
-                status_code=status.HTTP_404_NOT_FOUND
+        if not user_id or not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
             )
 
-        db.commit()
+        # -------------------------------------------------
+        # REQUEST BODY (SAFE JSON)
+        # -------------------------------------------------
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
+        inquiry_id = payload.get("id")
+        inquiry_mode = payload.get("inquiry_mode", "").strip()
+        guest_name = payload.get("guest_name", "").strip()
+        inquiry_status = payload.get("inquiry_status", "").strip()
+
+        response = payload.get("response", "").strip() or None
+        follow_up = payload.get("follow_up", "").strip() or None
+        incidents = payload.get("incidents", "").strip() or None
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if not inquiry_id or not isinstance(inquiry_id, int) or inquiry_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid inquiry id is required"
+            )
+
+        if not inquiry_mode:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="inquiry_mode is required"
+            )
+
+        if not guest_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="guest_name is required"
+            )
+
+        if not inquiry_status:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="inquiry_status is required"
+            )
+
+        # -------------------------------------------------
+        # FETCH INQUIRY
+        # -------------------------------------------------
+        inquiry = (
+            db.query(models.Inquiry)
+            .filter(
+                models.Inquiry.id == inquiry_id,
+                models.Inquiry.company_id == company_id,
+                models.Inquiry.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if not inquiry:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Inquiry not found"
+            )
+
+        # -------------------------------------------------
+        # UPDATE INQUIRY
+        # -------------------------------------------------
+        inquiry.inquiry_mode = inquiry_mode
+        inquiry.guest_name = guest_name
+        inquiry.response = response
+        inquiry.follow_up = follow_up
+        inquiry.incidents = incidents
+        inquiry.inquiry_status = inquiry_status
+        inquiry.updated_by = user_id
+
+        db.commit()
+        db.refresh(inquiry)
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Inquiry updated successfully"
+            "message": "Inquiry updated successfully",
+            "data": {
+                "id": inquiry.id,
+                "inquiry_mode": inquiry.inquiry_mode,
+                "guest_name": inquiry.guest_name,
+                "inquiry_status": inquiry.inquiry_status,
+                "updated_at": inquiry.updated_at
+            }
         }
 
-    except JWTError:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    except HTTPException:
+        # ✅ Expected errors
+        raise
 
+    except Exception as e:
+        # ❌ Unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 # =====================================================
 # DELETE INQUIRY (SOFT DELETE)
@@ -261,37 +405,69 @@ def delete_inquiry(
     inquiry_id: int,
     db: Session = Depends(get_db)
 ):
-    if "sessid" not in request.session:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-
     try:
-        payload = jwt.decode(
-            request.session["sessid"],
-            BaseConfig.SECRET_KEY,
-            algorithms=[BaseConfig.ALGORITHM]
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not user_id or not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if inquiry_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid inquiry_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH INQUIRY
+        # -------------------------------------------------
+        inquiry = (
+            db.query(models.Inquiry)
+            .filter(
+                models.Inquiry.id == inquiry_id,
+                models.Inquiry.company_id == company_id,
+                models.Inquiry.status == CommonWords.STATUS
+            )
+            .first()
         )
 
-        company_id = payload.get("company_id")
-
-        deleted = db.query(models.Inquiry).filter(
-            models.Inquiry.id == inquiry_id,
-            models.Inquiry.company_id == company_id
-        ).update({
-            "status": CommonWords.UNSTATUS
-        })
-
-        if not deleted:
-            return JSONResponse(
-                content={"status": "error", "message": "Inquiry not found"},
-                status_code=status.HTTP_404_NOT_FOUND
+        if not inquiry:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Inquiry not found"
             )
+
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
+        inquiry.status = CommonWords.UNSTATUS
+        inquiry.updated_by = user_id
 
         db.commit()
 
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
         return {
             "status": "success",
             "message": "Inquiry deleted successfully"
         }
 
-    except JWTError:
-        return RedirectResponse(CommonWords.LOGINER_URL, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    except HTTPException:
+        # ✅ Expected errors
+        raise
+
+    except Exception as e:
+        # ❌ Unexpected errors
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )

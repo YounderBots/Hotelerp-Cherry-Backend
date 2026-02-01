@@ -259,33 +259,27 @@ class HousekeeperTask(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # ---------------- Employee Details ----------------
-    employee_id = Column(String(255), nullable=True, index=True)
-    first_name = Column(String(100), nullable=True)
-    last_name = Column(String(100), nullable=True)
-
-    # ---------------- Schedule Details ----------------
-    schedule_date = Column(Date, nullable=True, index=True)
-    schedule_time = Column(Time, nullable=True)
-
-    # ---------------- Room & Task Details ----------------
-    room_no = Column(Integer, nullable=True, index=True)
-    task_type = Column(String(100), nullable=True, index=True)          # Cleaning | Inspection | Maintenance
-    assign_staff = Column(String(100), nullable=True)
-    task_status = Column(String(50), nullable=True, index=True)         # Pending | In-Progress | Completed
-    room_status = Column(String(50), nullable=True, index=True)         # Clean | Dirty | Out of Order
-
-    # ---------------- Additional Info ----------------
+    employee_id = Column(String(100), nullable=False, index=True)  # stores users.id
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    schedule_date = Column(Date, nullable=False, index=True)
+    schedule_time = Column(Time, nullable=False)
+    room_no = Column(Integer, nullable=False, index=True) # room id
+    task_type = Column(String(100), nullable=False, index=True) # task type id
+    assign_staff = Column(String(100), nullable=False, index=True) # users.id
+    task_status = Column(String(50), nullable=False, index=True)  # Pending | In-Progress | Completed
+    room_status = Column(String(50), nullable=False, index=True)  # Blocking | Unblocking
     lost_found = Column(String(255), nullable=True)
-    special_instructions = Column(String(255), nullable=True)
+    special_instructions = Column(String(255), nullable=True) 
 
     # ---------------- System Fields ----------------
     status = Column(String(50), nullable=False, index=True)
-    created_by = Column(String(100), nullable=False)
+    created_by = Column(Integer, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
-    updated_by = Column(String(100), nullable=True)
-    company_id = Column(String(100), nullable=False, index=True)
+    updated_by = Column(Integer, nullable=True)
+    company_id = Column(Integer, nullable=False, index=True)
+
 
 # =====================================================
 # HOUSE KEEPING

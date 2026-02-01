@@ -30,21 +30,15 @@ async def create_housekeeper_task(
             )
 
         # -------------------------------------------------
-        # REQUEST BODY (SAFE JSON)
+        # REQUEST BODY
         # -------------------------------------------------
-        try:
-            payload = await request.json()
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid JSON body"
-            )
+        payload = await request.json()
 
         # -------------------------------------------------
         # REQUIRED FIELDS
         # -------------------------------------------------
         required_fields = [
-            "employee_id",
+            "employee_id",      # ✅ users.id
             "first_name",
             "last_name",
             "schedule_date",
@@ -56,17 +50,36 @@ async def create_housekeeper_task(
         ]
 
         for field in required_fields:
-            if not payload.get(field):
+            if payload.get(field) is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"{field} is required"
                 )
 
         # -------------------------------------------------
+        # VALIDATE EMPLOYEE (USERS TABLE)
+        # -------------------------------------------------
+        employee = (
+            db.query(models.Users)
+            .filter(
+                models.Users.id == payload["employee_id"],
+                models.Users.company_id == company_id,
+                models.Users.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if not employee:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Employee not found"
+            )
+
+        # -------------------------------------------------
         # CREATE TASK
         # -------------------------------------------------
         task = models.HousekeeperTask(
-            employee_id=payload.get("employee_id"),
+            employee_id=str(employee.id),   # ✅ STORE users.id
             first_name=payload.get("first_name"),
             last_name=payload.get("last_name"),
 
@@ -74,10 +87,10 @@ async def create_housekeeper_task(
             schedule_time=payload.get("schedule_time"),
 
             room_no=payload.get("room_no"),
-            task_type=payload.get("task_type"),           # Cleaning | Inspection | Maintenance
+            task_type=payload.get("task_type"),
             assign_staff=payload.get("assign_staff"),
-            task_status=payload.get("task_status"),       # Pending | In-Progress | Completed
-            room_status=payload.get("room_status"),       # Clean | Dirty | Out of Order
+            task_status=payload.get("task_status"),
+            room_status=payload.get("room_status"),
 
             lost_found=payload.get("lost_found"),
             special_instructions=payload.get("special_instructions"),
@@ -99,7 +112,8 @@ async def create_housekeeper_task(
             "message": "Housekeeper task assigned successfully",
             "data": {
                 "id": task.id,
-                "employee_id": task.employee_id,
+                "employee_id": employee.id,
+                "employee_name": f"{employee.First_Name} {employee.Last_Name}",
                 "room_no": task.room_no,
                 "task_type": task.task_type,
                 "task_status": task.task_status,
