@@ -1,16 +1,11 @@
-import React, { useState } from "react";
+import React, { use, useState , useEffect } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../../MasterData/MasterData.css";
+import APICall from "../../APICalls/APICalls";
 
 const Department = () => {
-    const [data, setData] = useState([
-        {
-            id: 1,
-            departmentName: "Store"
-        },
-
-    ]);
+    const [data, setData] = useState([]);
 
     const [showModal, setShowModal] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
@@ -18,7 +13,7 @@ const Department = () => {
     const [viewData, setViewData] = useState(null);
 
     const initialForm = {
-        departmentName: "",
+        department_name: "",
     };
 
     const [formData, setFormData] = useState(initialForm);
@@ -49,21 +44,54 @@ const Department = () => {
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleSave = () => {
-        if (
-            !formData.departmentName
+    const getAllData = async () => {
+        const getAllData = await APICall.getT("/user/departments");
+        setData(getAllData.data);
+    }
+    useEffect(() => {
+        getAllData();
+    }, []);
 
+    const createDepartment = async () => {
+        try {
+            await APICall.postT("/user/departments", {
+                department_name: formData.department_name,
+            });
+            getAllData();
+        } catch (error) {
+            return error, " to create a Department";
+        }
+    };
+    const updateDepartment = async () => {
+        try {
+            await APICall.putT("/user/departments", {
+                id: editId,
+                department_name: formData.department_name,
+            });
+            getAllData();
+        } catch (error) {
+            return error, " to update a Department";
+        }
+    };
+    const deleteDepartment = async (id) => {
+        try {
+            await APICall.deleteT(`/user/departments/${id}`);
+            getAllData();
+        } catch (error) {
+            return error, " to delete a Department";
+        }
+    };
+
+    const handleSave = async () => {
+        if (
+            !formData.department_name
         )
             return;
 
         if (editId) {
-            setData((prev) =>
-                prev.map((item) =>
-                    item.id === editId ? { ...item, ...formData } : item
-                )
-            );
+            await updateDepartment();
         } else {
-            setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+            await createDepartment();
         }
 
         closeModal();
@@ -76,7 +104,7 @@ const Department = () => {
     };
 
     const handleDelete = (id) => {
-        setData((prev) => prev.filter((item) => item.id !== id));
+        deleteDepartment(id);
     };
 
     return (
@@ -95,7 +123,7 @@ const Department = () => {
                 }}
                 columns={[
                     {
-                        key: "departmentName",
+                        key: "department_name",
                         title: "Department Name",
                         align: "center",
                     },
@@ -153,7 +181,7 @@ const Department = () => {
                         <div className="modal-body single view">
                             <div className="form-group">
                                 <label>Department Name</label>
-                                <input value={viewData.departmentName} disabled />
+                                <input value={viewData.department_name} disabled />
                             </div>
                         </div>
 
@@ -181,8 +209,8 @@ const Department = () => {
                             <div className="form-group">
                                 <label>Department Name</label>
                                 <input
-                                    name="departmentName"
-                                    value={formData.departmentName}
+                                    name="department_name"
+                                    value={formData.department_name}
                                     onChange={handleChange}
                                 />
                             </div>

@@ -1,16 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../../MasterData/MasterData.css";
+import APICall from "../../APICalls/APICalls";
 
 const Designation = () => {
-    const [data, setData] = useState([
-        {
-            id: 1,
-            designationName: "Manager"
-        },
-
-    ]);
+    const [data, setData] = useState([]);
 
     const [showModal, setShowModal] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
@@ -49,21 +44,59 @@ const Designation = () => {
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleSave = () => {
-        if (
-            !formData.designationName
+    const getDesignation = async () => {
+        const AllRoles = await APICall.getT("/user/designations");
+        setData(AllRoles.data);
+    }
 
-        )
+    const createDesignation = async () => {
+        try {
+            await APICall.postT("/user/designations", {
+                designation_name: formData.designationName,
+
+            });
+            getDesignation();
+        } catch (error) {
+            return error
+        }
+    }
+
+    const updateDesignation = async () => {
+        try {
+            await APICall.putT("/user/designations", {
+                id: editId,
+                designation_name: formData.designationName,
+
+
+            });
+            getDesignation();
+        }
+        catch (error) {
+            return error;
+        }
+    }
+
+    const deleteDesignation = async (id) => {
+        try {
+            await APICall.deleteT(`/user/designations/${id}`)
+        }
+        catch (error) {
+            return error
+        }
+    }
+
+    useEffect(() => {
+        getDesignation();
+    }, [])
+
+    const handleSave = () => {
+        if (!formData.designationName)
             return;
 
         if (editId) {
-            setData((prev) =>
-                prev.map((item) =>
-                    item.id === editId ? { ...item, ...formData } : item
-                )
-            );
+            updateDesignation();
         } else {
-            setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+            createDesignation();
         }
 
         closeModal();
@@ -71,14 +104,15 @@ const Designation = () => {
 
     const handleEdit = (row) => {
         setEditId(row.id);
-        setFormData(row);
+        setFormData({
+            designationName: row.designation_name
+        });
         setShowModal(true);
     };
 
     const handleDelete = (id) => {
-        setData((prev) => prev.filter((item) => item.id !== id));
-    };
-
+        deleteDesignation(id);
+    }
     return (
         <>
             <TableTemplate
@@ -95,7 +129,7 @@ const Designation = () => {
                 }}
                 columns={[
                     {
-                        key: "designationName",
+                        key: "designation_name",
                         title: "Designation Name",
                         align: "center",
                     },
@@ -153,7 +187,7 @@ const Designation = () => {
                         <div className="modal-body single view">
                             <div className="form-group">
                                 <label>Designation Name</label>
-                                <input value={viewData.designationName} disabled />
+                                <input value={viewData.designation_name} disabled />
                             </div>
                         </div>
 
@@ -203,5 +237,6 @@ const Designation = () => {
         </>
     );
 };
+
 
 export default Designation;

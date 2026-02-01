@@ -1,16 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../../MasterData/MasterData.css";
-
+import APICall from "../../APICalls/APICalls";
 const Role = () => {
-    const [data, setData] = useState([
-        {
-            id: 1,
-            roleName: "Admin",
-            description: "Handles Entire System",
-        },
-    ]);
+    const [data, setData] = useState([]);
 
     const [showModal, setShowModal] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
@@ -53,22 +47,57 @@ const Role = () => {
         setFormData((prev) => ({ ...prev, [name]: value }));
     };
 
+    const getRoles = async () => {
+        const AllRoles = await APICall.getT("/user/roles");
+        setData(AllRoles.data);
+    }
+
+    const createRoles = async () => {
+        try {
+            await APICall.postT("/user/roles", {
+                role_name: formData.roleName,
+                description: formData.description
+            });
+            getRoles();
+        } catch (error) {
+            return error
+        }
+    }
+
+    const updateRoles = async () => {
+        try {
+            await APICall.putT("/user/roles", {
+                id: editId,
+                role_name: formData.roleName,
+                description: formData.description
+
+            });
+            getRoles();
+        }
+        catch (error) {
+            return error;
+        }
+    }
+
+    const deleteRoles = async (id) => {
+        try {
+            await APICall.deleteT(`/user/roles/${id}`)
+        }
+        catch (error) {
+            return error
+        }
+    }
+
+    useEffect(() => {
+        getRoles();
+    }, [])
     const handleSave = () => {
         if (!formData.roleName || !formData.description) return;
 
         if (editId) {
-            setData((prev) =>
-                prev.map((item) =>
-                    item.id === editId
-                        ? { ...item, ...formData }
-                        : item
-                )
-            );
+            updateRoles();
         } else {
-            setData((prev) => [
-                ...prev,
-                { id: Date.now(), ...formData },
-            ]);
+            createRoles();
         }
 
         closeModal();
@@ -77,14 +106,14 @@ const Role = () => {
     const handleEdit = (row) => {
         setEditId(row.id);
         setFormData({
-            roleName: row.roleName,
+            roleName: row.role_name,
             description: row.description,
         });
         setShowModal(true);
     };
 
     const handleDelete = (id) => {
-        setData((prev) => prev.filter((item) => item.id !== id));
+        deleteRoles(id);
     };
 
     return (
@@ -103,7 +132,7 @@ const Role = () => {
                 }}
                 columns={[
                     {
-                        key: "roleName",
+                        key: "role_name",
                         title: "Role Name",
                         align: "center",
                     },
@@ -164,7 +193,7 @@ const Role = () => {
                         <div className="modal-body single view">
                             <div className="form-group">
                                 <label>Role Name</label>
-                                <input value={viewData.roleName} disabled />
+                                <input value={viewData.role_name} disabled />
                             </div>
 
                             <div className="form-group">
