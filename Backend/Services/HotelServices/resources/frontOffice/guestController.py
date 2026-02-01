@@ -21,7 +21,7 @@ def get_inquiries(
     db: Session = Depends(get_db)
 ):
     try:
-        # -------------------------------------------------
+        # -------------------------------------------------  
         # AUTHENTICATION
         # -------------------------------------------------
         user_id, role_id, company_id, token = verify_authentication(request)

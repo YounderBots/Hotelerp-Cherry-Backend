@@ -1,16 +1,15 @@
 from fastapi import APIRouter, Depends, status, HTTPException, Request
-from sqlalchemy.orm import Session 
+from sqlalchemy.orm import Session
+from datetime import datetime
 
 from resources.utils import verify_authentication
-from models import models
-from models import get_db
+from models import get_db, models
 from configs.base_config import CommonWords
-
 
 router = APIRouter()
 
 # =====================================================
-# CREATE HOUSEKEEPER TASK (ASSIGN TASK)
+# CREATE HOUSEKEEPER TASK
 # =====================================================
 @router.post("/housekeeper_tasks", status_code=status.HTTP_201_CREATED)
 async def create_housekeeper_task(
@@ -32,42 +31,86 @@ async def create_housekeeper_task(
         # -------------------------------------------------
         # REQUEST BODY
         # -------------------------------------------------
-        payload = await request.json()
-
-        # -------------------------------------------------
-        # REQUIRED FIELDS
-        # -------------------------------------------------
-        required_fields = [
-            "employee_id",      # ✅ users.id
-            "first_name",
-            "last_name",
-            "schedule_date",
-            "schedule_time",
-            "room_no",
-            "task_type",
-            "task_status",
-            "room_status"
-        ]
-
-        for field in required_fields:
-            if payload.get(field) is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"{field} is required"
-                )
-
-        # -------------------------------------------------
-        # VALIDATE EMPLOYEE (USERS TABLE)
-        # -------------------------------------------------
-        employee = (
-            db.query(models.Users)
-            .filter(
-                models.Users.id == payload["employee_id"],
-                models.Users.company_id == company_id,
-                models.Users.status == CommonWords.STATUS
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
             )
-            .first()
-        )
+
+        # -------------------------------------------------
+        # DATE & TIME CONVERSION
+        # -------------------------------------------------
+        try:
+            schedule_date = datetime.strptime(
+                payload.get("schedule_date"), "%Y-%m-%d"
+            ).date()
+
+            schedule_time = datetime.strptime(
+                payload.get("schedule_time"), "%H:%M:%S"
+            ).time()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="schedule_date must be YYYY-MM-DD and schedule_time must be HH:MM:SS"
+            )
+
+        # -------------------------------------------------
+        # PAYLOAD VALUES
+        # -------------------------------------------------
+        employee_id = payload.get("employee_id")
+        first_name = payload.get("first_name")
+        last_name = payload.get("last_name")
+        room_no = payload.get("room_no")
+        task_type = payload.get("task_type")
+        assign_staff = payload.get("assign_staff")
+        task_status = payload.get("task_status")
+        room_status = payload.get("room_status")
+        lost_found = payload.get("lost_found")
+        special_instructions = payload.get("special_instructions")
+
+        # -------------------------------------------------
+        # BASIC VALIDATION
+        # -------------------------------------------------
+        if not all([
+            employee_id,
+            first_name,
+            last_name,
+            room_no,
+            task_type,
+            assign_staff,
+            task_status,
+            room_status
+        ]):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="All required fields must be provided"
+            )
+
+        # -------------------------------------------------
+        # VALIDATE ROOM
+        # -------------------------------------------------
+        room = db.query(models.Room).filter(
+            models.Room.id == room_no,
+            models.Room.company_id == company_id,
+            models.Room.status == CommonWords.STATUS
+        ).first()
+
+        if not room:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Room not found"
+            )
+
+        # -------------------------------------------------
+        # VALIDATE EMPLOYEE
+        # -------------------------------------------------
+        employee = db.query(models.Users).filter(
+            models.Users.id == employee_id,
+            models.Users.company_id == company_id,
+            models.Users.status == CommonWords.STATUS
+        ).first()
 
         if not employee:
             raise HTTPException(
@@ -76,50 +119,76 @@ async def create_housekeeper_task(
             )
 
         # -------------------------------------------------
+        # VALIDATE ASSIGNED STAFF
+        # -------------------------------------------------
+        staff = db.query(models.Users).filter(
+            models.Users.id == assign_staff,
+            models.Users.company_id == company_id,
+            models.Users.status == CommonWords.STATUS
+        ).first()
+
+        if not staff:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assigned staff not found"
+            )
+
+        # -------------------------------------------------
+        # VALIDATE TASK TYPE
+        # -------------------------------------------------
+        task = db.query(models.Task_Type).filter(
+            models.Task_Type.id == task_type,
+            models.Task_Type.company_id == company_id,
+            models.Task_Type.status == CommonWords.STATUS
+        ).first()
+
+        if not task:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task type not found"
+            )
+
+        # -------------------------------------------------
         # CREATE TASK
         # -------------------------------------------------
-        task = models.HousekeeperTask(
-            employee_id=str(employee.id),   # ✅ STORE users.id
-            first_name=payload.get("first_name"),
-            last_name=payload.get("last_name"),
-
-            schedule_date=payload.get("schedule_date"),
-            schedule_time=payload.get("schedule_time"),
-
-            room_no=payload.get("room_no"),
-            task_type=payload.get("task_type"),
-            assign_staff=payload.get("assign_staff"),
-            task_status=payload.get("task_status"),
-            room_status=payload.get("room_status"),
-
-            lost_found=payload.get("lost_found"),
-            special_instructions=payload.get("special_instructions"),
-
+        new_task = models.HousekeeperTask(
+            employee_id=employee_id,
+            first_name=first_name,
+            last_name=last_name,
+            schedule_date=schedule_date,
+            schedule_time=schedule_time,
+            room_no=room_no,
+            task_type=task_type,
+            assign_staff=assign_staff,
+            task_status=task_status,
+            room_status=room_status,
+            lost_found=lost_found,
+            special_instructions=special_instructions,
             status=CommonWords.STATUS,
             created_by=user_id,
             company_id=company_id
         )
 
-        db.add(task)
+        db.add(new_task)
         db.commit()
-        db.refresh(task)
+        db.refresh(new_task)
 
         # -------------------------------------------------
         # RESPONSE
         # -------------------------------------------------
         return {
             "status": "success",
-            "message": "Housekeeper task assigned successfully",
+            "message": "Housekeeper task created successfully",
             "data": {
-                "id": task.id,
+                "id": new_task.id,
+                "room_id": room.id,
+                "room_name": room.Room_Name,
                 "employee_id": employee.id,
-                "employee_name": f"{employee.First_Name} {employee.Last_Name}",
-                "room_no": task.room_no,
-                "task_type": task.task_type,
-                "task_status": task.task_status,
-                "schedule_date": task.schedule_date,
-                "schedule_time": task.schedule_time,
-                "created_at": task.created_at
+                "assigned_staff": staff.id,
+                "task_type": task.Type_Name,
+                "task_status": new_task.task_status,
+                "schedule_date": str(new_task.schedule_date),
+                "schedule_time": str(new_task.schedule_time)
             }
         }
 
