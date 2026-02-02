@@ -1,29 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { UserPlus, Eye, Pencil, Trash2, X } from "lucide-react";
 import "../../MasterData/MasterData.css";
+import APICall from "../../APICalls/APICalls";
 
 const TaskAssign = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      employeeName: "Ravi Kumar",
-      roomNo: "101",
-      assignedStaff: "Housekeeping",
-      assignedDateTime: "2026-01-06 10:30",
-      roomStatus: "Clean",
-      taskStatus: "Assigned",
-    },
-    {
-      id: 2,
-      employeeName: "Suresh",
-      roomNo: "203",
-      assignedStaff: "Maintenance",
-      assignedDateTime: "2026-01-06 14:00",
-      roomStatus: "Dirty",
-      taskStatus: "In Progress",
-    },
-  ]);
+  const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -75,45 +57,111 @@ const TaskAssign = () => {
     setFormData((p) => ({ ...p, [name]: value }));
   };
 
+  const getTaskAssign = async () => {
+    const AllTaskAssign = await APICall.getT("/hotel/housekeeper_tasks");
+    setData(AllTaskAssign.data);
+  }
+
+
+  const createHousekeeperTtasks = async () => {
+    try {
+      await APICall.postT("/hotel/housekeeper_tasks", {
+        employee_id: formData.employeeId,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        room_no: Number(formData.roomNo),
+        assign_staff: Number(formData.assignedStaff),
+        schedule_date: formData.scheduleDate,
+        schedule_time: formData.scheduleTime,
+        task_status: formData.taskStatus,
+        task_type: formData.taskType,
+        lost_found: formData.lostAndFound,
+        room_status: formData.roomStatus,
+        special_instructions: formData.specialInstruction,
+
+      });
+
+      getTaskAssign();
+    } catch (error) {
+      console.error("Create error:", error.response?.data || error);
+    }
+  };
+  const updateHousekeeperTtasks = async () => {
+    try {
+      await APICall.putT("/hotel/housekeeper_tasks", {
+        id: editId,
+        employee_id: formData.employeeId,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        room_no:formData.roomNo,
+        assign_staff:formData.assignedStaff,
+        schedule_date: formData.scheduleDate,
+        schedule_time: formData.scheduleTime,
+        task_status: formData.taskStatus,
+        task_type: formData.taskType,
+        lost_found: formData.lostAndFound,
+        room_status: formData.roomStatus,
+        special_instructions: formData.specialInstruction,
+
+      });
+
+      getTaskAssign();
+    } catch (error) {
+      console.error("Create error:", error.response?.data || error);
+    }
+  };
+
+   const deleteHousekeeperTtasks = async (id) => {
+    try {
+      await APICall.deleteT(`/hotel/housekeeper_tasks/${id}`)
+    }
+    catch (error) {
+      return error
+    }
+  }
+
+  useEffect(() => {
+    getTaskAssign();
+  }, [])
+
   const handleSave = () => {
     if (!formData.firstName || !formData.roomNo) return;
 
-    const payload = {
-      id: editId || Date.now(),
-      employeeName: `${formData.firstName} ${formData.lastName}`,
-      roomNo: formData.roomNo,
-      assignedStaff: formData.assignedStaff,
-      assignedDateTime: `${formData.scheduleDate} ${formData.scheduleTime}`,
-      roomStatus: formData.roomStatus,
-      taskStatus: formData.taskStatus,
-    };
-
     if (editId) {
-      setData((prev) => prev.map((i) => (i.id === editId ? payload : i)));
+      updateHousekeeperTtasks();
     } else {
-      setData((prev) => [...prev, payload]);
+      createHousekeeperTtasks();
     }
 
     closeModal();
   };
 
   const handleEdit = (row) => {
-    const [firstName, lastName = ""] = row.employeeName.split(" ");
+    const firstName = row.first_name || "";
+    const lastName = row.last_name || "";
+
     setEditId(row.id);
     setFormData({
-      ...initialForm,
+      employeeId: row.employee_id,
       firstName,
       lastName,
-      roomNo: row.roomNo,
-      assignedStaff: row.assignedStaff,
-      taskStatus: row.taskStatus,
-      roomStatus: row.roomStatus,
+      roomNo: row.room_no,
+      assignedStaff: row.assign_staff,
+      scheduleDate: row.schedule_date,
+      scheduleTime: row.schedule_time,
+      taskStatus: row.task_status,
+      taskType: row.task_type,
+      lostAndFound: row.lost_found,
+      roomStatus: row.room_status,
+      specialInstruction: row.special_instructions,
     });
     setShowModal(true);
   };
 
+
+
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((i) => i.id !== id));
+    deleteHousekeeperTtasks(id);
   };
 
   /* ================= UI ================= */
@@ -126,19 +174,19 @@ const TaskAssign = () => {
         searchable
         pagination
         exportable
-        actionButton={{ 
+        actionButton={{
           label: "Assign Task",
           onClick: openAddModal,
           size: "medium",
           variant: "primary",
         }}
         columns={[
-          { key: "employeeName", title: "Employee Name", align: "center" },
-          { key: "roomNo", title: "Room No", align: "center" },
-          { key: "assignedStaff", title: "Assigned Staff", align: "center" },
-          { key: "assignedDateTime", title: "Assigned Date Time", align: "center" },
-          { key: "roomStatus", title: "Room Status", align: "center", type: "badge" },
-          { key: "taskStatus", title: "Task Status", align: "center", type: "badge" },
+          { key: "first_name", title: "Employee Name", align: "center", },
+          { key: "room_no", title: "Room No", align: "center" },
+          { key: "assign_staff", title: "Assigned Staff", align: "center" },
+          { key: "schedule_time", title: "Assigned Date Time", align: "center" },
+          { key: "room_status", title: "Room Status", align: "center", type: "badge" },
+          { key: "task_status", title: "Task Status", align: "center", type: "badge" },
           {
             key: "actions",
             title: "Action",
@@ -232,7 +280,7 @@ const TaskAssign = () => {
                 <label>Room Status</label>
                 <select name="roomStatus" value={formData.roomStatus} onChange={handleChange}>
                   <option>Blocking</option>
-                  <option>Unblocking</option> 
+                  <option>Unblocking</option>
                 </select>
               </div>
 

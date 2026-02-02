@@ -262,8 +262,9 @@ class HousekeeperTask(Base):
     employee_id = Column(String(100), nullable=False, index=True)  # stores users.id
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    schedule_date = Column(Date, nullable=False, index=True)
+    assign_staff = Column(Date, nullable=False, index=True)
     schedule_time = Column(Time, nullable=False)
+    schedule_date = Column(Date, nullable=False)
     room_no = Column(Integer, nullable=False, index=True) # room id
     task_type = Column(String(100), nullable=False, index=True) # task type id
     assign_staff = Column(String(100), nullable=False, index=True) # users.id

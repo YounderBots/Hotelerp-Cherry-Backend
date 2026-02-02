@@ -1,28 +1,12 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { Eye, Pencil, Trash2, X, UserPlus } from "lucide-react";
 import "../../MasterData/MasterData.css";
+import APICall from "../../APICalls/APICalls";
 
 const RoomIncidentLog = () => {
   const [data, setData] = useState([
-    {
-      id: 1,
-      roomNo: "101",
-      incidentDate: "2026-01-05",
-      incidentTime: "14:30",
-      witness: "Guest",
-      reportedBy: "Front Office",
-      reportDate: "2026-01-05",
-    },
-    {
-      id: 2,
-      roomNo: "205",
-      incidentDate: "2026-01-04",
-      incidentTime: "18:00",
-      witness: "Housekeeping",
-      reportedBy: "Supervisor",
-      reportDate: "2026-01-04",
-    },
+
   ]);
 
   const [showModal, setShowModal] = useState(false);
@@ -69,37 +53,98 @@ const RoomIncidentLog = () => {
     setShowModal(false);
   };
 
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "application/pdf",
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert("Only JPG, PNG, or PDF files are allowed!");
+      e.target.value = "";
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      attachment_file: file,
+    }));
+  };
+
+
   const handleChange = (e) => {
     const { name, value, files } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: files ? files : value,
+      [name]: files ? files[0] : value,
     }));
   };
 
-  const handleSave = () => {
-    if (!formData.roomNo || !formData.incidentDate) return;
 
-    const payload = {
-      id: editId || Date.now(),
-      roomNo: formData.roomNo,
-      incidentDate: formData.incidentDate,
-      incidentTime: formData.incidentTime,
-      witness: formData.witnesses,
-      reportedBy: formData.reportedBy,
-      reportDate: formData.reportDate,
-    };
+  const getRoomIncidentLog = async () => {
+    const AllRoomIncidentLog = await APICall.getT("/hotel/roomincident_log");
+    setData(AllRoomIncidentLog.data);
+  }
+
+  const createRoomIncidentLog = async () => {
+    try {
+      await APICall.postT("/hotel/roomincident_log", {
+        room_no: formData.roomNo,
+        incident_date: formData.incidentDate,
+        incident_time: formData.incidentTime,
+        incident_description: formData.incidentDescription,
+        involved_staff: formData.housekeepingStaff,
+        severity: formData.severity,
+        witness: formData.witnesses,
+        actions_taken: formData.actionsTaken,
+        reported_by: formData.reportedBy,
+        report_date: formData.reportDate,
+        attachment_file: formData.attachments
+
+      });
+      getRoomIncidentLog();
+    }
+    catch (error) {
+      return error;
+    }
+  }
+
+
+  useEffect(() => {
+    getRoomIncidentLog();
+  }, [])
+
+
+
+  const handleSave = () => {
+    // Basic validation
+    if (!formData.roomNo || !formData.incidentDate) {
+      alert("Room No and Incident Date are required");
+      return;
+    }
 
     if (editId) {
+      // 🔁 local edit logic (if you really need it)
       setData((prev) =>
-        prev.map((item) => (item.id === editId ? payload : item))
+        prev.map((item) =>
+          item.id === editId
+            ? { ...item, ...formData }
+            : item
+        )
       );
     } else {
-      setData((prev) => [...prev, payload]);
+      // ✅ backend create
+      createRoomIncidentLog();
     }
 
     closeModal();
   };
+
 
   const handleEdit = (row) => {
     setEditId(row.id);
@@ -136,12 +181,12 @@ const RoomIncidentLog = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "roomNo", title: "Room No", align: "center" },
-          { key: "incidentDate", title: "Incident Date", align: "center" },
-          { key: "incidentTime", title: "Incident Time", align: "center" },
-          { key: "witness", title: "Witness", align: "center" },
-          { key: "reportedBy", title: "Reported By", align: "center" },
-          { key: "reportDate", title: "Date of Report", align: "center" },
+          { key: "room_no", title: "Room No", align: "center" },
+          { key: "incident_date", title: "Incident Date", align: "center" },
+          { key: "incident_time", title: "Incident Time", align: "center" },
+          { key: "witnesses", title: "Witness", align: "center" },
+          { key: "reported_by", title: "Reported By", align: "center" },
+          { key: "report_date", title: "Date of Report", align: "center" },
           {
             key: "actions",
             title: "Actions",
@@ -229,16 +274,17 @@ const RoomIncidentLog = () => {
                 </div>
               ))}
 
+
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                <label>Attachments</label>
+                <label>Attachment</label>
                 <input
                   type="file"
-                  name="attachments"
-                  multiple
-                  onChange={handleChange}
+                  name="attachment_file"
+                  onChange={handleFileChange}
                 />
               </div>
             </div>
+
 
             <div className="modal-footer">
               <button className="btn secondary" onClick={closeModal}>

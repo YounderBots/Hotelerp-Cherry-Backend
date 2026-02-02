@@ -79,10 +79,10 @@ async def create_housekeepertasks(request: Request, db: Session = Depends(get_db
 
         first_name = payload.get("first_name", "").strip()
         last_name = payload.get("last_name", "").strip()
-        room_no = payload.get("room_no")
+        room_no = payload.get("room_no","")
         assign_staff = payload.get("assign_staff", "").strip()
-        schedule_date = payload.get("schedule_date")
-        schedule_time = payload.get("schedule_time")
+        schedule_date = payload.get("schedule_date").strip()
+        schedule_time = payload.get("schedule_time").strip()
 
         employee_id = payload.get("employee_id", "").strip() or None
         task_status = payload.get("task_status", "").strip() or None
@@ -372,7 +372,7 @@ async def update_inquiry(request: Request, db: Session = Depends(get_db)):
 @router.delete(
     "/housekeeper_tasks/{housekeepertasks_id}", status_code=status.HTTP_200_OK
 )
-def delete_inquiry(
+def delete_housekeeper_tasks(
     request: Request, housekeepertasks_id: int, db: Session = Depends(get_db)
 ):
     try:
