@@ -183,13 +183,16 @@ async def create_user(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Only JPG and PNG images are allowed"
                 )
+        if photo and photo.filename:
 
             ext = photo.filename.split(".")[-1]
             filename = f"user_{uuid.uuid4().hex}.{ext}"
-            photo_path = os.path.join(UPLOAD_DIR, filename)
+            save_path = os.path.join(UPLOAD_DIR, filename)
 
-            with open(photo_path, "wb") as buffer:
+            with open(save_path, "wb") as buffer:
                 buffer.write(await photo.read())
+
+            photo_path = f"/templates/static/users/{filename}"
 
         # -------------------------------------------------
         # USER CODE
@@ -679,6 +682,17 @@ async def update_user(
         user.Last_Name = payload.get("last_name", user.Last_Name)
         user.Personal_Email = payload.get("personal_email", user.Personal_Email)
         user.Company_Email = payload.get("company_email", user.Company_Email)
+
+        new_password = payload.get("password")
+        if new_password and new_password.strip() != "":
+            hashed_password = bcrypt.hashpw(
+                new_password.encode("utf-8"),
+                bcrypt.gensalt()
+            ).decode("utf-8")
+
+            user.Password = hashed_password
+
+
         user.Mobile = payload.get("mobile", user.Mobile)
         user.Alternative_Mobile = payload.get(
             "alternative_mobile", user.Alternative_Mobile
