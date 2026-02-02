@@ -60,7 +60,7 @@ const PaymentMethods = () => {
       getAllpayMethod();
     }
     catch (error) {
-      return error, " to create a Complementary";
+      return error ;
     }
   }
   const updatePaymentMethod = async () => {
@@ -73,7 +73,7 @@ const PaymentMethods = () => {
       getAllpayMethod();
     }
     catch (error) {
-      return error, " to create a Complementary";
+      return error ;
     }
   }
 
