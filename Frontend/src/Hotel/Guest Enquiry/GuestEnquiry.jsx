@@ -50,39 +50,91 @@ const GuestEnquiry = () => {
     setFormData((p) => ({ ...p, [name]: value }));
   };
 
-  // const getGuestEnquiry = async () => {
-  //   const AllEnquiry = await APICall.getT("/hotel/inquiry");
-  //   setData(AllEnquiry.data);
-  // }
+  const getGuestEnquiry = async () => {
+    const AllEnquiry = await APICall.getT("/hotel/inquiry");
+    setData(AllEnquiry.data);
+  }
 
-  // useEffect(() => {
-  //   getGuestEnquiry();
-  // },[])
+  const createGuestEnquiry = async () => {
+    try {
+      await APICall.postT("/hotel/inquiry", {
+        inquiry_mode: formData.inquiryMode,
+        guest_name: formData.guestName,
+        inquiry_status: formData.status,
+        response: formData.responseDate,
+        follow_up: formData.followUpDate,
+        incidents: formData.incidents,
+
+      });
+      getGuestEnquiry();
+    }
+    catch (error) {
+      return error;
+    }
+  }
+
+  const updateGuestEnquiry = async () => {
+    try {
+      await APICall.putT("/hotel/inquiry", {
+        id: editId,
+        inquiry_mode: formData.inquiryMode,
+        guest_name: formData.guestName,
+        inquiry_status: formData.status,
+        response: formData.responseDate,
+        follow_up: formData.followUpDate,
+        incidents: formData.incidents,
+
+
+      });
+      getGuestEnquiry();
+    }
+    catch (error) {
+      return error;
+    }
+  }
+
+  const deleteguestEnquiry = async (id) => {
+    try {
+      await APICall.deleteT(`/hotel/inquiry/${id}`)
+    }
+    catch (error) {
+      return error
+    }
+  }
+
+
+  useEffect(() => {
+    getGuestEnquiry();
+  }, [])
 
 
   const handleSave = () => {
     if (!formData.inquiryMode || !formData.guestName) return;
 
     if (editId) {
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId ? { ...item, ...formData } : item
-        )
-      );
+      updateGuestEnquiry();
+
     } else {
-      setData((prev) => [...prev, { id: Date.now(), ...formData }]);
+      createGuestEnquiry();
     }
     closeModal();
   };
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData(row);
+    setFormData({
+      inquiryMode: row.inquiry_mode,
+      guestName: row.guest_name,
+      status: row.inquiry_status,
+      responseDate: row.response,
+      followUpDate: row.follow_up,
+      incidents: row.incidents
+    });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+    deleteguestEnquiry(id);
   };
 
   /* ================= UI ================= */
@@ -102,15 +154,15 @@ const GuestEnquiry = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "inquiryMode", title: "Inquiry Mode", align: "center" },
-          { key: "guestName", title: "Guest Name", align: "center" },
+          { key: "inquiry_mode", title: "Inquiry Mode", align: "center" },
+          { key: "guest_name", title: "Guest Name", align: "center" },
           {
-            key: "responseDate",
+            key: "response",
             title: "Response",
             align: "center",
           },
           {
-            key: "followUpDate",
+            key: "follow_up",
             title: "Follow Up",
             align: "center",
           },
