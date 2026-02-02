@@ -246,11 +246,11 @@ const AddNewReservation = () => {
 
               <div className="selected-room-card">
                 <div className="room-info">
-                  <div style={{ marginBottom: "26px" }}>
+                  <div className="room-block">
                     <label>Room Type</label>
                     {selectedRooms.map((r) => `${r.type}`).join(", ")}
                   </div>
-                  <div style={{ marginBottom: "26px" }}>
+                  <div className="room-block">
                     <label>Room No</label>
                     {selectedRooms.map((r) => `${r.roomNo}`).join(", ")}
                   </div>
