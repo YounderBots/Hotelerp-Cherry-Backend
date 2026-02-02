@@ -9,38 +9,49 @@ const Employee = () => {
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [viewData, setViewData] = useState(null);
-  const [roles, setRoles] = useState([]);
+  const [viewData, setViewData] = useState(null);;
   const [departments, setDepartments] = useState([]);
   const [designations, setDesignations] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [shifts, setShifts] = useState([]);
 
 
   const initialForm = {
-    photo: "",
-    firstName: "",
-    lastName: "",
-    email: "",
+    username: "",
+    first_name: "",
+    last_name: "",
+
+    personal_email: "",
+    company_email: "",
     password: "",
     mobile: "",
-    altMobile: "",
+    alternative_mobile: "",
+
     dob: "",
     gender: "",
+    marital_status: "",
+    address: "",
     city: "",
     state: "",
-    postalCode: "",
+    postal_code: "",
     country: "",
-    role: "",
-    department: "",
-    designation: "",
-    joiningDate: "",
-    salary: "",
+
+    department_id: "",
+    designation_id: "",
+    role_id: "",
+    shift_id: "",
+    date_of_joining: "",
     experience: "",
-    maritalStatus: "",
-    notes: "",
-    emergencyName: "",
-    emergencyContact: "",
-    emergencyRelation: "",
-    policyAccepted: false,
+    salary_details: "",
+    register_code: "",
+
+    emergency_name: "",
+    emergency_contact: "",
+    emergency_relationship: "",
+
+    acknowledgment_of_hotel_policies: false,
+
+    photo: null,
   };
 
   const [formData, setFormData] = useState(initialForm);
@@ -75,54 +86,140 @@ const Employee = () => {
       [name]: type === "checkbox" ? checked : value,
     }));
   };
+  const handlePhotoChange = (e) => {
+    const file = e.target.files[0];
+
+    if (!file) return;
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      alert("Only JPG and PNG images are allowed!");
+      e.target.value = "";
+      return;
+    }
+    setFormData((p) => ({
+      ...p,
+      photo: file,
+    }));
+  };
 
   const getEmployee = async () => {
     const AllRoles = await APICall.getT("/user/users");
     setData(AllRoles.data);
   }
+  const getDepartments = async () => {
+    const AllDepartments = await APICall.getT("/user/departments");
+    setDepartments(AllDepartments.data);
+  }
+  const getDesignations = async () => {
+    const AllDesignations = await APICall.getT("/user/designations");
+    setDesignations(AllDesignations.data);
+  }
+  const getRoles = async () => {
+    const AllRoles = await APICall.getT("/user/roles");
+    setRoles(AllRoles.data);
+  }
+  const getShifts = async () => {
+    const AllShifts = await APICall.getT("/user/shifts");
+    setShifts(AllShifts.data);
+  }
+
 
   useEffect(() => {
     getEmployee();
+    getDepartments();
+    getDesignations();
+    getRoles();
+    getShifts();
   }, [])
 
+  const addEmployee = async () => {
+    try {
+      const payload = new FormData();
 
-  const handleSave = () => {
-    if (!formData.firstName || !formData.email || !formData.mobile) return;
+      Object.entries(formData).forEach(([key, value]) => {
 
-    const payload = {
-      id: editId || Date.now(),
-      name: `${formData.firstName} ${formData.lastName}`,
-      companyMail: formData.email,
-      mobile: formData.mobile,
-      gender: formData.gender,
-      department: formData.department,
-      ...formData,
-    };
+        if (key === "acknowledgment_of_hotel_policies") {
+          payload.append(key, value ? "true" : "false");
+          return;
+        }
+
+        if (key === "photo") {
+          if (value) payload.append("photo", value);
+          return;
+        }
+
+        payload.append(key, value ?? "");
+      });
+
+      console.log("Sending Payload:", [...payload.entries()]);
+      
+      await APICall.postT("/user/users", payload);
+
+      alert("Employee Added Successfully");
+      getEmployee();
+      closeModal();
+
+    } catch (error) {
+      console.log("FULL ERROR:", error);
+
+      if (error.response) {
+        console.log("STATUS:", error.response.status);
+        console.log("DATA:", error.response.data);
+        alert("ERROR: " + JSON.stringify(error.response.data));
+      } else {
+        alert("Server Not Responding");
+      }
+    }
+  };
+
+  const updateEmployee = async () => {
+    try {
+      await APICall.putT("/user/users", {
+        ...formData,
+      });
+      getEmployee();
+    } catch (error) {
+      return error, " to update an Employee";
+    }
+  };
+  const deleteEmployee = async (id) => {
+    try {
+      await APICall.deleteT(`/user/users/${id}`);
+      getEmployee();
+    } catch (error) {
+      return error, " to delete an Employee";
+    }
+  };
+
+
+
+  const handleSave = async () => {
+    if (
+      !formData.username ||
+      !formData.company_email ||
+      !formData.password
+    )
+      return;
 
     if (editId) {
-      setData((prev) => prev.map((e) => (e.id === editId ? payload : e)));
+      await updateEmployee();
     } else {
-      setData((prev) => [...prev, payload]);
+      await addEmployee();
     }
 
     closeModal();
   };
 
   const handleEdit = (row) => {
-    const [firstName, lastName = ""] = row.name.split(" ");
     setEditId(row.id);
     setFormData({
       ...initialForm,
       ...row,
-      firstName,
-      lastName,
-      email: row.companyMail,
     });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    setData((prev) => prev.filter((e) => e.id !== id));
+    deleteEmployee(id);
   };
 
   /* ================= UI ================= */
@@ -213,34 +310,69 @@ const Employee = () => {
                 <input
                   type="file"
                   name="photo"
-                  value={formData.photo}
-                  onChange={handleChange}
+                  onChange={handlePhotoChange}
                 />
               </div>
               {[
-                ["First Name", "firstName"],
-                ["Last Name", "lastName"],
-                ["Email Address", "email"],
-                ["Login Password", "password"],
+                ["Username", "username"],
+                ["First Name", "first_name"],
+                ["Last Name", "last_name"],
+
+                ["Personal Email", "personal_email"],
+                ["Company Email", "company_email"],
+
+                ["Password", "password"],
                 ["Mobile", "mobile"],
-                ["Alternative Mobile", "altMobile"],
-                ["Date of Birth", "dob", "date"],
-                ["Gender", "gender"],
+                ["Alternative Mobile", "alternative_mobile"],
+
+                ["DOB", "dob", "date"],
+              ]
+              .map(([label, name, type]) => (
+                <div className="form-group" key={name}>
+                  <label>{label}</label>
+                  <input
+                    type={type || "text"}
+                    name={name}
+                    value={formData[name]}
+                    onChange={handleChange}
+                  />
+                </div>
+              ))}
+
+              <div className="form-group">
+                <label>Gender</label>
+                <select
+                  name="gender"
+                  value={formData.gender}
+                  onChange={handleChange}
+                >
+                  <option value="">Select Gender</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Marital Status</label>
+                <select
+                  name="marital_status"
+                  value={formData.marital_status}
+                  onChange={handleChange}
+                >
+                  <option value="">Select Marital Status</option>
+                  <option value="Single">Single</option>
+                  <option value="Married">Married</option>
+                  <option value="Divorced">Divorced</option>
+                </select>
+              </div>
+              {[
+                ["Address", "address"],
                 ["City", "city"],
                 ["State", "state"],
-                ["Postal Code", "postalCode"],
+                ["Postal Code", "postal_code"],
                 ["Country", "country"],
-                ["Role", "role"],
-                ["Department", "department"],
-                ["Designation", "designation"],
-                ["Joining Date", "joiningDate", "date"],
-                ["Salary Details", "salary"],
-                ["Experience", "experience"],
-                ["Marital Status", "maritalStatus"],
-                ["Emergency Name", "emergencyName"],
-                ["Emergency Contact", "emergencyContact"],
-                ["Emergency Relationship", "emergencyRelation"],
-              ].map(([label, name, type]) => (
+              ]
+              .map(([label, name, type]) => (
                 <div className="form-group" key={name}>
                   <label>{label}</label>
                   <input
@@ -253,21 +385,99 @@ const Employee = () => {
               ))}
 
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                <label>Notes</label>
-                <input
-                  name="notes"
-                  value={formData.notes}
+                <label>Department</label>
+                <select
+                  name="department_id"
+                  value={formData.department_id}
                   onChange={handleChange}
-                />
+                >
+                  <option value="">Select a department</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.department_name}
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <label>Designation</label>
+                <select
+                  name="designation_id"
+                  value={formData.designation_id}
+                  onChange={handleChange}
+                >
+                  <option value="">Select a designation</option>
+                  {designations.map((designation) => (
+                    <option key={designation.id} value={designation.id}>
+                      {designation.designation_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <label>Role</label>
+                <select
+                  name="role_id"
+                  value={formData.role_id}
+                  onChange={handleChange}
+                >
+                  <option value="">Select a role</option>
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.role_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                <label>Shift</label>
+                <select
+                  name="shift_id"
+                  value={formData.shift_id}
+                  onChange={handleChange}
+                >
+                  <option value="">Select a shift</option>
+                  {shifts.map((shift) => (
+                    <option key={shift.id} value={shift.id}>
+                      {shift.shift_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {[
+
+                ["Date of Joining", "date_of_joining", "date"],
+                ["Experience", "experience"],
+                ["Salary Details", "salary_details"],
+
+                ["Register Code", "register_code"],
+
+                ["Emergency Contact Name", "emergency_name"],
+                ["Emergency Contact Number", "emergency_contact"],
+                ["Emergency Contact Relationship", "emergency_relationship"],
+              ]
+              .map(([label, name, type]) => (
+                <div className="form-group" key={name}>
+                  <label>{label}</label>
+                  <input
+                    type={type || "text"}
+                    name={name}
+                    value={formData[name]}
+                    onChange={handleChange}
+                  />
+                </div>
+              ))}
 
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                 <label>Acknowledgment of Hotel Policies</label>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <input
                     type="checkbox"
-                    name="policyAccepted"
-                    checked={formData.policyAccepted}
+                    name="acknowledgment_of_hotel_policies"
+                    checked={formData.acknowledgment_of_hotel_policies}
                     onChange={handleChange}
                   />
                   <span>

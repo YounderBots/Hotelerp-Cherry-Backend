@@ -11,7 +11,7 @@ const handleResponse = async (response) => {
     
 
     if (!response.ok) {
-        throw new Error(result.detail || result.message || "API Error");
+        throw result;
     }
 
     return result;
@@ -43,13 +43,15 @@ const APICall = {
     // -------------------------
     postT: async (endpoint, payload = {}) => {
         try {
+
+            const isFormData = payload instanceof FormData;
             const response = await fetch(`${baseURL}${endpoint}`, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json",
+                    ...(isFormData ? {} : {"Content-Type": "application/json"}),
                     ...getAuthHeader(),
                 },
-                body: JSON.stringify(payload),
+                body: isFormData ? payload : JSON.stringify(payload),
             });
 
             return await handleResponse(response);
