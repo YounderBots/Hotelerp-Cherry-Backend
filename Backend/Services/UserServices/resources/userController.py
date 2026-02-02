@@ -315,8 +315,16 @@ def get_all_users(
 
                     "personal_email": user.Personal_Email,
                     "company_email": user.Company_Email,
+                    "password": user.Password,
                     "mobile": user.Mobile,
-
+                    "alternative_mobile": user.Alternative_Mobile,
+                    "dob": user.D_O_B,
+                    "marital_status": user.Marital_Status,
+                    "address": user.Address,
+                    "city": user.City,
+                    "state": user.State,
+                    "postal_code": user.Postal_Code,
+                    "country": user.Country,
                     "department_id": user.Department_ID,
                     "designation_id": user.Designation_ID,
                     "role_id": user.Role_ID,
@@ -324,6 +332,12 @@ def get_all_users(
 
                     "date_of_joining": user.Date_Of_Joining,
                     "experience": user.Experience,
+                    "salary_details": user.Salary_Details,
+                    "register_code": user.Register_Code,
+                    "emergency_name": user.Emergency_Name,
+                    "emergency_contact": user.Emergency_Contact,
+                    "emergency_relationship": user.Emergency_Relationship,
+                    "acknowledgment_of_hotel_policies": user.Acknowledgment_of_Hotel_Policies,
 
                     "status": user.status,
                     "created_at": user.created_at,
