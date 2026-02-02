@@ -3,6 +3,7 @@ import TableTemplate from "../../stories/TableTemplate";
 import { Eye, Pencil, Trash2, X, UserPlus } from "lucide-react";
 import "../../MasterData/MasterData.css";
 import APICall from "../../APICalls/APICalls";
+import { baseURL } from "../../APICalls/APICalls";
 const Employee = () => {
   const [data, setData] = useState([]);
 
@@ -221,7 +222,13 @@ const Employee = () => {
   const handleDelete = (id) => {
     deleteEmployee(id);
   };
+  const getDepartmentName = (id) => {
+    const department = departments.find(
+      (dept) => String(dept.id) === String(id)
+    );
 
+    return department ? department.department_name : "N/A";
+  };
   /* ================= UI ================= */
 
   return (
@@ -239,11 +246,40 @@ const Employee = () => {
           variant: "primary",
         }}
         columns={[
+          {
+            key: "photo",
+            title: "Photo",
+            align: "center",
+            type: "custom",
+            render: (row) =>
+              row.photo ? (
+                <img
+                  src={`${baseURL}${row.photo}`}
+                  alt="Employee"
+                  style={{
+                    width: "45px",
+                    height: "45px",
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                  }}
+                />
+
+              ) : (
+                <span>No Image</span>
+              ),
+          },
+
           { key: "username", title: "Name", align: "center" },
           { key: "company_email", title: "Company Mail", align: "center" },
           { key: "mobile", title: "Mobile", align: "center" },
           { key: "gender", title: "Gender", align: "center" },
-          { key: "department", title: "Department", align: "center" },
+          {
+            key: "department_id",
+            title: "Department",
+            align: "center",
+            type: "custom",
+            render: (row) => getDepartmentName(row.department_id),
+          },
           {
             key: "actions",
             title: "Actions",
@@ -277,16 +313,48 @@ const Employee = () => {
             </div>
 
             <div className="modal-body grid view">
-              {Object.entries(viewData).map(
-                ([key, value]) =>
-                  key !== "id" && (
+              {Object.entries(viewData).map(([key, value]) => {
+                
+                if (key === "id") return null;
+                if (key === "password") {
+                  return (
                     <div className="form-group" key={key}>
-                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                      <input value={value} disabled />
+                      <label>Password</label>
+                      <input value="**********" disabled />
                     </div>
-                  )
-              )}
-            </div>
+                  );
+                }
+                if (key === "photo") {
+                  return (
+                    <div className="form-group" key={key}>
+                      <label>Photo</label>
+                      {value ? (
+                        <img
+                          src={`${baseURL}${value}`}
+                          alt="Employee"
+                          style={{
+                            width: "120px",
+                            height: "120px",
+                            borderRadius: "10px",
+                            objectFit: "cover",
+                            border: "1px solid #ccc",
+                          }}
+                        />
+                      ) : (
+                        <p>No Image</p>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="form-group" key={key}>
+                    <label>{key.replace(/_/g, " ").toUpperCase()}</label>
+                    <input value={value || ""} disabled />
+                  </div>
+                );
+              })}
+              </div>
+
 
             <div className="modal-footer">
               <button className="btn secondary" onClick={closeViewModal}>Close</button>
@@ -331,7 +399,7 @@ const Employee = () => {
                 <div className="form-group" key={name}>
                   <label>{label}</label>
                   <input
-                    type={type || "text"}
+                    type={name === "password" ? "password" : type || "text"}
                     name={name}
                     value={formData[name]}
                     onChange={handleChange}
