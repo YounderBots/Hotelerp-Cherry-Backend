@@ -319,6 +319,7 @@ def get_all_users(
                     "mobile": user.Mobile,
                     "alternative_mobile": user.Alternative_Mobile,
                     "dob": user.D_O_B,
+                    "gender": user.Gender,
                     "marital_status": user.Marital_Status,
                     "address": user.Address,
                     "city": user.City,
