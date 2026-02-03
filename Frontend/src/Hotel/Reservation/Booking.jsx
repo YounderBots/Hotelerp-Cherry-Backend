@@ -1,53 +1,26 @@
 import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { UserPlus, Eye, Pencil, Trash2, X } from "lucide-react";
+import APICall from "../../APICalls/APICalls";
+import { useEffect } from "react";
 
 const Booking = () => {
-  const [data, setData] = useState([
-    {
-      id: 1,
-      roomNo: "202",
-      firstName: "John",
-      lastName: "Doe",
-      email: "john@example.com",
-      phone: "9876543210",
-      roomType: "Deluxe",
-      arrivalDate: "2026-01-10",
-      departureDate: "2026-01-12",
-      noOfRooms: 1,
-      noOfAdults: 2,
-      noOfChilds: 0,
-      noOfNights: 2,
-    },
-    {
-      id: 2,
-      roomNo: "203",
-      firstName: "Sarah",
-      lastName: "Wilson",
-      email: "sarah@example.com",
-      phone: "9123456780",
-      roomType: "Suite",
-      arrivalDate: "2026-01-15",
-      departureDate: "2026-01-18",
-      noOfRooms: 1,
-      noOfAdults: 2,
-      noOfChilds: 1,
-      noOfNights: 3,
-    },
-  ]);
+  const [data, setData] = useState([]);
+  const [roomTypes, setRoomTypes] = useState([]);
 
   const initialForm = {
-    firstName: "",
-    lastName: "",
+    salutation: "",
+    first_name: "",
+    last_name: "",
+    phone_number: "",
     email: "",
-    phone: "",
-    roomType: "",
-    arrivalDate: "",
-    departureDate: "",
-    noOfRooms: 1,
-    noOfAdults: 1,
-    noOfChilds: 0,
-    noOfNights: 1,
+    arrival_date: "",
+    departure_date: "",
+    no_of_nights: "",
+    room_type: [],
+    no_of_rooms: "",
+    no_of_adults: "",
+    no_of_children: 0,
   };
 
   const [formData, setFormData] = useState(initialForm);
@@ -65,22 +38,22 @@ const Booking = () => {
   };
 
   const openEditModal = (row) => {
-    setFormData(row);
+    setFormData({
+      ...row,
+      room_type: (row.room_type || []).map(Number),
+    });
     setSelectedId(row.id);
     setMode("edit");
     setShowModal(true);
   };
 
   const openViewModal = (row) => {
-    setFormData(row);
+    setFormData({
+      ...row,
+      room_type: (row.room_type || []).map(Number),
+    });
     setMode("view");
     setShowModal(true);
-  };
-
-  const handleDelete = (row) => {
-    if (window.confirm("Are you sure you want to delete this booking?")) {
-      setData((prev) => prev.filter((i) => i.id !== row.id));
-    }
   };
 
   const closeModal = () => {
@@ -92,21 +65,92 @@ const Booking = () => {
     const { name, value } = e.target;
     setFormData((p) => ({ ...p, [name]: value }));
   };
+  
+  const getAllBookings = async ()=> {
+    try {
+      const response = await APICall.getT("/hotel/room_booking");
+      setData(response.data);
+    }
+    catch (err) {
+      console.log("Rooms API Error:", err);
+    }
+  }
+  const getAllroom_types = async () => {
+    try {
+      const response = await APICall.getT("/masterdata/room_types");
 
-  const handleSave = () => {
-    if (!formData.firstName || !formData.lastName) return;
+      console.log("Room Types Full Response:", response);
+
+      setRoomTypes(response?.data|| []);
+    } catch (err) {
+      console.log("Room Types API Error:", err);
+    }
+  };
+
+
+  useEffect(() => {
+    getAllBookings();
+    getAllroom_types();
+  }, []);
+
+  const createBooking = async () => {
+    try {
+      const response = await APICall.postT("/hotel/room_booking", formData);
+      getAllBookings();
+      closeModal();
+    }
+    catch (err) {
+      console.log("Rooms API Error:", err);
+    }
+  }
+  const updateBooking = async () => {
+    try {
+      const payload = {
+        ...formData,
+        id: selectedId,
+      };
+
+      const response = await APICall.putT(
+        "/hotel/room_booking",
+        payload
+      );
+
+      console.log("Update Success:", response);
+
+      getAllBookings();
+      closeModal();
+    } catch (err) {
+      console.log("Update Booking API Error:", err);
+    }
+  };
+
+  const deleteBooking = async () => {
+    try {
+      const response = await APICall.deleteT(`/hotel/room_booking/${selectedId}`);
+      getAllBookings();
+      closeModal();
+    }
+    catch (err) {
+      console.log("Rooms API Error:", err);
+    }
+  }
+
+
+  const handleSave = async () => {
+    if (!formData.first_name || !formData.last_name) return;
 
     if (mode === "edit") {
-      setData((prev) =>
-        prev.map((i) => (i.id === selectedId ? { ...formData } : i))
-      );
+      await updateBooking();
     } else {
-      setData((prev) => [
-        ...prev,
-        { ...formData, id: Date.now(), roomNo: "Auto" },
-      ]);
+      await createBooking();
     }
-    closeModal();
+  };
+
+  const handleDelete = (row) => {
+    if (window.confirm("Are you sure you want to delete this booking?")) {
+      setSelectedId(row.id);
+      deleteBooking();
+    }
   };
 
   const isView = mode === "view";
@@ -127,9 +171,11 @@ const Booking = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "roomNo", title: "Room No", align: "center" },
-          { key: "firstName", title: "First Name", align: "center" },
-          { key: "lastName", title: "Last Name", align: "center" },
+          { key: "first_name", title: "First Name", align: "center" },
+          { key: "last_name", title: "Last Name", align: "center" },
+          { key: "no_of_rooms", title: "No. of Rooms", align: "center" },
+          { key: "arrival_date", title: "Arrival Date", align: "center" },
+          { key: "departure_date", title: "Departure Date", align: "center" },
           {
             key: "actions",
             title: "Actions",
@@ -184,18 +230,24 @@ const Booking = () => {
 
             {/* ===== BODY (ALL FIELDS ALWAYS VISIBLE) ===== */}
             <div className="modal-body grid">
+              <div className="form-group">
+                <label>Salutation</label>
+                <select
+                  name="salutation"
+                  value={formData.salutation}
+                  onChange={handleChange}
+                  disabled={isView}
+                >
+                  <option value="Mr">Mr</option>
+                  <option value="Mrs">Mrs</option>
+                </select>
+              </div>
+
               {[
-                ["First Name", "firstName"],
-                ["Last Name", "lastName"],
+                ["First Name", "first_name"],
+                ["Last Name", "last_name"],
                 ["Email", "email"],
-                ["Phone", "phone"],
-                ["Room Type", "roomType"],
-                ["Arrival Date", "arrivalDate", "date"],
-                ["Departure Date", "departureDate", "date"],
-                ["No of Rooms", "noOfRooms"],
-                ["No of Adults", "noOfAdults"],
-                ["No of Children", "noOfChilds"],
-                ["No of Nights", "noOfNights"],
+                ["phone_number", "phone_number"],
               ].map(([label, name, type]) => (
                 <div className="form-group" key={name}>
                   <label>{label}</label>
@@ -208,6 +260,118 @@ const Booking = () => {
                   />
                 </div>
               ))}
+              <div className="form-group">
+                <label>Room Type</label>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "6px",
+                    padding: "8px",
+                    border: "1px solid #ccc",
+                    borderRadius: "8px",
+                    minHeight: "45px",
+                    background: isView ? "#f5f5f5" : "white",
+                  }}
+                >
+                  {formData.room_type.length > 0 ? (
+                    formData.room_type.map((id) => {
+                      const room = roomTypes.find((r) => r.id === id);
+
+                      return (
+                        <span
+                          key={id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "4px 10px",
+                            borderRadius: "20px",
+                            background: "#e0f2fe",
+                            fontSize: "13px",
+                          }}
+                        >
+                          {room?.room_type_name}
+                          {!isView && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  room_type: prev.room_type.filter((x) => x !== id),
+                                }));
+                              }}
+                              style={{
+                                marginLeft: "6px",
+                                border: "none",
+                                background: "transparent",
+                                cursor: "pointer",
+                                fontWeight: "bold",
+                              }}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <span style={{ fontSize: "13px", color: "#888" }}>
+                      Select Room Types...
+                    </span>
+                  )}
+                </div>
+                {!isView && (
+                  <select
+                    style={{
+                      marginTop: "8px",
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: "8px",
+                    }}
+                    onChange={(e) => {
+                      const selectedId = Number(e.target.value);
+
+                      if (!selectedId) return;
+                      if (formData.room_type.includes(selectedId)) return;
+
+                      setFormData((prev) => ({
+                        ...prev,
+                        room_type: [...prev.room_type, selectedId],
+                      }));
+                      e.target.value = "";
+                    }}
+                  >
+                    <option value="">+ Add Room Type</option>
+
+                    {roomTypes.map((room) => (
+                      <option key={room.id} value={room.id}>
+                        {room.room_type_name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {[
+                ["Arrival Date", "arrival_date", "date"],
+                ["Departure Date", "departure_date", "date"],
+                ["No of Rooms", "no_of_rooms"],
+                ["No of Adults", "no_of_adults"],
+                ["No of Children", "no_of_children"],
+                ["No of Nights", "no_of_nights"],
+              ].map(([label, name, type]) => (
+                <div className="form-group" key={name}>
+                  <label>{label}</label>
+                  <input
+                    type={type || "text"}
+                    name={name}
+                    value={formData[name]}
+                    onChange={handleChange}
+                    disabled={isView}
+                  />
+                </div>
+              ))}
+
             </div>
 
             {/* ===== FOOTER ===== */}
