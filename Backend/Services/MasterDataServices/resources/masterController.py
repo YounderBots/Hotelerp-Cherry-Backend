@@ -2012,7 +2012,7 @@ async def create_room(
     room_name: str = Form(...),
     room_type_id: int = Form(...),
     bed_type_id: int = Form(...),
-    tele_no: str = Form(None),
+    room_telephone: str = Form(None),
     max_adult: int = Form(...),
     max_child: int = Form(...),
 
@@ -2096,7 +2096,7 @@ async def create_room(
             Room_Name=room_name,
             Room_Type_ID=room_type_id,
             Bed_Type_ID=bed_type_id,
-            Room_Telephone=tele_no,
+            Room_Telephone=room_telephone,
             Max_Adult_Occupy=max_adult,
             Max_Child_Occupy=max_child,
 
