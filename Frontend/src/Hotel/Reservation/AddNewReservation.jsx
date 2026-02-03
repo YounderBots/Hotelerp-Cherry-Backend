@@ -1,15 +1,66 @@
 import React, { useState } from "react";
 import Tabs, { Tab } from "../../stories/Tabs";
+import { useEffect } from "react";
 import Modal from 'react-modal'
 import Button from "../../stories/Button"
 import RoomCard from "./Pages/Card";
 import Payment from "./payment";
 import "./Reservation.css";
+import APICall from "../../APICalls/APICalls";
 
 const AddNewReservation = () => {
   const [selectedRooms, setSelectedRooms] = useState([]);
-  const [modalView, setModalView] = useState(false)
-  const [paymentModal, setpaymentModal] = useState(false)
+  const [modalView, setModalView] = useState(false);
+  const [paymentModal, setpaymentModal] = useState(false);
+  const [roomsData, setRoomsData] = useState([]);
+  const [roomTypes, setRoomTypes] = useState([]);
+
+
+  const getAllroom_type_ids = async () => {
+    try {
+      const res = await APICall.getT("/masterdata/room_types");
+
+      console.log("FULL Room Types Response:", res.data);
+
+      if (Array.isArray(res.data.data)) {
+        setRoomTypes(res.data.data);
+      } else if (Array.isArray(res.data)) {
+        setRoomTypes(res.data);
+      } else {
+        setRoomTypes([]);
+      }
+
+    } catch (err) {
+      console.log("Room Types API Error:", err);
+    }
+  };
+
+  const getAllRooms = async () => {
+    try {
+      const response = await APICall.getT("/masterdata/room");
+
+      console.log("FULL Rooms Response:", response.data);
+
+      if (Array.isArray(response.data.data)) {
+        setRoomsData(response.data.data);
+      } else if (Array.isArray(response.data)) {
+        setRoomsData(response.data);
+      } else {
+        setRoomsData([]);
+      }
+
+    } catch (err) {
+      console.log("Rooms API Error:", err);
+    }
+  };
+
+  useEffect(() => {
+    getAllRooms();
+    getAllroom_type_ids();
+  }, []);
+
+
+
   const [formData, setFormData] = useState({
     title: "Mr",
     firstName: "",
@@ -40,71 +91,33 @@ const AddNewReservation = () => {
     setpaymentModal(true);
   };
 
-
-  const allRooms = [
-    { id: 1, roomNo: 201, adults: 2, children: 1, status: "Available", type: "Standard" },
-    { id: 2, roomNo: 202, adults: 2, children: 3, status: "Available", type: "Standard" },
-    { id: 3, roomNo: 301, adults: 2, children: 0, status: "Available", type: "Deluxe" },
-    { id: 4, roomNo: 302, adults: 3, children: 2, status: "Available", type: "Deluxe" },
-    { id: 5, roomNo: 401, adults: 2, children: 2, status: "Available", type: "Suite" },
-    { id: 6, roomNo: 501, adults: 4, children: 2, status: "Available", type: "Family" },
-    { id: 7, roomNo: 601, adults: 2, children: 1, status: "Available", type: "Executive" },
-  ];
-
   const isRoomSelected = (room) =>
     selectedRooms.some((r) => r.id === room.id);
 
   return (
     <div>
-      <Tabs variant="default">
-        <Tab label="Standard Room">
-          <h3>Standard Rooms</h3>
-          <RoomGrid
-            rooms={allRooms.filter((r) => r.type === "Standard")}
-            isSelected={isRoomSelected}
-            onSelect={handleSelect}
-          />
-        </Tab>
+      {roomTypes.length === 0 ? (
+          <h3>Loading Room Types...</h3>
+        ) : (
+          <Tabs variant="default">
+            {roomTypes.map((type) => (
+              <Tab
+                key={type.id}
+                label={type.room_type || type.room_type_name}
+              >
+            <h3>{type.room_type} Rooms</h3>
 
-        <Tab label="Deluxe Room">
-          <h3>Deluxe Rooms</h3>
-          <RoomGrid
-            rooms={allRooms.filter((r) => r.type === "Deluxe")}
-            isSelected={isRoomSelected}
-            onSelect={handleSelect}
-          />
-        </Tab>
-
-        <Tab label="Suite Room">
-          <h3>Suite Rooms</h3>
-          <RoomGrid
-            rooms={allRooms.filter((r) => r.type === "Suite")}
-            isSelected={isRoomSelected}
-            onSelect={handleSelect}
-          />
-        </Tab>
-
-        <Tab label="Family Room">
-          <h3>Family Rooms</h3>
-          <RoomGrid
-            rooms={allRooms.filter((r) => r.type === "Family")}
-            isSelected={isRoomSelected}
-            onSelect={handleSelect}
-          />
-        </Tab>
-
-        <Tab label="Executive Room">
-          <h3>Executive Rooms</h3>
-          <RoomGrid
-            rooms={allRooms.filter((r) => r.type === "Executive")}
-            isSelected={isRoomSelected}
-            onSelect={handleSelect}
-          />
-        </Tab>
-      </Tabs>
-
-
-
+            <RoomGrid
+              rooms={roomsData.filter(
+                (room) => Number(room.room_type_id) === type.id
+              )}
+              isSelected={isRoomSelected}
+              onSelect={handleSelect}
+            />
+          </Tab>
+            ))}
+        </Tabs>
+      )}
       <div style={{
         marginTop: "24px", padding: "16px",
         display: "flex",
@@ -116,7 +129,7 @@ const AddNewReservation = () => {
           <strong>Rooms:</strong>{" "}
           {selectedRooms.length === 0
             ? "Book the Rooms"
-            : selectedRooms.map((r) => `Room ${r.roomNo}`).join(", ")}
+            : selectedRooms.map((r) => `Room ${r.room_no}`).join(", ")}
         </div>
         <div>
           {selectedRooms.length > 0 && (
@@ -252,7 +265,7 @@ const AddNewReservation = () => {
                   </div>
                   <div className="room-block">
                     <label>Room No</label>
-                    {selectedRooms.map((r) => `${r.roomNo}`).join(", ")}
+                    {selectedRooms.map((r) => `${r.room_no}`).join(", ")}
                   </div>
                   <div>
                     <label >Rate Type</label>
