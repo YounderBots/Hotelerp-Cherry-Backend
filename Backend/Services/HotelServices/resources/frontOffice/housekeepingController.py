@@ -471,7 +471,7 @@ async def create_roomincident_log(
         incident = models.HousekeeperRoomIncident(
             room_no=room_id,  # ✅ storing master DB room id
             incident_date=datetime.strptime(incident_date, "%Y-%m-%d").date(),
-            incident_time=datetime.strptime(incident_time, "%H:%M:%S").time(),
+            incident_time=datetime.strptime(incident_time, "%H:%M").time(),
             incident_description=incident_description.strip(),
 
             involved_staff=involved_staff,

@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, Trash2, X, UserPlus } from "lucide-react";
+import { Eye, Pencil, Trash2, X } from "lucide-react";
 import "../../MasterData/MasterData.css";
 import APICall from "../../APICalls/APICalls";
 
 const RoomIncidentLog = () => {
-  const [data, setData] = useState([
-
-  ]);
+  const [data, setData] = useState([]);
+  const [rooms, setRooms] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -30,132 +29,102 @@ const RoomIncidentLog = () => {
 
   const [formData, setFormData] = useState(initialForm);
 
+  /* ================= API CALLS ================= */
+
+  const getRoomIncidentLog = async () => {
+    try {
+      const res = await APICall.getT("/hotel/roomincident_log");
+      setData(res.data.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const getAllRooms = async () => {
+    try {
+      const res = await APICall.getT("/masterdata/room");
+      setRooms(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const createRoomIncidentLog = async () => {
+    try {
+      const form = new FormData();
+
+      form.append("room_id", formData.roomNo);
+      form.append("incident_date", formData.incidentDate);
+      form.append("incident_time", formData.incidentTime);
+      form.append("incident_description", formData.incidentDescription);
+
+      form.append("involved_staff", formData.housekeepingStaff || "");
+      form.append("severity", formData.severity || "");
+      form.append("witnesses", formData.witnesses || "");
+      form.append("actions_taken", formData.actionsTaken || "");
+      form.append("reported_by", formData.reportedBy || "");
+      form.append("report_date", formData.reportDate || "");
+
+      if (formData.attachments) {
+        form.append("attachment_file", formData.attachments);
+      }
+
+      await APICall.postT("/hotel/roomincident_log", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      getRoomIncidentLog();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   /* ================= HANDLERS ================= */
 
-  const openAddModal = () => {
-    setEditId(null);
-    setFormData(initialForm);
-    setShowModal(true);
-  };
-
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
-  };
-
-  const closeViewModal = () => {
-    setViewData(null);
-    setShowViewModal(false);
-  };
-
-  const closeModal = () => {
-    setEditId(null);
-    setShowModal(false);
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-
     if (!file) return;
 
-    const allowedTypes = [
-      "image/jpeg",
-      "image/png",
-      "application/pdf",
-    ];
-
-    if (!allowedTypes.includes(file.type)) {
-      alert("Only JPG, PNG, or PDF files are allowed!");
+    const allowed = ["image/jpeg", "image/png", "application/pdf"];
+    if (!allowed.includes(file.type)) {
+      alert("Only JPG, PNG, or PDF allowed");
       e.target.value = "";
       return;
     }
 
-    setFormData((prev) => ({
-      ...prev,
-      attachment_file: file,
-    }));
+    setFormData((prev) => ({ ...prev, attachments: file }));
   };
-
-
-  const handleChange = (e) => {
-    const { name, value, files } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: files ? files[0] : value,
-    }));
-  };
-
-
-  const getRoomIncidentLog = async () => {
-    const AllRoomIncidentLog = await APICall.getT("/hotel/roomincident_log");
-    setData(AllRoomIncidentLog.data);
-  }
-
-  const createRoomIncidentLog = async () => {
-    try {
-      await APICall.postT("/hotel/roomincident_log", {
-        room_no: formData.roomNo,
-        incident_date: formData.incidentDate,
-        incident_time: formData.incidentTime,
-        incident_description: formData.incidentDescription,
-        involved_staff: formData.housekeepingStaff,
-        severity: formData.severity,
-        witness: formData.witnesses,
-        actions_taken: formData.actionsTaken,
-        reported_by: formData.reportedBy,
-        report_date: formData.reportDate,
-        attachment_file: formData.attachments
-
-      });
-      getRoomIncidentLog();
-    }
-    catch (error) {
-      return error;
-    }
-  }
-
-
-  useEffect(() => {
-    getRoomIncidentLog();
-  }, [])
-
-
 
   const handleSave = () => {
-    // Basic validation
     if (!formData.roomNo || !formData.incidentDate) {
-      alert("Room No and Incident Date are required");
+      alert("Room No & Incident Date required");
       return;
     }
 
-    if (editId) {
-      // 🔁 local edit logic (if you really need it)
-      setData((prev) =>
-        prev.map((item) =>
-          item.id === editId
-            ? { ...item, ...formData }
-            : item
-        )
-      );
-    } else {
-      // ✅ backend create
-      createRoomIncidentLog();
-    }
-
-    closeModal();
+    createRoomIncidentLog();
+    setShowModal(false);
+    setFormData(initialForm);
   };
-
 
   const handleEdit = (row) => {
     setEditId(row.id);
     setFormData({
       ...initialForm,
-      roomNo: row.roomNo,
-      incidentDate: row.incidentDate,
-      incidentTime: row.incidentTime,
-      witnesses: row.witness,
-      reportedBy: row.reportedBy,
-      reportDate: row.reportDate,
+      roomNo: row.room_id,
+      incidentDate: row.incident_date,
+      incidentTime: row.incident_time,
+      incidentDescription: row.incident_description,
+      housekeepingStaff: row.involved_staff,
+      severity: row.severity,
+      witnesses: row.witnesses,
+      actionsTaken: row.actions_taken,
+      reportedBy: row.reported_by,
+      reportDate: row.report_date,
     });
     setShowModal(true);
   };
@@ -163,6 +132,13 @@ const RoomIncidentLog = () => {
   const handleDelete = (id) => {
     setData((prev) => prev.filter((item) => item.id !== id));
   };
+
+  /* ================= EFFECT ================= */
+
+  useEffect(() => {
+    getRoomIncidentLog();
+    getAllRooms();
+  }, []);
 
   /* ================= UI ================= */
 
@@ -176,31 +152,51 @@ const RoomIncidentLog = () => {
         exportable
         actionButton={{
           label: "Add Incident",
-          onClick: openAddModal,
-          size: "medium",
-          variant: "primary",
+          onClick: () => setShowModal(true),
         }}
         columns={[
-          { key: "room_no", title: "Room No", align: "center" },
-          { key: "incident_date", title: "Incident Date", align: "center" },
-          { key: "incident_time", title: "Incident Time", align: "center" },
-          { key: "witnesses", title: "Witness", align: "center" },
+          { key: "room_id", title: "Room No", align: "center" },
+
+          {
+            key: "incident_date",
+            title: "Incident Date",
+            align: "center",
+            render: (row) =>
+              new Date(row.incident_date).toLocaleDateString(),
+          },
+
+          {
+            key: "incident_time",
+            title: "Incident Time",
+            align: "center",
+            render: (row) => row.incident_time?.slice(0, 5),
+          },
+
+          { key: "witnesses", title: "Witnesses", align: "center" },
           { key: "reported_by", title: "Reported By", align: "center" },
-          { key: "report_date", title: "Date of Report", align: "center" },
+
+          {
+            key: "report_date",
+            title: "Report Date",
+            align: "center",
+            render: (row) =>
+              new Date(row.report_date).toLocaleDateString(),
+          },
+
           {
             key: "actions",
             title: "Actions",
             align: "center",
             type: "custom",
             render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setViewData(row)}>
                   <Eye size={16} />
                 </button>
-                <button className="table-action-btn edit" onClick={() => handleEdit(row)}>
+                <button onClick={() => handleEdit(row)}>
                   <Pencil size={16} />
                 </button>
-                <button className="table-action-btn delete" onClick={() => handleDelete(row.id)}>
+                <button onClick={() => handleDelete(row.id)}>
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -210,58 +206,63 @@ const RoomIncidentLog = () => {
         data={data}
       />
 
+
       {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
+      {viewData && (
         <div className="modal-overlay">
           <div className="modal-card modal-sm">
             <div className="modal-header">
               <h3>View Incident</h3>
-              <button onClick={closeViewModal}>
+              <button onClick={() => setViewData(null)}>
                 <X size={18} />
               </button>
             </div>
 
             <div className="modal-body single view">
-              {Object.entries(viewData).map(([key, value]) => (
-                <div className="form-group" key={key}>
-                  <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                  <input value={value} disabled />
+              {Object.entries(viewData).map(([k, v]) => (
+                <div className="form-group" key={k}>
+                  <label>{k.replace(/_/g, " ")}</label>
+                  <input value={v || ""} disabled />
                 </div>
               ))}
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= ADD / EDIT MODAL ================= */}
+      {/* ================= ADD MODAL ================= */}
       {showModal && (
         <div className="modal-overlay">
           <div className="modal-card">
             <div className="modal-header">
-              <h3>{editId ? "Edit Incident" : "Add Incident"}</h3>
-              <button onClick={closeModal}>
+              <h3>Add Incident</h3>
+              <button onClick={() => setShowModal(false)}>
                 <X size={18} />
               </button>
             </div>
 
             <div className="modal-body grid">
+              <div className="form-group">
+                <label>Room Number</label>
+                <select name="roomNo" value={formData.roomNo} onChange={handleChange}>
+                  <option value="">Select Room</option>
+                  {rooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.room_no}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {[
-                ["Room No", "roomNo"],
-                ["Date of Incident", "incidentDate", "date"],
-                ["Time of Incident", "incidentTime", "time"],
-                ["Incident Description", "incidentDescription"],
-                ["Housekeeping Staff Involved", "housekeepingStaff"],
-                ["Severity of Incident", "severity"],
+                ["Incident Date", "incidentDate", "date"],
+                ["Incident Time", "incidentTime", "time"],
+                ["Description", "incidentDescription"],
+                ["Housekeeping Staff", "housekeepingStaff"],
                 ["Witnesses", "witnesses"],
                 ["Actions Taken", "actionsTaken"],
                 ["Reported By", "reportedBy"],
-                ["Date of Report", "reportDate", "date"],
+                ["Report Date", "reportDate", "date"],
               ].map(([label, name, type]) => (
                 <div className="form-group" key={name}>
                   <label>{label}</label>
@@ -274,20 +275,25 @@ const RoomIncidentLog = () => {
                 </div>
               ))}
 
+              <div className="form-group">
+                <label>Severity</label>
+                <select name="severity" value={formData.severity} onChange={handleChange}>
+                  <option value="">Select</option>
+                  <option>Low</option>
+                  <option>Medium</option>
+                  <option>High</option>
+                  <option>Critical</option>
+                </select>
+              </div>
 
-              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+              <div className="form-group" style={{ gridColumn: "1/-1" }}>
                 <label>Attachment</label>
-                <input
-                  type="file"
-                  name="attachment_file"
-                  onChange={handleFileChange}
-                />
+                <input type="file" onChange={handleFileChange} />
               </div>
             </div>
 
-
             <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
+              <button className="btn secondary" onClick={() => setShowModal(false)}>
                 Close
               </button>
               <button className="btn primary" onClick={handleSave}>
