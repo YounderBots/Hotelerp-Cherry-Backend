@@ -11,8 +11,12 @@ const TaskAssign = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [Employee, setEmployee] = useState([]);
+  const [roomNo, setroomNo] = useState([]);
+  const [userCode, setUserCode] = useState("");
 
   const initialForm = {
+    userCode: "",
     employeeId: "",
     firstName: "",
     lastName: "",
@@ -62,6 +66,18 @@ const TaskAssign = () => {
     setData(AllTaskAssign.data);
   }
 
+  const getAllRooms = async () => {
+    const response = await APICall.getT("/masterdata/room");
+    setroomNo(response.data)
+  }
+
+
+  const getEmployee = async () => {
+    const AllRoles = await APICall.getT("/user/users");
+    setEmployee(AllRoles.data);
+
+    setUserCode(AllRoles.data[0]?.user_code || "");
+  }
 
   const createHousekeeperTtasks = async () => {
     try {
@@ -93,8 +109,8 @@ const TaskAssign = () => {
         employee_id: formData.employeeId,
         first_name: formData.firstName,
         last_name: formData.lastName,
-        room_no:formData.roomNo,
-        assign_staff:formData.assignedStaff,
+        room_no: formData.roomNo,
+        assign_staff: formData.assignedStaff,
         schedule_date: formData.scheduleDate,
         schedule_time: formData.scheduleTime,
         task_status: formData.taskStatus,
@@ -111,7 +127,7 @@ const TaskAssign = () => {
     }
   };
 
-   const deleteHousekeeperTtasks = async (id) => {
+  const deleteHousekeeperTtasks = async (id) => {
     try {
       await APICall.deleteT(`/hotel/housekeeper_tasks/${id}`)
     }
@@ -122,7 +138,14 @@ const TaskAssign = () => {
 
   useEffect(() => {
     getTaskAssign();
+    getEmployee();
+    getAllRooms();
   }, [])
+  const employee_name = (row) =>
+    `${row?.first_name || ""} ${row?.last_name || ""}`.trim();
+
+
+
 
   const handleSave = () => {
     if (!formData.firstName || !formData.roomNo) return;
@@ -181,7 +204,11 @@ const TaskAssign = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "first_name", title: "Employee Name", align: "center", },
+          {
+            key: "first_name",
+            title: "Employee Name",
+            align: "center",
+          },
           { key: "room_no", title: "Room No", align: "center" },
           { key: "assign_staff", title: "Assigned Staff", align: "center" },
           { key: "schedule_time", title: "Assigned Date Time", align: "center" },
@@ -219,14 +246,35 @@ const TaskAssign = () => {
               <button onClick={closeViewModal}><X size={18} /></button>
             </div>
 
+
+
             <div className="modal-body single view">
-              {Object.entries(viewData).map(([k, v]) => (
-                <div className="form-group" key={k}>
-                  <label>{k.replace(/([A-Z])/g, " $1")}</label>
-                  <input value={v} disabled />
-                </div>
-              ))}
+
+              {Object.entries(viewData).map(([k, v]) => {
+                if (k === "employee_id") {
+                  return (
+                    <div className="form-group">
+                      <label>Employee ID</label>
+                      <input
+                        type="text"
+                        value={userCode}
+                        readOnly
+                        className="form-control"
+                      />
+                    </div>
+                  )
+
+                }
+
+                return (
+                  <div className="form-group" key={k}>
+                    <label>{k.replace(/([A-Z])/g, " $1")}</label>
+                    <input value={v} disabled />
+                  </div>
+                );
+              })}
             </div>
+
 
             <div className="modal-footer">
               <button className="btn secondary" onClick={closeViewModal}>Close</button>
@@ -245,15 +293,24 @@ const TaskAssign = () => {
             </div>
 
             <div className="modal-body grid">
+              <div className="form-group">
+                <label>Employee ID</label>
+                <select>
+                  <option value="" disabled>Select ID</option>
+                  {Employee.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.user_code}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {[
-                ["Employee ID", "employeeId"],
                 ["First Name", "firstName"],
                 ["Last Name", "lastName"],
                 ["Schedule Date", "scheduleDate", "date"],
                 ["Schedule Time", "scheduleTime", "time"],
-                ["Room Number", "roomNo"],
                 ["Task Type", "taskType"],
-                ["Assigned Staff", "assignedStaff"],
                 ["Lost & Found", "lostAndFound"],
               ].map(([label, name, type]) => (
                 <div className="form-group" key={name}>
@@ -267,6 +324,30 @@ const TaskAssign = () => {
                 </div>
               ))}
 
+
+
+              <div className="form-group">
+                <label>Room Number</label>
+                <select name="roomNo" value={formData.roomNo} onChange={handleChange}>
+                  <option disabled value="">Select the Room</option>
+                  {roomNo.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.room_no}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Assigned Staff</label>
+                <select name="assignedStaff" value={formData.assignedStaff} onChange={handleChange}>
+                  <option disabled value="">Select the Staff</option>
+                  {Employee.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.username}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="form-group">
                 <label>Task Status</label>
                 <select name="taskStatus" value={formData.taskStatus} onChange={handleChange}>
