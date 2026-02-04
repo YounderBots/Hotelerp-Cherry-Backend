@@ -11,12 +11,34 @@ from configs.base_config import CommonWords
 
 router = APIRouter()
 
+# =====================================================
+# COMMON CONSTANTS & CONFIG
+# =====================================================
+import os
+from datetime import datetime, date
+
+# ---------------- System Status ----------------
 STATUS = "ACTIVE"
 UNSTATUS = "INACTIVE"
-RESERVATION = "RESERVATION"
 
+# ---------------- Reservation Types ----------------
+RESERVATION = "RESERVATION"
+GROUP_RESERVATION = "GROUP_RESERVATION"
+CHECKIN = "CHECKIN"
+
+# ---------------- Room Status ----------------
+AVAILABLE = "AVAILABLE"
+RESERVED = "RESERVED"
+OCCUPIED = "OCCUPIED"
+CANCELLED = "CANCELLED"
+
+# ---------------- Upload Paths ----------------
 UPLOAD_DIR = "templates/static/identity_proofs"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# ---------------- Date Helpers ----------------
+TODAY = date.today()
+NOW = datetime.now()
 
 # =====================================================
 # CREATE ROOM BOOKING
@@ -574,9 +596,9 @@ async def create_room_reservation(
     departure_date: date = Form(...),
     no_of_nights: int = Form(...),
 
-    room_type_ids: str = Form(...),   # JSON → [room_type_id]
-    room_ids: str = Form(...),        # JSON → [room_id]
-    rate_type: str = Form(...),       # JSON → ["daily"]
+    room_type_ids: str = Form(...),   # JSON → [1,2]
+    room_ids: str = Form(...),        # JSON → [101,102]
+    rate_type: str = Form(...),       # JSON → ["daily","daily"]
 
     no_of_rooms: int = Form(...),
     no_of_adults: int = Form(...),
@@ -614,12 +636,15 @@ async def create_room_reservation(
     identity_file: UploadFile = File(...),
 ):
     # -------------------------------------------------
-    # AUTH
+    # AUTHENTICATION
     # -------------------------------------------------
     user_id, role_id, company_id, token = verify_authentication(request)
     if not user_id or not company_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    # -------------------------------------------------
+    # DATE VALIDATION
+    # -------------------------------------------------
     if departure_date <= arrival_date:
         raise HTTPException(
             status_code=400,
@@ -627,17 +652,30 @@ async def create_room_reservation(
         )
 
     # -------------------------------------------------
+    # JSON VALIDATION
+    # -------------------------------------------------
+    try:
+        room_type_ids_json = json.loads(room_type_ids)
+        room_ids_json = json.loads(room_ids)
+        rate_type_json = json.loads(rate_type)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="room_type_ids, room_ids, rate_type must be valid JSON arrays"
+        )
+
+    # -------------------------------------------------
     # FILE UPLOAD
     # -------------------------------------------------
     ext = identity_file.filename.split(".")[-1]
     filename = f"{uuid.uuid4()}.{ext}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
+    file_path = os.path.join(UPLOAD_DIR, filename)
 
-    with open(filepath, "wb") as f:
+    with open(file_path, "wb") as f:
         shutil.copyfileobj(identity_file.file, f)
 
     # -------------------------------------------------
-    # CREATE & ASSIGN (SAFE)
+    # CREATE RESERVATION (SAFE ASSIGNMENT)
     # -------------------------------------------------
     reservation = models.RoomReservation()
 
@@ -652,9 +690,9 @@ async def create_room_reservation(
     reservation.departure_date = departure_date
     reservation.no_of_nights = no_of_nights
 
-    reservation.room_type_ids = json.loads(room_type_ids)
-    reservation.room_ids = json.loads(room_ids)
-    reservation.rate_type = json.loads(rate_type)
+    reservation.room_type_ids = room_type_ids_json
+    reservation.room_ids = room_ids_json
+    reservation.rate_type = rate_type_json
 
     reservation.no_of_rooms = no_of_rooms
     reservation.no_of_adults = no_of_adults
@@ -689,7 +727,6 @@ async def create_room_reservation(
     reservation.proof_document = filename
 
     reservation.confirmation_code = str(uuid.uuid4())[:8].upper()
-
     reservation.status = STATUS
     reservation.created_by = user_id
     reservation.company_id = company_id
@@ -701,6 +738,9 @@ async def create_room_reservation(
     db.commit()
     db.refresh(reservation)
 
+    # -------------------------------------------------
+    # RESPONSE
+    # -------------------------------------------------
     return {
         "status": "success",
         "message": "Room reservation created successfully",
@@ -732,7 +772,7 @@ def get_all_room_reservations(
             )
 
         # -------------------------------------------------
-        # FETCH DATA
+        # FETCH ROOM RESERVATIONS
         # -------------------------------------------------
         reservations = (
             db.query(models.RoomReservation)
@@ -745,26 +785,27 @@ def get_all_room_reservations(
         )
 
         # -------------------------------------------------
-        # FORMAT RESPONSE
+        # FORMAT RESPONSE (MODEL ORDER)
         # -------------------------------------------------
         data = [
             {
+                # ---------------- Reference ----------------
                 "id": r.id,
                 "room_reservation_id": r.room_reservation_id,
 
-                # Guest
+                # ---------------- Guest Details ----------------
                 "salutation": r.salutation,
                 "first_name": r.first_name,
                 "last_name": r.last_name,
                 "phone_number": r.phone_number,
                 "email": r.email,
 
-                # Stay
+                # ---------------- Stay Details ----------------
                 "arrival_date": r.arrival_date,
                 "departure_date": r.departure_date,
                 "no_of_nights": r.no_of_nights,
 
-                # Room / Rate
+                # ---------------- Room Details ----------------
                 "room_type_ids": r.room_type_ids,
                 "room_ids": r.room_ids,
                 "rate_type": r.rate_type,
@@ -773,16 +814,19 @@ def get_all_room_reservations(
                 "no_of_adults": r.no_of_adults,
                 "no_of_children": r.no_of_children,
 
-                # Payment
+                # ---------------- Payment ----------------
                 "payment_method_id": r.payment_method_id,
+
                 "extra_bed_count": r.extra_bed_count,
                 "extra_bed_cost": r.extra_bed_cost,
 
                 "total_amount": r.total_amount,
                 "tax_percentage": r.tax_percentage,
                 "tax_amount": r.tax_amount,
+
                 "discount_percentage": r.discount_percentage,
                 "discount_amount": r.discount_amount,
+
                 "extra_charges": r.extra_charges,
 
                 "overall_amount": r.overall_amount,
@@ -790,19 +834,20 @@ def get_all_room_reservations(
                 "balance_amount": r.balance_amount,
                 "extra_amount": r.extra_amount,
 
-                # Reservation Info
+                # ---------------- Reservation Info ----------------
                 "booking_status_id": r.booking_status_id,
                 "reservation_type": r.reservation_type,
+
                 "room_complementary": r.room_complementary,
                 "common_complementary": r.common_complementary,
 
-                # Identity
+                # ---------------- Identity ----------------
                 "identity_type_id": r.identity_type_id,
                 "proof_document": r.proof_document,
 
                 "confirmation_code": r.confirmation_code,
 
-                # System
+                # ---------------- System ----------------
                 "token": r.token,
                 "status": r.status,
                 "created_by": r.created_by,
@@ -863,7 +908,7 @@ def get_room_reservation_by_id(
             )
 
         # -------------------------------------------------
-        # FETCH DATA
+        # FETCH RESERVATION
         # -------------------------------------------------
         reservation = (
             db.query(models.RoomReservation)
@@ -882,27 +927,28 @@ def get_room_reservation_by_id(
             )
 
         # -------------------------------------------------
-        # RESPONSE
+        # RESPONSE (MODEL ORDER)
         # -------------------------------------------------
         return {
             "status": "success",
             "data": {
+                # ---------------- Reference ----------------
                 "id": reservation.id,
                 "room_reservation_id": reservation.room_reservation_id,
 
-                # Guest
+                # ---------------- Guest Details ----------------
                 "salutation": reservation.salutation,
                 "first_name": reservation.first_name,
                 "last_name": reservation.last_name,
                 "phone_number": reservation.phone_number,
                 "email": reservation.email,
 
-                # Stay
+                # ---------------- Stay Details ----------------
                 "arrival_date": reservation.arrival_date,
                 "departure_date": reservation.departure_date,
                 "no_of_nights": reservation.no_of_nights,
 
-                # Room / Rate
+                # ---------------- Room Details ----------------
                 "room_type_ids": reservation.room_type_ids,
                 "room_ids": reservation.room_ids,
                 "rate_type": reservation.rate_type,
@@ -911,16 +957,19 @@ def get_room_reservation_by_id(
                 "no_of_adults": reservation.no_of_adults,
                 "no_of_children": reservation.no_of_children,
 
-                # Payment
+                # ---------------- Payment ----------------
                 "payment_method_id": reservation.payment_method_id,
+
                 "extra_bed_count": reservation.extra_bed_count,
                 "extra_bed_cost": reservation.extra_bed_cost,
 
                 "total_amount": reservation.total_amount,
                 "tax_percentage": reservation.tax_percentage,
                 "tax_amount": reservation.tax_amount,
+
                 "discount_percentage": reservation.discount_percentage,
                 "discount_amount": reservation.discount_amount,
+
                 "extra_charges": reservation.extra_charges,
 
                 "overall_amount": reservation.overall_amount,
@@ -928,19 +977,20 @@ def get_room_reservation_by_id(
                 "balance_amount": reservation.balance_amount,
                 "extra_amount": reservation.extra_amount,
 
-                # Reservation Info
+                # ---------------- Reservation Info ----------------
                 "booking_status_id": reservation.booking_status_id,
                 "reservation_type": reservation.reservation_type,
+
                 "room_complementary": reservation.room_complementary,
                 "common_complementary": reservation.common_complementary,
 
-                # Identity
+                # ---------------- Identity ----------------
                 "identity_type_id": reservation.identity_type_id,
                 "proof_document": reservation.proof_document,
 
                 "confirmation_code": reservation.confirmation_code,
 
-                # System
+                # ---------------- System ----------------
                 "token": reservation.token,
                 "status": reservation.status,
                 "created_by": reservation.created_by,

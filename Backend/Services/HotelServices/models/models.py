@@ -105,7 +105,6 @@ class RoomReservation(Base):
     company_id = Column(String(100), nullable=False, index=True)
 
 
-
 class RoomDetails(Base):
     __tablename__ = "room_details"
 
