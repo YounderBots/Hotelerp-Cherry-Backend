@@ -261,7 +261,14 @@ const AddNewReservation = () => {
                 <div className="room-info">
                   <div className="room-block">
                     <label>Room Type</label>
-                    {selectedRooms.map((r) => `${r.type}`).join(", ")}
+                    {selectedRooms
+                      .map((r) => {
+                        const typeObj = roomTypes.find(
+                          (t) => Number(t.id) === Number(r.room_type_id)
+                        );
+                        return typeObj ? typeObj.room_type_name : "Unknown";
+                      })
+                      .join(", ")}
                   </div>
                   <div className="room-block">
                     <label>Room No</label>

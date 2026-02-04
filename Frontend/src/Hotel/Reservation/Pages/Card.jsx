@@ -6,12 +6,12 @@ const RoomCard = ({ room, isSelected, onSelect }) => {
 
   return (
     <div
-      className={`room-card ${isSelected ? "selected" : ""} `}
+      className={`room-card ${isSelected ? "selected" : ""}`}
       onClick={() => onSelect(room)}
     >
       <div className="room-card-header">
-        <span>Room No: {room.roomNo}</span>
-        <span className="room-status">{room.status}</span>
+        <span>Room No: {room.room_no}</span>
+        <span className="room-status">{room.booking_status}</span>
       </div>
 
       <div className="room-icon">
@@ -19,8 +19,8 @@ const RoomCard = ({ room, isSelected, onSelect }) => {
       </div>
 
       <div className="room-card-footer">
-        <span>Adult : {room.adults}</span>
-        <span>Child : {room.children}</span>
+        <span>Adult : {room.max_adult}</span>
+        <span>Child : {room.max_child}</span>
       </div>
     </div>
   );
