@@ -40,7 +40,7 @@ CREATE TABLE `department` (
   KEY `ix_department_status` (`status`),
   KEY `ix_department_Department_Name` (`Department_Name`),
   KEY `ix_department_created_by` (`created_by`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -49,7 +49,7 @@ CREATE TABLE `department` (
 
 LOCK TABLES `department` WRITE;
 /*!40000 ALTER TABLE `department` DISABLE KEYS */;
-INSERT INTO `department` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-29 14:04:31','2026-01-29 14:05:09','1','1');
+INSERT INTO `department` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-29 14:04:31','2026-01-29 14:05:09','1','1'),(2,'Front Office','ACTIVE','1','2026-02-04 19:27:38',NULL,NULL,'1'),(3,'Housekeeping','ACTIVE','1','2026-02-04 19:27:44',NULL,NULL,'1'),(4,'Food & Beverage','ACTIVE','1','2026-02-04 19:27:49',NULL,NULL,'1'),(5,'Maintenance','ACTIVE','1','2026-02-04 19:27:53',NULL,NULL,'1'),(6,'Accounts & Finance','ACTIVE','1','2026-02-04 19:27:57',NULL,NULL,'1');
 /*!40000 ALTER TABLE `department` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -76,7 +76,7 @@ CREATE TABLE `designation` (
   KEY `ix_designation_Designation_Name` (`Designation_Name`),
   KEY `ix_designation_company_id` (`company_id`),
   KEY `ix_designation_id` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -85,7 +85,7 @@ CREATE TABLE `designation` (
 
 LOCK TABLES `designation` WRITE;
 /*!40000 ALTER TABLE `designation` DISABLE KEYS */;
-INSERT INTO `designation` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-29 14:05:44','2026-01-29 14:06:31','1','1');
+INSERT INTO `designation` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-29 14:05:44','2026-01-29 14:06:31','1','1'),(2,'Hotel Manager','ACTIVE','1','2026-02-04 19:28:18',NULL,NULL,'1'),(3,'Front Office Executive','ACTIVE','1','2026-02-04 19:28:22',NULL,NULL,'1'),(4,'Housekeeping Supervisor','ACTIVE','1','2026-02-04 19:28:27',NULL,NULL,'1'),(5,'Chef','ACTIVE','1','2026-02-04 19:28:31',NULL,NULL,'1'),(6,'Accountant','ACTIVE','1','2026-02-04 19:28:35',NULL,NULL,'1');
 /*!40000 ALTER TABLE `designation` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -168,7 +168,7 @@ CREATE TABLE `role_permissions` (
 
 LOCK TABLES `role_permissions` WRITE;
 /*!40000 ALTER TABLE `role_permissions` DISABLE KEYS */;
-INSERT INTO `role_permissions` VALUES (1,'1','1',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:11:04','2026-01-29 15:46:45','1','1'),(2,'1','2',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:13:56',NULL,NULL,'1'),(3,'1','2','1',1,1,1,1,'ACTIVE','1','2026-01-23 15:14:13',NULL,NULL,'1'),(4,'1','2','2',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:09',NULL,NULL,'1'),(5,'1','2','3',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:17',NULL,NULL,'1'),(6,'1','2','4',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:25',NULL,NULL,'1'),(7,'1','3',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:16:13',NULL,NULL,'1'),(8,'1','3','5',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:30',NULL,NULL,'1'),(9,'1','3','6',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:42',NULL,NULL,'1'),(10,'1','3','7',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:49',NULL,NULL,'1'),(11,'1','4',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:21:16',NULL,NULL,'1'),(12,'1','5',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:22:10',NULL,NULL,'1'),(13,'1','5','8',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:34',NULL,NULL,'1'),(14,'1','5','9',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(15,'1','6',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(16,'1','6','32',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(17,'1','6','33',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(18,'1','7','10',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(19,'1','7','11',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(20,'1','7','12',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(21,'1','7','13',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(22,'1','7','14',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(23,'1','7','15',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(24,'1','7','16',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(25,'1','7','17',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(26,'1','7','18',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(27,'1','8','19',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(28,'1','8','20',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(29,'1','8','21',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(30,'1','8','22',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(31,'1','8','23',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(32,'1','8','24',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(33,'1','8','25',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(34,'1','8','26',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(35,'1','8','27',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(36,'1','8','28',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(37,'1','8','29',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(38,'1','8','30',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(39,'1','8','31',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(40,'1','8','34',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(41,'1','8','35',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(42,'1','7','36',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(43,'1','7','37',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(44,'1','7','38',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(45,'1','7','39',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(46,'1','7','40',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(47,'1','6','43',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(48,'1','6','34',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(49,'1','6','35',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(50,'1','6','44',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1');
+INSERT INTO `role_permissions` VALUES (1,'1','1',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:11:04','2026-01-29 15:46:45','1','1'),(2,'1','2',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:13:56',NULL,NULL,'1'),(3,'1','2','1',1,1,1,1,'ACTIVE','1','2026-01-23 15:14:13',NULL,NULL,'1'),(4,'1','2','2',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:09',NULL,NULL,'1'),(5,'1','2','3',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:17',NULL,NULL,'1'),(6,'1','2','4',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:25',NULL,NULL,'1'),(7,'1','3',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:16:13',NULL,NULL,'1'),(8,'1','3','5',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:30',NULL,NULL,'1'),(9,'1','3','6',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:42',NULL,NULL,'1'),(10,'1','3','7',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:49',NULL,NULL,'1'),(11,'1','4',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:21:16',NULL,NULL,'1'),(12,'1','5',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:22:10',NULL,NULL,'1'),(13,'1','5','8',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:34',NULL,NULL,'1'),(14,'1','5','9',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(15,'1','6',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(16,'1','6','32',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(17,'1','6','33',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(18,'1','7','10',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(19,'1','7','11',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(20,'1','7','12',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(21,'1','7','13',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(22,'1','7','14',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(23,'1','7','15',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(24,'1','7','16',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(25,'1','7','17',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(26,'1','7','18',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(27,'1','8','19',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(28,'1','8','20',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(29,'1','8','21',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(30,'1','8','22',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(31,'1','8','23',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(32,'1','8','24',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(33,'1','8','25',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(34,'1','8','26',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(35,'1','8','27',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(36,'1','8','28',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(37,'1','8','29',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(38,'1','8','30',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(39,'1','8','31',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(40,'1','8','34',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(41,'1','8','35',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(42,'1','7','36',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(43,'1','7','37',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(44,'1','7','38',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(45,'1','7','39',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(46,'1','7','40',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(47,'1','6','43',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(48,'1','6','34',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(49,'1','6','35',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(50,'1','6','44',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1');
 /*!40000 ALTER TABLE `role_permissions` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -204,7 +204,7 @@ CREATE TABLE `roles` (
 
 LOCK TABLES `roles` WRITE;
 /*!40000 ALTER TABLE `roles` DISABLE KEYS */;
-INSERT INTO `roles` VALUES (1,'Admin','Full system access','ACTIVE','1','2026-01-22 12:22:54',NULL,NULL,'1'),(2,'Front Office','Handles reservations and check-in','ACTIVE','1','2026-01-22 12:23:02',NULL,NULL,'1'),(3,'House Keeping','Room cleaning and maintenance tasks','ACTIVE','1','2026-01-22 12:23:10',NULL,NULL,'1'),(4,'Front Office Manager','Manages front office operations','INACTIVE','1','2026-01-29 14:27:00','2026-01-29 15:30:57','1','1');
+INSERT INTO `roles` VALUES (1,'Admin','Full system access','ACTIVE','1','2026-01-22 12:22:54',NULL,NULL,'1'),(2,'Front Office','Handles reservations and check-in','ACTIVE','1','2026-01-22 12:23:02',NULL,NULL,'1'),(3,'House Keeping','Room cleaning and maintenance tasks','ACTIVE','1','2026-01-22 12:23:10','2026-02-03 09:44:00','1','1'),(4,'Front Office Manager','Manages front office operations','INACTIVE','1','2026-01-29 14:27:00','2026-01-29 15:30:57','1','1');
 /*!40000 ALTER TABLE `roles` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -233,7 +233,7 @@ CREATE TABLE `shift` (
   KEY `ix_shift_status` (`status`),
   KEY `ix_shift_created_by` (`created_by`),
   KEY `ix_shift_Shift_Name` (`Shift_Name`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -242,7 +242,7 @@ CREATE TABLE `shift` (
 
 LOCK TABLES `shift` WRITE;
 /*!40000 ALTER TABLE `shift` DISABLE KEYS */;
-INSERT INTO `shift` VALUES (1,'Evening Shift','16:00','00:00','INACTIVE','1','2026-01-29 16:27:05','2026-01-29 16:49:09','1','1');
+INSERT INTO `shift` VALUES (1,'Evening Shift','16:00','00:00','INACTIVE','1','2026-01-29 16:27:05','2026-01-29 16:49:09','1','1'),(2,'Morning Shift','06:00','21:06','ACTIVE','1','2026-02-04 19:30:13',NULL,NULL,'1'),(3,'General Shift','09:00','06:00','ACTIVE','1','2026-02-04 19:30:46',NULL,NULL,'1'),(4,'Evening Shift','19:00','01:31','ACTIVE','1','2026-02-04 19:31:22',NULL,NULL,'1'),(5,'Night Shift','23:00','06:00','ACTIVE','1','2026-02-04 19:31:45',NULL,NULL,'1');
 /*!40000 ALTER TABLE `shift` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -313,7 +313,7 @@ CREATE TABLE `users` (
   `Postal_Code` varchar(20) NOT NULL,
   `Country` varchar(100) NOT NULL,
   `Department_ID` varchar(100) NOT NULL,
-  `Designation_ID` varchar(45) NOT NULL,
+  `Designation_ID` varchar(100) NOT NULL,
   `Role_ID` varchar(100) NOT NULL,
   `Shift_ID` varchar(100) NOT NULL,
   `Date_Of_Joining` varchar(20) NOT NULL,
@@ -331,36 +331,37 @@ CREATE TABLE `users` (
   `updated_by` varchar(100) DEFAULT NULL,
   `company_id` varchar(100) NOT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `ix_users_username` (`username`),
   UNIQUE KEY `ix_users_Company_Email` (`Company_Email`),
   UNIQUE KEY `ix_users_User_Code` (`User_Code`),
-  UNIQUE KEY `ix_users_username` (`username`),
-  KEY `ix_users_Role_ID` (`Role_ID`),
-  KEY `ix_users_First_Name` (`First_Name`),
-  KEY `ix_users_Emergency_Relationship` (`Emergency_Relationship`),
-  KEY `ix_users_Last_Name` (`Last_Name`),
-  KEY `ix_users_status` (`status`),
-  KEY `ix_users_Emergency_Contact` (`Emergency_Contact`),
-  KEY `ix_users_Personal_Email` (`Personal_Email`),
-  KEY `ix_users_Experience` (`Experience`),
-  KEY `ix_users_created_by` (`created_by`),
   KEY `ix_users_Mobile` (`Mobile`),
-  KEY `ix_users_Salary_Details` (`Salary_Details`),
-  KEY `ix_users_D_O_B` (`D_O_B`),
-  KEY `ix_users_Postal_Code` (`Postal_Code`),
+  KEY `ix_users_Designation_ID` (`Designation_ID`),
   KEY `ix_users_updated_by` (`updated_by`),
-  KEY `ix_users_id` (`id`),
-  KEY `ix_users_Gender` (`Gender`),
   KEY `ix_users_Register_Code` (`Register_Code`),
-  KEY `ix_users_Marital_Status` (`Marital_Status`),
+  KEY `ix_users_First_Name` (`First_Name`),
   KEY `ix_users_company_id` (`company_id`),
-  KEY `ix_users_State` (`State`),
+  KEY `ix_users_Personal_Email` (`Personal_Email`),
   KEY `ix_users_Emergency_Name` (`Emergency_Name`),
-  KEY `ix_users_City` (`City`),
-  KEY `ix_users_Shift_ID` (`Shift_ID`),
+  KEY `ix_users_Last_Name` (`Last_Name`),
+  KEY `ix_users_D_O_B` (`D_O_B`),
+  KEY `ix_users_Emergency_Contact` (`Emergency_Contact`),
+  KEY `ix_users_Role_ID` (`Role_ID`),
   KEY `ix_users_Country` (`Country`),
+  KEY `ix_users_Gender` (`Gender`),
+  KEY `ix_users_Postal_Code` (`Postal_Code`),
+  KEY `ix_users_Shift_ID` (`Shift_ID`),
+  KEY `ix_users_Emergency_Relationship` (`Emergency_Relationship`),
+  KEY `ix_users_Date_Of_Joining` (`Date_Of_Joining`),
+  KEY `ix_users_Marital_Status` (`Marital_Status`),
+  KEY `ix_users_State` (`State`),
+  KEY `ix_users_status` (`status`),
+  KEY `ix_users_City` (`City`),
+  KEY `ix_users_id` (`id`),
+  KEY `ix_users_Experience` (`Experience`),
   KEY `ix_users_Department_ID` (`Department_ID`),
-  KEY `ix_users_Date_Of_Joining` (`Date_Of_Joining`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  KEY `ix_users_created_by` (`created_by`),
+  KEY `ix_users_Salary_Details` (`Salary_Details`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -369,7 +370,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (1,'EMP-335E08D0',NULL,'admin','System','Admin','admin.personal@gmail.com','admin@hotel.com','$2b$12$1aE0FG/A2xN6hKdKyhPSae1LqC5AFMHFYmE3TOAK1FutvBU1Gs5XW','9000000001',NULL,'1990-01-01','Male','Married','Head Office','Chennai','Tamil Nadu','600001','India','1','1','1','1','2020-01-01','10 Years','100000','REG001','Admin Spouse','9000000002','Wife',0,'ACTIVE','SYSTEM','2026-01-22 12:15:33',NULL,NULL,'1'),(2,'EMP-A513FF1C',NULL,'frontdesk','Front','Office','front.personal@gmail.com','frontoffice@hotel.com','$2b$12$DpiBnd2TSDDuIBAF/JwsLuSeSdLJpE9vza5JKPahfDJ.vR06RJFvy','9000000011',NULL,'1996-05-15','Female','Single','Reception Area','Coimbatore','Tamil Nadu','641001','India','2','2','2','2','2023-06-01','2 Years','30000','REG002','Father','9000000012','Father',0,'ACTIVE','ADMIN','2026-01-22 12:15:40',NULL,NULL,'1'),(3,'EMP-69ADB91A','templates/static/users\\user_a04aad1fd784433c870c78cce7543dd2.jpeg','john.doe','John','Doe','john.personal@gmail.com','john.updated@hotel.com','$2b$12$fbT38UQAItbgqxqx3LlNF.Ql3RL8PuOwLW5vehVi0r48okJmHAO62','9998887776','9123456780','1995-06-15','Male','Single','123, MG Road','Bangalore','Karnataka','560001','India','2','3','4','2','2024-01-10','4 Years','40000','REG-1001','Jane Doe','9988776655','Wife',1,'INACTIVE','1','2026-01-29 17:09:33','2026-01-29 17:42:22','1','1');
+INSERT INTO `users` VALUES (1,'EMP_2026_0001',NULL,'john.doe','John','Doe','john.personal@gmail.com','admin@hotel.com','$2b$12$7/POjFPyDUBw.MwPL3.Gw.uvUxaKfSPwSWn7oKCAER5wTeAE.WbAS','9998887776','9123456780','1995-06-15','Male','Single','123, MG Road','Bangalore','Karnataka','560001','India','1','1','1','1','2024-01-10','4 Years','40000','REG-1001','Jane Doe','9988776655','Wife',1,'ACTIVE','1','2026-01-30 13:19:46','2026-01-30 14:10:29','1','1'),(2,'EMP_2026_0002','/templates/static/users/user_863fa61fb2f34b818528131047f56a37.jpeg','anand','Anand ','M','anand@gmail.com','anand@hotel.com','$2b$12$60ifp.9/BKMzceO288mu3eQxVAKE4vckQ111jk8LAsloD62kmdlqC','7418529630','7418529630','2026-02-03','Male','Single','','','','','','','','','','','','','','','','',0,'ACTIVE','1','2026-02-03 08:25:39','2026-02-04 19:32:13','1','1');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -390,4 +391,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-29 18:02:55
+-- Dump completed on 2026-02-04 19:34:29
