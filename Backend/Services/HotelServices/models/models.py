@@ -13,13 +13,13 @@ Base = declarative_base()
    
 # =====================================================
 # ROOM RESERVATION
-# Room Reservation | Group Reservation | Check-in/out
 # =====================================================
 class RoomReservation(Base):
     __tablename__ = "room_reservation"
 
     id = Column(Integer, primary_key=True, index=True)
 
+    # ---------------- Reference ----------------
     room_reservation_id = Column(String(255), unique=True, nullable=False, index=True)
 
     # ---------------- Guest Details ----------------
@@ -35,19 +35,20 @@ class RoomReservation(Base):
     departure_date = Column(Date, nullable=False, index=True)
     no_of_nights = Column(Integer, nullable=False)
 
-    room_type = Column(JSON, nullable=True)
-    rate_type = Column(JSON, nullable=True)
-    room_no = Column(JSON, nullable=True)
+    # Store MASTER TABLE IDS
+    room_type_ids = Column(JSON, nullable=True)     # [room_type_id]
+    room_ids = Column(JSON, nullable=True)          # [room_id]
+    rate_type = Column(JSON, nullable=True)         # ["daily", "weekly"]
 
     no_of_rooms = Column(Integer, nullable=True)
     no_of_adults = Column(Integer, nullable=True)
     no_of_children = Column(Integer, nullable=True)
 
-    # ---------------- Payment Details ----------------
-    payment_mode = Column(String(100), nullable=True)
+    # ---------------- Payment ----------------
+    payment_method_id = Column(Integer, nullable=True, index=True)  # payment_methods.id
 
-    extra_bed_count = Column(Integer, nullable=True)
-    extra_bed_cost = Column(Float, nullable=True)
+    extra_bed_count = Column(Integer, default=0)
+    extra_bed_cost = Column(Float, default=0)
 
     total_amount = Column(Float, nullable=True)
     tax_percentage = Column(Float, nullable=True)
@@ -56,29 +57,29 @@ class RoomReservation(Base):
     discount_percentage = Column(Float, nullable=True)
     discount_amount = Column(Float, nullable=True)
 
-    extra_charges = Column(Float, nullable=True)
+    extra_charges = Column(Float, default=0)
 
     overall_amount = Column(Float, nullable=True)
-    paid_amount = Column(Float, nullable=True)
-    balance_amount = Column(Float, nullable=True)
-    extra_amount = Column(Float, nullable=True)
+    paid_amount = Column(Float, default=0)
+    balance_amount = Column(Float, default=0)
+    extra_amount = Column(Float, default=0)
 
     # ---------------- Reservation Info ----------------
-    booking_status = Column(String(50), nullable=True, index=True)
+    booking_status_id = Column(Integer, nullable=True, index=True)  # reservation_status.id
     reservation_type = Column(String(50), nullable=False, index=True)
 
     room_complementary = Column(String(100), nullable=True)
     common_complementary = Column(String(100), nullable=True)
 
-    identity_type = Column(String(100), nullable=True)
+    identity_type_id = Column(Integer, nullable=True, index=True)   # identity_proofs.id
     proof_document = Column(String(255), nullable=True)
 
     confirmation_code = Column(String(100), nullable=True, index=True)
 
-    # ---------------- System Fields ----------------
+    # ---------------- System ----------------
     token = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()), index=True)
 
-    status = Column(String(50), nullable=False, index=True)
+    status = Column(String(50), nullable=False, index=True, default="ACTIVE")
 
     created_by = Column(String(100), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
@@ -87,6 +88,7 @@ class RoomReservation(Base):
     updated_by = Column(String(100), nullable=True)
 
     company_id = Column(String(100), nullable=False, index=True)
+
 
 
 class RoomDetails(Base):

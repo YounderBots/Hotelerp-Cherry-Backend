@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, status, HTTPException, Request
+import os, json
+from fastapi import APIRouter, Depends, status, HTTPException, Request, Form, File, UploadFile
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 import uuid
+import shutil
 
 from models import models, get_db
 from resources.utils import verify_authentication
@@ -9,6 +11,12 @@ from configs.base_config import CommonWords
 
 router = APIRouter()
 
+STATUS = "ACTIVE"
+UNSTATUS = "INACTIVE"
+RESERVATION = "RESERVATION"
+
+UPLOAD_DIR = "templates/static/identity_proofs"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # =====================================================
 # CREATE ROOM BOOKING
@@ -544,3 +552,647 @@ def delete_room_booking(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+# =====================================================
+# CREATE ROOM RESERVATION
+# =====================================================
+@router.post("/room_reservation", status_code=status.HTTP_201_CREATED)
+async def create_room_reservation(
+    request: Request,
+    db: Session = Depends(get_db),
+
+    # ---------------- Guest ----------------
+    room_reservation_id: str = Form(...),
+    salutation: str = Form(None),
+    first_name: str = Form(None),
+    last_name: str = Form(None),
+    phone_number: str = Form(...),
+    email: str = Form(None),
+
+    # ---------------- Stay ----------------
+    arrival_date: date = Form(...),
+    departure_date: date = Form(...),
+    no_of_nights: int = Form(...),
+
+    room_type_ids: str = Form(...),   # JSON → [room_type_id]
+    room_ids: str = Form(...),        # JSON → [room_id]
+    rate_type: str = Form(...),       # JSON → ["daily"]
+
+    no_of_rooms: int = Form(...),
+    no_of_adults: int = Form(...),
+    no_of_children: int = Form(...),
+
+    # ---------------- Payment ----------------
+    payment_method_id: int = Form(...),
+
+    extra_bed_count: int = Form(0),
+    extra_bed_cost: float = Form(0),
+
+    total_amount: float = Form(...),
+    tax_percentage: float = Form(0),
+    tax_amount: float = Form(0),
+
+    discount_percentage: float = Form(0),
+    discount_amount: float = Form(0),
+
+    extra_charges: float = Form(0),
+
+    overall_amount: float = Form(...),
+    paid_amount: float = Form(0),
+    balance_amount: float = Form(0),
+    extra_amount: float = Form(0),
+
+    # ---------------- Reservation ----------------
+    booking_status_id: int = Form(...),
+    reservation_type: str = Form(RESERVATION),
+
+    room_complementary: str = Form(None),
+    common_complementary: str = Form(None),
+
+    # ---------------- Identity ----------------
+    identity_type_id: int = Form(...),
+    identity_file: UploadFile = File(...),
+):
+    # -------------------------------------------------
+    # AUTH
+    # -------------------------------------------------
+    user_id, role_id, company_id, token = verify_authentication(request)
+    if not user_id or not company_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if departure_date <= arrival_date:
+        raise HTTPException(
+            status_code=400,
+            detail="departure_date must be greater than arrival_date"
+        )
+
+    # -------------------------------------------------
+    # FILE UPLOAD
+    # -------------------------------------------------
+    ext = identity_file.filename.split(".")[-1]
+    filename = f"{uuid.uuid4()}.{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+
+    with open(filepath, "wb") as f:
+        shutil.copyfileobj(identity_file.file, f)
+
+    # -------------------------------------------------
+    # CREATE & ASSIGN (SAFE)
+    # -------------------------------------------------
+    reservation = models.RoomReservation()
+
+    reservation.room_reservation_id = room_reservation_id
+    reservation.salutation = salutation
+    reservation.first_name = first_name
+    reservation.last_name = last_name
+    reservation.phone_number = phone_number
+    reservation.email = email
+
+    reservation.arrival_date = arrival_date
+    reservation.departure_date = departure_date
+    reservation.no_of_nights = no_of_nights
+
+    reservation.room_type_ids = json.loads(room_type_ids)
+    reservation.room_ids = json.loads(room_ids)
+    reservation.rate_type = json.loads(rate_type)
+
+    reservation.no_of_rooms = no_of_rooms
+    reservation.no_of_adults = no_of_adults
+    reservation.no_of_children = no_of_children
+
+    reservation.payment_method_id = payment_method_id
+
+    reservation.extra_bed_count = extra_bed_count
+    reservation.extra_bed_cost = extra_bed_cost
+
+    reservation.total_amount = total_amount
+    reservation.tax_percentage = tax_percentage
+    reservation.tax_amount = tax_amount
+
+    reservation.discount_percentage = discount_percentage
+    reservation.discount_amount = discount_amount
+
+    reservation.extra_charges = extra_charges
+
+    reservation.overall_amount = overall_amount
+    reservation.paid_amount = paid_amount
+    reservation.balance_amount = balance_amount
+    reservation.extra_amount = extra_amount
+
+    reservation.booking_status_id = booking_status_id
+    reservation.reservation_type = reservation_type
+
+    reservation.room_complementary = room_complementary
+    reservation.common_complementary = common_complementary
+
+    reservation.identity_type_id = identity_type_id
+    reservation.proof_document = filename
+
+    reservation.confirmation_code = str(uuid.uuid4())[:8].upper()
+
+    reservation.status = STATUS
+    reservation.created_by = user_id
+    reservation.company_id = company_id
+
+    # -------------------------------------------------
+    # SAVE
+    # -------------------------------------------------
+    db.add(reservation)
+    db.commit()
+    db.refresh(reservation)
+
+    return {
+        "status": "success",
+        "message": "Room reservation created successfully",
+        "data": {
+            "id": reservation.id,
+            "room_reservation_id": reservation.room_reservation_id,
+            "token": reservation.token
+        }
+    }
+
+# =====================================================
+# GET ALL ROOM RESERVATIONS
+# =====================================================
+@router.get("/room_reservation", status_code=status.HTTP_200_OK)
+def get_all_room_reservations(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # FETCH DATA
+        # -------------------------------------------------
+        reservations = (
+            db.query(models.RoomReservation)
+            .filter(
+                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.status == STATUS
+            )
+            .order_by(models.RoomReservation.id.desc())
+            .all()
+        )
+
+        # -------------------------------------------------
+        # FORMAT RESPONSE
+        # -------------------------------------------------
+        data = [
+            {
+                "id": r.id,
+                "room_reservation_id": r.room_reservation_id,
+
+                # Guest
+                "salutation": r.salutation,
+                "first_name": r.first_name,
+                "last_name": r.last_name,
+                "phone_number": r.phone_number,
+                "email": r.email,
+
+                # Stay
+                "arrival_date": r.arrival_date,
+                "departure_date": r.departure_date,
+                "no_of_nights": r.no_of_nights,
+
+                # Room / Rate
+                "room_type_ids": r.room_type_ids,
+                "room_ids": r.room_ids,
+                "rate_type": r.rate_type,
+
+                "no_of_rooms": r.no_of_rooms,
+                "no_of_adults": r.no_of_adults,
+                "no_of_children": r.no_of_children,
+
+                # Payment
+                "payment_method_id": r.payment_method_id,
+                "extra_bed_count": r.extra_bed_count,
+                "extra_bed_cost": r.extra_bed_cost,
+
+                "total_amount": r.total_amount,
+                "tax_percentage": r.tax_percentage,
+                "tax_amount": r.tax_amount,
+                "discount_percentage": r.discount_percentage,
+                "discount_amount": r.discount_amount,
+                "extra_charges": r.extra_charges,
+
+                "overall_amount": r.overall_amount,
+                "paid_amount": r.paid_amount,
+                "balance_amount": r.balance_amount,
+                "extra_amount": r.extra_amount,
+
+                # Reservation Info
+                "booking_status_id": r.booking_status_id,
+                "reservation_type": r.reservation_type,
+                "room_complementary": r.room_complementary,
+                "common_complementary": r.common_complementary,
+
+                # Identity
+                "identity_type_id": r.identity_type_id,
+                "proof_document": r.proof_document,
+
+                "confirmation_code": r.confirmation_code,
+
+                # System
+                "token": r.token,
+                "status": r.status,
+                "created_by": r.created_by,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+                "updated_by": r.updated_by,
+                "company_id": r.company_id,
+            }
+            for r in reservations
+        ]
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
+        return {
+            "status": "success",
+            "count": len(data),
+            "data": data
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+# =====================================================
+# GET ROOM RESERVATION BY ID
+# =====================================================
+@router.get("/room_reservation/{reservation_id}", status_code=status.HTTP_200_OK)
+def get_room_reservation_by_id(
+    reservation_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if reservation_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid reservation_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH DATA
+        # -------------------------------------------------
+        reservation = (
+            db.query(models.RoomReservation)
+            .filter(
+                models.RoomReservation.id == reservation_id,
+                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.status == STATUS
+            )
+            .first()
+        )
+
+        if not reservation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Room reservation not found"
+            )
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
+        return {
+            "status": "success",
+            "data": {
+                "id": reservation.id,
+                "room_reservation_id": reservation.room_reservation_id,
+
+                # Guest
+                "salutation": reservation.salutation,
+                "first_name": reservation.first_name,
+                "last_name": reservation.last_name,
+                "phone_number": reservation.phone_number,
+                "email": reservation.email,
+
+                # Stay
+                "arrival_date": reservation.arrival_date,
+                "departure_date": reservation.departure_date,
+                "no_of_nights": reservation.no_of_nights,
+
+                # Room / Rate
+                "room_type_ids": reservation.room_type_ids,
+                "room_ids": reservation.room_ids,
+                "rate_type": reservation.rate_type,
+
+                "no_of_rooms": reservation.no_of_rooms,
+                "no_of_adults": reservation.no_of_adults,
+                "no_of_children": reservation.no_of_children,
+
+                # Payment
+                "payment_method_id": reservation.payment_method_id,
+                "extra_bed_count": reservation.extra_bed_count,
+                "extra_bed_cost": reservation.extra_bed_cost,
+
+                "total_amount": reservation.total_amount,
+                "tax_percentage": reservation.tax_percentage,
+                "tax_amount": reservation.tax_amount,
+                "discount_percentage": reservation.discount_percentage,
+                "discount_amount": reservation.discount_amount,
+                "extra_charges": reservation.extra_charges,
+
+                "overall_amount": reservation.overall_amount,
+                "paid_amount": reservation.paid_amount,
+                "balance_amount": reservation.balance_amount,
+                "extra_amount": reservation.extra_amount,
+
+                # Reservation Info
+                "booking_status_id": reservation.booking_status_id,
+                "reservation_type": reservation.reservation_type,
+                "room_complementary": reservation.room_complementary,
+                "common_complementary": reservation.common_complementary,
+
+                # Identity
+                "identity_type_id": reservation.identity_type_id,
+                "proof_document": reservation.proof_document,
+
+                "confirmation_code": reservation.confirmation_code,
+
+                # System
+                "token": reservation.token,
+                "status": reservation.status,
+                "created_by": reservation.created_by,
+                "created_at": reservation.created_at,
+                "updated_at": reservation.updated_at,
+                "updated_by": reservation.updated_by,
+                "company_id": reservation.company_id
+            }
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    
+# =====================================================
+# UPDATE ROOM RESERVATION
+# =====================================================
+@router.put("/room_reservation", status_code=status.HTTP_200_OK)
+async def update_room_reservation(
+    request: Request,
+    db: Session = Depends(get_db),
+
+    # -------- REQUIRED IDENTIFIER --------
+    id: int = Form(...),  # room_reservation.id
+
+    # -------- Guest --------
+    salutation: str = Form(None),
+    first_name: str = Form(None),
+    last_name: str = Form(None),
+    phone_number: str = Form(...),
+    email: str = Form(None),
+
+    # -------- Stay --------
+    arrival_date: date = Form(...),
+    departure_date: date = Form(...),
+    no_of_nights: int = Form(...),
+
+    room_type_ids: str = Form(...),   # JSON → [room_type_id]
+    room_ids: str = Form(...),        # JSON → [room_id]
+    rate_type: str = Form(...),       # JSON → ["daily"]
+
+    no_of_rooms: int = Form(...),
+    no_of_adults: int = Form(...),
+    no_of_children: int = Form(...),
+
+    # -------- Payment --------
+    payment_method_id: int = Form(...),
+
+    extra_bed_count: int = Form(0),
+    extra_bed_cost: float = Form(0),
+
+    total_amount: float = Form(...),
+    tax_percentage: float = Form(0),
+    tax_amount: float = Form(0),
+    discount_percentage: float = Form(0),
+    discount_amount: float = Form(0),
+    extra_charges: float = Form(0),
+
+    overall_amount: float = Form(...),
+    paid_amount: float = Form(0),
+    balance_amount: float = Form(0),
+    extra_amount: float = Form(0),
+
+    # -------- Reservation --------
+    booking_status_id: int = Form(...),
+    reservation_type: str = Form(...),
+
+    room_complementary: str = Form(None),
+    common_complementary: str = Form(None),
+):
+    try:
+        # -------------------------------------------------
+        # AUTH
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+        if not user_id or not company_id:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+        if id <= 0:
+            raise HTTPException(status_code=400, detail="Invalid reservation id")
+
+        if departure_date <= arrival_date:
+            raise HTTPException(
+                status_code=400,
+                detail="departure_date must be greater than arrival_date"
+            )
+
+        # -------------------------------------------------
+        # FETCH
+        # -------------------------------------------------
+        reservation = (
+            db.query(models.RoomReservation)
+            .filter(
+                models.RoomReservation.id == id,
+                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.status == STATUS
+            )
+            .first()
+        )
+
+        if not reservation:
+            raise HTTPException(
+                status_code=404,
+                detail="Room reservation not found"
+            )
+
+        # -------------------------------------------------
+        # UPDATE (SAFE ASSIGNMENT)
+        # -------------------------------------------------
+        reservation.salutation = salutation
+        reservation.first_name = first_name
+        reservation.last_name = last_name
+        reservation.phone_number = phone_number
+        reservation.email = email
+
+        reservation.arrival_date = arrival_date
+        reservation.departure_date = departure_date
+        reservation.no_of_nights = no_of_nights
+
+        reservation.room_type_ids = json.loads(room_type_ids)
+        reservation.room_ids = json.loads(room_ids)
+        reservation.rate_type = json.loads(rate_type)
+
+        reservation.no_of_rooms = no_of_rooms
+        reservation.no_of_adults = no_of_adults
+        reservation.no_of_children = no_of_children
+
+        reservation.payment_method_id = payment_method_id
+
+        reservation.extra_bed_count = extra_bed_count
+        reservation.extra_bed_cost = extra_bed_cost
+
+        reservation.total_amount = total_amount
+        reservation.tax_percentage = tax_percentage
+        reservation.tax_amount = tax_amount
+        reservation.discount_percentage = discount_percentage
+        reservation.discount_amount = discount_amount
+        reservation.extra_charges = extra_charges
+
+        reservation.overall_amount = overall_amount
+        reservation.paid_amount = paid_amount
+        reservation.balance_amount = balance_amount
+        reservation.extra_amount = extra_amount
+
+        reservation.booking_status_id = booking_status_id
+        reservation.reservation_type = reservation_type
+
+        reservation.room_complementary = room_complementary
+        reservation.common_complementary = common_complementary
+
+        reservation.updated_by = user_id
+
+        # -------------------------------------------------
+        # SAVE
+        # -------------------------------------------------
+        db.commit()
+        db.refresh(reservation)
+
+        return {
+            "status": "success",
+            "message": "Room reservation updated successfully",
+            "data": {
+                "id": reservation.id,
+                "room_reservation_id": reservation.room_reservation_id,
+                "updated_at": reservation.updated_at
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    
+# =====================================================
+# DELETE ROOM RESERVATION (SOFT DELETE)
+# =====================================================
+@router.delete("/room_reservation/{reservation_id}", status_code=status.HTTP_200_OK)
+def delete_room_reservation(
+    reservation_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+
+        if not user_id or not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        # -------------------------------------------------
+        # VALIDATION
+        # -------------------------------------------------
+        if reservation_id <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid reservation_id"
+            )
+
+        # -------------------------------------------------
+        # FETCH RECORD
+        # -------------------------------------------------
+        reservation = (
+            db.query(models.RoomReservation)
+            .filter(
+                models.RoomReservation.id == reservation_id,
+                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.status == STATUS
+            )
+            .first()
+        )
+
+        if not reservation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Room reservation not found"
+            )
+
+        # -------------------------------------------------
+        # SOFT DELETE
+        # -------------------------------------------------
+        reservation.status = UNSTATUS
+        reservation.updated_by = user_id
+
+        db.commit()
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
+        return {
+            "status": "success",
+            "message": "Room reservation deleted successfully"
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    
