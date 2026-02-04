@@ -27,57 +27,72 @@ class RoomReservation(Base):
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
 
-    phone_number = Column(String(20), nullable=False, index=True)
     email = Column(String(100), nullable=True)
+    phone_number = Column(String(20), nullable=False, index=True)
 
     # ---------------- Stay Details ----------------
     arrival_date = Column(Date, nullable=False, index=True)
     departure_date = Column(Date, nullable=False, index=True)
+
     no_of_nights = Column(Integer, nullable=False)
-
-    # Store MASTER TABLE IDS
-    room_type_ids = Column(JSON, nullable=True)     # [room_type_id]
-    room_ids = Column(JSON, nullable=True)          # [room_id]
-    rate_type = Column(JSON, nullable=True)         # ["daily", "weekly"]
-
     no_of_rooms = Column(Integer, nullable=True)
+
+    reservation_status = Column(String(100), nullable=True, index=True)
+
+    # ---------------- Identity ----------------
+    identity_type_id = Column(Integer, nullable=True, index=True)  # identity_proofs.id
+    proof_document = Column(String(255), nullable=True)
+
+    # ---------------- Room Details ----------------
+    room_ids = Column(JSON, nullable=True)       # [room_id]
+    room_type_ids = Column(JSON, nullable=True)  # [room_type_id]
+    room_no = Column(JSON, nullable=True)        # [room_no]
+
+    rate_type = Column(JSON, nullable=True)      # ["daily", "weekly"]
+
     no_of_adults = Column(Integer, nullable=True)
     no_of_children = Column(Integer, nullable=True)
 
-    # ---------------- Payment ----------------
-    payment_method_id = Column(Integer, nullable=True, index=True)  # payment_methods.id
+    room_complementary = Column(String(100), nullable=True)
+    common_complementary = Column(String(100), nullable=True)
 
-    extra_bed_count = Column(Integer, default=0)
-    extra_bed_cost = Column(Float, default=0)
+    # ---------------- Tax & Discount ----------------
+    tax_type_id = Column(Integer, nullable=True, index=True)        # tax_types.id
+    discount_type_id = Column(Integer, nullable=True, index=True)   # discount_types.id
 
-    total_amount = Column(Float, nullable=True)
+    room_amount = Column(Float, default=0)
+    extra_charges = Column(Float, default=0)
+
     tax_percentage = Column(Float, nullable=True)
     tax_amount = Column(Float, nullable=True)
 
     discount_percentage = Column(Float, nullable=True)
     discount_amount = Column(Float, nullable=True)
 
-    extra_charges = Column(Float, default=0)
-
     overall_amount = Column(Float, nullable=True)
+
+    # ---------------- Payment ----------------
+    payment_method_id = Column(Integer, nullable=True, index=True)  # payment_methods.id
+
+    paying_amount = Column(Float, nullable=True)
     paid_amount = Column(Float, default=0)
-    balance_amount = Column(Float, default=0)
+
+    balance_amount = Column(Float, nullable=True)
     extra_amount = Column(Float, default=0)
+
+    extra_bed_count = Column(Integer, default=0)
+    extra_bed_cost = Column(Float, default=0)
+
+    total_amount = Column(Float, nullable=True)
 
     # ---------------- Reservation Info ----------------
     booking_status_id = Column(Integer, nullable=True, index=True)  # reservation_status.id
     reservation_type = Column(String(50), nullable=False, index=True)
 
-    room_complementary = Column(String(100), nullable=True)
-    common_complementary = Column(String(100), nullable=True)
-
-    identity_type_id = Column(Integer, nullable=True, index=True)   # identity_proofs.id
-    proof_document = Column(String(255), nullable=True)
-
     confirmation_code = Column(String(100), nullable=True, index=True)
 
     # ---------------- System ----------------
-    token = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()), index=True)
+    token = Column(String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
 
     status = Column(String(50), nullable=False, index=True, default="ACTIVE")
 

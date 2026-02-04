@@ -1196,3 +1196,111 @@ def delete_room_reservation(
             detail=str(e)
         )
     
+# =====================================================
+# CREATE ROOM DETAILS (AFTER RESERVATION)
+# =====================================================
+@router.post("/room_details", status_code=status.HTTP_201_CREATED)
+async def create_room_details(
+    request: Request,
+    db: Session = Depends(get_db),
+
+    # -------- Reference --------
+    reservation_id: str = Form(...),           # room_reservation.id or token
+
+    # -------- Room Info --------
+    room_category: int = Form(...),             # room_type.id
+    available_rooms: int = Form(...),           # room.id
+
+    total_adults: int = Form(...),
+    total_children: int = Form(...),
+
+    arrival_date: date = Form(...),
+    departure_date: date = Form(...),
+
+    booking_status: str = Form(...),            # RESERVED / CHECKIN / etc
+    reservation_type: str = Form(...),          # RESERVATION / GROUP_RESERVATION
+
+    # -------- Extra --------
+    extra_bed_count: int = Form(0),
+    extra_bed_cost: float = Form(0),
+    total_amount: float = Form(...),
+
+    room_complementary: str = Form("No"),       # Yes / No
+):
+    # -------------------------------------------------
+    # AUTH
+    # -------------------------------------------------
+    user_id, role_id, company_id, token = verify_authentication(request)
+
+    if not user_id or not company_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # -------------------------------------------------
+    # VALIDATE RESERVATION
+    # -------------------------------------------------
+    reservation = db.query(models.RoomReservation).filter(
+        models.RoomReservation.id == reservation_id,
+        models.RoomReservation.status == STATUS
+    ).first()
+
+    if not reservation:
+        raise HTTPException(
+            status_code=404,
+            detail="Reservation not found"
+        )
+
+    # -------------------------------------------------
+    # CREATE ROOM DETAILS
+    # -------------------------------------------------
+    new_record = models.RoomDetails(
+        reservation_id=reservation.id,
+
+        room_category=room_category,
+        available_rooms=available_rooms,
+
+        total_adults=total_adults,
+        total_children=total_children,
+
+        arrival_date=arrival_date,
+        departure_date=departure_date,
+
+        booking_status=booking_status,
+        reservation_type=reservation_type,
+
+        extra_bed_count=extra_bed_count,
+        extra_bed_cost=extra_bed_cost,
+        total_amount=total_amount,
+
+        room_complementary=room_complementary,
+
+        status=STATUS,
+        created_by=user_id,
+        company_id=company_id
+    )
+
+    db.add(new_record)
+    db.commit()
+    db.refresh(new_record)
+
+    # -------------------------------------------------
+    # UPDATE ROOM STATUS (OPTIONAL BUT IMPORTANT)
+    # -------------------------------------------------
+    if booking_status in ["RESERVED", "CHECKIN"]:
+        db.query(models.Room).filter(
+            models.Room.id == available_rooms
+        ).update({
+            "Room_Booking_status": booking_status
+        })
+        db.commit()
+
+    # -------------------------------------------------
+    # RESPONSE
+    # -------------------------------------------------
+    return {
+        "status": "success",
+        "message": "Room details added successfully",
+        "data": {
+            "room_details_id": new_record.id,
+            "token": new_record.token
+        }
+    }
