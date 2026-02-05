@@ -1,12 +1,18 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import TableTemplate from "../../stories/TableTemplate";
 import Tabs, { Tab } from "../../stories/Tabs";
 import RoomCard from "./Pages/Card";
+import APICall from "../../APICalls/APICalls";
 
 const ReservationListEdit = () => {
   const [selectedRooms, setSelectedRooms] = useState([]);
+  const [roomTypes, setRoomTypes] = useState([]);
+  const [roomsData, setRoomsData] = useState([]);
   const [modalView, setModalView] = useState(false);
   const [paymentModal, setpaymentModal] = useState(false);
+  const location = useLocation();
+  const reservation = location.state?.reservation;
   const [formData, setFormData] = useState({
     title: "Mr",
     firstName: "",
@@ -19,17 +25,40 @@ const ReservationListEdit = () => {
     rooms: "1",
     status: "",
     idType: "",
+    totaldays: 0,
     totalAdult: 2,
     totalChild: 3,
     complementary: false,
   });
 
   const handleSelect = (room) => {
-    setSelectedRooms((prev) =>
-      prev.some((r) => r.id === room.id)
-        ? prev.filter((r) => r.id !== room.id)
-        : [...prev, room],
-    );
+    setSelectedRooms((prevSelected) => {
+      const exists = prevSelected.some((r) => r.id === room.id);
+
+      const updatedSelectedRooms = exists
+        ? prevSelected.filter((r) => r.id !== room.id)
+        : [...prevSelected, room];
+
+      setRoomDetails({
+        room_ids: updatedSelectedRooms.map((r) => r.id),
+        room_type_ids: updatedSelectedRooms.map((r) =>
+          Number(r.room_type_id)
+        ),
+        room_no: updatedSelectedRooms.map((r) => r.room_no),
+        rate_type: updatedSelectedRooms.map(() => "daily"),
+        room_complementary: updatedSelectedRooms.map(() => ""),
+        no_of_adults: updatedSelectedRooms.map(() => 1),
+        no_of_children: updatedSelectedRooms.map(() => 0),
+      });
+
+
+      setFormData((prev) => ({
+        ...prev,
+        no_of_rooms: String(updatedSelectedRooms.length),
+      }));
+
+      return updatedSelectedRooms;
+    });
   };
 
   const handleSave = () => {
@@ -37,64 +66,36 @@ const ReservationListEdit = () => {
     setpaymentModal(true);
   };
 
-  const allRooms = [
-    {
-      id: 1,
-      roomNo: 201,
-      adults: 2,
-      children: 1,
-      status: "Available",
-      type: "Standard",
-    },
-    {
-      id: 2,
-      roomNo: 202,
-      adults: 2,
-      children: 3,
-      status: "Available",
-      type: "Standard",
-    },
-    {
-      id: 3,
-      roomNo: 301,
-      adults: 2,
-      children: 0,
-      status: "Available",
-      type: "Deluxe",
-    },
-    {
-      id: 4,
-      roomNo: 302,
-      adults: 3,
-      children: 2,
-      status: "Available",
-      type: "Deluxe",
-    },
-    {
-      id: 5,
-      roomNo: 401,
-      adults: 2,
-      children: 2,
-      status: "Available",
-      type: "Suite",
-    },
-    {
-      id: 6,
-      roomNo: 501,
-      adults: 4,
-      children: 2,
-      status: "Available",
-      type: "Family",
-    },
-    {
-      id: 7,
-      roomNo: 601,
-      adults: 2,
-      children: 1,
-      status: "Available",
-      type: "Executive",
-    },
-  ];
+  const getAllroom_type = async () => {
+    try {
+      const res = await APICall.getT("/masterdata/room_types");
+      if (Array.isArray(res.data.data)) {
+        setRoomTypes(res.data.data);
+      } else if (Array.isArray(res.data)) {
+        setRoomTypes(res.data);
+      } else {
+        setRoomTypes([]);
+      }
+    } catch (err) {
+      console.log("Room Types API Error:", err);
+    }
+  };
+
+  const getAllRooms = async () => {
+    try {
+      const response = await APICall.getT("/masterdata/room");
+      if (Array.isArray(response.data.data)) {
+        setRoomsData(response.data.data);
+      } else if (Array.isArray(response.data)) {
+        setRoomsData(response.data);
+      } else {
+        setRoomsData([]);
+      }
+    } catch (err) {
+      console.log("Rooms API Error:", err);
+    }
+  };
+
 
   const RoomGrid = ({ rooms, isSelected, onSelect }) => (
     <div
@@ -121,59 +122,152 @@ const ReservationListEdit = () => {
   );
 
   const isRoomSelected = (room) => selectedRooms.some((r) => r.id === room.id);
+
+  useEffect(() => {
+    getAllroom_type();
+    getAllRooms();
+  }, [])
+
+  useEffect(() => {
+    if (reservation) {
+      setFormData((prev) => ({
+        ...prev,
+        firstName: reservation.first_name || "",
+        phone: reservation.phone_number || "",
+        arrivalDate: reservation.arrival_date || "",
+        departureDate: reservation.departure_date || "",
+        // totaldays:reservation.
+        status: reservation.reservation_status || "",
+      }));
+    }
+  }, [reservation]);
+
+  useEffect(() => {
+    if (formData.arrivalDate && formData.departureDate) {
+      const start = new Date(formData.arrivalDate);
+      const end = new Date(formData.departureDate);
+
+      const days =
+        (end - start) / (1000 * 60 * 60 * 24);
+
+      setFormData((prev) => ({
+        ...prev,
+        totaldays: days > 0 ? days : 0,
+      }));
+    }
+  }, [formData.arrivalDate, formData.departureDate]);
+
+
   return (
     <div className="split-container">
       <div className="left">
-        <Tabs variant="default">
-          <Tab label="Standard Room">
-            <h3>Standard Rooms</h3>
-            <RoomGrid
-              rooms={allRooms.filter((r) => r.type === "Standard")}
-              isSelected={isRoomSelected}
-              onSelect={handleSelect}
-            />
-          </Tab>
-
-          <Tab label="Deluxe Room">
-            <h3>Deluxe Rooms</h3>
-            <RoomGrid
-              rooms={allRooms.filter((r) => r.type === "Deluxe")}
-              isSelected={isRoomSelected}
-              onSelect={handleSelect}
-            />
-          </Tab>
-
-          <Tab label="Suite Room">
-            <h3>Suite Rooms</h3>
-            <RoomGrid
-              rooms={allRooms.filter((r) => r.type === "Suite")}
-              isSelected={isRoomSelected}
-              onSelect={handleSelect}
-            />
-          </Tab>
-
-          <Tab label="Family Room">
-            <h3>Family Rooms</h3>
-            <RoomGrid
-              rooms={allRooms.filter((r) => r.type === "Family")}
-              isSelected={isRoomSelected}
-              onSelect={handleSelect}
-            />
-          </Tab>
-
-          <Tab label="Executive Room">
-            <h3>Executive Rooms</h3>
-            <RoomGrid
-              rooms={allRooms.filter((r) => r.type === "Executive")}
-              isSelected={isRoomSelected}
-              onSelect={handleSelect}
-            />
-          </Tab>
-        </Tabs>
+        {roomTypes.length === 0 ? (
+          <h3>Loading Room Types...</h3>
+        ) : (
+          <Tabs variant="default">
+            {roomTypes.map((type) => (
+              <Tab key={type.id} label={type.room_type || type.room_type_name}>
+                <h3>{type.room_type} Rooms</h3>
+                <RoomGrid
+                  rooms={roomsData.filter(
+                    (room) => Number(room.room_type_id) === type.id
+                  )}
+                  isSelected={isRoomSelected}
+                  onSelect={handleSelect}
+                />
+              </Tab>
+            ))}
+          </Tabs>
+        )}
       </div>
       <div className="right">
-        <h1>Table</h1>
+        <div className="top-div">
+          <div className="field">
+            <input
+              type="date"
+              value={formData.arrivalDate}
+              onChange={(e) =>
+                setFormData({ ...formData, arrivalDate: e.target.value })
+              }
+            />
+          </div>
+
+          <div className="field">
+            <input
+              type="date"
+              value={formData.departureDate}
+              onChange={(e) =>
+                setFormData({ ...formData, departureDate: e.target.value })
+              }
+            />
+
+          </div>
+
+          <div className="field">
+            <input
+              type="number"
+              value={formData.totaldays}
+              readOnly
+            />
+
+          </div>
+        </div>
+        <div>
+          
+        </div>
+
+
+        <TableTemplate title={""}
+          columns={[
+            {
+              key: "",
+              title: "Room Category",
+              align: "center"
+            },
+            {
+              key: "",
+              title: "Room No",
+              align: "center"
+            },
+            {
+              key: "",
+              title: "Total Adult",
+              align: "center"
+            },
+            {
+              key: "",
+              title: "Total Child",
+              align: "center"
+            },
+            {
+              key: "",
+              title: "Complementry",
+              align: "center"
+            },
+            {
+              key: "",
+              title: "Extra Bed",
+              align: "center"
+            },
+            {
+              key: "",
+              title: "Bed Amt",
+              align: "center"
+            },
+            {
+              key: "",
+              title: "Amount",
+              align: "center"
+            },
+            {
+              key: "",
+              title: "Action",
+              align: "center"
+            },
+
+          ]} />
       </div>
+
     </div>
   );
 };

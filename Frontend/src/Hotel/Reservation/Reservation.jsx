@@ -1,23 +1,40 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Download, Eye, Pencil,Printer } from "lucide-react";
+import { Download, Eye, Pencil, Printer, Trash2, Check } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import "./Reservation.css";
+import APICall from "../../APICalls/APICalls";
+
 const Reservation = () => {
+  const [data, setData] = useState([])
   const Navigate = useNavigate()
 
-  const ViewModel=(row) =>{
-    Navigate('/ReservationView',{
-      state:row,
+  const ViewModel = (row) => {
+    Navigate('/ReservationView', {
+      state: row,
     });
   };
 
-  const EditModel=(row)=>{
-    Navigate('/ReservationEdit',{
-      state:row,
+  const EditModel = (row) => {
+    Navigate("/ReservationEdit", {
+      state: { reservation: row },
     });
   };
 
+  const getAllroomReservation = async () => {
+    try {
+      const AllroomReservation = await APICall.getT("/hotel/room_reservation")
+      setData(AllroomReservation.data)
+    }
+    catch (error) {
+      return error
+    }
+
+  }
+
+  useEffect(() => {
+    getAllroomReservation();
+  }, [])
   return (
     <TableTemplate
       title="Reservation List"
@@ -30,33 +47,44 @@ const Reservation = () => {
       actionButton={{
         icon: <Download size={18} />,
         label: "Export Reservations",
-        onClick: () => {},
+        onClick: () => { },
         size: "small",
         variant: "outline",
       }}
       columns={[
         {
-          key: "reservationId",
+          key: "room_reservation_id",
           title: "Reservation ID",
           align: "center",
           width: "160px",
         },
         {
-          key: "name",
-          title: "Guest Name",
+          key: "reservation_type",
+          title: "Reservation Type",
+          align: "center"
         },
         {
-          key: "arrivalDate",
+          key: "first_name",
+          title: "Name",
+          align: "center"
+        },
+        {
+          key: "phone_number",
+          title: "Phone",
+          align: "center"
+        },
+        {
+          key: "arrival_date",
           title: "Arrival Date",
           align: "center",
         },
         {
-          key: "departureDate",
+          key: "departure_date",
           title: "Departure Date",
           align: "center",
         },
         {
-          key: "status",
+          key: "reservation_status",
           title: "Reservation Status",
           align: "center",
           type: "badge",
@@ -71,59 +99,23 @@ const Reservation = () => {
               <button className="table-action-btn print" title="Print">
                 <Printer size={16} />
               </button>
-              <button className="table-action-btn view" title="View" onClick={()=>ViewModel(row)}>
+              <button className="table-action-btn print" title="check-in">
+                <Check size={16} />
+              </button>
+              <button className="table-action-btn view" title="View" onClick={() => ViewModel(row)}>
                 <Eye size={16} />
               </button>
-              <button className="table-action-btn edit" title="Edit" onClick={()=>EditModel(row)}>
+              <button className="table-action-btn edit" title="Edit" onClick={() => EditModel(row)}>
                 <Pencil size={16} />
+              </button>
+              <button className="table-action-btn edit" title="delete" onClick={() => EditModel(row)}>
+                <Trash2 size={16} />
               </button>
             </div>
           ),
         },
       ]}
-      data={[
-        {
-          id: 1,
-          sno: 1,
-          reservationId: "RSV-1001",
-          name: "John Doe",
-          arrivalDate: "2024-02-10",
-          departureDate: "2024-02-12",
-          status: "confirmed",
-          email:"john.doe@example.com",
-          phone:"9876543210",
-          NumberOfRooms:"1",
-          NumberOfNights:"2",
-          IdentityType:"1"
-        },
-        {
-          id: 2,
-          sno: 2,
-          reservationId: "RSV-1002",
-          name: "Jane Smith",
-          arrivalDate: "2024-02-11",
-          departureDate: "2024-02-13",
-          status: "pending",
-        },
-        {
-          id: 3,
-          sno: 3,
-          reservationId: "RSV-1003",
-          name: "Michael Brown",
-          arrivalDate: "2024-02-15",
-          departureDate: "2024-02-18",
-          status: "checked-in",
-        },
-        {
-          id: 4,
-          sno: 4,
-          reservationId: "RSV-1004",
-          name: "Sarah Wilson",
-          arrivalDate: "2024-02-16",
-          departureDate: "2024-02-20",
-          status: "cancelled",
-        },
-      ]}
+      data={data}
     />
   );
 };

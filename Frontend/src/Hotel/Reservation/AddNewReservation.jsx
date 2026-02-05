@@ -13,7 +13,7 @@ Modal.setAppElement('#root');
 const AddNewReservation = () => {
   const [modalView, setModalView] = useState(false);
   const [paymentModal, setpaymentModal] = useState(false);
-  
+
   const [identityTypes, setIdentityTypes] = useState([]);
   const [roomsData, setRoomsData] = useState([]);
   const [selectedRooms, setSelectedRooms] = useState([]);
@@ -27,12 +27,12 @@ const AddNewReservation = () => {
     const res = await APICall.getT("/masterdata/identity_proof");
     setIdentityTypes(res.data?.data || res.data || []);
   };
-  
+
   const getAllTaxTypes = async () => {
     const res = await APICall.getT("/masterdata/tax");
     setTaxTypes(res.data?.data || res.data || []);
   };
-  
+
   const getAllDiscountTypes = async () => {
     const res = await APICall.getT("/masterdata/discount");
     setDiscountTypes(res.data?.data || res.data || []);
@@ -136,28 +136,33 @@ const AddNewReservation = () => {
   });
 
   const handleSelect = (room) => {
-    const updatedSelectedRooms = selectedRooms.some((r) => r.id === room.id)
-      ? selectedRooms.filter((r) => r.id !== room.id)
-      : [...selectedRooms, room];
-    
-    setSelectedRooms(updatedSelectedRooms);
-    
-    const roomTypeObj = roomTypes.find(t => Number(t.id) === Number(room.room_type_id));
-    
-    setRoomDetails(prev => ({
-      room_ids: updatedSelectedRooms.map(r => r.id),
-      room_type_ids: updatedSelectedRooms.map(r => Number(r.room_type_id)),
-      room_no: updatedSelectedRooms.map(r => r.room_no),
-      rate_type: updatedSelectedRooms.map(() => "daily"),
-      room_complementary: updatedSelectedRooms.map(() => ""),
-      no_of_adults: updatedSelectedRooms.map(() => 1),
-      no_of_children: updatedSelectedRooms.map(() => 0)
-    }));
-    
-    setFormData(prev => ({
-      ...prev,
-      no_of_rooms: updatedSelectedRooms.length.toString()
-    }));
+    setSelectedRooms((prevSelected) => {
+      const exists = prevSelected.some((r) => r.id === room.id);
+
+      const updatedSelectedRooms = exists
+        ? prevSelected.filter((r) => r.id !== room.id)
+        : [...prevSelected, room];
+
+      setRoomDetails({
+        room_ids: updatedSelectedRooms.map((r) => r.id),
+        room_type_ids: updatedSelectedRooms.map((r) =>
+          Number(r.room_type_id)
+        ),
+        room_no: updatedSelectedRooms.map((r) => r.room_no),
+        rate_type: updatedSelectedRooms.map(() => "daily"),
+        room_complementary: updatedSelectedRooms.map(() => ""),
+        no_of_adults: updatedSelectedRooms.map(() => 1),
+        no_of_children: updatedSelectedRooms.map(() => 0),
+      });
+
+  
+      setFormData((prev) => ({
+        ...prev,
+        no_of_rooms: String(updatedSelectedRooms.length),
+      }));
+
+      return updatedSelectedRooms;
+    });
   };
 
   const validateRoomCapacity = (roomIndex, field, value) => {
@@ -166,21 +171,21 @@ const AddNewReservation = () => {
     const newChildren = field === 'no_of_children' ? parseInt(value) || 0 : roomDetails.no_of_children[roomIndex] || 0;
     const maxAdults = parseInt(room.max_adult) || 0;
     const maxChildren = parseInt(room.max_child) || 0;
-    
+
     const newErrors = { ...errors };
-    
+
     if (newAdults > maxAdults) {
       newErrors.adults = true;
       alert(`Maximum ${maxAdults} adults allowed for room ${room.room_no}`);
       return false;
     }
-    
+
     if (newChildren > maxChildren) {
       newErrors.children = true;
       alert(`Maximum ${maxChildren} children allowed for room ${room.room_no}`);
       return false;
     }
-    
+
     newErrors.adults = false;
     newErrors.children = false;
     setErrors(newErrors);
@@ -193,21 +198,21 @@ const AddNewReservation = () => {
         return;
       }
     }
-    
+
     setRoomDetails(prev => ({
       ...prev,
       [field]: prev[field].map((item, i) => i === index ? value : item)
     }));
-    
+
     if (field === 'no_of_adults' || field === 'no_of_children') {
-      const totalAdults = field === 'no_of_adults' 
+      const totalAdults = field === 'no_of_adults'
         ? roomDetails.no_of_adults.reduce((sum, count, i) => sum + (i === index ? (parseInt(value) || 0) : (parseInt(count) || 0)), 0)
         : roomDetails.no_of_adults.reduce((sum, count) => sum + (parseInt(count) || 0), 0);
-      
+
       const totalChildren = field === 'no_of_children'
         ? roomDetails.no_of_children.reduce((sum, count, i) => sum + (i === index ? (parseInt(value) || 0) : (parseInt(count) || 0)), 0)
         : roomDetails.no_of_children.reduce((sum, count) => sum + (parseInt(count) || 0), 0);
-      
+
       setFormData(prev => ({
         ...prev,
         no_of_adults: totalAdults,
@@ -217,38 +222,38 @@ const AddNewReservation = () => {
   };
 
   const handleSave = () => {
-    if (!formData.first_name || !formData.last_name || !formData.email || !formData.phone_number || 
-        !formData.arrival_date || !formData.departure_date || !formData.no_of_nights || 
-        !formData.booking_status_id || !formData.identity_type_id) {
+    if (!formData.first_name || !formData.last_name || !formData.email || !formData.phone_number ||
+      !formData.arrival_date || !formData.departure_date || !formData.no_of_nights ||
+      !formData.booking_status_id || !formData.identity_type_id) {
       alert("Please fill all required fields marked with *");
       return;
     }
-    
+
     if (selectedRooms.length === 0) {
       alert("Please select at least one room");
       return;
     }
-    
+
     if (!formData.proof_document) {
       alert("Please upload identity proof document");
       return;
     }
-    
+
     let capacityValid = true;
     selectedRooms.forEach((room, index) => {
       const adults = roomDetails.no_of_adults[index] || 0;
       const children = roomDetails.no_of_children[index] || 0;
       const maxAdults = parseInt(room.max_adult) || 0;
       const maxChildren = parseInt(room.max_child) || 0;
-      
+
       if (adults > maxAdults || children > maxChildren) {
         capacityValid = false;
         alert(`Room ${room.room_no} exceeds maximum capacity (Max: ${maxAdults} adults, ${maxChildren} children)`);
       }
     });
-    
+
     if (!capacityValid) return;
-    
+
     setModalView(false);
     setpaymentModal(true);
   };
@@ -259,56 +264,56 @@ const AddNewReservation = () => {
   const handleSubmitReservation = async (finalPaymentData) => {
     try {
       const formDataToSend = new FormData();
-      
+
       formDataToSend.append("room_reservation_id", `ROOM_RES_${Date.now()}`);
       formDataToSend.append("salutation", formData.salutation);
       formDataToSend.append("first_name", formData.first_name);
       formDataToSend.append("last_name", formData.last_name);
       formDataToSend.append("phone_number", formData.phone_number);
       formDataToSend.append("email", formData.email);
-      
+
       formDataToSend.append("arrival_date", formData.arrival_date);
       formDataToSend.append("departure_date", formData.departure_date);
       formDataToSend.append("no_of_nights", formData.no_of_nights);
-      
+
       formDataToSend.append("room_type_ids", JSON.stringify(roomDetails.room_type_ids));
       formDataToSend.append("room_ids", JSON.stringify(roomDetails.room_ids));
       formDataToSend.append("rate_type", JSON.stringify(roomDetails.rate_type));
-      
+
       formDataToSend.append("no_of_rooms", formData.no_of_rooms);
       formDataToSend.append("no_of_adults", formData.no_of_adults);
       formDataToSend.append("no_of_children", formData.no_of_children);
-      
+
       formDataToSend.append("payment_method_id", finalPaymentData.payment_method_id);
       formDataToSend.append("extra_bed_count", finalPaymentData.extra_bed_count);
       formDataToSend.append("extra_bed_cost", finalPaymentData.extra_bed_cost);
-      
+
       formDataToSend.append("total_amount", finalPaymentData.total_amount);
       formDataToSend.append("tax_percentage", finalPaymentData.tax_percentage);
       formDataToSend.append("tax_amount", finalPaymentData.tax_amount);
       formDataToSend.append("discount_percentage", finalPaymentData.discount_percentage);
       formDataToSend.append("discount_amount", finalPaymentData.discount_amount);
       formDataToSend.append("extra_charges", finalPaymentData.extra_charges);
-      
+
       formDataToSend.append("overall_amount", finalPaymentData.overall_amount);
       formDataToSend.append("paid_amount", finalPaymentData.paid_amount);
       formDataToSend.append("balance_amount", finalPaymentData.balance_amount);
       formDataToSend.append("extra_amount", finalPaymentData.extra_amount);
-      
+
       formDataToSend.append("booking_status_id", formData.booking_status_id);
       formDataToSend.append("room_complementary", formData.room_complementary || "");
       formDataToSend.append("common_complementary", formData.common_complementary || "");
-      
+
       formDataToSend.append("identity_type_id", formData.identity_type_id);
       if (formData.proof_document) {
         formDataToSend.append("identity_file", formData.proof_document);
       }
-      
+
       const response = await APICall.postT("/hotel/room_reservation", formDataToSend);
       console.log("Reservation created:", response.data);
       alert("Reservation created successfully!");
       setpaymentModal(false);
-      
+
       window.location.reload();
     } catch (error) {
       console.error("Error creating reservation:", error);
@@ -363,7 +368,7 @@ const AddNewReservation = () => {
         className="custom-modal"
         overlayClassName="custom-overlay"
       >
-        <Payment 
+        <Payment
           taxTypes={taxTypes}
           discountTypes={discountTypes}
           paymentMethods={paymentMethods}
@@ -395,8 +400,8 @@ const AddNewReservation = () => {
               <div className="form-group">
                 <label>First Name <span className="required">*</span></label>
                 <div className="title-input">
-                  <select 
-                    value={formData.salutation} 
+                  <select
+                    value={formData.salutation}
                     className="title-select"
                     onChange={(e) => setFormData({ ...formData, salutation: e.target.value })}
                   >
@@ -417,8 +422,8 @@ const AddNewReservation = () => {
 
               <div className="form-group">
                 <label>Last Name <span className="required">*</span></label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="Last Name"
                   value={formData.last_name}
                   onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
@@ -428,8 +433,8 @@ const AddNewReservation = () => {
 
               <div className="form-group">
                 <label>Email <span className="required">*</span></label>
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   placeholder="Email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -439,8 +444,8 @@ const AddNewReservation = () => {
 
               <div className="form-group">
                 <label>Phone Number <span className="required">*</span></label>
-                <input 
-                  type="tel" 
+                <input
+                  type="tel"
                   placeholder="Phone Number"
                   value={formData.phone_number}
                   onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
@@ -450,50 +455,82 @@ const AddNewReservation = () => {
 
               <div className="form-group">
                 <label>Arrival Date <span className="required">*</span></label>
-                <input 
-                  type="date" 
-                  placeholder="mm/dd/yyyy"
+                <input
+                  type="date"
                   value={formData.arrival_date}
-                  onChange={(e) => setFormData({ ...formData, arrival_date: e.target.value })}
+                  onChange={(e) => {
+                    const arrival = e.target.value;
+                    const departure = formData.departure_date;
+
+                    let nights = formData.no_of_nights;
+                    if (arrival && departure) {
+                      const start = new Date(arrival);
+                      const end = new Date(departure);
+                      const diff = (end - start) / (1000 * 60 * 60 * 24);
+                      nights = diff > 0 ? diff : 0;
+                    }
+
+                    setFormData({
+                      ...formData,
+                      arrival_date: arrival,
+                      no_of_nights: nights,
+                    });
+                  }}
                   required
                 />
               </div>
 
               <div className="form-group">
                 <label>Departure Date <span className="required">*</span></label>
-                <input 
-                  type="date" 
-                  placeholder="mm/dd/yyyy"
+                <input
+                  type="date"
                   value={formData.departure_date}
-                  onChange={(e) => setFormData({ ...formData, departure_date: e.target.value })}
+                  min={formData.arrival_date}
+                  onChange={(e) => {
+                    const departure = e.target.value;
+                    const arrival = formData.arrival_date;
+
+                    let nights = formData.no_of_nights;
+                    if (arrival && departure) {
+                      const start = new Date(arrival);
+                      const end = new Date(departure);
+                      const diff = (end - start) / (1000 * 60 * 60 * 24);
+                      nights = diff > 0 ? diff : 0;
+                    }
+
+                    setFormData({
+                      ...formData,
+                      departure_date: departure,
+                      no_of_nights: nights,
+                    });
+                  }}
                   required
                 />
               </div>
 
               <div className="form-group">
                 <label>Number of Nights <span className="required">*</span></label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   value={formData.no_of_nights}
-                  onChange={(e) => setFormData({ ...formData, no_of_nights: e.target.value })}
-                  min="1"
-                  required
+                  readOnly
                 />
               </div>
 
+
               <div className="form-group">
                 <label>Number of Rooms</label>
-                <input 
-                  type="number" 
-                  value={formData.no_of_rooms} 
-                  readOnly 
-                  className="readonly-input" 
+                <input
+                  type="number"
+                  value={formData.no_of_rooms}
+                  readOnly
+                  className="readonly-input"
                 />
               </div>
 
               <div className="form-group">
                 <label>Reservation Status <span className="required">*</span></label>
-                <select 
+                <select
                   style={{ height: "40px" }}
                   value={formData.booking_status_id}
                   onChange={(e) => setFormData({ ...formData, booking_status_id: e.target.value })}
@@ -510,7 +547,7 @@ const AddNewReservation = () => {
 
               <div className="form-group">
                 <label>Identity Type <span className="required">*</span></label>
-                <select 
+                <select
                   style={{ height: "40px" }}
                   value={formData.identity_type_id}
                   onChange={(e) => setFormData({ ...formData, identity_type_id: e.target.value })}
@@ -528,8 +565,8 @@ const AddNewReservation = () => {
               <div className="form-group">
                 <label>Identity Proof <span className="required">*</span></label>
                 <div className="file-upload">
-                  <input 
-                    type="file" 
+                  <input
+                    type="file"
                     id="file"
                     onChange={(e) => setFormData({ ...formData, proof_document: e.target.files[0] })}
                     required
@@ -550,7 +587,7 @@ const AddNewReservation = () => {
                 const roomTypeObj = roomTypes.find(t => Number(t.id) === Number(room.room_type_id));
                 const maxAdults = parseInt(room.max_adult) || 0;
                 const maxChildren = parseInt(room.max_child) || 0;
-                
+
                 return (
                   <div key={room.id} className="selected-room-card">
                     <div className="room-info">
@@ -568,7 +605,7 @@ const AddNewReservation = () => {
                       </div>
                       <div>
                         <label>Rate Type</label>
-                        <select 
+                        <select
                           className="rate-select"
                           value={roomDetails.rate_type[index] || "daily"}
                           onChange={(e) => handleRoomDetailChange(index, 'rate_type', e.target.value)}
@@ -583,8 +620,8 @@ const AddNewReservation = () => {
                       </div>
                       <div>
                         <label>Total Adult</label>
-                        <input 
-                          type="number" 
+                        <input
+                          type="number"
                           value={roomDetails.no_of_adults[index] || 0}
                           className="small-input"
                           onChange={(e) => handleRoomDetailChange(index, 'no_of_adults', parseInt(e.target.value) || 1)}
@@ -594,8 +631,8 @@ const AddNewReservation = () => {
                       </div>
                       <div>
                         <label>Total Child</label>
-                        <input 
-                          type="number" 
+                        <input
+                          type="number"
                           value={roomDetails.no_of_children[index] || 0}
                           className="small-input"
                           onChange={(e) => handleRoomDetailChange(index, 'no_of_children', parseInt(e.target.value) || 0)}

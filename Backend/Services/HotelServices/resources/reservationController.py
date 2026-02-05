@@ -627,6 +627,7 @@ async def create_room_reservation(
     # ---------------- Reservation ----------------
     booking_status_id: int = Form(...),
     reservation_type: str = Form(RESERVATION),
+    reservation_status:str = Form(...),
 
     room_complementary: str = Form(None),
     common_complementary: str = Form(None),
@@ -719,6 +720,7 @@ async def create_room_reservation(
 
     reservation.booking_status_id = booking_status_id
     reservation.reservation_type = reservation_type
+    reservation.reservation_status = reservation_status
 
     reservation.room_complementary = room_complementary
     reservation.common_complementary = common_complementary
@@ -837,6 +839,7 @@ def get_all_room_reservations(
                 # ---------------- Reservation Info ----------------
                 "booking_status_id": r.booking_status_id,
                 "reservation_type": r.reservation_type,
+                "reservation_status":r.reservation_status,
 
                 "room_complementary": r.room_complementary,
                 "common_complementary": r.common_complementary,
@@ -980,6 +983,7 @@ def get_room_reservation_by_id(
                 # ---------------- Reservation Info ----------------
                 "booking_status_id": reservation.booking_status_id,
                 "reservation_type": reservation.reservation_type,
+                "reservation_status":reservation.reservation_status,
 
                 "room_complementary": reservation.room_complementary,
                 "common_complementary": reservation.common_complementary,
@@ -1062,6 +1066,7 @@ async def update_room_reservation(
     # -------- Reservation --------
     booking_status_id: int = Form(...),
     reservation_type: str = Form(...),
+    reservation_status:str = Form(...),
 
     room_complementary: str = Form(None),
     common_complementary: str = Form(None),
@@ -1142,6 +1147,7 @@ async def update_room_reservation(
 
         reservation.booking_status_id = booking_status_id
         reservation.reservation_type = reservation_type
+        reservation.reservation_status = reservation_status
 
         reservation.room_complementary = room_complementary
         reservation.common_complementary = common_complementary
