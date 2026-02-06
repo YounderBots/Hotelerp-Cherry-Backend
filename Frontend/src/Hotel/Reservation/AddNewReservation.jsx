@@ -284,7 +284,7 @@ const AddNewReservation = () => {
       formDataToSend.append("no_of_adults", formData.no_of_adults);
       formDataToSend.append("no_of_children", formData.no_of_children);
 
-      formDataToSend.append("payment_method_id", finalPaymentData.payment_method_id);
+      formDataToSend.append("payment_method_id", Number(finalPaymentData.payment_method_id));
       formDataToSend.append("extra_bed_count", finalPaymentData.extra_bed_count);
       formDataToSend.append("extra_bed_cost", finalPaymentData.extra_bed_cost);
 
@@ -300,7 +300,9 @@ const AddNewReservation = () => {
       formDataToSend.append("balance_amount", finalPaymentData.balance_amount);
       formDataToSend.append("extra_amount", finalPaymentData.extra_amount);
 
-      formDataToSend.append("booking_status_id", formData.booking_status_id);
+      formDataToSend.append("booking_status_id", Number(formData.booking_status_id));
+      formDataToSend.append("reservation_status", "CONFIRMED");
+
       formDataToSend.append("room_complementary", formData.room_complementary || "");
       formDataToSend.append("common_complementary", formData.common_complementary || "");
 
@@ -533,7 +535,7 @@ const AddNewReservation = () => {
                 <select
                   style={{ height: "40px" }}
                   value={formData.booking_status_id}
-                  onChange={(e) => setFormData({ ...formData, booking_status_id: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, booking_status_id:Number(e.target.value) })}
                   required
                 >
                   <option value="">- select -</option>

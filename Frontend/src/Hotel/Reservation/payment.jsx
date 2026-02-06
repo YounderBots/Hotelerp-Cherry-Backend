@@ -106,7 +106,10 @@ const Payment = ({ taxTypes, discountTypes, paymentMethods, formData, setFormDat
       numValue = 0;
     } else if (field.includes('percentage') || field.includes('amount') || field.includes('cost') || field.includes('charges') || field === 'paying_amount') {
       numValue = parseFloat(value) || 0;
-    } else {
+    } else if (field === 'payment_method_id') {
+      numValue = Number(value);      
+    }
+    else {
       numValue = value;
     }
     
