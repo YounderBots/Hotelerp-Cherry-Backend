@@ -164,3 +164,18 @@
   margin-bottom: 10px;
   text-align: center;
 }
+
+.success-text {
+  background: linear-gradient(135deg, #e6f9f0, #d1f2e3);
+  color: #0f5132;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
