@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import { X, Pencil, Trash2, Eye } from "lucide-react";
+import Modal from "../stories/Modal";
+import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
@@ -18,6 +19,35 @@ const PaymentMethods = () => {
 
   const [formData, setFormData] = useState(initialForm);
 
+
+  const [alerts, setAlerts] = useState({
+    show: false,
+    message: "",
+    type: "success",
+    exiting: false,
+  });
+
+  const showAlert = (message, type = "success") => {
+    setAlerts({
+      show: true,
+      message,
+      type,
+      exiting: false,
+    });
+
+    setTimeout(() => {
+      setAlerts((prev) => ({ ...prev, exiting: true }));
+    }, 1800);
+
+    setTimeout(() => {
+      setAlerts({
+        show: false,
+        message: "",
+        type: "success",
+        exiting: false,
+      });
+    }, 2200);
+  };
   /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
@@ -57,10 +87,11 @@ const PaymentMethods = () => {
         payment_method: formData.name,
 
       });
+      showAlert("Payment Method added successfully", "success");
       getAllpayMethod();
     }
     catch (error) {
-      return error ;
+     showAlert(error.detail, "error");
     }
   }
   const updatePaymentMethod = async () => {
@@ -70,26 +101,29 @@ const PaymentMethods = () => {
         payment_method: formData.name,
 
       });
+      showAlert("Payment Method updated successfully", "update");
       getAllpayMethod();
     }
     catch (error) {
-      return error ;
+      showAlert(error.detail || "Update failed", "error");
     }
   }
 
-  
-  const deletePaymentMethod = async(id) => {
-    try{
-      await APICall.deleteT(`/masterdata/payment_methods/${id}`)
+
+  const deletePaymentMethod = async (id) => {
+    try {
+      await APICall.deleteT(`/masterdata/payment_methods/${id}`);
+      showAlert("Paymeent Method deleted successfully", "delete");
+      getAllpayMethod();
     }
-    catch(error){
-      return error
+    catch (error) {
+      showAlert(error.detail || "Delete failed", "error");
     }
   }
   useEffect(() => {
     getAllpayMethod();
-    
-  },[])
+
+  }, [])
 
   const handleSave = () => {
     if (!formData.name.trim()) return;
@@ -107,13 +141,15 @@ const PaymentMethods = () => {
   const handleEdit = (row) => {
     setEditId(row.id);
     setFormData({
-      name:row.payment_method
+      name: row.payment_method
     });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    deletePaymentMethod(id);
+    if (window.confirm("Are you sure you want to delete this Payment Method?")) {
+      deletePaymentMethod(id);
+    }
   };
 
   /* ================= UI ================= */
@@ -178,62 +214,67 @@ const PaymentMethods = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Payment Method</h3>
-              <button onClick={closeViewModal}>
-                <X size={18} />
-              </button>
-            </div>
+        <Modal
+          isOpen={showViewModal}
+          title="View Payment Method"
+          onClose={() => setShowViewModal(false)}
+          size="medium"
+        >
 
-            <div className="modal-body single view">
-              <div className="form-group">
-                <label>Payment Method Name</label>
-                <input value={viewData.payment_method} disabled />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
+          <div className="modal-body single view">
+            <div className="form-group">
+              <label>Payment Method Name</label>
+              <input value={viewData.payment_method} disabled />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Payment Method" : "Add Payment Method"}</h3>
-              <button onClick={closeModal}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Payment Method Name</label>
-                <input
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit  Payment Method" : "Add  Payment Method"}
+          onClose={() => setShowModal(false)}
+          showFooter
+          size="large"
+          bodyLayout="single"
+          actions={[
+            {
+              label: "Close",
+              variant: "secondary",
+              onClick: () => setShowModal(false),
+            },
+            {
+              label: "Submit",
+              variant: "primary",
+              onClick: handleSave,
+              autoFocus: true,
+            },
+          ]}
+        >
+          <div className="modal-body single">
+            <div className="form-group">
+              <label>Payment Method Name</label>
+              <input
+                name="name" value={formData.name}
+                onChange={handleChange} />
             </div>
           </div>
+        </Modal>
+      )}
+      {alerts.show && (
+        <div
+          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
+            }`}
+        >
+          <span className="toast-icon">
+            {alerts.type === "success" && <CheckCircle />}
+            {alerts.type === "update" && <Pencil />}
+            {alerts.type === "delete" && <Trash2 />}
+            {alerts.type === "error" && <AlertTriangle />}
+          </span>
+          <span>{alerts.message}</span>
         </div>
       )}
     </>

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import { X, Pencil, Trash2, Eye } from "lucide-react";
+import Modal from "../stories/Modal"
+import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 import { useEffect } from "react";
@@ -30,6 +31,34 @@ const Rooms = () => {
 
   const [formData, setFormData] = useState(initialForm);
 
+  const [alerts, setAlerts] = useState({
+    show: false,
+    message: "",
+    type: "success",
+    exiting: false,
+  });
+
+  const showAlert = (message, type = "success") => {
+    setAlerts({
+      show: true,
+      message,
+      type,
+      exiting: false,
+    });
+
+    setTimeout(() => {
+      setAlerts((prev) => ({ ...prev, exiting: true }));
+    }, 1800);
+
+    setTimeout(() => {
+      setAlerts({
+        show: false,
+        message: "",
+        type: "success",
+        exiting: false,
+      });
+    }, 2200);
+  };
   /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
@@ -69,10 +98,6 @@ const Rooms = () => {
     setEditId(null);
   };
 
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -105,7 +130,7 @@ const Rooms = () => {
   };
 
 
- const getAllroom_type_ids = async () => {
+  const getAllroom_type_ids = async () => {
     const res = await APICall.getT("/masterdata/room_types");
 
     console.log("Room Types Response:", res.data);
@@ -127,39 +152,39 @@ const Rooms = () => {
     getAllroom_type_ids();
     getAllbed_type_ids();
   }
-, []);
+    , []);
   const addRoom = async () => {
-      try {
-        const form = new FormData();
+    try {
+      const form = new FormData();
 
-        form.append("room_no", formData.room_no);
-        form.append("room_name", formData.room_name);
-        form.append("room_type_id", formData.room_type_id);
-        form.append("bed_type_id", formData.bed_type_id);
-        form.append("room_telephone", formData.room_telephone);
-        form.append("max_adult", formData.max_adult);
-        form.append("max_child", formData.max_child);
-        form.append("booking_status", formData.booking_status);
-        form.append("working_status", formData.working_status);
-        form.append("room_status", formData.room_status);
-        if (!formData.images[0]) {
-          alert("Please upload Image 1");
-          return;
-        }
-
-        form.append("image_1", formData.images[0]);
-
-        if (formData.images[1]) form.append("image_2", formData.images[1]);
-        if (formData.images[2]) form.append("image_3", formData.images[2]);
-        if (formData.images[3]) form.append("image_4", formData.images[3]);
-
-        await APICall.postT("/masterdata/room", form);
-
-        getAllRooms();
-      } catch (error) {
-        console.log(error);
+      form.append("room_no", formData.room_no);
+      form.append("room_name", formData.room_name);
+      form.append("room_type_id", formData.room_type_id);
+      form.append("bed_type_id", formData.bed_type_id);
+      form.append("room_telephone", formData.room_telephone);
+      form.append("max_adult", formData.max_adult);
+      form.append("max_child", formData.max_child);
+      form.append("booking_status", formData.booking_status);
+      form.append("working_status", formData.working_status);
+      form.append("room_status", formData.room_status);
+      if (!formData.images[0]) {
+        alert("Please upload Image 1");
+        return;
       }
-    };
+
+      form.append("image_1", formData.images[0]);
+
+      if (formData.images[1]) form.append("image_2", formData.images[1]);
+      if (formData.images[2]) form.append("image_3", formData.images[2]);
+      if (formData.images[3]) form.append("image_4", formData.images[3]);
+
+      await APICall.postT("/masterdata/room", form);
+      showAlert("Room added successfully", "success");
+      getAllRooms();
+    } catch (error) {
+      showAlert(error.detail, "error");
+    }
+  };
 
   const updateRoom = async (id, updatedData) => {
     try {
@@ -196,22 +221,23 @@ const Rooms = () => {
       if (updatedData.images[3] instanceof File)
         form.append("image_4", updatedData.images[3]);
       await APICall.putT(`/masterdata/room`, form);
-
+      showAlert("Room updated successfully", "update");
       getAllRooms();
     } catch (error) {
-      console.log("Update Error:", error);
+      showAlert(error.detail || "Update failed", "error");
     }
   };
 
-  
+
   const deleteRoom = async (id) => {
     try {
-            await APICall.deleteT(`/masterdata/room/${id}`);
-            getAllRooms();
-        }
-      catch (error) {
-            return error, " to delete a Room";
-        }
+      await APICall.deleteT(`/masterdata/room/${id}`);
+      showAlert("Room deleted successfully", "delete");
+      getAllRooms();
+    }
+    catch (error) {
+      showAlert(error.detail || "Delete failed", "error");
+    }
   };
 
   const handleImageChange = (index, file) => {
@@ -325,68 +351,76 @@ const Rooms = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "900px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>View Room</h3>
-              <button onClick={closeViewModal}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen={showViewModal}
+          title="View Room"
+          onClose={() => setShowViewModal(false)}
+          size="large"
+        >
+          <div className="modal-body grid view" style={gridStyle}>
+            {Object.entries(viewData).map(
+              ([key, value]) =>
+                key !== "id" &&
+                key !== "images" && (
+                  <div className="form-group" key={key}>
+                    <label>{key.replace(/([A-Z])/g, " $1")}</label>
+                    <input value={value} disabled />
+                  </div>
+                )
+            )}
 
-            <div className="modal-body grid view" style={gridStyle}>
-              {Object.entries(viewData).map(
-                ([key, value]) =>
-                  key !== "id" &&
-                  key !== "images" && (
-                    <div className="form-group" key={key}>
-                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                      <input value={value} disabled />
-                    </div>
-                  )
-              )}
-
-              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                <label>Room Images</label>
-                <div style={imageGridStyle}>
-                  {[
-                    viewData.images?.image_1,
-                    viewData.images?.image_2,
-                    viewData.images?.image_3,
-                    viewData.images?.image_4,
-                  ].filter(Boolean).map((img, i) => (
-                    <img
-                      key={i}
-                      src={img}
-                      alt="room"
-                      style={{
-                        width: "100%",
-                        height: "120px",
-                        objectFit: "cover",
-                        borderRadius: "8px",
-                      }}
-                    />
-                  ))}
-                </div>
+            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+              <label>Room Images</label>
+              <div style={imageGridStyle}>
+                {[
+                  viewData.images?.image_1,
+                  viewData.images?.image_2,
+                  viewData.images?.image_3,
+                  viewData.images?.image_4,
+                ].filter(Boolean).map((img, i) => (
+                  <img
+                    key={i}
+                    src={img}
+                    alt="room"
+                    style={{
+                      width: "100%",
+                      height: "120px",
+                      objectFit: "cover",
+                      borderRadius: "8px",
+                    }}
+                  />
+                ))}
               </div>
             </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
-            </div>
           </div>
-        </div>
+
+        </Modal>
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "900px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>{editId ? "Edit Room" : "Add Room"}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
-
+      {
+        showModal && (
+          <Modal
+            isOpen={showModal}
+            title={editId ? "Edit Room" : "Add Room"}
+            onClose={() => setShowModal(false)}
+            showFooter
+            size="large"
+            bodyLayout="single"
+            actions={[
+              {
+                label: "Close",
+                variant: "secondary",
+                onClick: () => setShowModal(false),
+              },
+              {
+                label: "Submit",
+                variant: "primary",
+                onClick: handleSave,
+                autoFocus: true,
+              },
+            ]}
+          >
             <div className="modal-body grid" style={gridStyle}>
               {[
                 ["Room No", "room_no"],
@@ -408,9 +442,9 @@ const Rooms = () => {
                 >
                   <option value="">Select Room Type</option>
                   {roomTypes.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.room_type_name}
-                      </option>
+                    <option key={r.id} value={r.id}>
+                      {r.room_type_name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -418,14 +452,14 @@ const Rooms = () => {
                 <label>Bed Type</label>
                 <select
                   name="bed_type_id"
-                  value={formData.bed_type_id || ""}  
+                  value={formData.bed_type_id || ""}
                   onChange={handleChange}
                 >
                   <option value="">Select Bed Type</option>
                   {bedTypes.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.bed_type_name}
-                      </option>
+                    <option key={b.id} value={b.id}>
+                      {b.bed_type_name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -442,7 +476,6 @@ const Rooms = () => {
                 </div>
               ))}
 
-              {/* 🔥 FIXED SELECT SIZE */}
               <div className="form-group">
                 <label>Booked Status</label>
                 <select
@@ -483,7 +516,7 @@ const Rooms = () => {
                 <div style={imageGridStyle}>
                   {(formData.images || []).map((img, i) => (
                     <div key={i}>
-                      
+
                       {img instanceof File ? (
                         <img
                           src={URL.createObjectURL(img)}
@@ -523,14 +556,21 @@ const Rooms = () => {
                   ))}
                 </div>
               </div>
-
             </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>Close</button>
-              <button className="btn primary" onClick={handleSave}>Submit</button>
-            </div>
-          </div>
+          </Modal>
+        )}
+      {alerts.show && (
+        <div
+          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
+            }`}
+        >
+          <span className="toast-icon">
+            {alerts.type === "success" && <CheckCircle />}
+            {alerts.type === "update" && <Pencil />}
+            {alerts.type === "delete" && <Trash2 />}
+            {alerts.type === "error" && <AlertTriangle />}
+          </span>
+          <span>{alerts.message}</span>
         </div>
       )}
     </>

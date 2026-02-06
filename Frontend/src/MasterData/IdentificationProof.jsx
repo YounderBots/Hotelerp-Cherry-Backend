@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import { X, Pencil, Trash2, Eye } from "lucide-react";
+import Modal from "../stories/Modal";
+import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
@@ -18,6 +19,35 @@ const IdentificationProof = () => {
 
   const [formData, setFormData] = useState(initialForm);
 
+
+  const [alerts, setAlerts] = useState({
+    show: false,
+    message: "",
+    type: "success",
+    exiting: false,
+  });
+
+  const showAlert = (message, type = "success") => {
+    setAlerts({
+      show: true,
+      message,
+      type,
+      exiting: false,
+    });
+
+    setTimeout(() => {
+      setAlerts((prev) => ({ ...prev, exiting: true }));
+    }, 1800);
+
+    setTimeout(() => {
+      setAlerts({
+        show: false,
+        message: "",
+        type: "success",
+        exiting: false,
+      });
+    }, 2200);
+  };
   /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
@@ -42,36 +72,44 @@ const IdentificationProof = () => {
   };
 
   const getProof = async () => {
-  const res = await APICall.getT("/masterdata/identity_proof");
-  setData(res.data?.data || res.data || []);
-};
+    const res = await APICall.getT("/masterdata/identity_proof");
+    setData(res.data?.data || res.data || []);
+  };
 
-  const createProof = async () =>{
-    try{
-      await APICall.postT("/masterdata/identity_proof",{
-        proof_name:formData.name
+  const createProof = async () => {
+    try {
+      await APICall.postT("/masterdata/identity_proof", {
+        proof_name: formData.name
       });
+      showAlert("Identity Proof added successfully", "success");
       getProof();
-    } catch(error){
-      return error
+    } catch (error) {
+      showAlert(error.detail, "error");
     }
   }
 
-  const updateProof = async () =>{
-    try{
-      await APICall.putT("/masterdata/identity_proof",{
-        id:editId,
-        proof_name:formData.name
+  const updateProof = async () => {
+    try {
+      await APICall.putT("/masterdata/identity_proof", {
+        id: editId,
+        proof_name: formData.name
       });
+      showAlert("Identity Proof updated successfully", "update");
       getProof();
-    } catch(error){
-      return error
+    } catch (error) {
+      showAlert(error.detail || "Update failed", "error");
     }
   };
 
-  const deleteProof = async(id)=>{
-    await APICall.deleteT(`/masterdata/identity_proof/${id}`);
-    getProof();
+  const deleteProof = async (id) => {
+    try {
+      await APICall.deleteT(`/masterdata/identity_proof/${id}`);
+      showAlert("Identity Proof deleted successfully", "delete");
+      getProof();
+    } catch (error) {
+      showAlert(error.detail || "Delete failed", "error");
+    }
+
   }
 
   const handleChange = (e) => {
@@ -93,17 +131,19 @@ const IdentificationProof = () => {
 
   const handleEdit = (row) => {
     setEditId(row.id);
-    setFormData({name:row.proof_name});
+    setFormData({ name: row.proof_name });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    deleteProof(id)
+    if (window.confirm("Are you sure you want to delete this Identify Proof?")) {
+      deleteProof(id)
+    }
   };
 
-  useEffect(()=>{
+  useEffect(() => {
     getProof();
-  },[])
+  }, [])
 
   /* ================= UI ================= */
 
@@ -167,66 +207,71 @@ const IdentificationProof = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Identification Proof</h3>
-              <button onClick={closeViewModal}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body single view">
-              <div className="form-group">
-                <label>Identification Proof Name</label>
-                <input value={viewData.proof_name} disabled />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
+        <Modal
+          isOpen={showViewModal}
+          title="View Identify Proof"
+          onClose={() => setShowViewModal(false)}
+          size="medium"
+        >
+          <div className="modal-body single view">
+            <div className="form-group">
+              <label>Identification Proof Name</label>
+              <input value={viewData.proof_name} disabled />
             </div>
           </div>
-        </div>
+
+        </Modal>
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>
-                {editId
-                  ? "Edit Identification Proof"
-                  : "Add Identification Proof"}
-              </h3>
-              <button onClick={closeModal}>
-                <X size={18} />
-              </button>
-            </div>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit  Identify Proof" : "Add  Identify Proof"}
+          onClose={() => setShowModal(false)}
+          showFooter
+          size="large"
+          bodyLayout="single"
+          actions={[
+            {
+              label: "Close",
+              variant: "secondary",
+              onClick: () => setShowModal(false),
+            },
+            {
+              label: "Submit",
+              variant: "primary",
+              onClick: handleSave,
+              autoFocus: true,
+            },
+          ]}
+        >
 
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Identification Proof Name</label>
-                <input
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
+          <div className="modal-body single">
+            <div className="form-group">
+              <label>Identification Proof Name</label>
+              <input
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+              />
             </div>
           </div>
+        </Modal>
+      )}
+
+      {alerts.show && (
+        <div
+          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
+            }`}
+        >
+          <span className="toast-icon">
+            {alerts.type === "success" && <CheckCircle />}
+            {alerts.type === "update" && <Pencil />}
+            {alerts.type === "delete" && <Trash2 />}
+            {alerts.type === "error" && <AlertTriangle />}
+          </span>
+          <span>{alerts.message}</span>
         </div>
       )}
     </>

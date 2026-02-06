@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import { X, Pencil, Trash2, Eye, ConciergeBell } from "lucide-react";
+import Modal from "../stories/Modal";
+import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
@@ -19,6 +20,35 @@ const HskTaskType = () => {
 
   const [formData, setFormData] = useState(initialForm);
 
+
+  const [alerts, setAlerts] = useState({
+    show: false,
+    message: "",
+    type: "success",
+    exiting: false,
+  });
+
+  const showAlert = (message, type = "success") => {
+    setAlerts({
+      show: true,
+      message,
+      type,
+      exiting: false,
+    });
+
+    setTimeout(() => {
+      setAlerts((prev) => ({ ...prev, exiting: true }));
+    }, 1800);
+
+    setTimeout(() => {
+      setAlerts({
+        show: false,
+        message: "",
+        type: "success",
+        exiting: false,
+      });
+    }, 2200);
+  };
   /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
@@ -53,9 +83,10 @@ const HskTaskType = () => {
         task_name: formData.taskType,
         color: formData.color
       });
+      showAlert("Task Type added successfully", "success");
       getTask();
     } catch (error) {
-      return error
+      showAlert(error.detail, "error");
     }
   }
 
@@ -67,19 +98,22 @@ const HskTaskType = () => {
         color: formData.color
 
       });
+      showAlert("Task Type updated successfully", "update");
       getTask();
     }
     catch (error) {
-      return error;
+      showAlert(error.detail || "Update failed", "error");
     }
   }
 
-  const deleteTask = async (id)=>{
-    try{
+  const deleteTask = async (id) => {
+    try {
       await APICall.deleteT(`/masterdata/task_type/${id}`)
+      showAlert("Task Type deleted successfully", "delete");
+      getTask();
     }
-    catch(error){
-      return error
+    catch (error) {
+      showAlert(error.detail || "Delete failed", "error");
     }
   }
 
@@ -112,7 +146,8 @@ const HskTaskType = () => {
 
 
   const handleDelete = (id) => {
-   deleteTask(id)
+    if (window.confirm("Are you sure you want to delete this HSK TaskType?")) {
+    deleteTask(id)}
   };
 
   useEffect(() => {
@@ -194,89 +229,98 @@ const HskTaskType = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Task Type</h3>
-              <button onClick={closeViewModal}>
-                <X size={18} />
-              </button>
+        <Modal
+          isOpen={showViewModal}
+          title="View HSK Task Type"
+          onClose={() => setShowViewModal(false)}
+          size="medium"
+        >
+
+          <div className="modal-body single view">
+            <div className="form-group">
+              <label>Task Type</label>
+              <input value={viewData.task_name} disabled />
             </div>
 
-            <div className="modal-body single view">
-              <div className="form-group">
-                <label>Task Type</label>
-                <input value={viewData.task_name} disabled />
+            <div className="form-group">
+              <label>Color</label>
+              <div style={{ display: "flex", justifyContent: "left" }}>
+                <span
+
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                    borderRadius: "50%",
+                    backgroundColor: viewData.color,
+                    border: "1px solid #e5e7eb",
+                  }}
+                />
               </div>
-
-              <div className="form-group">
-                <label>Color</label>
-                <div style={{ display: "flex", justifyContent: "left" }}>
-                  <span
-
-                    style={{
-                      width: "28px",
-                      height: "28px",
-                      borderRadius: "50%",
-                      backgroundColor: viewData.color,
-                      border: "1px solid #e5e7eb",
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
             </div>
           </div>
-        </div>
+        </Modal>
+
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Task Type" : "Add Task Type"}</h3>
-              <button onClick={closeModal}>
-                <X size={18} />
-              </button>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit HSK Task Type" : "Add HSK Task Type"}
+          onClose={() => setShowModal(false)}
+          showFooter
+          size="large"
+          bodyLayout="single"
+          actions={[
+            {
+              label: "Close",
+              variant: "secondary",
+              onClick: () => setShowModal(false),
+            },
+            {
+              label: "Submit",
+              variant: "primary",
+              onClick: handleSave,
+              autoFocus: true,
+            },
+          ]}
+        >
+
+          <div className="modal-body single">
+            <div className="form-group">
+              <label>Task Type</label>
+              <input
+                name="taskType"
+                value={formData.taskType}
+                onChange={handleChange}
+              />
             </div>
 
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Task Type</label>
-                <input
-                  name="taskType"
-                  value={formData.taskType}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Color</label>
-                <input
-                  type="color"
-                  name="color"
-                  value={formData.color}
-                  onChange={handleChange}
-                  style={{ height: "42px", padding: "4px" }}
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
+            <div className="form-group">
+              <label>Color</label>
+              <input
+                type="color"
+                name="color"
+                value={formData.color}
+                onChange={handleChange}
+                style={{ height: "42px", padding: "4px" }}
+              />
             </div>
           </div>
+        </Modal>
+      )}
+      {alerts.show && (
+        <div
+          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
+            }`}
+        >
+          <span className="toast-icon">
+            {alerts.type === "success" && <CheckCircle />}
+            {alerts.type === "update" && <Pencil />}
+            {alerts.type === "delete" && <Trash2 />}
+            {alerts.type === "error" && <AlertTriangle />}
+          </span>
+          <span>{alerts.message}</span>
         </div>
       )}
     </>

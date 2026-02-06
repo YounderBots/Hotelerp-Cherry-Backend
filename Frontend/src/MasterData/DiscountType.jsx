@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import { X, Pencil, Trash2, Eye } from "lucide-react";
+import Modal from "../stories/Modal";
+import { X, Pencil, Trash2, Eye,CheckCircle,AlertTriangle } from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
@@ -20,6 +21,34 @@ const DiscountType = () => {
 
   const [formData, setFormData] = useState(initialForm);
 
+  const [alerts, setAlerts] = useState({
+    show: false,
+    message: "",
+    type: "success",
+    exiting: false,
+  });
+
+  const showAlert = (message, type = "success") => {
+    setAlerts({
+      show: true,
+      message,
+      type,
+      exiting: false,
+    });
+
+    setTimeout(() => {
+      setAlerts((prev) => ({ ...prev, exiting: true }));
+    }, 1800);
+
+    setTimeout(() => {
+      setAlerts({
+        show: false,
+        message: "",
+        type: "success",
+        exiting: false,
+      });
+    }, 2200);
+  };
   /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
@@ -48,45 +77,48 @@ const DiscountType = () => {
     setData(AllDiscount.data)
   }
 
-  const createDiscount = async () =>{
-    try{
-      await APICall.postT("/masterdata/discount",{
-      country_id : formData.discountCountry,
-      discount_name : formData.discountName,
-      discount_percentage : formData.discountPercentage,
-    });
-    getDiscountType();
-    } catch (error){
-      return error ,"Create Discount"
+  const createDiscount = async () => {
+    try {
+      await APICall.postT("/masterdata/discount", {
+        country_id: formData.discountCountry,
+        discount_name: formData.discountName,
+        discount_percentage: formData.discountPercentage,
+      });
+      showAlert("Discount Type added successfully", "success");
+      getDiscountType();
+    } catch (error) {
+      showAlert(error.detail, "error");
     }
   }
 
-  const updatedDiscount = async () =>{
-    try{
-      await APICall.putT("/masterdata/discount",{
+  const updatedDiscount = async () => {
+    try {
+      await APICall.putT("/masterdata/discount", {
         id: editId,
-        country_id : formData.discountCountry,
+        country_id: formData.discountCountry,
         discount_name: formData.discountName,
         discount_percentage: formData.discountPercentage
       });
+      showAlert("Discount Type updated successfully", "update");
       getDiscountType();
-    }catch(error){
-      return error,"Update Discount"
-    }
-  };
-
-  const deleteDiscount = async (id) =>{
-    try{
-    await APICall.deleteT(`/masterdata/discount/${id}`);
-    getDiscountType();
     } catch (error) {
-      return error,"Delete discount"
+      showAlert(error.detail || "Update failed", "error");
     }
   };
 
-  useEffect(()=>{
+  const deleteDiscount = async (id) => {
+    try {
+      await APICall.deleteT(`/masterdata/discount/${id}`);
+      showAlert("Discount Type deleted successfully", "delete");
+      getDiscountType();
+    } catch (error) {
+      showAlert(error.detail || "Delete failed", "error");
+    }
+  };
+
+  useEffect(() => {
     getDiscountType();
-  },[]);
+  }, []);
 
 
   const handleChange = (e) => {
@@ -114,15 +146,16 @@ const DiscountType = () => {
   const handleEdit = (row) => {
     setEditId(row.id);
     setFormData({
-      discountCountry:row.country_id,
-      discountName:row.discount_name,
-      discountPercentage:row.discount_percentage,
+      discountCountry: row.country_id,
+      discountName: row.discount_name,
+      discountPercentage: row.discount_percentage,
     });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    deleteDiscount(id);
+     if (window.confirm("Are you sure you want to delete this Discount Type?")) {
+    deleteDiscount(id);}
   };
 
   /* ================= UI ================= */
@@ -197,91 +230,101 @@ const DiscountType = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Discount</h3>
-              <button onClick={closeViewModal}>
-                <X size={18} />
-              </button>
+        <Modal
+          isOpen={showViewModal}
+          title="View Discount Type"
+          onClose={() => setShowViewModal(false)}
+          size="medium"
+        >
+
+          <div className="modal-body single view">
+            <div className="form-group">
+              <label>Discount Country</label>
+              <input value={viewData.country_id} disabled />
             </div>
 
-            <div className="modal-body single view">
-              <div className="form-group">
-                <label>Discount Country</label>
-                <input value={viewData.country_id} disabled />
-              </div>
-
-              <div className="form-group">
-                <label>Discount Name</label>
-                <input value={viewData.discount_name} disabled />
-              </div>
-
-              <div className="form-group">
-                <label>Discount Percentage</label>
-                <input value={viewData.discount_percentage} disabled />
-              </div>
+            <div className="form-group">
+              <label>Discount Name</label>
+              <input value={viewData.discount_name} disabled />
             </div>
 
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
+            <div className="form-group">
+              <label>Discount Percentage</label>
+              <input value={viewData.discount_percentage} disabled />
             </div>
           </div>
-        </div>
+        </Modal>
+
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Discount" : "Add Discount"}</h3>
-              <button onClick={closeModal}>
-                <X size={18} />
-              </button>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit  Discount Type" : "Add  Discount Type"}
+          onClose={() => setShowModal(false)}
+          showFooter
+          size="large"
+          bodyLayout="single"
+          actions={[
+            {
+              label: "Close",
+              variant: "secondary",
+              onClick: () => setShowModal(false),
+            },
+            {
+              label: "Submit",
+              variant: "primary",
+              onClick: handleSave,
+              autoFocus: true,
+            },
+          ]}
+        >
+          <div className="modal-body single">
+            <div className="form-group">
+              <label>Country Name</label>
+              <input
+                name="discountCountry"
+                value={formData.discountCountry}
+                onChange={handleChange}
+              />
             </div>
 
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Country Name</label>
-                <input
-                  name="discountCountry"
-                  value={formData.discountCountry}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Discount Name</label>
-                <input
-                  name="discountName"
-                  value={formData.discountName}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Discount Percentage</label>
-                <input
-                  type="number"
-                  name="discountPercentage"
-                  value={formData.discountPercentage}
-                  onChange={handleChange}
-                />
-              </div>
+            <div className="form-group">
+              <label>Discount Name</label>
+              <input
+                name="discountName"
+                value={formData.discountName}
+                onChange={handleChange}
+              />
             </div>
 
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
+            <div className="form-group">
+              <label>Discount Percentage</label>
+              <input
+                type="number"
+                name="discountPercentage"
+                value={formData.discountPercentage}
+                onChange={handleChange}
+              />
             </div>
           </div>
+
+        </Modal>
+      )}
+
+      {alerts.show && (
+        <div
+          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
+            }`}
+        >
+          <span className="toast-icon">
+            {alerts.type === "success" && <CheckCircle />}
+            {alerts.type === "update" && <Pencil />}
+            {alerts.type === "delete" && <Trash2 />}
+            {alerts.type === "error" && <AlertTriangle />}
+          </span>
+          <span>{alerts.message}</span>
         </div>
       )}
     </>

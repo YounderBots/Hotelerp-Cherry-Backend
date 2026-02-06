@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import { UserPlus, X, Pencil, Trash2, Eye } from "lucide-react";
+import Modal from "../stories/Modal"
+import {
+  UserPlus, X, Pencil, Trash2, Eye, CheckCircle,
+  AlertTriangle,
+} from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
@@ -13,11 +17,39 @@ const HallFloor = () => {
   const [viewData, setViewData] = useState(null);
 
   const initialForm = {
-    name: "",
+    hall_name: "",
   };
 
   const [formData, setFormData] = useState(initialForm);
 
+  const [alerts, setAlerts] = useState({
+    show: false,
+    message: "",
+    type: "success",
+    exiting: false,
+  });
+
+  const showAlert = (message, type = "success") => {
+    setAlerts({
+      show: true,
+      message,
+      type,
+      exiting: false,
+    });
+
+    setTimeout(() => {
+      setAlerts((prev) => ({ ...prev, exiting: true }));
+    }, 1800);
+
+    setTimeout(() => {
+      setAlerts({
+        show: false,
+        message: "",
+        type: "success",
+        exiting: false,
+      });
+    }, 2200);
+  };
   /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
@@ -36,51 +68,49 @@ const HallFloor = () => {
     setEditId(null);
   };
 
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
-
   const getHallFloor = async () => {
     const AllFloor = await APICall.getT("/masterdata/hall_floor");
     setData(AllFloor.data);
   };
 
   const createNewHall = async () => {
-  try {
-    await APICall.postT("/masterdata/hall_floor", {
-      hall_name: formData.name,
-    });
-    getHallFloor();
-  } catch (error) {
-        return error, "Create facility"
-  }
-};
-
-const updatedHallFloor = async () => {
-  try {
-    await APICall.putT("/masterdata/hall_floor", {
-      id: editId,
-      hall_name: formData.name,
-    });
-    getHallFloor();
-  } catch (error) {
-    return error, "Update Hall Floor"
-  }
-};
-
-const deleteHallFloor = async (id) => {
-  try {
-    await APICall.deleteT(`/masterdata/hall_floor/${id}`);
-    getHallFloor();
-  } catch (error) {
-     return error, "Delete Hall Floor";
-  }
-};
-
-   useEffect(() => {
+    try {
+      await APICall.postT("/masterdata/hall_floor", {
+        hall_name: formData.hall_name,
+      });
+      showAlert("HallFloor added successfully", "success");
       getHallFloor();
-    }, []);
+    } catch (error) {
+      showAlert(error.detail, "error");
+    }
+  };
+
+  const updatedHallFloor = async () => {
+    try {
+      await APICall.putT("/masterdata/hall_floor", {
+        id: editId,
+        hall_name: formData.hall_name,
+      });
+      showAlert("HallFloor updated successfully", "update");
+      getHallFloor();
+    } catch (error) {
+      showAlert(error.detail || "Update failed", "error");
+    }
+  };
+
+  const deleteHallFloor = async (id) => {
+    try {
+      await APICall.deleteT(`/masterdata/hall_floor/${id}`);
+      showAlert("HallFloor deleted successfully", "delete");
+      getHallFloor();
+    } catch (error) {
+      showAlert(error.detail || "Delete failed", "error");
+    }
+  };
+
+  useEffect(() => {
+    getHallFloor();
+  }, []);
 
 
   const handleChange = (e) => {
@@ -89,7 +119,7 @@ const deleteHallFloor = async (id) => {
   };
 
   const handleSave = () => {
-    if (!formData.name.trim()) return;
+    if (!formData.hall_name.trim()) return;
 
     if (editId) {
       updatedHallFloor();
@@ -104,13 +134,15 @@ const deleteHallFloor = async (id) => {
   const handleEdit = (row) => {
     setEditId(row.id);
     setFormData({
-    name: row.hall_name,
-  });
+      hall_name: row.hall_name,
+    });
     setShowModal(true);
   };
 
   const handleDelete = (id) => {
-    deleteHallFloor(id);
+    if (window.confirm("Are you sure you want to delete this room?")) {
+      deleteHallFloor(id);
+    }
   };
 
   /* ================= UI ================= */
@@ -175,63 +207,71 @@ const deleteHallFloor = async (id) => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Hall Floor</h3>
-              <button onClick={closeViewModal}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body single view">
-              <div className="form-group">
-                <label>Hall Floor Name</label>
-                <input value={formData.name} disabled />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
+        <Modal
+          isOpen={showViewModal}
+          title="View Hall/Floor"
+          onClose={() => setShowViewModal(false)}
+          size="medium"
+        >
+          <div className="modal-body single view">
+            <div className="form-group">
+              <label>Hall Floor Name</label>
+              <input value={viewData.hall_name} disabled />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Hall Floor" : "Add Hall Floor"}</h3>
-              <button onClick={closeModal}>
-                <X size={18} />
-              </button>
-            </div>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit Hall/Floor" : "Add Hall/Floor"}
+          onClose={() => setShowModal(false)}
+          showFooter
+          size="medium"
+          bodyLayout="single"
+          actions={[
+            {
+              label: "Close",
+              variant: "secondary",
+              onClick: () => setShowModal(false),
+            },
+            {
+              label: "Submit",
+              variant: "primary",
+              onClick: handleSave,
+              autoFocus: true,
+            },
+          ]}
+        >
 
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Hall Floor Name</label>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
+          <div className="modal-body single">
+            <div className="form-group">
+              <label>Hall Floor Name</label>
+              <input
+                type="text"
+                name="hall_name"
+                value={formData.hall_name}
+                onChange={handleChange}
+              />
             </div>
           </div>
+        </Modal>
+      )}
+
+      {alerts.show && (
+        <div
+          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
+            }`}
+        >
+          <span className="toast-icon">
+            {alerts.type === "success" && <CheckCircle />}
+            {alerts.type === "update" && <Pencil />}
+            {alerts.type === "delete" && <Trash2 />}
+            {alerts.type === "error" && <AlertTriangle />}
+          </span>
+          <span>{alerts.message}</span>
         </div>
       )}
     </>

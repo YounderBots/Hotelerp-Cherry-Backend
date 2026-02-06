@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from "react";
+import Modal from "../stories/Modal";
 import TableTemplate from "../stories/TableTemplate";
-import { UserPlus, X, Pencil, Trash2, Eye } from "lucide-react";
+import {
+  UserPlus, X, Pencil, Trash2, Eye, CheckCircle,
+  AlertTriangle,
+} from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
@@ -12,6 +16,13 @@ const RoomType = () => {
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [complementary, setComplementary] = useState([])
+
+  const [alerts, setAlerts] = useState({
+    show: false,
+    message: "",
+    type: "success",
+    exiting: false,
+  });
 
   const initialForm = {
     roomType: "",
@@ -27,6 +38,28 @@ const RoomType = () => {
   };
 
   const [formData, setFormData] = useState(initialForm);
+
+  const showAlert = (message, type = "success") => {
+    setAlerts({
+      show: true,
+      message,
+      type,
+      exiting: false,
+    });
+
+    setTimeout(() => {
+      setAlerts((prev) => ({ ...prev, exiting: true }));
+    }, 1800);
+
+    setTimeout(() => {
+      setAlerts({
+        show: false,
+        message: "",
+        type: "success",
+        exiting: false,
+      });
+    }, 2200);
+  };
 
   /* ================= HANDLERS ================= */
 
@@ -59,10 +92,10 @@ const RoomType = () => {
         half_board_rate: formData.halfBoardRate,
         full_board_rate: formData.fullBoardRate,
       });
-
+      showAlert("RoomType added successfully", "success");
       getRoomTypes();
     } catch (error) {
-      console.error("Create room type error", error);
+      showAlert(error.detail, "error");
     }
   };
 
@@ -82,18 +115,20 @@ const RoomType = () => {
         full_board_rate: formData.fullBoardRate
 
       });
+      showAlert("RoomType updated successfully", "update");
       getRoomTypes();
     } catch (error) {
-      console.error("Update room type error", error);
+      showAlert(error.detail || "Update failed", "error");
     }
   };
 
   const deleteRoomType = async (id) => {
     try {
       await APICall.deleteT(`/masterdata/room_types/${id}`);
+      showAlert("Room Type deleted successfully", "delete");
       getRoomTypes();
     } catch (error) {
-      console.error("Delete room type error", error);
+      showAlert(error.detail || "Delete failed", "error");
     }
   };
 
@@ -161,14 +196,14 @@ const RoomType = () => {
   };
 
   const handleDelete = (id) => {
-    if (window.confirm("Delete this room type?")) {
+    if (window.confirm("Are you sure you want to delete this Facilities?")) {
       deleteRoomType(id);
     }
   };
 
 
   useEffect(() => {
-     getComplementary();
+    getComplementary();
     getRoomTypes();
   }, []);
 
@@ -236,46 +271,51 @@ const RoomType = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>View Room Type</h3>
-              <button onClick={closeViewModal}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body grid view">
-              {Object.entries(viewData).map(
-                ([key, value]) =>
-                  key !== "id" && (
-                    <div className="form-group" key={key}>
-                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                      <input value={value} disabled />
-                    </div>
-                  )
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
-            </div>
+        <Modal
+          isOpen={showViewModal}
+          title="View Room Type"
+          onClose={() => setShowViewModal(false)}
+          size="medium"
+        >
+          <div className="modal-body grid view">
+            {Object.entries(viewData).map(
+              ([key, value]) =>
+                key !== "id" && (
+                  <div className="form-group" key={key}>
+                    <label>{key.replace(/([A-Z])/g, " $1")}</label>
+                    <input value={value} disabled />
+                  </div>
+                )
+            )}
           </div>
-        </div>
+        </Modal>
+
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Room Type" : "Add Room Type"}</h3>
-              <button onClick={closeModal}>
-                <X size={18} />
-              </button>
-            </div>
+      {
+        showModal && (
+          <Modal
+            isOpen={showModal}
+            title={editId ? "Edit Room Type" : "Add Room Type"}
+            onClose={() => setShowModal(false)}
+            showFooter
+            size="medium"
+            bodyLayout="single"
+            actions={[
+              {
+                label: "Close",
+                variant: "secondary",
+                onClick: () => setShowModal(false),
+              },
+              {
+                label: "Submit",
+                variant: "primary",
+                onClick: handleSave,
+                autoFocus: true,
+              },
+            ]}
+          >
 
             <div className="modal-body grid">
               {[
@@ -315,15 +355,22 @@ const RoomType = () => {
               </div>
             </div>
 
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
-            </div>
-          </div>
+
+          </Modal>
+        )
+      }
+      {alerts.show && (
+        <div
+          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
+            }`}
+        >
+          <span className="toast-icon">
+            {alerts.type === "success" && <CheckCircle />}
+            {alerts.type === "update" && <Pencil />}
+            {alerts.type === "delete" && <Trash2 />}
+            {alerts.type === "error" && <AlertTriangle />}
+          </span>
+          <span>{alerts.message}</span>
         </div>
       )}
     </>
