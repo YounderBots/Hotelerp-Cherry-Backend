@@ -43,8 +43,10 @@
   backdrop-filter: blur(4px);
 
   display: flex;
-  align-items: center;          /* ✅ CENTER */
-  justify-content: center;      /* ✅ CENTER */
+  align-items: center;
+  /* ✅ CENTER */
+  justify-content: center;
+  /* ✅ CENTER */
 
   z-index: 1000;
   padding: 16px;
@@ -72,11 +74,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(
-    to right,
-    var(--primary-lightest, #fff0f6),
-    #ffffff
-  );
+  background: linear-gradient(to right,
+      var(--primary-lightest, #fff0f6),
+      #ffffff);
   border-radius: 14px 14px 0 0;
 }
 
@@ -167,11 +167,9 @@
 }
 
 .btn.primary {
-  background: linear-gradient(
-    135deg,
-    var(--primary-color, #610025),
-    var(--primary-mild, #94013a)
-  );
+  background: linear-gradient(135deg,
+      var(--primary-color, #610025),
+      var(--primary-mild, #94013a));
   color: #ffffff;
 }
 
@@ -194,6 +192,7 @@
     transform: scale(0.96) translateY(10px);
     opacity: 0;
   }
+
   to {
     transform: scale(1) translateY(0);
     opacity: 1;
@@ -232,4 +231,44 @@
 
 .modal-body {
   overflow-y: auto;
+}
+
+.toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-radius: 6px;
+  font-weight: 500;
+  color: #fff;
+  z-index: 9999;
+  animation: slideIn 0.3s ease;
+}
+
+.toast-success {
+  background-color: #16a34a;
+}
+
+.toast-update {
+  background-color: #2563eb;
+}
+
+.toast-delete {
+  background-color: #dc2626;
+
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

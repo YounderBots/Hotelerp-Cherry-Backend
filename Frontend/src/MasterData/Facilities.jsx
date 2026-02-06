@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import { UserPlus, X, Pencil, Trash2, Eye } from "lucide-react";
+import Modal from "../stories/Modal"
+import AlertModal from "../stories/Modal.stories"
+import { UserPlus, X, Pencil, Trash2, Eye, CheckCircle } from "lucide-react";
 import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
@@ -9,14 +11,26 @@ const Facilities = () => {
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
-  const [facilityName, setFacilityName] = useState("");
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [alert, setalert] = useState({
+    show: false,
+    message: "",
+    type: "success",
+  });
+
+
+
+  const initialForm = {
+    facility_name: "",
+  };
+
+  const [formData, setFormData] = useState(initialForm);
 
   /* -------------------- HANDLERS -------------------- */
 
   const openAddModal = () => {
-    setFacilityName("");
+    setFormData(initialForm);
     setEditId(null);
     setShowModal(true);
   };
@@ -27,7 +41,7 @@ const Facilities = () => {
   };
 
   const closeModal = () => {
-    setFacilityName("");
+    setFormData(initialForm);
     setEditId(null);
     setShowModal(false);
   };
@@ -37,6 +51,16 @@ const Facilities = () => {
     setShowViewModal(false);
   };
 
+  const showalert = (message, type = "success") => {
+    setalert({ show: true, message, type });
+
+    setTimeout(() => {
+      setalert({ show: false, message: "", type: "" });
+    }, 2000);
+  };
+
+
+
   const getFacilitiesData = async () => {
     const AllFacilitesAPI = await APICall.getT("/masterdata/facilities");
     setData(AllFacilitesAPI.data);
@@ -45,9 +69,11 @@ const Facilities = () => {
   const createNewFacility = async () => {
     try {
       await APICall.postT("/masterdata/facilities", {
-        facility_name: facilityName,
+        facility_name: formData.facility_name,
       });
+      showalert("Facility added successfully","success");
       getFacilitiesData();
+
     } catch (error) {
       return error, "Create facility"
     }
@@ -58,8 +84,9 @@ const Facilities = () => {
     try {
       await APICall.putT("/masterdata/facilities", {
         id: editId,
-        facility_name: facilityName,
+        facility_name: formData.facility_name,
       });
+      showalert("Facility updated successfully","update");
       getFacilitiesData();
     } catch (error) {
       return error, "Update facility"
@@ -71,6 +98,7 @@ const Facilities = () => {
     try {
       await APICall.deleteT(`/masterdata/facilities/${id}`);
       getFacilitiesData();
+      showalert("Facility deleted successfully","delete");
     } catch (error) {
       return error, "Delete facility";
     }
@@ -78,7 +106,7 @@ const Facilities = () => {
 
 
   const handleSave = async () => {
-    if (!facilityName.trim()) return;
+    if (!formData.facility_name.trim()) return;
 
     if (editId) {
       await updateNewFacility();
@@ -90,7 +118,9 @@ const Facilities = () => {
   };
 
   const handleEdit = (row) => {
-    setFacilityName(row.facility_name);
+    setFormData({
+      facility_name: row.facility_name
+    });
     setEditId(row.id);
     setShowModal(true);
   };
@@ -162,65 +192,85 @@ const Facilities = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Facility</h3>
-              <button onClick={closeViewModal}>
-                <X size={18} />
-              </button>
-            </div>
+        <Modal
+          isOpen={showViewModal}
+          title="View Facilities"
+          data={viewData}
+          onClose={closeViewModal}
+          size="medium">
 
-            <div className="modal-body single view">
-              <div className="form-group">
-                <label>Facility Name</label>
-                <input value={viewData.facility_name} disabled />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
-            </div>
+          <div className="form-group">
+            <label>Facility Name</label>
+            <input
+              name="facility_name"
+              value={viewData.facility_name}
+              readOnly
+            />
           </div>
-        </div>
+
+        </Modal>
+
+
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-md">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Facility" : "Add Facility"}</h3>
-              <button onClick={closeModal}>
-                <X size={18} />
-              </button>
-            </div>
 
-            <div className="modal-body single edit">
-              <div className="form-group">
-                <label>Facility Name</label>
-                <input
-                  type="text"
-                  value={facilityName}
-                  onChange={(e) => setFacilityName(e.target.value)}
-                  autoFocus
-                />
-              </div>
-            </div>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit Facilities" : "Add Facilities"}
+          onClose={closeModal}
+          showFooter={true}
+          size="medium"
+          bodyLayout="single"
+          actions={[
+            {
+              label: "Close",
+              variant: "secondary",
+              onClick: closeModal,
+            },
+            {
+              label: "Submit",
+              variant: "primary",
+              onClick: handleSave,
+              autoFocus: true,
+            },
+          ]}
 
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
-                Cancel
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Save
-              </button>
-            </div>
+
+        >
+          <div className="form-group">
+            <label>Facility Name</label>
+            <input
+              type="text"
+              name="facility_name"
+              value={formData.facility_name}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  facility_name: e.target.value,
+                })
+              }
+            />
+
           </div>
+        </Modal>
+
+
+      )}
+
+
+      {alert.show && (
+        <div className={`toast toast-${alert.type}`}>
+          <span className="toast-icon">
+            {alert.type === "success" && <CheckCircle/>}
+            {alert.type === "update" && <Pencil/>}
+            {alert.type === "delete" && <Trash2/>}
+          </span>
+          <span>{alert.message}</span>
         </div>
       )}
+
 
 
     </>

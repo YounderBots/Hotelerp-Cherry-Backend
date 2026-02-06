@@ -1,5 +1,6 @@
-import React, { use, useState , useEffect } from "react";
+import React, { use, useState, useEffect } from "react";
 import TableTemplate from "../../stories/TableTemplate";
+import Modal from "../../stories/Modal"
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../../MasterData/MasterData.css";
 import APICall from "../../APICalls/APICalls";
@@ -169,65 +170,61 @@ const Department = () => {
 
             {/* ================= VIEW MODAL ================= */}
             {showViewModal && viewData && (
-                <div className="modal-overlay">
-                    <div className="modal-card modal-sm">
-                        <div className="modal-header">
-                            <h3>View Department</h3>
-                            <button onClick={closeViewModal}>
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        <div className="modal-body single view">
-                            <div className="form-group">
-                                <label>Department Name</label>
-                                <input value={viewData.department_name} disabled />
-                            </div>
-                        </div>
-
-                        <div className="modal-footer">
-                            <button className="btn secondary" onClick={closeViewModal}>
-                                Close
-                            </button>
-                        </div>
+                <Modal
+                    isOpen={showViewModal}
+                    title="View Department"
+                    data={viewData}
+                    onClose={closeViewModal}
+                    size="small">
+                    <div className="form-group">
+                        <label>Department Name</label>
+                        <input
+                            name="department_name"
+                            value={viewData.department_name}
+                            onChange={handleChange}
+                            readOnly
+                        />
                     </div>
-                </div>
+                </Modal>
             )}
+
 
 
             {showModal && (
-                <div className="modal-overlay">
-                    <div className="modal-card modal-sm">
-                        <div className="modal-header">
-                            <h3>{editId ? "Edit Department" : "Add Department"}</h3>
-                            <button onClick={closeModal}>
-                                <X size={18} />
-                            </button>
-                        </div>
+                <Modal
+                    isOpen={showModal}
+                    title={editId ? "Edit Department" : "Add Department"}
+                    onClose={closeModal}
+                    showFooter={true}
+                    size="small"
+                    bodyLayout="single"
+                    actions={[
+                        {
+                            label: "Close",
+                            variant: "secondary",
+                            onClick: closeModal,
+                        },
+                        {
+                            label: "Submit",
+                            variant: "primary",
+                            onClick: handleSave,
+                            autoFocus: true,
+                        },
+                    ]}
 
-                        <div className="modal-body single">
-                            <div className="form-group">
-                                <label>Department Name</label>
-                                <input
-                                    name="department_name"
-                                    value={formData.department_name}
-                                    onChange={handleChange}
-                                />
-                            </div>
 
-                        </div>
-
-                        <div className="modal-footer">
-                            <button className="btn secondary" onClick={closeModal}>
-                                Close
-                            </button>
-                            <button className="btn primary" onClick={handleSave}>
-                                Submit
-                            </button>
-                        </div>
+                >
+                    <div className="form-group">
+                        <label>Department Name</label>
+                        <input
+                            name="department_name"
+                            value={formData.department_name}
+                            onChange={handleChange}
+                        />
                     </div>
-                </div>
+                </Modal>
             )}
+
         </>
     );
 };
