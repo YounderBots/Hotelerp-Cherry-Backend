@@ -150,10 +150,13 @@ const RoomType = () => {
     setEditId(null);
   };
 
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
+  const exceptField = [
+    "status",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "company_id",
+  ]
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;
@@ -278,17 +281,41 @@ const RoomType = () => {
           size="medium"
         >
           <div className="modal-body grid view">
-            {Object.entries(viewData).map(
-              ([key, value]) =>
-                key !== "id" && (
-                  <div className="form-group" key={key}>
-                    <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                    <input value={value} disabled />
-                  </div>
-                )
-            )}
+            {[
+              ["Room Type", "room_type_name"],
+              ["Room Cost", "room_cost"],
+              ["Bed Cost", "bed_cost"],
+              ["Daily Rate", "daily_rate"],
+              ["Weekly Rate", "weekly_rate"],
+              ["Bed Only Rate", "bed_only_rate"],
+              ["Bed & Breakfast Rate", "bed_and_breakfast_rate"],
+              ["Half Board Rate", "half_board_rate"],
+              ["Full Board Rate", "full_board_rate"],
+              ["Status", "status"],
+            ].map(([label, key]) => (
+              <div className="form-group" key={key}>
+                <label>{label}</label>
+                <input
+                  value={viewData?.[key] ?? "-"}
+                  disabled
+                />
+              </div>
+            ))}
+
+            <div className="form-group">
+              <label>Complementary</label>
+              <input
+               style={{width:"110%"}}
+                disabled
+                value={
+                  complementary.find(
+                    (c) => String(c.id) === String(viewData?.complementry)
+                  )?.complementry_name || "-"
+                }
+              />
+            </div>
           </div>
-        </Modal>
+        </Modal >
 
       )}
 
@@ -300,7 +327,7 @@ const RoomType = () => {
             title={editId ? "Edit Room Type" : "Add Room Type"}
             onClose={() => setShowModal(false)}
             showFooter
-            size="medium"
+            size="large"
             bodyLayout="single"
             actions={[
               {
@@ -359,20 +386,22 @@ const RoomType = () => {
           </Modal>
         )
       }
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+      {
+        alerts.show && (
+          <div
+            className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
+              }`}
+          >
+            <span className="toast-icon">
+              {alerts.type === "success" && <CheckCircle />}
+              {alerts.type === "update" && <Pencil />}
+              {alerts.type === "delete" && <Trash2 />}
+              {alerts.type === "error" && <AlertTriangle />}
+            </span>
+            <span>{alerts.message}</span>
+          </div>
+        )
+      }
     </>
   );
 };
