@@ -78,10 +78,19 @@ const Rooms = () => {
     setShowViewModal(true);
   };
   const handleEdit = (row) => {
-    setEditId(row.id);
+    setEditId(row.room_id);
 
     setFormData({
-      ...row,
+      room_no: row.room_no,
+      room_name: row.room_name,
+      room_status: row.room_status,
+      room_telephone: row.room_telephone,
+      room_type_id: row.room_type_id,
+      bed_type_id : row.bed_type_id,
+      max_adult: row.max_adult,
+      max_child: row.max_child,
+      booking_status: row.booking_status,
+      working_status: row.working_status,
       images: [
         row.images?.image_1 || null,
         row.images?.image_2 || null,
@@ -358,16 +367,59 @@ const Rooms = () => {
           size="large"
         >
           <div className="modal-body grid view" style={gridStyle}>
-            {Object.entries(viewData).map(
-              ([key, value]) =>
-                key !== "id" &&
-                key !== "images" && (
-                  <div className="form-group" key={key}>
-                    <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                    <input value={value} disabled />
-                  </div>
-                )
-            )}
+            {[
+              ["Room No", "room_no"],
+              ["Room Name", "room_name"],
+            ].map(([label, name]) => (
+              <div className="form-group" key={name}>
+                <label>{label}</label>
+                <input name={name} value={viewData[name]} disabled />
+              </div>
+            ))}
+
+            <div className="form-group">
+              <label>Room Type</label>
+              <input
+                disabled
+                value={
+                  roomTypes.find(
+                    (r) => String(r.id) === String(viewData?.room_type_id)
+                  )?.room_type_name || "-"
+                }
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Bed Type</label>
+              <input
+                disabled
+                value={
+                  bedTypes.find(
+                    (b) => String(b.id) === String(viewData?.bed_type_id)
+                  )?.bed_type_name || "-"
+                }
+              />
+            </div>
+
+
+            {[
+              ["Room Telephone", "room_telephone", "tel"],
+              ["Max Adult", "max_adult", "number"],
+              ["Max Child", "max_child", "number"],
+            ].map(([label, name, type]) => (
+              <div className="form-group" key={name}>
+                <label>{label}</label>
+                <input name={name} value={viewData[name]} disabled />
+              </div>
+            ))}
+
+            <div className="form-group">
+              <label>Booked Status</label>
+              <input
+              disabled
+              value={viewData.booking_status}>
+              </input>
+            </div>
 
             <div className="form-group" style={{ gridColumn: "1 / -1" }}>
               <label>Room Images</label>
