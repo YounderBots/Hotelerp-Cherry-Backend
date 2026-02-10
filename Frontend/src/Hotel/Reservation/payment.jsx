@@ -179,10 +179,6 @@ const Payment = ({ taxTypes, discountTypes, paymentMethods, formData, setFormDat
 
   return (
     <div className="pay-wrapper">
-      <div className="pay-header">
-        <h2>Billing Details</h2>
-        <button className="close-modal" onClick={onClose}>&times;</button>
-      </div>
 
       <div className="pay-grid">
         <div className="pay-field">
@@ -367,11 +363,6 @@ const Payment = ({ taxTypes, discountTypes, paymentMethods, formData, setFormDat
             readOnly
           />
         </div>
-      </div>
-
-      <div className="payment-modal-footer">
-        <Button className="pay-cancel-btn" onClick={onClose}>Cancel</Button>
-        <Button className="pay-submit-btn" onClick={handleSubmit}>Submit Reservation</Button>
       </div>
     </div>
   );

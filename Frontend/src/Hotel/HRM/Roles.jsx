@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
+import Modal from "../../stories/Modal";
 import { X, Pencil, Trash2, Eye } from "lucide-react";
 import "../../MasterData/MasterData.css";
 import APICall from "../../APICalls/APICalls";
@@ -181,89 +182,71 @@ const Role = () => {
 
             {/* ================= VIEW MODAL ================= */}
             {showViewModal && viewData && (
-                <div className="modal-overlay">
-                    <div className="modal-card modal-sm">
-                        <div className="modal-header">
-                            <h3>View Role</h3>
-                            <button onClick={closeViewModal}>
-                                <X size={18} />
-                            </button>
+                <Modal
+                    isOpen={showViewModal}
+                    title="view Role"
+                    onClose={() => setShowViewModal(false)}>
+                    <div className="modal-body single view">
+                        <div className="form-group">
+                            <label>Role Name</label>
+                            <input value={viewData.role_name} disabled />
                         </div>
 
-                        <div className="modal-body single view">
-                            <div className="form-group">
-                                <label>Role Name</label>
-                                <input value={viewData.role_name} disabled />
-                            </div>
-
-                            <div className="form-group">
-                                <label>Description</label>
-                                <textarea
-                                    value={viewData.description}
-                                    disabled
-                                />
-                            </div>
-                        </div>
-
-                        <div className="modal-footer">
-                            <button
-                                className="btn secondary"
-                                onClick={closeViewModal}
-                            >
-                                Close
-                            </button>
+                        <div className="form-group">
+                            <label>Description</label>
+                            <textarea
+                                value={viewData.description}
+                                disabled
+                            />
                         </div>
                     </div>
-                </div>
+                </Modal>
             )}
 
             {/* ================= ADD / EDIT MODAL ================= */}
             {showModal && (
-                <div className="modal-overlay">
-                    <div className="modal-card modal-sm">
-                        <div className="modal-header">
-                            <h3>{editId ? "Edit Role" : "Add Role"}</h3>
-                            <button onClick={closeModal}>
-                                <X size={18} />
-                            </button>
+                <Modal
+                    isOpen={showModal}
+                    title={editId ? "Edit Roles" : "Add Roles"}
+                    onClose={() => setShowModal(false)}
+                    showFooter
+                    size="large"
+                    bodyLayout="single"
+                    actions={[
+                        {
+                            label: "Close",
+                            variant: "secondary",
+                            onClick: () => setShowModal(false),
+                        },
+                        {
+                            label: "Submit",
+                            variant: "primary",
+                            onClick: handleSave,
+                            autoFocus: true,
+                        },
+                    ]}
+                >
+
+                    <div className="modal-body single">
+                        <div className="form-group">
+                            <label>Role Name</label>
+                            <input
+                                name="roleName"
+                                value={formData.roleName}
+                                onChange={handleChange}
+                            />
                         </div>
 
-                        <div className="modal-body single">
-                            <div className="form-group">
-                                <label>Role Name</label>
-                                <input
-                                    name="roleName"
-                                    value={formData.roleName}
-                                    onChange={handleChange}
-                                />
-                            </div>
-
-                            <div className="form-group">
-                                <label>Description</label>
-                                <textarea
-                                    name="description"
-                                    value={formData.description}
-                                    onChange={handleChange}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="modal-footer">
-                            <button
-                                className="btn secondary"
-                                onClick={closeModal}
-                            >
-                                Close
-                            </button>
-                            <button
-                                className="btn primary"
-                                onClick={handleSave}
-                            >
-                                Submit
-                            </button>
+                        <div className="form-group">
+                            <label>Description</label>
+                            <textarea
+                                name="description"
+                                value={formData.description}
+                                onChange={handleChange}
+                            />
                         </div>
                     </div>
-                </div>
+                </Modal>
             )}
         </>
     );

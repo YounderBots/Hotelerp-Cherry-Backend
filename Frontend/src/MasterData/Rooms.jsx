@@ -416,8 +416,8 @@ const Rooms = () => {
             <div className="form-group">
               <label>Booked Status</label>
               <input
-              disabled
-              value={viewData.booking_status}>
+                disabled
+                value={viewData.booking_status}>
               </input>
             </div>
 
@@ -529,16 +529,19 @@ const Rooms = () => {
               ))}
 
               <div className="form-group">
-                <label>Booked Status</label>
+                <label>Room Status</label>
                 <select
-                  name="booking_status"
-                  value={formData.booking_status}
+                  name="room_status"
+                  value={formData.room_status}
                   onChange={handleChange}
                 >
-                  <option value="No">No</option>
-                  <option value="Yes">Yes</option>
+                  <option value="" disabled>select Room Status</option>
+                  <option value="Available">Available</option>
+                  <option value="Occupied">Occupied</option>
+                  <option value="Maintenance">Maintenance</option>
                 </select>
               </div>
+
 
               <div className="form-group">
                 <label>Working Status</label>

@@ -1,14 +1,13 @@
 import React, { useState } from "react";
 import Tabs, { Tab } from "../../stories/Tabs";
 import { useEffect } from "react";
-import Modal from 'react-modal'
+import Modal from "../../stories/Modal"
 import Button from "../../stories/Button"
 import RoomCard from "./Pages/Card";
 import Payment from "./payment";
 import "./Reservation.css";
 import APICall from "../../APICalls/APICalls";
 
-Modal.setAppElement('#root');
 
 const AddNewReservation = () => {
   const [modalView, setModalView] = useState(false);
@@ -155,7 +154,7 @@ const AddNewReservation = () => {
         no_of_children: updatedSelectedRooms.map(() => 0),
       });
 
-  
+
       setFormData((prev) => ({
         ...prev,
         no_of_rooms: String(updatedSelectedRooms.length),
@@ -364,11 +363,27 @@ const AddNewReservation = () => {
         </div>
       </div>
 
+
       <Modal
         isOpen={paymentModal}
-        onRequestClose={() => setpaymentModal(false)}
-        className="custom-modal"
-        overlayClassName="custom-overlay"
+        title={"Billing Details"}
+        onClose={() => setpaymentModal(false)}
+        showFooter
+        size="large"
+        bodyLayout="single"
+        actions={[
+          {
+            label: "Close",
+            variant: "secondary",
+            onClick: () => setpaymentModal(false),
+          },
+          {
+            label: "Submit",
+            variant: "primary",
+            onClick: handleSubmitReservation,
+            autoFocus: true,
+          },
+        ]}
       >
         <Payment
           taxTypes={taxTypes}
@@ -378,313 +393,321 @@ const AddNewReservation = () => {
           setFormData={setFormData}
           selectedRooms={selectedRooms}
           roomTypes={roomTypes}
-          onSubmit={handleSubmitReservation}
-          onClose={() => setpaymentModal(false)}
+         
+          
         />
       </Modal>
 
       <Modal
         isOpen={modalView}
-        onRequestClose={() => setModalView(false)}
-        className="custom-modal"
-        overlayClassName="custom-overlay"
+        title={"Reservation Details"}
+        onClose={() => setModalView(false)}
+        showFooter
+        size="large"
+        bodyLayout="single"
+        actions={[
+          {
+            label: "Close",
+            variant: "secondary",
+            onClick: () => setModalView(false),
+          },
+          {
+            label: "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            autoFocus: true,
+          },
+        ]}
       >
-        <div className="reservation-container">
-          <div className="reservation-header">
-            <h2>Reservation Details</h2>
-            <button className="close-modal" onClick={() => setModalView(false)}>&times;</button>
-          </div>
 
-          <div className="form-card">
-            <h3 className="section-title">Guest Information</h3>
 
-            <div className="form-grid">
-              <div className="form-group">
-                <label>First Name <span className="required">*</span></label>
-                <div className="title-input">
-                  <select
-                    value={formData.salutation}
-                    className="title-select"
-                    onChange={(e) => setFormData({ ...formData, salutation: e.target.value })}
-                  >
-                    <option>Mr</option>
-                    <option>Ms</option>
-                    <option>Mrs</option>
-                  </select>
-                  <input
-                    type="text"
-                    placeholder="First Name"
-                    style={{ height: "40px" }}
-                    value={formData.first_name}
-                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
+        <div className="form-card">
+          <h3 className="section-title">Guest Information</h3>
 
-              <div className="form-group">
-                <label>Last Name <span className="required">*</span></label>
+          <div className="form-grid">
+            <div className="form-group">
+              <label>First Name <span className="required">*</span></label>
+              <div className="title-input">
+                <select
+                  value={formData.salutation}
+                  className="title-select"
+                  onChange={(e) => setFormData({ ...formData, salutation: e.target.value })}
+                >
+                  <option>Mr</option>
+                  <option>Ms</option>
+                  <option>Mrs</option>
+                </select>
                 <input
                   type="text"
-                  placeholder="Last Name"
-                  value={formData.last_name}
-                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Email <span className="required">*</span></label>
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Phone Number <span className="required">*</span></label>
-                <input
-                  type="tel"
-                  placeholder="Phone Number"
-                  value={formData.phone_number}
-                  onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Arrival Date <span className="required">*</span></label>
-                <input
-                  type="date"
-                  value={formData.arrival_date}
-                  onChange={(e) => {
-                    const arrival = e.target.value;
-                    const departure = formData.departure_date;
-
-                    let nights = formData.no_of_nights;
-                    if (arrival && departure) {
-                      const start = new Date(arrival);
-                      const end = new Date(departure);
-                      const diff = (end - start) / (1000 * 60 * 60 * 24);
-                      nights = diff > 0 ? diff : 0;
-                    }
-
-                    setFormData({
-                      ...formData,
-                      arrival_date: arrival,
-                      no_of_nights: nights,
-                    });
-                  }}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Departure Date <span className="required">*</span></label>
-                <input
-                  type="date"
-                  value={formData.departure_date}
-                  min={formData.arrival_date}
-                  onChange={(e) => {
-                    const departure = e.target.value;
-                    const arrival = formData.arrival_date;
-
-                    let nights = formData.no_of_nights;
-                    if (arrival && departure) {
-                      const start = new Date(arrival);
-                      const end = new Date(departure);
-                      const diff = (end - start) / (1000 * 60 * 60 * 24);
-                      nights = diff > 0 ? diff : 0;
-                    }
-
-                    setFormData({
-                      ...formData,
-                      departure_date: departure,
-                      no_of_nights: nights,
-                    });
-                  }}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Number of Nights <span className="required">*</span></label>
-                <input
-                  type="number"
-                  value={formData.no_of_nights}
-                  readOnly
-                />
-              </div>
-
-
-              <div className="form-group">
-                <label>Number of Rooms</label>
-                <input
-                  type="number"
-                  value={formData.no_of_rooms}
-                  readOnly
-                  className="readonly-input"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Reservation Status <span className="required">*</span></label>
-                <select
+                  placeholder="First Name"
                   style={{ height: "40px" }}
-                  value={formData.booking_status_id}
-                  onChange={(e) => setFormData({ ...formData, booking_status_id:Number(e.target.value) })}
+                  value={formData.first_name}
+                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
                   required
-                >
-                  <option value="">- select -</option>
-                  {reservationStatusTypes.map((status) => (
-                    <option key={status.id} value={status.id}>
-                      {status.reservation_status}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Identity Type <span className="required">*</span></label>
-                <select
-                  style={{ height: "40px" }}
-                  value={formData.identity_type_id}
-                  onChange={(e) => setFormData({ ...formData, identity_type_id: e.target.value })}
-                  required
-                >
-                  <option value="">- select -</option>
-                  {identityTypes.map((identity) => (
-                    <option key={identity.id} value={identity.id}>
-                      {identity.proof_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Identity Proof <span className="required">*</span></label>
-                <div className="file-upload">
-                  <input
-                    type="file"
-                    id="file"
-                    onChange={(e) => setFormData({ ...formData, proof_document: e.target.files[0] })}
-                    required
-                  />
-                  <label htmlFor="file" className="file-label">
-                    Choose File
-                  </label>
-                  <span className="file-name">
-                    {formData.proof_document ? formData.proof_document.name : "No file chosen"}
-                  </span>
-                </div>
+                />
               </div>
             </div>
 
-            <div className="selected-rooms-section">
-              <h3 className="section-title">Selected Rooms:</h3>
-              {selectedRooms.map((room, index) => {
-                const roomTypeObj = roomTypes.find(t => Number(t.id) === Number(room.room_type_id));
-                const maxAdults = parseInt(room.max_adult) || 0;
-                const maxChildren = parseInt(room.max_child) || 0;
-
-                return (
-                  <div key={room.id} className="selected-room-card">
-                    <div className="room-info">
-                      <div className="room-block">
-                        <label>Room Type</label>
-                        <div>{roomTypeObj ? (roomTypeObj.room_type || roomTypeObj.room_type_name) : "Unknown"}</div>
-                      </div>
-                      <div className="room-block">
-                        <label>Room No</label>
-                        <div>{room.room_no}</div>
-                      </div>
-                      <div className="room-block">
-                        <label>Max Capacity</label>
-                        <div>{maxAdults} adults, {maxChildren} children</div>
-                      </div>
-                      <div>
-                        <label>Rate Type</label>
-                        <select
-                          className="rate-select"
-                          value={roomDetails.rate_type[index] || "daily"}
-                          onChange={(e) => handleRoomDetailChange(index, 'rate_type', e.target.value)}
-                        >
-                          <option value="daily">Daily Rate</option>
-                          <option value="weekly">Weekly Rate</option>
-                          <option value="bed_only">Bed Only Rate</option>
-                          <option value="bed_breakfast">Bed & Breakfast Rate</option>
-                          <option value="half_board">Half Board Rate</option>
-                          <option value="full_board">Full Board Rate</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label>Total Adult</label>
-                        <input
-                          type="number"
-                          value={roomDetails.no_of_adults[index] || 0}
-                          className="small-input"
-                          onChange={(e) => handleRoomDetailChange(index, 'no_of_adults', parseInt(e.target.value) || 1)}
-                          min="1"
-                          max={maxAdults}
-                        />
-                      </div>
-                      <div>
-                        <label>Total Child</label>
-                        <input
-                          type="number"
-                          value={roomDetails.no_of_children[index] || 0}
-                          className="small-input"
-                          onChange={(e) => handleRoomDetailChange(index, 'no_of_children', parseInt(e.target.value) || 0)}
-                          min="0"
-                          max={maxChildren}
-                        />
-                      </div>
-                      <div className="complementary-toggle">
-                        <label>Complementary</label>
-                        <select
-                          value={roomDetails.room_complementary[index] || ""}
-                          onChange={(e) => handleRoomDetailChange(index, 'room_complementary', e.target.value)}
-                          style={{ height: "40px", marginLeft: "10px" }}
-                        >
-                          <option value="">No Complementary</option>
-                          <option value="Breakfast">Breakfast</option>
-                          <option value="Welcome Drink">Welcome Drink</option>
-                          <option value="Lunch">Lunch</option>
-                          <option value="Dinner">Dinner</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f5f5f5", borderRadius: "4px" }}>
-                <strong>Total Adults: {formData.no_of_adults}</strong> | <strong>Total Children: {formData.no_of_children}</strong>
-              </div>
+            <div className="form-group">
+              <label>Last Name <span className="required">*</span></label>
+              <input
+                type="text"
+                placeholder="Last Name"
+                value={formData.last_name}
+                onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                required
+              />
             </div>
 
-            <div className="form-group" style={{ marginTop: "20px" }}>
-              <label>Common Complementary</label>
+            <div className="form-group">
+              <label>Email <span className="required">*</span></label>
+              <input
+                type="email"
+                placeholder="Email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Phone Number <span className="required">*</span></label>
+              <input
+                type="tel"
+                placeholder="Phone Number"
+                value={formData.phone_number}
+                onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Arrival Date <span className="required">*</span></label>
+              <input
+                type="date"
+                value={formData.arrival_date}
+                onChange={(e) => {
+                  const arrival = e.target.value;
+                  const departure = formData.departure_date;
+
+                  let nights = formData.no_of_nights;
+                  if (arrival && departure) {
+                    const start = new Date(arrival);
+                    const end = new Date(departure);
+                    const diff = (end - start) / (1000 * 60 * 60 * 24);
+                    nights = diff > 0 ? diff : 0;
+                  }
+
+                  setFormData({
+                    ...formData,
+                    arrival_date: arrival,
+                    no_of_nights: nights,
+                  });
+                }}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Departure Date <span className="required">*</span></label>
+              <input
+                type="date"
+                value={formData.departure_date}
+                min={formData.arrival_date}
+                onChange={(e) => {
+                  const departure = e.target.value;
+                  const arrival = formData.arrival_date;
+
+                  let nights = formData.no_of_nights;
+                  if (arrival && departure) {
+                    const start = new Date(arrival);
+                    const end = new Date(departure);
+                    const diff = (end - start) / (1000 * 60 * 60 * 24);
+                    nights = diff > 0 ? diff : 0;
+                  }
+
+                  setFormData({
+                    ...formData,
+                    departure_date: departure,
+                    no_of_nights: nights,
+                  });
+                }}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Number of Nights <span className="required">*</span></label>
+              <input
+                type="number"
+                value={formData.no_of_nights}
+                readOnly
+              />
+            </div>
+
+
+            <div className="form-group">
+              <label>Number of Rooms</label>
+              <input
+                type="number"
+                value={formData.no_of_rooms}
+                readOnly
+                className="readonly-input"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Reservation Status <span className="required">*</span></label>
               <select
-                value={formData.common_complementary}
-                onChange={(e) => setFormData({ ...formData, common_complementary: e.target.value })}
-                style={{ height: "40px", width: "100%" }}
+                style={{ height: "40px" }}
+                value={formData.booking_status_id}
+                onChange={(e) => setFormData({ ...formData, booking_status_id: Number(e.target.value) })}
+                required
               >
-                <option value="">No Complementary</option>
-                <option value="Welcome Drink">Welcome Drink</option>
-                <option value="Airport Pickup">Airport Pickup</option>
-                <option value="Late Checkout">Late Checkout</option>
-                <option value="Spa Voucher">Spa Voucher</option>
+                <option value="">- select -</option>
+                {reservationStatusTypes.map((status) => (
+                  <option key={status.id} value={status.id}>
+                    {status.reservation_status}
+                  </option>
+                ))}
               </select>
             </div>
+
+            <div className="form-group">
+              <label>Identity Type <span className="required">*</span></label>
+              <select
+                style={{ height: "40px" }}
+                value={formData.identity_type_id}
+                onChange={(e) => setFormData({ ...formData, identity_type_id: e.target.value })}
+                required
+              >
+                <option value="">- select -</option>
+                {identityTypes.map((identity) => (
+                  <option key={identity.id} value={identity.id}>
+                    {identity.proof_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Identity Proof <span className="required">*</span></label>
+              <div className="file-upload">
+                <input
+                  type="file"
+                  id="file"
+                  onChange={(e) => setFormData({ ...formData, proof_document: e.target.files[0] })}
+                  required
+                />
+                <label htmlFor="file" className="file-label">
+                  Choose File
+                </label>
+                <span className="file-name">
+                  {formData.proof_document ? formData.proof_document.name : "No file chosen"}
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="modal-footer">
-            <Button className="cancel-btn" onClick={() => setModalView(false)}>Cancel</Button>
-            <Button className="save-btn" onClick={handleSave}>Save & Continue to Billing</Button>
+
+          <div className="selected-rooms-section">
+            <h3 className="section-title">Selected Rooms:</h3>
+            {selectedRooms.map((room, index) => {
+              const roomTypeObj = roomTypes.find(t => Number(t.id) === Number(room.room_type_id));
+              const maxAdults = parseInt(room.max_adult) || 0;
+              const maxChildren = parseInt(room.max_child) || 0;
+
+              return (
+                <div key={room.id} className="selected-room-card">
+                  <div className="room-info">
+                    <div className="room-block">
+                      <label>Room Type</label>
+                      <div>{roomTypeObj ? (roomTypeObj.room_type || roomTypeObj.room_type_name) : "Unknown"}</div>
+                    </div>
+                    <div className="room-block">
+                      <label>Room No</label>
+                      <div>{room.room_no}</div>
+                    </div>
+                    <div className="room-block">
+                      <label>Max Capacity</label>
+                      <div>{maxAdults} adults, {maxChildren} children</div>
+                    </div>
+                    <div>
+                      <label>Rate Type</label>
+                      <select
+                        className="rate-select"
+                        value={roomDetails.rate_type[index] || "daily"}
+                        onChange={(e) => handleRoomDetailChange(index, 'rate_type', e.target.value)}
+                      >
+                        <option value="daily">Daily Rate</option>
+                        <option value="weekly">Weekly Rate</option>
+                        <option value="bed_only">Bed Only Rate</option>
+                        <option value="bed_breakfast">Bed & Breakfast Rate</option>
+                        <option value="half_board">Half Board Rate</option>
+                        <option value="full_board">Full Board Rate</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Total Adult</label>
+                      <input
+                        type="number"
+                        value={roomDetails.no_of_adults[index] || 0}
+                        className="small-input"
+                        onChange={(e) => handleRoomDetailChange(index, 'no_of_adults', parseInt(e.target.value) || 1)}
+                        min="1"
+                        max={maxAdults}
+                      />
+                    </div>
+                    <div>
+                      <label>Total Child</label>
+                      <input
+                        type="number"
+                        value={roomDetails.no_of_children[index] || 0}
+                        className="small-input"
+                        onChange={(e) => handleRoomDetailChange(index, 'no_of_children', parseInt(e.target.value) || 0)}
+                        min="0"
+                        max={maxChildren}
+                      />
+                    </div>
+                    <div className="complementary-toggle">
+                      <label>Complementary</label>
+                      <select
+                        value={roomDetails.room_complementary[index] || ""}
+                        onChange={(e) => handleRoomDetailChange(index, 'room_complementary', e.target.value)}
+                        style={{ height: "40px", marginLeft: "10px" }}
+                      >
+                        <option value="">No Complementary</option>
+                        <option value="Breakfast">Breakfast</option>
+                        <option value="Welcome Drink">Welcome Drink</option>
+                        <option value="Lunch">Lunch</option>
+                        <option value="Dinner">Dinner</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f5f5f5", borderRadius: "4px" }}>
+              <strong>Total Adults: {formData.no_of_adults}</strong> | <strong>Total Children: {formData.no_of_children}</strong>
+            </div>
+          </div>
+
+          <div className="form-group" style={{ marginTop: "20px" }}>
+            <label>Common Complementary</label>
+            <select
+              value={formData.common_complementary}
+              onChange={(e) => setFormData({ ...formData, common_complementary: e.target.value })}
+              style={{ height: "40px", width: "100%" }}
+            >
+              <option value="">No Complementary</option>
+              <option value="Welcome Drink">Welcome Drink</option>
+              <option value="Airport Pickup">Airport Pickup</option>
+              <option value="Late Checkout">Late Checkout</option>
+              <option value="Spa Voucher">Spa Voucher</option>
+            </select>
           </div>
         </div>
+
+
       </Modal>
     </div>
   );

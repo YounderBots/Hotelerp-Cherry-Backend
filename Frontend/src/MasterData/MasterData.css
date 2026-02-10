@@ -254,11 +254,11 @@
 
 
 .toast-success {
-  background-color: #16a34a;
+  background-color: var(--success-color);
 }
 
 .toast-update {
-  background-color: #2563eb;
+  background-color: var( --primary-light);
 }
 
 .toast-delete {

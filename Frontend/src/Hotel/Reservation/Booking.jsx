@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
+import Modal from "../../stories/Modal";
 import { UserPlus, Eye, Pencil, Trash2, X } from "lucide-react";
 import APICall from "../../APICalls/APICalls";
 import { useEffect } from "react";
