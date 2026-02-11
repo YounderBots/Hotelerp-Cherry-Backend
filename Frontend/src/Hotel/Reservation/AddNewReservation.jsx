@@ -13,6 +13,7 @@ const AddNewReservation = () => {
   const [modalView, setModalView] = useState(false);
   const [paymentModal, setpaymentModal] = useState(false);
 
+
   const [identityTypes, setIdentityTypes] = useState([]);
   const [roomsData, setRoomsData] = useState([]);
   const [selectedRooms, setSelectedRooms] = useState([]);
@@ -21,6 +22,23 @@ const AddNewReservation = () => {
   const [discountTypes, setDiscountTypes] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [reservationStatusTypes, setReservationStatusTypes] = useState([]);
+
+  const [paymentdata, setPaymentdata] = useState({
+    payment_method_id: "",
+    extra_bed_count: 0,
+    extra_bed_cost: 0,
+    total_amount: 0,
+    tax_percentage: 0,
+    tax_amount: 0,
+    discount_percentage: 0,
+    discount_amount: 0,
+    extra_charges: 0,
+    overall_amount: 0,
+    paid_amount: 0,
+    balance_amount: 0,
+    extra_amount: 0,
+  });
+
 
   const getAllIdentityTypes = async () => {
     const res = await APICall.getT("/masterdata/identity_proof");
@@ -102,6 +120,7 @@ const AddNewReservation = () => {
     no_of_adults: 0,
     no_of_children: 0,
     room_complementary: "",
+    reservation_status: "",
     common_complementary: "",
     room_amount: 0,
     extra_charges: 0,
@@ -252,7 +271,6 @@ const AddNewReservation = () => {
     });
 
     if (!capacityValid) return;
-
     setModalView(false);
     setpaymentModal(true);
   };
@@ -260,8 +278,13 @@ const AddNewReservation = () => {
   const isRoomSelected = (room) =>
     selectedRooms.some((r) => r.id === room.id);
 
-  const handleSubmitReservation = async (finalPaymentData) => {
+  const handleSubmitReservation = async () => {
+
     try {
+      if (!paymentdata || !paymentdata.payment_method_id) {
+        alert("Please select payment method");
+        return;
+      }
       const formDataToSend = new FormData();
 
       formDataToSend.append("room_reservation_id", `ROOM_RES_${Date.now()}`);
@@ -275,52 +298,85 @@ const AddNewReservation = () => {
       formDataToSend.append("departure_date", formData.departure_date);
       formDataToSend.append("no_of_nights", formData.no_of_nights);
 
-      formDataToSend.append("room_type_ids", JSON.stringify(roomDetails.room_type_ids));
-      formDataToSend.append("room_ids", JSON.stringify(roomDetails.room_ids));
-      formDataToSend.append("rate_type", JSON.stringify(roomDetails.rate_type));
+      formDataToSend.append(
+        "room_type_ids",
+        JSON.stringify(roomDetails.room_type_ids)
+      );
+      formDataToSend.append(
+        "room_ids",
+        JSON.stringify(roomDetails.room_ids)
+      );
+      formDataToSend.append(
+        "rate_type",
+        JSON.stringify(roomDetails.rate_type)
+      );
 
       formDataToSend.append("no_of_rooms", formData.no_of_rooms);
       formDataToSend.append("no_of_adults", formData.no_of_adults);
       formDataToSend.append("no_of_children", formData.no_of_children);
 
-      formDataToSend.append("payment_method_id", Number(finalPaymentData.payment_method_id));
-      formDataToSend.append("extra_bed_count", finalPaymentData.extra_bed_count);
-      formDataToSend.append("extra_bed_cost", finalPaymentData.extra_bed_cost);
+      // ✅ Payment Data
+      formDataToSend.append(
+        "payment_method_id",
+        Number(paymentdata.payment_method_id)
+      );
+      formDataToSend.append("extra_bed_count", paymentdata.extra_bed_count);
+      formDataToSend.append("extra_bed_cost", paymentdata.extra_bed_cost);
+      formDataToSend.append("total_amount", paymentdata.total_amount);
+      formDataToSend.append("tax_percentage", paymentdata.tax_percentage);
+      formDataToSend.append("tax_amount", paymentdata.tax_amount);
+      formDataToSend.append("discount_percentage", paymentdata.discount_percentage);
+      formDataToSend.append("discount_amount", paymentdata.discount_amount);
+      formDataToSend.append("extra_charges", paymentdata.extra_charges);
+      formDataToSend.append("overall_amount", paymentdata.overall_amount);
+      formDataToSend.append("paid_amount", paymentdata.paid_amount);
+      formDataToSend.append("balance_amount", paymentdata.balance_amount);
+      formDataToSend.append("extra_amount", paymentdata.extra_amount);
 
-      formDataToSend.append("total_amount", finalPaymentData.total_amount);
-      formDataToSend.append("tax_percentage", finalPaymentData.tax_percentage);
-      formDataToSend.append("tax_amount", finalPaymentData.tax_amount);
-      formDataToSend.append("discount_percentage", finalPaymentData.discount_percentage);
-      formDataToSend.append("discount_amount", finalPaymentData.discount_amount);
-      formDataToSend.append("extra_charges", finalPaymentData.extra_charges);
+      formDataToSend.append(
+        "booking_status_id",
+        Number(formData.booking_status_id)
+      );
 
-      formDataToSend.append("overall_amount", finalPaymentData.overall_amount);
-      formDataToSend.append("paid_amount", finalPaymentData.paid_amount);
-      formDataToSend.append("balance_amount", finalPaymentData.balance_amount);
-      formDataToSend.append("extra_amount", finalPaymentData.extra_amount);
+      const selectedStatus = reservationStatusTypes.find(
+        (status) => status.id === Number(formData.booking_status_id)
+      );
 
-      formDataToSend.append("booking_status_id", Number(formData.booking_status_id));
-      formDataToSend.append("reservation_status", "CONFIRMED");
+      formDataToSend.append(
+        "reservation_status",
+        selectedStatus ? selectedStatus.reservation_status : ""
+      );
 
-      formDataToSend.append("room_complementary", formData.room_complementary || "");
-      formDataToSend.append("common_complementary", formData.common_complementary || "");
+      formDataToSend.append(
+        "room_complementary",
+        formData.room_complementary || ""
+      );
+      formDataToSend.append(
+        "common_complementary",
+        formData.common_complementary || ""
+      );
 
       formDataToSend.append("identity_type_id", formData.identity_type_id);
+
       if (formData.proof_document) {
         formDataToSend.append("identity_file", formData.proof_document);
       }
 
-      const response = await APICall.postT("/hotel/room_reservation", formDataToSend);
-      console.log("Reservation created:", response.data);
+      const response = await APICall.postT(
+        "/hotel/room_reservation",
+        formDataToSend
+      );
+
       alert("Reservation created successfully!");
       setpaymentModal(false);
-
       window.location.reload();
+
     } catch (error) {
       console.error("Error creating reservation:", error);
       alert("Failed to create reservation");
     }
   };
+
 
   return (
     <div>
@@ -381,21 +437,19 @@ const AddNewReservation = () => {
             label: "Submit",
             variant: "primary",
             onClick: handleSubmitReservation,
-            autoFocus: true,
-          },
+          }
         ]}
       >
+
         <Payment
           taxTypes={taxTypes}
           discountTypes={discountTypes}
           paymentMethods={paymentMethods}
-          formData={formData}
-          setFormData={setFormData}
           selectedRooms={selectedRooms}
           roomTypes={roomTypes}
-         
-          
+          setpaymentData={setPaymentdata}
         />
+
       </Modal>
 
       <Modal

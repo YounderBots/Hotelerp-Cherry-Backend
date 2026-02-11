@@ -10,6 +10,8 @@ const Reservation = () => {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({});
+  const [identityTypes, setIdentityTypes] = useState([]);
+  const [roomTypes, setRoomTypes] = useState([]);
 
   const getStatusBadgeClass = (status) => {
     const statusLower = status?.toLowerCase();
@@ -69,12 +71,23 @@ const Reservation = () => {
     }
   };
 
- 
+  const getAllIdentityTypes = async () => {
+    const res = await APICall.getT("/masterdata/identity_proof");
+    setIdentityTypes(res.data?.data || res.data || []);
+  };
+
+  const getroomTypes = async () => {
+      const res = await APICall.getT("/masterdata/room_types");
+      setRoomTypes(res.data?.data || res.data || []);   
+
+  }
+
+
   const handleApprove = async (id) => {
     try {
       const res = await APICall.postT(`/hotel/room_reservation_checkin/${id}`);
 
-      alert("Guest checked in successfully ✅");
+      alert("Guest checked in successfully ");
 
       getAllroomReservation();
     } catch (error) {
@@ -86,19 +99,19 @@ const Reservation = () => {
   };
 
   const handleCheckout = async (token) => {
-  try {
-    const res = await APICall.postT(`/hotel/room_reservation_checkout/${token}`);
+    try {
+      const res = await APICall.postT(`/hotel/room_reservation_checkout/${token}`);
 
-    alert("Checked out successfully 🧳");
+      alert("Checked out successfully");
 
-    getAllroomReservation();
-  } catch (error) {
-    console.error(error);
-    alert(
-      error.response?.data?.detail || "Check-out failed"
-    );
-  }
-};
+      getAllroomReservation();
+    } catch (error) {
+      console.error(error);
+      alert(
+        error.response?.data?.detail || "Check-out failed"
+      );
+    }
+  };
 
 
 
@@ -282,6 +295,8 @@ const Reservation = () => {
 
   useEffect(() => {
     getAllroomReservation();
+    getAllIdentityTypes();
+    getroomTypes();
   }, []);
 
   return (
@@ -728,6 +743,7 @@ const Reservation = () => {
       )}
 
       {isEditModalOpen && selectedReservation && (
+
         <div className="modal-container" onClick={(e) => {
           if (e.target === e.currentTarget) setIsEditModalOpen(false);
         }}>
@@ -805,15 +821,21 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Identity Type ID</label>
-                        <input
-                          type="number"
-                          name="identity_type_id"
-                          value={editFormData.identity_type_id || 1}
+                        <label>Identity Type <span className="required">*</span></label>
+                        <select
+                          style={{ height: "40px" }}
+                          value={editFormData.identity_type_id || ""}
                           onChange={handleInputChange}
-                          min="1"
-                          className="form-input"
-                        />
+                          name="identity_type_id"
+                          required
+                        >
+                          <option value="">- select -</option>
+                          {identityTypes.map((identity) => (
+                            <option key={identity.id} value={identity.id}>
+                              {identity.proof_name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
@@ -862,15 +884,21 @@ const Reservation = () => {
                     <h3 className="section-title">Room Information</h3>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Room Type IDs (JSON) *</label>
-                        <input
-                          type="text"
-                          name="room_type_ids"
-                          value={JSON.stringify(editFormData.room_type_ids || [])}
+                        <label>Room Type <span className="required">*</span></label>
+                        <select
+                          style={{ height: "40px" }}
+                          value={editFormData.room_type_ids || ""}
                           onChange={handleInputChange}
+                          name="room_type_ids"
                           required
-                          className="form-input json-input"
-                        />
+                        >
+                          <option value="">- select -</option>
+                          {roomTypes.map((roomType) => (
+                            <option key={roomType.id} value={roomType.id}>
+                              {roomType.room_type_name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className="form-group">
                         <label className="form-label">Room IDs (JSON) *</label>
