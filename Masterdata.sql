@@ -201,7 +201,7 @@ CREATE TABLE `discount_data` (
 
 LOCK TABLES `discount_data` WRITE;
 /*!40000 ALTER TABLE `discount_data` DISABLE KEYS */;
-INSERT INTO `discount_data` VALUES (1,'IN','Festival Offer Updated','25.0','INACTIVE','1','2026-01-27 11:41:58','2026-01-27 12:07:54','1','1'),(2,'IN','Seasonal Discount','10.0','ACTIVE','1','2026-02-04 19:20:10',NULL,NULL,'1'),(3,'IN','Corporate Booking Discount','15.0','ACTIVE','1','2026-02-04 19:20:21',NULL,NULL,'1'),(4,'IN','Long Stay Discount','20.0','ACTIVE','1','2026-02-04 19:20:34',NULL,NULL,'1');
+INSERT INTO `discount_data` VALUES (1,'IN','Festival Offer Updated','25.0','INACTIVE','1','2026-01-27 11:41:58','2026-01-27 12:07:54','1','1'),(2,'IN','Seasonal Discount','10.0','ACTIVE','1','2026-02-04 19:20:10',NULL,NULL,'1'),(3,'IN','Corporate Booking Discount','15.0','ACTIVE','1','2026-02-04 19:20:21',NULL,NULL,'1'),(4,'IN','Long Stay Discount','20.0','ACTIVE','1','2026-02-04 19:20:34','2026-02-07 17:57:47','1','1');
 /*!40000 ALTER TABLE `discount_data` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -228,7 +228,7 @@ CREATE TABLE `facility` (
   KEY `ix_facility_created_by` (`created_by`),
   KEY `ix_facility_status` (`status`),
   KEY `ix_facility_company_id` (`company_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -237,7 +237,7 @@ CREATE TABLE `facility` (
 
 LOCK TABLES `facility` WRITE;
 /*!40000 ALTER TABLE `facility` DISABLE KEYS */;
-INSERT INTO `facility` VALUES (1,'GYM','INACTIVE','1','2026-01-26 14:19:28','2026-02-04 19:06:04','1','1'),(2,'Free High-Speed Wi-Fi','ACTIVE','1','2026-02-04 19:06:10',NULL,NULL,'1'),(3,'24×7 Room Service','ACTIVE','1','2026-02-04 19:06:16',NULL,NULL,'1'),(4,'Swimming Pool','ACTIVE','1','2026-02-04 19:06:24',NULL,NULL,'1'),(5,'Fitness Center (Gym)','ACTIVE','1','2026-02-04 19:06:31',NULL,NULL,'1'),(6,'Airport Pickup & Drop','ACTIVE','1','2026-02-04 19:06:35',NULL,NULL,'1');
+INSERT INTO `facility` VALUES (1,'GYM','INACTIVE','1','2026-01-26 14:19:28','2026-02-04 19:06:04','1','1'),(2,'Free High-Speed Wi-Fi','ACTIVE','1','2026-02-04 19:06:10',NULL,NULL,'1'),(3,'24×7 Room Service','ACTIVE','1','2026-02-04 19:06:16',NULL,NULL,'1'),(4,'Swimming Pool','ACTIVE','1','2026-02-04 19:06:24',NULL,NULL,'1'),(5,'Fitness Center (Gym)','ACTIVE','1','2026-02-04 19:06:31',NULL,NULL,'1'),(6,'Airport Pickup & Drop','ACTIVE','1','2026-02-04 19:06:35','2026-02-10 15:49:27','1','1'),(7,'HEllo','INACTIVE','1','2026-02-06 12:32:34','2026-02-06 12:32:38','1','1');
 /*!40000 ALTER TABLE `facility` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -273,7 +273,7 @@ CREATE TABLE `identity_proof` (
 
 LOCK TABLES `identity_proof` WRITE;
 /*!40000 ALTER TABLE `identity_proof` DISABLE KEYS */;
-INSERT INTO `identity_proof` VALUES (1,'Passport','INACTIVE','1','2026-01-27 16:29:18','2026-01-27 16:36:58','1','1'),(2,'Hii','INACTIVE','1','2026-02-04 16:55:58','2026-02-04 19:24:02','1','1'),(3,'Aadhaar Card','ACTIVE','1','2026-02-04 19:24:23',NULL,NULL,'1'),(4,'Passport','ACTIVE','1','2026-02-04 19:24:27',NULL,NULL,'1'),(5,'Driving License','ACTIVE','1','2026-02-04 19:24:31',NULL,NULL,'1'),(6,'Voter ID','ACTIVE','1','2026-02-04 19:24:36',NULL,NULL,'1'),(7,'PAN Card','ACTIVE','1','2026-02-04 19:24:40',NULL,NULL,'1');
+INSERT INTO `identity_proof` VALUES (1,'Passport','INACTIVE','1','2026-01-27 16:29:18','2026-01-27 16:36:58','1','1'),(2,'Hii','INACTIVE','1','2026-02-04 16:55:58','2026-02-04 19:24:02','1','1'),(3,'Aadhaar Card','ACTIVE','1','2026-02-04 19:24:23',NULL,NULL,'1'),(4,'Passport','ACTIVE','1','2026-02-04 19:24:27',NULL,NULL,'1'),(5,'Driving License','ACTIVE','1','2026-02-04 19:24:31',NULL,NULL,'1'),(6,'Voter ID','ACTIVE','1','2026-02-04 19:24:36',NULL,NULL,'1'),(7,'PAN Card','ACTIVE','1','2026-02-04 19:24:40','2026-02-07 17:57:58','1','1');
 /*!40000 ALTER TABLE `identity_proof` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -632,4 +632,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-02-04 19:34:09
+-- Dump completed on 2026-02-12 13:29:41

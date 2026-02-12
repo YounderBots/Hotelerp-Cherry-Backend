@@ -690,7 +690,7 @@ CREATE TABLE `room_reservation` (
   KEY `ix_room_reservation_reservation_status` (`reservation_status`),
   KEY `ix_room_reservation_tax_type_id` (`tax_type_id`),
   KEY `ix_room_reservation_arrival_date` (`arrival_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -699,7 +699,7 @@ CREATE TABLE `room_reservation` (
 
 LOCK TABLES `room_reservation` WRITE;
 /*!40000 ALTER TABLE `room_reservation` DISABLE KEYS */;
-INSERT INTO `room_reservation` VALUES (1,'ROOM_RES_10001','Mr','Anandh','M','anand@gmail.com','9876543210','2026-03-01','2026-03-04',2,2,NULL,1,'59e3552d-8490-418e-a0d0-109929b1b466.pdf','[101, 102]','[1, 2]',NULL,'[\"daily\", \"daily\"]',3,1,'Breakfast','Welcome Drink',NULL,NULL,0,250,12,600,10,500,5300,1,NULL,3000,2300,0,1,500,5000,2,'RESERVATION','90C0292A','cfbec587-e5ed-4404-8fec-04bb42f37e62','ACTIVE','1','2026-02-04 13:10:15','2026-02-04 13:14:20','1','1');
+INSERT INTO `room_reservation` VALUES (1,'ROOM_RES_10001','Mr','Anandh','M','anand@gmail.com','9876543210','2026-03-01','2026-03-04',2,2,NULL,1,'59e3552d-8490-418e-a0d0-109929b1b466.pdf','[101, 102]','[1, 2]',NULL,'[\"daily\", \"daily\"]',3,1,'Breakfast','Welcome Drink',NULL,NULL,0,250,12,600,10,500,5300,1,NULL,3000,2300,0,1,500,5000,2,'RESERVATION','90C0292A','cfbec587-e5ed-4404-8fec-04bb42f37e62','ACTIVE','1','2026-02-04 13:10:15','2026-02-04 13:14:20','1','1'),(2,'ROOM_RES_1770380150861','Mr','Anand ','M','anand@gmail.com','1234567890','2026-02-06','2026-02-07',1,1,'CONFIRMED',7,'98973750-b5f2-4fb7-88b0-0aef553fa7dc.jpg','[3]','[7]',NULL,'[\"daily\"]',0,0,'','Welcome Drink',NULL,NULL,0,0,5,0,20,0,0,6,NULL,0,0,0,0,0,0,6,'RESERVATION','27C5FEF1','52275de2-e006-4e3b-9908-d04ce10f05f9','INACTIVE','1','2026-02-06 17:45:51','2026-02-10 10:25:06','1','1');
 /*!40000 ALTER TABLE `room_reservation` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -755,4 +755,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-02-04 19:34:42
+-- Dump completed on 2026-02-12 13:29:12
