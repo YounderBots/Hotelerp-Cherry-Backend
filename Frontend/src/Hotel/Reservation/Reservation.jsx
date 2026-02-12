@@ -12,6 +12,7 @@ const Reservation = () => {
   const [editFormData, setEditFormData] = useState({});
   const [identityTypes, setIdentityTypes] = useState([]);
   const [roomTypes, setRoomTypes] = useState([]);
+  const [rooms, setRooms] = useState([]);
 
   const getStatusBadgeClass = (status) => {
     const statusLower = status?.toLowerCase();
@@ -77,9 +78,14 @@ const Reservation = () => {
   };
 
   const getroomTypes = async () => {
-      const res = await APICall.getT("/masterdata/room_types");
-      setRoomTypes(res.data?.data || res.data || []);   
+    const res = await APICall.getT("/masterdata/room_types");
+    setRoomTypes(res.data?.data || res.data || []);
 
+  }
+
+  const getAllrooms = async () => {
+    const res = await APICall.getT("/masterdata/room")
+    setRooms(res.data?.data || res.data || [])
   }
 
 
@@ -297,6 +303,7 @@ const Reservation = () => {
     getAllroomReservation();
     getAllIdentityTypes();
     getroomTypes();
+    getAllrooms();
   }, []);
 
   return (
@@ -515,30 +522,29 @@ const Reservation = () => {
                 <div className="view-section">
                   <h3 className="section-title">Room Details</h3>
                   <div className="field-pair">
+
                     <div className="field-group">
-                      <span className="field-label">Room IDs</span>
+                      <span className="field-label">Room Type</span>
                       <span className="field-value json-value">
-                        {Array.isArray(selectedReservation.room_ids)
-                          ? selectedReservation.room_ids.join(", ")
-                          : selectedReservation.room_ids}
+                        {selectedReservation?.room_type_ids?.length > 0
+                          ? selectedReservation.room_type_ids
+                            .map(id => roomTypes.find(rt => rt.id === id)?.room_type_name)
+                            .filter(Boolean)
+                            .join(", ")
+                          : "N/A"}
                       </span>
                     </div>
+
+
                     <div className="field-group">
-                      <span className="field-label">Room Type IDs</span>
+                      <span className="field-label">Room Number</span>
                       <span className="field-value json-value">
-                        {Array.isArray(selectedReservation.room_type_ids)
-                          ? selectedReservation.room_type_ids.join(", ")
-                          : selectedReservation.room_type_ids}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Room Numbers</span>
-                      <span className="field-value json-value">
-                        {Array.isArray(selectedReservation.room_no)
-                          ? selectedReservation.room_no.join(", ")
-                          : selectedReservation.room_no}
+                        {selectedReservation?.room_ids?.length > 0
+                          ? selectedReservation.room_ids
+                            .map(id => rooms.find(rt => rt.id === id)?.room_no)
+                            .filter(Boolean)
+                            .join(", ")
+                          : "N/A"}
                       </span>
                     </div>
                     <div className="field-group">
@@ -901,18 +907,21 @@ const Reservation = () => {
                         </select>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Room IDs (JSON) *</label>
-                        <input
-                          type="text"
+                        <label className="form-label">Room Number</label>
+                        <input className="form-input" type="text" readOnly
                           name="room_ids"
-                          value={JSON.stringify(editFormData.room_ids || [])}
-                          onChange={handleInputChange}
-                          required
-                          className="form-input json-input"
-                        />
+                          value={editFormData?.room_ids?.length > 0
+                            ? editFormData.room_ids
+                              .map(id => rooms.find(rt => rt.id === id)?.room_no)
+                              .filter(Boolean)
+                              .join(", ")
+                            : "N/A"}>
+                        </input>
                       </div>
+
+
                       <div className="form-group">
-                        <label className="form-label">Rate Type (JSON) *</label>
+                        <label className="form-label">Rate Type*</label>
                         <input
                           type="text"
                           name="rate_type"

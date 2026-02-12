@@ -1,49 +1,51 @@
-import React,{useState} from "react";
+import React,{useState,useEffect} from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import { Eye,X } from "lucide-react";
 import "../../MasterData/MasterData.css";
+import APICall from "../../APICalls/APICalls";
 
 const SettlementSummary = () => {
+  const [data, setData] = useState([]);
   const [viewSettlement, setViewSettlement] = useState(null);
   const columns = [
     {
-      key: "reservationId",
+      key: "room_reservation_id",
       title: "Reservation ID",
       align: "center",
     },
     {
-      key: "Name",
+      key: "first_name",
       title: "Name",
       type: "custom",
-      render: (row) => [row.FirstName, row.LastName].filter(Boolean).join(" "),
+      render: (row) => [row.first_name, row.last_name].filter(Boolean).join(" "),
     },
     {
-      key: "phone",
+      key: "phone_number",
       title: "Phone Number",
       align: "center",
     },
     {
-      key: "arrivalDate",
+      key: "arrival_date",
       title: "Arrival Date",
       align: "center",
     },
     {
-      key: "departureDate",
+      key: "departure_date",
       title: "Departure Date",
       align: "center",
     },
     {
-      key: "totalAmount",
+      key: "total_amount",
       title: "Total Amount",
       align: "right",
     },
     {
-      key: "paidAmount",
+      key: "paid_amount",
       title: "Paid Amount",
       align: "right",
     },
     {
-      key: "balanceAmount",
+      key: "balance_amount",
       title: "Balance Amount",
       align: "right",
     },
@@ -70,59 +72,72 @@ const SettlementSummary = () => {
     },
   ];
 
-  const data = [
-    {
-      id: 1,
-      reservationId: "RES-1001",
-      FirstName: "Anand",
-      LastName:"Kumar",
-      phone: "9876543210",
-      email: "anand.kumar@gmail.com",
-      arrivalDate: "2026-01-12",
-      departureDate: "2026-01-13",
-      noOfRooms: 1,
-      noOfAdults: 2,
-      noOfChildren: 1,
-      paymentMode: "Debit Card",
-      extraBedCost: 0,
-      totalAmount: 1000,
-      taxAmount: 150,
-      discountAmount: 0,
-      overallAmount: 1150,
-      paidAmount: 0,
-      balanceAmount: 1150,
-      bookingStatus: "Confirmed",
-      reservationType: "Reservation",
-      roomComplementary: "No",
-      commonComplementary: "Breakfast",
-    },
-    {
-      id: 2,
-      reservationId: "RES-1002",
-      FirstName: "Madhu",
-      LastName: "Priya",
-      phone: "9123456780",
-      email: "madhu.priya@gmail.com",
-      arrivalDate: "2026-01-15",
-      departureDate: "2026-01-18",
-      noOfRooms: 1,
-      noOfAdults: 2,
-      noOfChildren: 0,
-      paymentMode: "UPI",
-      extraBedCost: 0,
-      totalAmount: 3000,
-      taxAmount: 450,
-      discountAmount: 200,
-      overallAmount: 3250,
-      paidAmount: 2000,
-      balanceAmount: 1250,
-      bookingStatus: "Checked In",
-      reservationType: "Reservation",
-      roomComplementary: "Yes",
-      commonComplementary: "Breakfast, WiFi",
-    },
-  ];
+   const getAllroomReservation = async () => {
+    try {
+      const response = await APICall.getT("/hotel/room_reservation");
+      console.log("Full Response:", response);
+      setData(response.data); 
+    } catch (error) {
+      console.error("Error fetching reservations:", error);
+    }
+  };
+  // const data = [
+  //   {
+  //     id: 1,
+  //     reservationId: "RES-1001",
+  //     FirstName: "Anand",
+  //     LastName:"Kumar",
+  //     phone: "9876543210",
+  //     email: "anand.kumar@gmail.com",
+  //     arrivalDate: "2026-01-12",
+  //     departureDate: "2026-01-13",
+  //     noOfRooms: 1,
+  //     noOfAdults: 2,
+  //     noOfChildren: 1,
+  //     paymentMode: "Debit Card",
+  //     extraBedCost: 0,
+  //     totalAmount: 1000,
+  //     taxAmount: 150,
+  //     discountAmount: 0,
+  //     overallAmount: 1150,
+  //     paidAmount: 0,
+  //     balanceAmount: 1150,
+  //     bookingStatus: "Confirmed",
+  //     reservationType: "Reservation",
+  //     roomComplementary: "No",
+  //     commonComplementary: "Breakfast",
+  //   },
+  //   {
+  //     id: 2,
+  //     reservationId: "RES-1002",
+  //     FirstName: "Madhu",
+  //     LastName: "Priya",
+  //     phone: "9123456780",
+  //     email: "madhu.priya@gmail.com",
+  //     arrivalDate: "2026-01-15",
+  //     departureDate: "2026-01-18",
+  //     noOfRooms: 1,
+  //     noOfAdults: 2,
+  //     noOfChildren: 0,
+  //     paymentMode: "UPI",
+  //     extraBedCost: 0,
+  //     totalAmount: 3000,
+  //     taxAmount: 450,
+  //     discountAmount: 200,
+  //     overallAmount: 3250,
+  //     paidAmount: 2000,
+  //     balanceAmount: 1250,
+  //     bookingStatus: "Checked In",
+  //     reservationType: "Reservation",
+  //     roomComplementary: "Yes",
+  //     commonComplementary: "Breakfast, WiFi",
+  //   },
+  // ];
 
+
+   useEffect(() => {
+        getAllroomReservation();
+      }, [])
   return (
     <>
     <TableTemplate
@@ -130,7 +145,7 @@ const SettlementSummary = () => {
       columns={columns}
       data={data}
       searchable
-      pageSize={1}
+      pageSize={10}
       pagination
       exportable
     />
