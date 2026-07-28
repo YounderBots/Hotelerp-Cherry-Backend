@@ -1,22 +1,16 @@
 .app-layout {
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
 }
 :root {
   --primary-pale: #FFF9F4;
 }
-/* Navbar Styles */
+
+/* Navbar shell — sticky + z-index preserved; visual rules live in the
+   consolidated block near the bottom of this file. */
 .navbar {
-    height: 64px;
-    background: linear-gradient(180deg, var(--bg-primary), var(--bg-secondary));
-    overflow-x: visible;
-    overflow-y:visible;
-    border-bottom: 1px solid var(--border-color);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 24px;
     position: sticky;
     top: 0;
     z-index: 1000;
@@ -28,89 +22,13 @@
 }
 
 .navbar-left {
-    height: 90%;
     display: flex;
     align-items: center;
 }
 
 .logo-container {
-    height: 90%;
-    display: flex;
-    align-items: center;}
-
-.logo-container img {
-    height: 90px;       /* 👈 increase size */
-    width: auto;        /* keeps ratio */
-    object-fit: contain;
-}
-
-.search-container {
-    background-color: var(--primary-pale) !important;
-    position: relative;
-    width: 400px;
-    max-width: 100%;
-    transition: transform 0.2s;
-}
-
-.search-container.focused {
-    transform: scale(1.01);
-}
-
-.search-icon {
-    position: absolute;
-    left: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--primary-pale);
-    transition: color 0.2s;
-    pointer-events: none;
-}
-
-.search-container.focused .search-icon {
-    color: var(--primary-pale);
-}
-
-.search-input {
-    width: 100%;
-    padding: 10px 14px 10px 44px;
-    border: 1px solid rgba(0, 0, 0, 0);
-    border-radius: 25px;
-    font-size: 0.875rem;
-    background: var(--primary-pale);
-    transition: all 0.2s;
-}
-
-.search-input:focus {
-    outline: rgba(0, 0, 0, 0);
-    /* border-color: none; */
-    background: var(--primary-pale);
-    /* box-shadow: 0 0 0 3px var(--primary-lightest); */
-}
-
-.navbar-right {
     display: flex;
     align-items: center;
-    gap: 8px;
-}
-
-.icon-button {
-    width: 40px;
-    height: 40px;
-    border: none;
-    background: var(--primary-pale)!important;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    color: var(--gray-500);
-    transition: all 0.2s;
-}
-
-.icon-button:hover {
-    background: var(--gray-100);
-    color: var(--secondary-color);
-    transform: scale(1.05);
 }
 
 main {
@@ -518,7 +436,16 @@ main {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: 0.2s;
+    transition: background 0.2s ease, color 0.2s ease;
+    background: transparent;
+    border: none;
+    font: inherit;
+    padding: 0;
+}
+
+.nav-item:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
 }
 
 .nav-item span {
@@ -555,15 +482,29 @@ main {
 }
 
 .sub-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
     padding: 12px 14px;
     border-radius: 8px;
     cursor: pointer;
     margin-bottom: 8px;
     font-size: 0.875rem;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    transition: background 0.15s ease, color 0.15s ease;
 }
 
 .sub-item:hover {
     background: var(--primary-lightest);
+}
+
+.sub-item:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
 }
 
 .sub-item.active {
@@ -730,31 +671,29 @@ main {
   background: #dbeafe;
 }
 
-/* NOTIFICATION DOT */
-.notify-dot {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 8px;
-  height: 8px;
-  background: #ef4444;
-  border-radius: 50%;
-}
-
 /* PROFILE */
 .profile-box {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 6px 14px 6px 6px;
-  /* background: linear-gradient(135deg, var(--primary-lightest), var(--primary-lighter)); */
   border-radius: 9999px;
+  background: transparent;
+  border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
 .profile-box:hover {
-  /* background: linear-gradient(135deg, var(--primary-lighter), var(--primary-lightest)); */
+  background: var(--primary-lightest);
+}
+
+.profile-box:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 .profile-avatar {
@@ -763,6 +702,20 @@ main {
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid var(--primary-pale);
+}
+
+/* Local-only initials avatar (no third-party image request). */
+.profile-avatar-initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--white);
+  background: linear-gradient(135deg, var(--primary-mild), var(--primary-color));
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  border: 2px solid var(--primary-pale);
+  user-select: none;
 }
 
 .profile-info {
@@ -800,9 +753,77 @@ main {
 }
 
 .dropdown-item {
-  padding: 12px 12px;
+  padding: 12px;
   cursor: pointer;
   font-size: 14px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: block;
+  transition: background 0.15s ease;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus-visible {
+  background: var(--primary-lightest);
+  outline: none;
+}
+
+.dropdown-item.logout {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.dropdown-item.logout:hover {
+  color: var(--primary-dark);
+}
+
+/* App body — dynamic viewport height for iOS Safari. */
+.app-body {
+  min-height: calc(100vh - 80px);
+  min-height: calc(100dvh - 80px);
+}
+
+/* Mobile drawer wiring — the button in Navbar toggles this. */
+.mobile-drawer {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 1200;
+  display: flex;
+  animation: mobileDrawerFadeIn 0.15s ease-out;
+}
+
+.mobile-panel {
+  display: flex;
+  gap: 0;
+  height: 100%;
+  background: var(--white);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+}
+
+.mobile-side-nav {
+  width: 90px;
+  padding-top: 20px;
+  border-right: 1px solid var(--border-color);
+}
+
+.mobile-submenu {
+  min-width: 240px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+@keyframes mobileDrawerFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-drawer { animation: none; }
 }
 
 

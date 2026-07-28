@@ -39,28 +39,24 @@ async def login_post(
             )
 
         # -------------------------------------------------
-        # FETCH USER FROM USER SERVICE
+        # VERIFY CREDENTIALS VIA USERSERVICE
+        # (password never leaves UserService — see verify_credentials endpoint)
         # -------------------------------------------------
-        user_response = await fetch_from_service(
-            f"{ServiceURL.USER_SERVICE_URL}/login_user/{email}"
-        )
-
-        user_data = user_response.get("data")
+        user_data = None
+        try:
+            async with httpx.AsyncClient(timeout=10) as _c:
+                verify_resp = await _c.post(
+                    f"{ServiceURL.USER_SERVICE_URL}/verify_credentials",
+                    json={"email": email, "password": password},
+                )
+                if verify_resp.status_code == 200:
+                    user_data = (verify_resp.json() or {}).get("data")
+        except httpx.HTTPError:
+            raise HTTPException(status_code=503, detail="Auth backend unavailable")
 
         if not user_data:
-            raise HTTPException(
-                status_code=404,
-                detail="User not found"
-            )
-
-        # -------------------------------------------------
-        # VERIFY PASSWORD
-        # -------------------------------------------------
-        if not verify_password(password, user_data.get("password")):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid credentials"
-            )
+            # Uniform 401 — do not distinguish which field was wrong.
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
         # -------------------------------------------------
         # CREATE JWT TOKEN

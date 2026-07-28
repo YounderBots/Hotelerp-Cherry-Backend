@@ -1,34 +1,66 @@
-// RoomAvailability.jsx
 import React from "react";
 
-const RoomAvailability = () => {
-  const rooms = [
-    { status: "Occupied", count: 286, color: "var(--primary-color)" },      // #850126 - Rich Maroon
-    { status: "Reserved", count: 87, color: "var(--primary-dark)" },        // #4a081b - Deep Wine
-    { status: "Available", count: 32, color: "var(--primary-mild)" },       // #db1b4b - Muted Maroon
-    { status: "Not Ready", count: 13, color: "var(--primary-light)" }       // #d88c9a - Soft Rose
-];
+const COLORS = {
+  Occupied: "var(--primary-color)",
+  Reserved: "var(--primary-dark)",
+  Available: "var(--primary-mild)",
+  "Not Ready": "var(--primary-light)",
+};
+
+const RoomAvailability = ({ counts, total = 0, loading = false, error = null }) => {
+  const rows = counts
+    ? [
+        { status: "Occupied", count: counts.Occupied ?? 0 },
+        { status: "Reserved", count: counts.Reserved ?? 0 },
+        { status: "Available", count: counts.Available ?? 0 },
+        { status: "Not Ready", count: counts["Not Ready"] ?? 0 },
+      ]
+    : [];
 
   return (
     <div className="card">
       <div className="card-header-inline">
         <h4>Room Availability</h4>
-        <span className="more">⋯</span>
+        {!loading && !error && total > 0 && (
+          <span className="card-meta">{total} rooms</span>
+        )}
       </div>
-      <div className="availability">
-        {rooms.map((room, index) => (
-          <div 
-            key={index} 
-            style={{ 
-              borderLeft: `5px solid ${room.color}`,
-              paddingLeft: '1.25rem'
-            }}
-          >
-            <span>{room.status}</span>
-            <b style={{ color: room.color }}>{room.count}</b>
-          </div>
-        ))}
-      </div>
+
+      {loading && (
+        <div className="dashboard-empty" role="status" aria-live="polite">
+          Loading room status…
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="dashboard-alert inline" role="alert">
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && total === 0 && (
+        <div className="dashboard-empty">
+          No rooms configured. Add rooms in Master Data → Rooms.
+        </div>
+      )}
+
+      {!loading && !error && total > 0 && (
+        <div className="availability" role="list">
+          {rows.map((row) => {
+            const color = COLORS[row.status];
+            return (
+              <div
+                key={row.status}
+                role="listitem"
+                style={{ borderLeft: `5px solid ${color}`, paddingLeft: "1.25rem" }}
+              >
+                <span>{row.status}</span>
+                <b style={{ color }}>{row.count}</b>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

@@ -1,12 +1,12 @@
 import React from "react";
 
 const data = [
-  { label: "Direct Booking", value: 61, color: "var(--primary-mild)" },        // #db1b4b - Vibrant but not too dark
-  { label: "Booking.com", value: 12, color: "var(--primary-color)" },          // #850126 - Medium maroon
-  { label: "Agoda", value: 11, color: "var(--primary-light)" },                // #d88c9a - Soft rose (lighter)
-  { label: "Airbnb", value: 9, color: "var(--primary-lighter)" },              // #f3c9d2 - Blush pink (very light)
-  { label: "Hotels.com", value: 5, color: "var(--primary-lightest)" },         // #fff1f4 - Almost white with pink tint
-  { label: "Others", value: 2, color: "var(--primary-pale)" }                  // #FFF9F4 - Very pale cream
+  { label: "Direct Booking", value: 61, color: "var(--primary-mild)" },
+  { label: "Booking.com",    value: 12, color: "var(--primary-color)" },
+  { label: "Agoda",          value: 11, color: "var(--primary-light)" },
+  { label: "Airbnb",         value:  9, color: "var(--primary-lighter)" },
+  { label: "Hotels.com",     value:  5, color: "var(--primary-lightest)" },
+  { label: "Others",         value:  2, color: "var(--primary-pale)" },
 ];
 
 const BookingPlatform = () => {
@@ -16,16 +16,25 @@ const BookingPlatform = () => {
   let offset = 0;
 
   return (
-    <div className="card booking-platform-card">
-      {/* Header */}
+    <div
+      className="card booking-platform-card"
+      aria-label="Booking distribution by platform (sample data)"
+    >
       <div className="card-header-inline">
         <h4>Booking by Platform</h4>
-        <span className="more">⋯</span>
+        <span className="sample-tag" title="Sample data — no channel-manager integration wired yet">
+          Sample
+        </span>
       </div>
 
       <div className="platform-content">
-        {/* DONUT CHART */}
-        <svg width="240" height="240" viewBox="0 0 200 200">
+        <svg
+          width="240"
+          height="240"
+          viewBox="0 0 200 200"
+          role="img"
+          aria-label="Donut chart of booking sources — sample data"
+        >
           <g transform="translate(100,100)">
             {data.map((item, index) => {
               const dash = (item.value / 100) * circumference;
@@ -48,8 +57,6 @@ const BookingPlatform = () => {
                 />
               );
             })}
-
-            {/* Center Text */}
             <text
               textAnchor="middle"
               dy="-0.1em"
@@ -71,21 +78,17 @@ const BookingPlatform = () => {
           </g>
         </svg>
 
-        {/* BAR STYLE LEGEND (BIG CHANGE) */}
-        <ul className="platform-legend">
+        <ul className="platform-legend" role="list">
           {data.map((item, index) => (
             <li key={index} className="platform-bar">
               <div className="bar-label">
                 <span>{item.label}</span>
                 <b>{item.value}%</b>
               </div>
-              <div className="bar-track">
+              <div className="bar-track" aria-hidden="true">
                 <div
                   className="bar-fill"
-                  style={{
-                    width: `${item.value}%`,
-                    background: item.color
-                  }}
+                  style={{ width: `${item.value}%`, background: item.color }}
                 />
               </div>
             </li>

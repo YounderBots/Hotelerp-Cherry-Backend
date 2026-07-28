@@ -1,4 +1,3 @@
-// KPICard.jsx
 import React from "react";
 import {
   Calendar,
@@ -6,8 +5,6 @@ import {
   LogOut,
   BedDouble,
   DollarSign,
-  TrendingUp,
-  TrendingDown,
 } from "lucide-react";
 
 const iconMap = {
@@ -18,37 +15,31 @@ const iconMap = {
   revenue: DollarSign,
 };
 
-const KPICard = ({
-  title,
-  value,
-  change,
-  type,
-  negative,
-  active,
-  onClick,
-}) => {
-  const Icon = iconMap[type];
-  const TrendIcon = negative ? TrendingDown : TrendingUp;
+const KPICard = ({ title, value, note, type, loading = false }) => {
+  const Icon = iconMap[type] || Calendar;
 
   return (
     <div
-      className={`kpi-card ${active ? "active" : ""}`}
-      onClick={onClick}
+      className={`kpi-card ${loading ? "loading" : ""}`}
+      role="group"
+      aria-label={`${title}: ${loading ? "loading" : value}`}
     >
       <div className="kpi-top">
         <span className="kpi-title">{title}</span>
-        <div className="kpi-icon">
+        <div className="kpi-icon" aria-hidden="true">
           <Icon size={18} />
         </div>
       </div>
 
-      <div className="kpi-value">{value}</div>
-
-      <div className={`kpi-badge ${negative ? "down" : "up"}`}>
-        <TrendIcon size={14} />
-        <span>{change}</span>
-        <small>from last week</small>
+      <div className="kpi-value" aria-live="polite">
+        {loading ? <span className="kpi-skeleton" aria-hidden="true" /> : value}
       </div>
+
+      {note && !loading && (
+        <div className="kpi-note" title={note}>
+          {note}
+        </div>
+      )}
     </div>
   );
 };

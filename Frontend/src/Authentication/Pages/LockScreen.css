@@ -1,0 +1,384 @@
+/* =========================
+   LOCK SCREEN — PAGE
+   Scoped to .lock-page / .lock-card so nothing else depends on shape.
+   Authentication.css is now unused after this page (Deferred D21 cleanup).
+========================= */
+
+.lock-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-image: linear-gradient(
+      rgba(243, 238, 238, 0.562),
+      rgba(240, 240, 240, 0.753)
+    ),
+    url('../../assets/cherryBackground.jpg');
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.lock-card {
+  width: 440px;
+  max-width: 100%;
+  padding: 40px 36px 30px;
+  background: var(--bg-primary);
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.lock-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.lock-logo-wrap img {
+  width: 48px;
+  height: auto;
+}
+
+/* =========================
+   AVATAR (initials, no external image)
+========================= */
+.lock-avatar {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  margin: 6px auto 12px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-mild), var(--primary-color));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-white);
+  box-shadow: var(--shadow-md);
+}
+
+.lock-avatar-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: rgba(255, 255, 255, 0.18);
+}
+
+.lock-avatar-initials {
+  position: relative;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  z-index: 1;
+}
+
+/* =========================
+   HEADER
+========================= */
+.lock-card .auth-header {
+  margin-bottom: 20px;
+}
+
+.lock-card .auth-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.lock-email {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.lock-subtitle {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* =========================
+   ALERTS
+========================= */
+.lock-card .error-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.lock-card .error-text svg { flex-shrink: 0; margin-top: 2px; }
+
+/* =========================
+   FORM
+========================= */
+.lock-card .auth-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.lock-card .form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.lock-card .form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.lock-card .form-group input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-dark);
+  font-size: 14.5px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.lock-card .form-group input:focus-visible {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(133, 1, 38, 0.12);
+}
+
+.lock-card .form-group input:disabled {
+  background: #f9fafb;
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.lock-card [aria-invalid="true"] {
+  border-color: #dc2626;
+}
+
+.lock-card [aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.14);
+}
+
+/* =========================
+   PASSWORD TOGGLE
+========================= */
+.lock-card .password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.lock-card .password-input-wrap input {
+  padding-right: 44px;
+}
+
+.lock-card .password-toggle {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.lock-card .password-toggle:hover:not(:disabled) {
+  background: var(--border-light);
+  color: var(--text-secondary);
+}
+
+.lock-card .password-toggle:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.lock-card .password-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.auth-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #b45309;
+}
+
+/* =========================
+   BUTTON
+========================= */
+.lock-card .primary-btn {
+  margin-top: 4px;
+  padding: 12px 15px;
+  background: linear-gradient(135deg, var(--primary-mild), var(--primary-mild));
+  color: var(--text-white);
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast),
+    opacity var(--transition-fast);
+  box-shadow: var(--shadow-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  width: 100%;
+}
+
+.lock-card .primary-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.lock-card .primary-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-md);
+}
+
+.lock-card .primary-btn:focus-visible {
+  outline: 2px solid var(--primary-dark);
+  outline-offset: 2px;
+}
+
+.lock-card .primary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.spin {
+  animation: lockSpin 0.9s linear infinite;
+}
+
+@keyframes lockSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* =========================
+   FOOTER
+========================= */
+.lock-card .auth-link {
+  color: var(--primary-color);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.lock-card .auth-link.inline {
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.lock-card .auth-link:hover {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
+
+.lock-card .auth-link:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.lock-card .auth-link-button {
+  background: transparent;
+  border: none;
+  padding: 6px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-color);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.lock-card .auth-link-button:hover:not(:disabled) {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
+
+.lock-card .auth-link-button:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.lock-card .auth-link-button:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.lock-card .auth-footer-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.lock-card .auth-footer {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  display: inline-flex;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+  align-items: center;
+}
+
+.lock-card .auth-footer .dot {
+  opacity: 0.5;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+@media (max-width: 460px) {
+  .lock-card {
+    padding: 32px 22px;
+  }
+  .lock-avatar { width: 72px; height: 72px; }
+  .lock-avatar-initials { font-size: 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lock-card .primary-btn,
+  .lock-card .password-toggle,
+  .lock-card input { transition: none; }
+  .lock-card .primary-btn:hover:not(:disabled) { transform: none; }
+  .spin { animation: none; }
+}

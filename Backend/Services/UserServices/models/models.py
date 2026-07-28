@@ -6,7 +6,8 @@ from sqlalchemy import (
     String,
     DateTime,
     Float,
-    JSON
+    JSON,
+    UniqueConstraint,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -83,9 +84,12 @@ class Users(Base):
 
 class Roles(Base):
     __tablename__ = "roles"
+    __table_args__ = (
+        UniqueConstraint("company_id", "role_name", name="uq_role_company_name"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    role_name = Column(String(100), nullable=False, unique=True, index=True)
+    role_name = Column(String(100), nullable=False, index=True)
     description = Column(String(255), nullable=True)
     # ================= SYSTEM =================
     status = Column(String(100), nullable=False, index=True)
@@ -98,6 +102,9 @@ class Roles(Base):
 #Department
 class Department(Base):
     __tablename__ = "department"
+    __table_args__ = (
+        UniqueConstraint("company_id", "Department_Name", name="uq_department_company_name"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     Department_Name = Column(String(100), nullable=False, index=True)
@@ -112,6 +119,9 @@ class Department(Base):
 #Designation
 class Designation(Base):
     __tablename__ = "designation"
+    __table_args__ = (
+        UniqueConstraint("company_id", "Designation_Name", name="uq_designation_company_name"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     Designation_Name = Column(String(100), nullable=False, index=True)
@@ -123,9 +133,12 @@ class Designation(Base):
     updated_by = Column(String(100), nullable=True, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 
-# Shift 
+# Shift
 class Shift(Base):
     __tablename__ = "shift"
+    __table_args__ = (
+        UniqueConstraint("company_id", "Shift_Name", name="uq_shift_company_name"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     Shift_Name = Column(String(100), nullable=False, index=True)
@@ -160,9 +173,12 @@ class RolePermissions(Base):
 
 class Menus(Base):
     __tablename__ = "menus"
+    __table_args__ = (
+        UniqueConstraint("company_id", "menu_name", name="uq_menu_company_name"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    menu_name = Column(String(100), nullable=False, unique=True, index=True)
+    menu_name = Column(String(100), nullable=False, index=True)
     menu_link = Column(String(255), nullable=False)
     menu_icon = Column(String(100), nullable=True)
     order = Column(Integer, nullable=False)
@@ -176,6 +192,9 @@ class Menus(Base):
     
 class Submenus(Base):
     __tablename__ = "submenus"
+    __table_args__ = (
+        UniqueConstraint("company_id", "menu_id", "submenu_name", name="uq_submenu_company_menu_name"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     menu_id = Column(String(100), nullable=False, index=True)

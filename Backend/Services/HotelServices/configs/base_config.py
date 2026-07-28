@@ -5,10 +5,17 @@ import datetime  as dt
 
 
 class BaseConfig(object):
-    SECRET_KEY = '691a03c2f0a7a449a00a394ca9deca08a3c4602f0995d8376bc60884c184c991'
+    _ENV = os.getenv("ASCEND_ENV", "dev").lower()
+    _IS_PROD = _ENV in ("prod", "production")
+    SECRET_KEY = os.getenv(
+        "JWT_SECRET_KEY",
+        None if _IS_PROD else "dev-only-do-not-use-in-prod",
+    )
+    if not SECRET_KEY:
+        raise RuntimeError("JWT_SECRET_KEY must be set in production")
     ALGORITHM = 'HS256'
-    ACCESS_TOKEN_EXPIRE_MINUTES = 1440
-    REFRESH_TOKEN_EXPIRE_MINUTES = 45
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    REFRESH_TOKEN_EXPIRE_MINUTES = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", "1440"))
     
 # ------- Common Using Names -------#  
 class CommonWords():

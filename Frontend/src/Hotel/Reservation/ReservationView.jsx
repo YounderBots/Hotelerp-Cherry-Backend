@@ -1,134 +1,249 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, RefreshCw, AlertCircle } from "lucide-react";
+import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
-const TABS = [
-  { key: "all", label: "All", count: 14 },
-  { key: "arrivals", label: "Arrivals", count: 0 },
-  { key: "departures", label: "Departures", count: 8 },
-  { key: "confirmed", label: "Confirmed", count: 3 },
-  { key: "cancelled", label: "Cancelled", count: 3 },
-];
+const readList = (res) =>
+  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
 
-const RESERVATIONS = [
-  {
-    id: 1,
-    name: "Anand M",
-    checkIn: "29/06/2025",
-    checkOut: "30/06/2025",
-    total: 150,
-    paid: 150,
-    balance: 0,
-  },
-  {
-    id: 2,
-    name: "Anand M",
-    checkIn: "29/06/2025",
-    checkOut: "30/06/2025",
-    total: 150,
-    paid: 0,
-    balance: 150,
-  },
-  {
-    id: 3,
-    name: "Anand M",
-    checkIn: "29/06/2025",
-    checkOut: "30/06/2025",
-    total: 950,
-    paid: null,
-    balance: null,
-  },
-  {
-    id: 4,
-    name: "Madhu M",
-    checkIn: "30/06/2025",
-    checkOut: "01/07/2025",
-    total: 950,
-    paid: 5000,
-    balance: 0,
-  },
-  {
-    id: 5,
-    name: "Sanjay S",
-    checkIn: "30/06/2025",
-    checkOut: "01/07/2025",
-    total: 1911,
-    paid: 5000,
-    balance: 0,
-  },
-  {
-    id: 6,
-    name: "Anandhi M",
-    checkIn: "30/06/2025",
-    checkOut: "01/07/2025",
-    total: 950,
-    paid: 11111,
-    balance: 0,
-  },
-];
+const errMsg = (err, fallback) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const numberFmt = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const formatAmount = (v) => (Number.isFinite(Number(v)) ? numberFmt.format(Number(v)) : "—");
+
+const formatDate = (v) => {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+};
+
+const guestName = (r) =>
+  [r?.salutation, r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "Guest";
+
+// Bucket by backend reservation_status vocabulary (Pending / Confirmed / Arrived / Departures / Cancelled).
+// Also tolerates the legacy Checked-in / Checked-out labels.
+const bucketOf = (r) => {
+  const s = String(r?.reservation_status || "").toLowerCase();
+  if (s === "arrived" || s === "checked-in") return "arrived";
+  if (s === "departures" || s === "checked-out") return "departures";
+  if (s === "confirmed") return "confirmed";
+  if (s === "cancelled" || s === "canceled") return "cancelled";
+  if (s === "pending") return "pending";
+  return "pending";
+};
+
+const BUCKET_LABEL = {
+  pending: "Pending",
+  confirmed: "Confirmed",
+  arrived: "Arrivals",
+  departures: "Departures",
+  cancelled: "Cancelled",
+};
+
+const BUCKET_CLASS = {
+  pending: "status-pending",
+  confirmed: "status-confirmed",
+  arrived: "status-checked-in",
+  departures: "status-checked-out",
+  cancelled: "status-cancelled",
+};
 
 const ReservationView = () => {
+  const navigate = useNavigate();
+  const mounted = useRef(true);
+
+  const [reservations, setReservations] = useState(null); // null = loading
+  const [error, setError] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [activeTab, setActiveTab] = useState("all");
 
+  const load = useCallback(() => {
+    setReservations(null);
+    setError(null);
+    APICall.getT("/hotel/room_reservation")
+      .then((res) => {
+        if (!mounted.current) return;
+        setReservations(Array.isArray(res?.data) ? res.data : readList(res));
+      })
+      .catch((err) => {
+        if (!mounted.current) return;
+        setReservations([]);
+        setError(errMsg(err, "Failed to load reservations."));
+      });
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    load();
+    return () => { mounted.current = false; };
+  }, [load, refreshTick]);
+
+  const counts = useMemo(() => {
+    const list = reservations || [];
+    const c = { all: list.length, pending: 0, confirmed: 0, arrived: 0, departures: 0, cancelled: 0 };
+    for (const r of list) {
+      const b = bucketOf(r);
+      c[b] = (c[b] || 0) + 1;
+    }
+    return c;
+  }, [reservations]);
+
+  const filtered = useMemo(() => {
+    const list = reservations || [];
+    if (activeTab === "all") return list;
+    return list.filter((r) => bucketOf(r) === activeTab);
+  }, [reservations, activeTab]);
+
+  const isLoading = reservations === null;
+
+  const handleBack = () => navigate("/reservation");
+  const handleRefresh = () => setRefreshTick((n) => n + 1);
+  const handleCardOpen = (r) =>
+    navigate("/ReservationView", { state: { reservationId: r.id } });
+
   return (
-    <div className="reservationview-wrapper">
-      {/* ================= FILTER TABS ================= */}
-      <div className="reservationview-tabs">
-        {TABS.map((tab) => (
+    <div className="rvv-page">
+      <div className="rvv-toolbar">
+        <button
+          type="button"
+          className="rmv-back-btn"
+          onClick={handleBack}
+          aria-label="Back to reservations"
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Back</span>
+        </button>
+        <div className="rvv-header">
+          <span className="rmv-eyebrow">Reservations</span>
+          <h1 className="rmv-title">Reservation View</h1>
+        </div>
+        <div className="rmv-toolbar-actions">
           <button
-            key={tab.key}
-            className={`reservationview-tab ${
-              activeTab === tab.key ? "active" : ""
-            }`}
-            onClick={() => setActiveTab(tab.key)}
+            type="button"
+            className="rmv-toolbar-btn"
+            onClick={handleRefresh}
+            aria-label="Refresh reservations"
+            disabled={isLoading}
           >
-            {tab.label}
-            <span>{tab.count}</span>
+            <RefreshCw size={16} aria-hidden="true" />
+            <span>Refresh</span>
           </button>
-        ))}
+        </div>
       </div>
 
-      {/* ================= CARDS GRID ================= */}
-      <div className="reservationview-grid">
-        {RESERVATIONS.map((item) => (
-          <div key={item.id} className="reservation-card">
-            {/* Header */}
-            <div className="reservation-card-header">
-              <h4>{item.name}</h4>
-            </div>
+      {error && (
+        <div className="rmv-alert" role="alert">
+          <span>{error}</span>
+          <button type="button" className="rmv-alert-action" onClick={handleRefresh}>Retry</button>
+        </div>
+      )}
 
-            {/* Dates */}
-            <div className="reservation-dates">
-              <div>
-                <p>{item.checkIn}</p>
-                <span>12:00:00 AM</span>
-                <label>Check In</label>
-              </div>
-
-              <div>
-                <p>{item.checkOut}</p>
-                <span>12:00:00 AM</span>
-                <label>Check Out</label>
-              </div>
-            </div>
-
-            {/* Amounts */}
-            <div className="reservation-amount">
-              <div>
-                <span>Total</span>
-                <b>₹ {item.total ?? "None"}</b>
-              </div>
-              <div>
-                <span>Paid</span>
-                <b>₹ {item.paid ?? "None"}</b>
-              </div>
-              <div className="balance">
-                <span>Balance</span>
-                <b>₹ {item.balance ?? "None"}</b>
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="rvw-tabs" role="tablist" aria-label="Filter reservations by status">
+        {[
+          { key: "all", label: "All" },
+          { key: "pending", label: "Pending" },
+          { key: "confirmed", label: "Confirmed" },
+          { key: "arrived", label: "Arrivals" },
+          { key: "departures", label: "Departures" },
+          { key: "cancelled", label: "Cancelled" },
+        ].map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`rvw-tab ${active ? "active" : ""}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              <span>{tab.label}</span>
+              <span className="rvw-tab-count">{counts[tab.key] ?? 0}</span>
+            </button>
+          );
+        })}
       </div>
+
+      {isLoading && (
+        <div className="rmv-loading" role="status" aria-live="polite">
+          Loading reservations…
+        </div>
+      )}
+
+      {!isLoading && (reservations || []).length === 0 && !error && (
+        <div className="rmv-empty">
+          No reservations yet.
+        </div>
+      )}
+
+      {!isLoading && filtered.length === 0 && (reservations || []).length > 0 && (
+        <div className="rmv-empty inline">
+          No reservations in this category.
+        </div>
+      )}
+
+      {!isLoading && filtered.length > 0 && (
+        <div className="rvv-grid">
+          {filtered.map((r) => {
+            const bucket = bucketOf(r);
+            return (
+              <button
+                type="button"
+                key={r.id}
+                className="rvv-card"
+                onClick={() => handleCardOpen(r)}
+                aria-label={`Open reservation ${r.room_reservation_id || r.id} for ${guestName(r)}`}
+              >
+                <div className="rvv-card-top">
+                  <div className="rvv-card-guest">
+                    <h4>{guestName(r)}</h4>
+                    <span className="rvv-card-id">#{r.room_reservation_id || r.id}</span>
+                  </div>
+                  <span className={`rvw-status-chip ${BUCKET_CLASS[bucket]}`}>
+                    {BUCKET_LABEL[bucket]}
+                  </span>
+                </div>
+
+                <div className="rvv-card-dates">
+                  <div>
+                    <p>{formatDate(r.arrival_date)}</p>
+                    <label>Check In</label>
+                  </div>
+                  <div>
+                    <p>{formatDate(r.departure_date)}</p>
+                    <label>Check Out</label>
+                  </div>
+                  <div>
+                    <p>{r.no_of_nights ?? "—"}</p>
+                    <label>Nights</label>
+                  </div>
+                </div>
+
+                <div className="rvv-card-amounts">
+                  <div>
+                    <span>Total</span>
+                    <b>{formatAmount(r.overall_amount ?? r.total_amount)}</b>
+                  </div>
+                  <div>
+                    <span>Paid</span>
+                    <b>{formatAmount(r.paid_amount)}</b>
+                  </div>
+                  <div className="rvv-balance">
+                    <span>Balance</span>
+                    <b>{formatAmount(r.balance_amount)}</b>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

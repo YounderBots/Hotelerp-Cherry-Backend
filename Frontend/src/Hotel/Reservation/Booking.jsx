@@ -1,313 +1,643 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import Modal from "../../stories/Modal";
-import { UserPlus, Eye, Pencil, Trash2, X } from "lucide-react";
-import APICall from "../../APICalls/APICalls";
-import { useEffect } from "react";
+import { Eye, Pencil, Trash2, X, AlertCircle, CheckCircle, Download } from "lucide-react";
+import APICall, { ApiError } from "../../APICalls/APICalls";
+import "./Reservation.css";
+
+const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^[+()\-\s\d]{7,20}$/;
+
+const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const parseArr = (v) => {
+  if (Array.isArray(v)) return v;
+  if (v === null || v === undefined || v === "") return [];
+  try {
+    const p = JSON.parse(v);
+    return Array.isArray(p) ? p : [];
+  } catch {
+    return [];
+  }
+};
+
+const readList = (res) =>
+  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
+
+const errMsg = (err, fallback) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const nightsBetween = (start, end) => {
+  if (!start || !end) return 0;
+  const a = new Date(start);
+  const d = new Date(end);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(d.getTime())) return 0;
+  const ms = d.getTime() - a.getTime();
+  if (ms <= 0) return 0;
+  return Math.round(ms / (1000 * 60 * 60 * 24));
+};
+
+const Toast = ({ toast, onClose }) => {
+  if (!toast) return null;
+  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
+  return (
+    <div
+      className={`reservation-toast ${toast.kind}`}
+      role={toast.kind === "success" ? "status" : "alert"}
+      aria-live={toast.kind === "success" ? "polite" : "assertive"}
+    >
+      <Icon size={18} aria-hidden="true" />
+      <span>{toast.text}</span>
+      <button
+        type="button"
+        className="reservation-toast-close"
+        onClick={onClose}
+        aria-label="Dismiss notification"
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+};
+
+const ConfirmDialog = ({
+  open,
+  title,
+  body,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  tone = "danger",
+  onConfirm,
+  onCancel,
+  loading = false,
+}) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === "Escape" && !loading) onCancel(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onCancel, loading]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="modal-container"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="booking-confirm-title"
+      onClick={(e) => { if (e.target === e.currentTarget && !loading) onCancel(); }}
+    >
+      <div className="modal-content confirm-modal">
+        <div className="modal-header">
+          <h2 className="modal-title" id="booking-confirm-title">{title}</h2>
+          <button
+            type="button"
+            className="modal-close-btn"
+            onClick={onCancel}
+            aria-label="Close confirmation"
+            disabled={loading}
+          >
+            <X size={22} />
+          </button>
+        </div>
+        <div className="modal-body"><p>{body}</p></div>
+        <div className="modal-footer">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`}
+            onClick={onConfirm}
+            disabled={loading}
+            aria-busy={loading}
+          >
+            {loading ? "Working…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const initialForm = {
+  salutation: "Mr.",
+  first_name: "",
+  last_name: "",
+  phone_number: "",
+  email: "",
+  arrival_date: "",
+  departure_date: "",
+  room_type: [], // array of room type ids
+  no_of_rooms: "",
+  no_of_adults: "",
+  no_of_children: 0,
+};
 
 const Booking = () => {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState(null); // null = loading
+  const [error, setError] = useState(null);
   const [roomTypes, setRoomTypes] = useState([]);
-
-  const initialForm = {
-    salutation: "",
-    first_name: "",
-    last_name: "",
-    phone_number: "",
-    email: "",
-    arrival_date: "",
-    departure_date: "",
-    no_of_nights: "",
-    room_type: [],
-    no_of_rooms: "",
-    no_of_adults: "",
-    no_of_children: 0,
-  };
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const [formData, setFormData] = useState(initialForm);
   const [showModal, setShowModal] = useState(false);
-  const [mode, setMode] = useState("add"); // add | edit | view
+  const [mode, setMode] = useState("add");
   const [selectedId, setSelectedId] = useState(null);
+  const [formError, setFormError] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  /* ================= HANDLERS ================= */
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const [toast, setToast] = useState(null);
+  const mounted = useRef(true);
+
+  const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const loadBookings = useCallback(async () => {
+    try {
+      const res = await APICall.getT("/hotel/room_booking");
+      if (!mounted.current) return;
+      setData(Array.isArray(res?.data) ? res.data : readList(res));
+      setError(null);
+    } catch (err) {
+      if (!mounted.current) return;
+      setData([]);
+      setError(errMsg(err, "Failed to load bookings."));
+    }
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    setData(null);
+    loadBookings();
+
+    APICall.getT("/masterdata/room_types")
+      .then((res) => {
+        if (!mounted.current) return;
+        setRoomTypes(readList(res));
+      })
+      .catch(() => {
+        if (!mounted.current) return;
+        setRoomTypes([]);
+      });
+
+    return () => { mounted.current = false; };
+  }, [loadBookings, refreshTick]);
+
+  // Escape to close the CRUD modal.
+  useEffect(() => {
+    if (!showModal) return undefined;
+    const onKey = (e) => { if (e.key === "Escape" && !saving) closeModal(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showModal, saving]);
+
+  useEffect(() => {
+    const anyOpen = showModal || Boolean(pendingDelete);
+    if (!anyOpen) return undefined;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = original; };
+  }, [showModal, pendingDelete]);
+
+  // ----------------------------------------------------------------
   const openAddModal = () => {
     setFormData(initialForm);
     setMode("add");
     setSelectedId(null);
+    setFormError(null);
     setShowModal(true);
   };
 
   const openEditModal = (row) => {
     setFormData({
-      ...row,
-      room_type: (row.room_type || []).map(Number),
+      salutation: row.salutation || "Mr.",
+      first_name: row.first_name || "",
+      last_name: row.last_name || "",
+      phone_number: row.phone_number || "",
+      email: row.email || "",
+      arrival_date: isoDay(row.arrival_date),
+      departure_date: isoDay(row.departure_date),
+      room_type: parseArr(row.room_type).map(Number).filter(Number.isFinite),
+      no_of_rooms: row.no_of_rooms ?? "",
+      no_of_adults: row.no_of_adults ?? "",
+      no_of_children: row.no_of_children ?? 0,
     });
     setSelectedId(row.id);
     setMode("edit");
+    setFormError(null);
     setShowModal(true);
   };
 
   const openViewModal = (row) => {
     setFormData({
-      ...row,
-      room_type: (row.room_type || []).map(Number),
+      salutation: row.salutation || "",
+      first_name: row.first_name || "",
+      last_name: row.last_name || "",
+      phone_number: row.phone_number || "",
+      email: row.email || "",
+      arrival_date: isoDay(row.arrival_date),
+      departure_date: isoDay(row.departure_date),
+      room_type: parseArr(row.room_type).map(Number).filter(Number.isFinite),
+      no_of_rooms: row.no_of_rooms ?? "",
+      no_of_adults: row.no_of_adults ?? "",
+      no_of_children: row.no_of_children ?? 0,
     });
     setMode("view");
+    setSelectedId(row.id);
+    setFormError(null);
     setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setSelectedId(null);
+    setFormError(null);
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((p) => ({ ...p, [name]: value }));
-  };
-  
-  const getAllBookings = async ()=> {
-    try {
-      const response = await APICall.getT("/hotel/room_booking");
-      setData(response.data);
-    }
-    catch (err) {
-      console.log("Rooms API Error:", err);
-    }
-  }
-  const getAllroom_types = async () => {
-    try {
-      const response = await APICall.getT("/masterdata/room_types");
-
-      console.log("Room Types Full Response:", response);
-
-      setRoomTypes(response?.data|| []);
-    } catch (err) {
-      console.log("Room Types API Error:", err);
-    }
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const totalNights = useMemo(
+    () => nightsBetween(formData.arrival_date, formData.departure_date),
+    [formData.arrival_date, formData.departure_date],
+  );
 
-  useEffect(() => {
-    getAllBookings();
-    getAllroom_types();
-  }, []);
-
-  const createBooking = async () => {
-    try {
-      const response = await APICall.postT("/hotel/room_booking", formData);
-      getAllBookings();
-      closeModal();
-    }
-    catch (err) {
-      console.log("Rooms API Error:", err);
-    }
-  }
-  const updateBooking = async () => {
-    try {
-      const payload = {
-        ...formData,
-        id: selectedId,
-      };
-
-      const response = await APICall.putT(
-        "/hotel/room_booking",
-        payload
-      );
-
-      console.log("Update Success:", response);
-
-      getAllBookings();
-      closeModal();
-    } catch (err) {
-      console.log("Update Booking API Error:", err);
-    }
+  const validate = () => {
+    if (!formData.first_name?.trim()) return "First name is required.";
+    if (!formData.last_name?.trim()) return "Last name is required.";
+    if (!formData.phone_number?.trim()) return "Phone number is required.";
+    if (!PHONE_RE.test(formData.phone_number.trim())) return "Enter a valid phone number.";
+    if (formData.email && !EMAIL_RE.test(formData.email.trim())) return "Enter a valid email address.";
+    if (!formData.arrival_date) return "Arrival date is required.";
+    if (!formData.departure_date) return "Departure date is required.";
+    if (isoDay(formData.arrival_date) >= isoDay(formData.departure_date)) return "Departure date must be after arrival date.";
+    if (!Array.isArray(formData.room_type) || formData.room_type.length === 0) return "Pick at least one room type.";
+    if (num(formData.no_of_rooms) < 1) return "Number of rooms must be at least 1.";
+    if (num(formData.no_of_adults) < 1) return "Number of adults must be at least 1.";
+    if (num(formData.no_of_children) < 0) return "Children count cannot be negative.";
+    return null;
   };
 
-  const deleteBooking = async () => {
-    try {
-      const response = await APICall.deleteT(`/hotel/room_booking/${selectedId}`);
-      getAllBookings();
-      closeModal();
-    }
-    catch (err) {
-      console.log("Rooms API Error:", err);
-    }
-  }
-
+  const buildPayload = (includeId = false) => {
+    const payload = {
+      salutation: formData.salutation || null,
+      first_name: formData.first_name.trim(),
+      last_name: formData.last_name.trim(),
+      phone_number: formData.phone_number.trim(),
+      email: formData.email ? formData.email.trim().toLowerCase() : null,
+      arrival_date: formData.arrival_date,
+      departure_date: formData.departure_date,
+      no_of_nights: totalNights || 1,
+      room_type: formData.room_type.map(Number).filter(Number.isFinite),
+      no_of_rooms: num(formData.no_of_rooms) || 1,
+      no_of_adults: num(formData.no_of_adults) || 1,
+      no_of_children: num(formData.no_of_children),
+    };
+    if (includeId) payload.id = selectedId;
+    return payload;
+  };
 
   const handleSave = async () => {
-    if (!formData.first_name || !formData.last_name) return;
-
-    if (mode === "edit") {
-      await updateBooking();
-    } else {
-      await createBooking();
+    const v = validate();
+    if (v) {
+      setFormError(v);
+      showToast("error", v);
+      return;
+    }
+    setFormError(null);
+    setSaving(true);
+    try {
+      if (mode === "edit") {
+        await APICall.putT("/hotel/room_booking", buildPayload(true));
+        showToast("success", "Booking updated.");
+      } else {
+        await APICall.postT("/hotel/room_booking", buildPayload(false));
+        showToast("success", "Booking created.");
+      }
+      closeModal();
+      loadBookings();
+    } catch (err) {
+      const m = errMsg(err, mode === "edit" ? "Failed to update booking." : "Failed to create booking.");
+      setFormError(m);
+      showToast("error", m);
+    } finally {
+      if (mounted.current) setSaving(false);
     }
   };
 
-  const handleDelete = (row) => {
-    if (window.confirm("Are you sure you want to delete this booking?")) {
-      setSelectedId(row.id);
-      deleteBooking();
+  const handleDeleteClick = (row) => setPendingDelete(row);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleteLoading(true);
+    try {
+      await APICall.deleteT(`/hotel/room_booking/${pendingDelete.id}`);
+      showToast("success", "Booking deleted.");
+      setPendingDelete(null);
+      loadBookings();
+    } catch (err) {
+      showToast("error", errMsg(err, "Failed to delete booking."));
+    } finally {
+      if (mounted.current) setDeleteLoading(false);
     }
+  };
+
+  const handleExportCsv = () => {
+    const list = Array.isArray(data) ? data : [];
+    if (list.length === 0) {
+      showToast("error", "No bookings to export.");
+      return;
+    }
+    const header = [
+      "Booking ID", "First Name", "Last Name", "Phone", "Email",
+      "Arrival", "Departure", "Nights", "Rooms", "Adults", "Children",
+    ];
+    const rows = list.map((r) => [
+      r.room_booking_id ?? r.id,
+      r.first_name ?? "",
+      r.last_name ?? "",
+      r.phone_number ?? "",
+      r.email ?? "",
+      r.arrival_date ?? "",
+      r.departure_date ?? "",
+      r.no_of_nights ?? "",
+      r.no_of_rooms ?? "",
+      r.no_of_adults ?? "",
+      r.no_of_children ?? "",
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => {
+        const s = String(cell ?? "");
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      }).join(","))
+      .join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bookings-${isoDay(new Date().toISOString())}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const isView = mode === "view";
-
-  /* ================= UI ================= */
+  const isLoading = data === null;
+  const tableData = Array.isArray(data) ? data : [];
+  const modalTitle = mode === "add" ? "Add Booking" : mode === "edit" ? "Edit Booking" : "View Booking";
 
   return (
     <>
-      <TableTemplate
-        title="Booking List"
-        hasActionButton
-        searchable
-        pagination
-        exportable
-        actionButton={{
-          label: "Add Booking",
-          onClick: openAddModal,
-          variant: "primary",
-        }}
-        columns={[
-          { key: "first_name", title: "First Name", align: "center" },
-          { key: "last_name", title: "Last Name", align: "center" },
-          { key: "no_of_rooms", title: "No. of Rooms", align: "center" },
-          { key: "arrival_date", title: "Arrival Date", align: "center" },
-          { key: "departure_date", title: "Departure Date", align: "center" },
-          {
-            key: "actions",
-            title: "Actions",
-            align: "center",
-            type: "custom",
-            render: (row) => (
-              <div className="table-actions">
-                <button
-                  className="table-action-btn view"
-                  title="View"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  title="Edit"
-                  onClick={() => openEditModal(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  title="Delete"
-                  onClick={() => handleDelete(row)}
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            ),
-          },
-        ]}
-        data={data}
-      />
+      {error && (
+        <div className="reservation-alert" role="alert">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="reservation-alert-action"
+            onClick={() => setRefreshTick((n) => n + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
+      {isLoading && (
+        <div className="reservation-loading" role="status" aria-live="polite">
+          Loading bookings…
+        </div>
+      )}
+
+      {!isLoading && (
+        <TableTemplate
+          title="Booking List"
+          hasActionButton
+          searchable
+          pagination
+          exportable
+          actionButton={{
+            icon: <Download size={18} />,
+            label: "Add Booking",
+            onClick: openAddModal,
+            variant: "primary",
+          }}
+          columns={[
+            { key: "room_booking_id", title: "Booking ID", align: "center" },
+            { key: "first_name", title: "First Name", align: "center" },
+            { key: "last_name", title: "Last Name", align: "center" },
+            { key: "phone_number", title: "Phone", align: "center" },
+            { key: "no_of_rooms", title: "Rooms", align: "center" },
+            { key: "arrival_date", title: "Arrival", align: "center" },
+            { key: "departure_date", title: "Departure", align: "center" },
+            {
+              key: "actions",
+              title: "Actions",
+              align: "center",
+              type: "custom",
+              render: (row) => (
+                <div className="table-actions">
+                  <button
+                    type="button"
+                    className="table-action-btn view"
+                    title="View"
+                    aria-label={`View booking ${row.room_booking_id || row.id}`}
+                    onClick={() => openViewModal(row)}
+                  >
+                    <Eye size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="table-action-btn edit"
+                    title="Edit"
+                    aria-label={`Edit booking ${row.room_booking_id || row.id}`}
+                    onClick={() => openEditModal(row)}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="table-action-btn delete"
+                    title="Delete"
+                    aria-label={`Delete booking ${row.room_booking_id || row.id}`}
+                    onClick={() => handleDeleteClick(row)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+          data={tableData}
+        />
+      )}
+
+      {!isLoading && tableData.length === 0 && !error && (
+        <div className="reservation-empty">
+          No bookings yet. Use "Add Booking" to create the first one.
+        </div>
+      )}
+
+      {/* Export bar shown alongside the table when data is present */}
+      {!isLoading && tableData.length > 0 && (
+        <div className="bkg-export-bar">
+          <button
+            type="button"
+            className="rmv-toolbar-btn"
+            onClick={handleExportCsv}
+            aria-label="Export bookings as CSV"
+          >
+            <Download size={16} aria-hidden="true" />
+            <span>Export CSV</span>
+          </button>
+        </div>
+      )}
+
+      {/* CRUD modal */}
       {showModal && (
-        <div className="modal-overlay">
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="booking-modal-title"
+          onClick={(e) => { if (e.target === e.currentTarget && !saving) closeModal(); }}
+        >
           <div className="modal-card">
-            {/* ===== HEADER ===== */}
             <div className="modal-header">
-              <h3>
-                {mode === "add"
-                  ? "Add Booking"
-                  : mode === "edit"
-                  ? "Edit Booking"
-                  : "View Booking"}
-              </h3>
-              <button onClick={closeModal}>
+              <h3 id="booking-modal-title">{modalTitle}</h3>
+              <button
+                type="button"
+                onClick={closeModal}
+                aria-label="Close booking dialog"
+                disabled={saving}
+              >
                 <X size={18} />
               </button>
             </div>
 
-            {/* ===== BODY (ALL FIELDS ALWAYS VISIBLE) ===== */}
+            {formError && (
+              <div className="reservation-alert inline" role="alert">
+                {formError}
+              </div>
+            )}
+
             <div className="modal-body grid">
               <div className="form-group">
-                <label>Salutation</label>
+                <label htmlFor="bkg-salutation">Salutation</label>
                 <select
+                  id="bkg-salutation"
                   name="salutation"
                   value={formData.salutation}
                   onChange={handleChange}
                   disabled={isView}
                 >
-                  <option value="Mr">Mr</option>
-                  <option value="Mrs">Mrs</option>
+                  {SALUTATIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
                 </select>
               </div>
 
-              {[
-                ["First Name", "first_name"],
-                ["Last Name", "last_name"],
-                ["Email", "email"],
-                ["phone_number", "phone_number"],
-              ].map(([label, name, type]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input
-                    type={type || "text"}
-                    name={name}
-                    value={formData[name]}
-                    onChange={handleChange}
-                    disabled={isView}
-                  />
-                </div>
-              ))}
               <div className="form-group">
-                <label>Room Type</label>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "6px",
-                    padding: "8px",
-                    border: "1px solid #ccc",
-                    borderRadius: "8px",
-                    minHeight: "45px",
-                    background: isView ? "#f5f5f5" : "white",
-                  }}
-                >
+                <label htmlFor="bkg-first-name">First Name *</label>
+                <input
+                  id="bkg-first-name"
+                  type="text"
+                  name="first_name"
+                  value={formData.first_name}
+                  onChange={handleChange}
+                  disabled={isView}
+                  required
+                  maxLength={100}
+                  autoComplete="given-name"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="bkg-last-name">Last Name *</label>
+                <input
+                  id="bkg-last-name"
+                  type="text"
+                  name="last_name"
+                  value={formData.last_name}
+                  onChange={handleChange}
+                  disabled={isView}
+                  required
+                  maxLength={100}
+                  autoComplete="family-name"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="bkg-email">Email</label>
+                <input
+                  id="bkg-email"
+                  type="email"
+                  inputMode="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  disabled={isView}
+                  maxLength={100}
+                  autoComplete="email"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="bkg-phone">Phone Number *</label>
+                <input
+                  id="bkg-phone"
+                  type="tel"
+                  inputMode="tel"
+                  name="phone_number"
+                  value={formData.phone_number}
+                  onChange={handleChange}
+                  disabled={isView}
+                  required
+                  maxLength={20}
+                  autoComplete="tel"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Room Types *</label>
+                <div className="bkg-chip-tray" data-view={isView ? "true" : "false"}>
                   {formData.room_type.length > 0 ? (
                     formData.room_type.map((id) => {
                       const room = roomTypes.find((r) => r.id === id);
-
                       return (
-                        <span
-                          key={id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            padding: "4px 10px",
-                            borderRadius: "20px",
-                            background: "#e0f2fe",
-                            fontSize: "13px",
-                          }}
-                        >
-                          {room?.room_type_name}
+                        <span key={id} className="bkg-chip">
+                          {room?.room_type_name || `#${id}`}
                           {!isView && (
                             <button
                               type="button"
-                              onClick={() => {
+                              className="bkg-chip-remove"
+                              aria-label={`Remove room type ${room?.room_type_name || id}`}
+                              onClick={() =>
                                 setFormData((prev) => ({
                                   ...prev,
                                   room_type: prev.room_type.filter((x) => x !== id),
-                                }));
-                              }}
-                              style={{
-                                marginLeft: "6px",
-                                border: "none",
-                                background: "transparent",
-                                cursor: "pointer",
-                                fontWeight: "bold",
-                              }}
+                                }))
+                              }
                             >
                               ×
                             </button>
@@ -316,34 +646,25 @@ const Booking = () => {
                       );
                     })
                   ) : (
-                    <span style={{ fontSize: "13px", color: "#888" }}>
-                      Select Room Types...
-                    </span>
+                    <span className="bkg-chip-placeholder">Select room types…</span>
                   )}
                 </div>
                 {!isView && (
                   <select
-                    style={{
-                      marginTop: "8px",
-                      width: "100%",
-                      padding: "10px",
-                      borderRadius: "8px",
-                    }}
+                    className="bkg-chip-picker"
+                    aria-label="Add room type"
                     onChange={(e) => {
-                      const selectedId = Number(e.target.value);
-
-                      if (!selectedId) return;
-                      if (formData.room_type.includes(selectedId)) return;
-
+                      const id = Number(e.target.value);
+                      if (!id) return;
+                      if (formData.room_type.includes(id)) return;
                       setFormData((prev) => ({
                         ...prev,
-                        room_type: [...prev.room_type, selectedId],
+                        room_type: [...prev.room_type, id],
                       }));
                       e.target.value = "";
                     }}
                   >
                     <option value="">+ Add Room Type</option>
-
                     {roomTypes.map((room) => (
                       <option key={room.id} value={room.id}>
                         {room.room_type_name}
@@ -353,42 +674,127 @@ const Booking = () => {
                 )}
               </div>
 
-              {[
-                ["Arrival Date", "arrival_date", "date"],
-                ["Departure Date", "departure_date", "date"],
-                ["No of Rooms", "no_of_rooms"],
-                ["No of Adults", "no_of_adults"],
-                ["No of Children", "no_of_children"],
-                ["No of Nights", "no_of_nights"],
-              ].map(([label, name, type]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input
-                    type={type || "text"}
-                    name={name}
-                    value={formData[name]}
-                    onChange={handleChange}
-                    disabled={isView}
-                  />
-                </div>
-              ))}
+              <div className="form-group">
+                <label htmlFor="bkg-arrival">Arrival Date *</label>
+                <input
+                  id="bkg-arrival"
+                  type="date"
+                  name="arrival_date"
+                  value={formData.arrival_date}
+                  onChange={handleChange}
+                  disabled={isView}
+                  required
+                  min={isView ? undefined : isoDay(new Date().toISOString())}
+                />
+              </div>
 
+              <div className="form-group">
+                <label htmlFor="bkg-departure">Departure Date *</label>
+                <input
+                  id="bkg-departure"
+                  type="date"
+                  name="departure_date"
+                  value={formData.departure_date}
+                  onChange={handleChange}
+                  disabled={isView}
+                  required
+                  min={formData.arrival_date || undefined}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="bkg-nights">No. of Nights</label>
+                <input
+                  id="bkg-nights"
+                  type="number"
+                  value={totalNights}
+                  readOnly
+                  aria-readonly="true"
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="bkg-no-rooms">No. of Rooms *</label>
+                <input
+                  id="bkg-no-rooms"
+                  type="number"
+                  name="no_of_rooms"
+                  value={formData.no_of_rooms}
+                  onChange={handleChange}
+                  disabled={isView}
+                  min="1"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="bkg-no-adults">No. of Adults *</label>
+                <input
+                  id="bkg-no-adults"
+                  type="number"
+                  name="no_of_adults"
+                  value={formData.no_of_adults}
+                  onChange={handleChange}
+                  disabled={isView}
+                  min="1"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="bkg-no-children">No. of Children</label>
+                <input
+                  id="bkg-no-children"
+                  type="number"
+                  name="no_of_children"
+                  value={formData.no_of_children}
+                  onChange={handleChange}
+                  disabled={isView}
+                  min="0"
+                />
+              </div>
             </div>
 
-            {/* ===== FOOTER ===== */}
             <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={closeModal}
+                disabled={saving}
+              >
                 {isView ? "Close" : "Cancel"}
               </button>
               {!isView && (
-                <button className="btn primary" onClick={handleSave}>
-                  Save
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={handleSave}
+                  disabled={saving}
+                  aria-busy={saving}
+                >
+                  {saving ? "Saving…" : "Save"}
                 </button>
               )}
             </div>
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete booking"
+        body={
+          pendingDelete
+            ? `Delete booking ${pendingDelete.room_booking_id || pendingDelete.id} for ${pendingDelete.first_name || "guest"}? This action cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+        loading={deleteLoading}
+      />
+
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </>
   );
 };

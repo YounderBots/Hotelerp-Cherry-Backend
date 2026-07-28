@@ -11,6 +11,10 @@ from resources.utils import verify_authentication
 from models import models
 from models import get_db
 from configs.base_config import CommonWords
+import logging
+
+logger = logging.getLogger("userservice.controller")
+
 
 router = APIRouter()
 
@@ -262,9 +266,10 @@ async def create_user(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -318,7 +323,6 @@ def get_all_users(
 
                     "personal_email": user.Personal_Email,
                     "company_email": user.Company_Email,
-                    "password": user.Password,
                     "mobile": user.Mobile,
                     "alternative_mobile": user.Alternative_Mobile,
                     "dob": user.D_O_B,
@@ -355,9 +359,10 @@ def get_all_users(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -467,32 +472,90 @@ def get_user_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
-# GET USER BY EMAIL (LOGIN USER)
+# VERIFY CREDENTIALS (auth-only; server-side password check)
 # =====================================================
+#
+# Preferred replacement for the legacy `GET /login_user/{email}` endpoint,
+# which returned the bcrypt password hash across the service boundary.
+# This variant accepts {email, password} and returns only the identity
+# fields the auth gateway needs. Password never leaves this service.
+@router.post("/verify_credentials", status_code=status.HTTP_200_OK)
+def verify_credentials(payload: dict, db: Session = Depends(get_db)):
+    try:
+        email = (payload.get("email") or "").strip().lower()
+        password = payload.get("password") or ""
+
+        if not email or "@" not in email or not password:
+            # Unified 401 — never disclose which field was wrong.
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+        user = (
+            db.query(models.Users)
+            .filter(
+                func.lower(models.Users.Company_Email) == email,
+                models.Users.status == CommonWords.STATUS,
+            )
+            .first()
+        )
+
+        ok = False
+        if user and user.Password:
+            try:
+                ok = bcrypt.checkpw(password.encode("utf-8"), user.Password.encode("utf-8"))
+            except (ValueError, TypeError):
+                ok = False
+
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+        return {
+            "status": "success",
+            "data": {
+                "id": user.id,
+                "user_code": user.User_Code,
+                "username": user.username,
+                "first_name": user.First_Name,
+                "last_name": user.Last_Name,
+                "company_email": user.Company_Email,
+                "role_id": user.Role_ID,
+                "company_id": user.company_id,
+                "status": user.status,
+            },
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.exception("unhandled_exception")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+# =====================================================
+# GET USER BY EMAIL (LOGIN USER) — LEGACY, HASH REDACTED
+# =====================================================
+# Kept for any legacy caller. Response no longer includes the password hash,
+# salary details, or emergency contact. New callers should use
+# POST /verify_credentials.
 @router.get("/login_user/{usermail}", status_code=status.HTTP_200_OK)
 def get_user_by_mail(
     usermail: str,
     db: Session = Depends(get_db)
 ):
     try:
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
         if not usermail or "@" not in usermail:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Valid email is required"
             )
 
-        # -------------------------------------------------
-        # FETCH USER (CASE INSENSITIVE)
-        # -------------------------------------------------
         user = (
             db.query(models.Users)
             .filter(
@@ -508,54 +571,34 @@ def get_user_by_mail(
                 detail="User not found"
             )
 
-        # -------------------------------------------------
-        # RESPONSE (FOR AUTH SERVICE)
-        # -------------------------------------------------
         return {
             "status": "success",
             "data": {
                 "id": user.id,
                 "user_code": user.User_Code,
                 "username": user.username,
-
                 "first_name": user.First_Name,
                 "last_name": user.Last_Name,
-
                 "personal_email": user.Personal_Email,
                 "company_email": user.Company_Email,
-
-                # ⚠️ REQUIRED FOR LOGIN PASSWORD VERIFICATION
-                "password": user.Password,
-
                 "mobile": user.Mobile,
                 "alternative_mobile": user.Alternative_Mobile,
-
                 "dob": user.D_O_B,
                 "gender": user.Gender,
                 "marital_status": user.Marital_Status,
-
                 "address": user.Address,
                 "city": user.City,
                 "state": user.State,
                 "postal_code": user.Postal_Code,
                 "country": user.Country,
-
                 "department_id": user.Department_ID,
                 "designation_id": user.Designation_ID,
                 "role_id": user.Role_ID,
                 "shift_id": user.Shift_ID,
-
                 "date_of_joining": user.Date_Of_Joining,
                 "experience": user.Experience,
-                "salary_details": user.Salary_Details,
                 "register_code": user.Register_Code,
-
-                "emergency_name": user.Emergency_Name,
-                "emergency_contact": user.Emergency_Contact,
-                "emergency_relationship": user.Emergency_Relationship,
-
                 "acknowledgment_of_hotel_policies": user.Acknowledgment_of_Hotel_Policies,
-
                 "status": user.status,
                 "company_id": user.company_id,
                 "created_at": user.created_at,
@@ -567,9 +610,10 @@ def get_user_by_mail(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -761,9 +805,10 @@ async def update_user(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -835,9 +880,10 @@ def delete_user(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -956,10 +1002,11 @@ async def create_role(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1025,10 +1072,11 @@ def get_all_roles(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1101,10 +1149,11 @@ def get_role_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1239,10 +1288,11 @@ async def update_role(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1315,10 +1365,11 @@ def delete_role(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1448,10 +1499,11 @@ async def create_role_permission(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1608,10 +1660,11 @@ def get_all_role_permissions(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1746,10 +1799,11 @@ def get_permissions_by_role(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 
@@ -1877,10 +1931,11 @@ async def update_role_permission(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1953,10 +2008,11 @@ def delete_role_permission(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2081,10 +2137,11 @@ async def create_menu(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2152,10 +2209,11 @@ def get_all_menus(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2230,10 +2288,11 @@ def get_menu_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2380,10 +2439,11 @@ async def update_menu(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2456,10 +2516,11 @@ def delete_menu(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2610,10 +2671,11 @@ async def create_submenu(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Catch DB integrity or unexpected issues
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 @router.get("/submenus/by-menu/{menu_id}", status_code=status.HTTP_200_OK)
@@ -2693,9 +2755,10 @@ def get_all_submenus(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2769,9 +2832,10 @@ def get_submenu_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2942,9 +3006,10 @@ async def update_submenu(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3016,9 +3081,10 @@ def delete_submenu(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3086,11 +3152,11 @@ def get_departments(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only q
-        print(e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3188,10 +3254,11 @@ async def create_department(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # Unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Internal server error",
         )
     
 # =====================================================
@@ -3263,10 +3330,11 @@ def get_department_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
     
 # =====================================================
@@ -3390,10 +3458,11 @@ async def update_department(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Internal server error",
         )
 
 # =====================================================
@@ -3466,10 +3535,11 @@ def delete_department(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3537,10 +3607,11 @@ def get_designations(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3638,10 +3709,11 @@ async def create_designation(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # Unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Internal server error",
         )
     
 # =====================================================
@@ -3713,10 +3785,11 @@ def get_designation_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
     
 # =====================================================
@@ -3840,10 +3913,11 @@ async def update_designation(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Internal server error",
         )
 
 # =====================================================
@@ -3916,10 +3990,11 @@ def delete_designation(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4040,9 +4115,10 @@ async def create_shift(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4103,9 +4179,10 @@ def get_all_shifts(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4179,9 +4256,10 @@ def get_shift_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4324,9 +4402,10 @@ async def update_shift(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4398,7 +4477,8 @@ def delete_shift(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )

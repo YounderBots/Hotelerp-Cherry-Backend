@@ -1,240 +1,330 @@
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Download, Eye, Pencil, Printer, Trash2, Check, X, LogOut } from "lucide-react";
-import APICall from "../../APICalls/APICalls";
+import {
+  Download,
+  Eye,
+  Pencil,
+  Printer,
+  Trash2,
+  Check,
+  X,
+  LogOut,
+  AlertCircle,
+  CheckCircle,
+} from "lucide-react";
+import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
+// Backend reservation_status vocabulary — must match reservationController.py
+// (checkin flips Confirmed → Arrived; checkout flips Arrived → Departures).
+const RESERVATION_STATUSES = ["Pending", "Confirmed", "Arrived", "Departures", "Cancelled"];
+const CAN_CHECKIN = new Set(["Confirmed"]);
+const CAN_CHECKOUT = new Set(["Arrived"]);
+const LOCKED_STATUSES = new Set(["Arrived", "Departures", "Cancelled"]);
+
+const RESERVATION_TYPES = ["RESERVATION", "GROUP_RESERVATION", "CHECKIN"];
+const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
+
+const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
+
+const escapeHtml = (v) =>
+  String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const parseArr = (v) => {
+  if (Array.isArray(v)) return v;
+  if (v === null || v === undefined || v === "") return [];
+  try {
+    const parsed = JSON.parse(v);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const readList = (res) => {
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res?.data?.data)) return res.data.data;
+  return [];
+};
+
+const errMsg = (err, fallback) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const getStatusBadgeClass = (status) => {
+  const s = String(status || "").toLowerCase();
+  if (s === "pending") return "status-pending";
+  if (s === "confirmed") return "status-confirmed";
+  if (s === "arrived" || s === "checked-in") return "status-checked-in";
+  if (s === "departures" || s === "checked-out") return "status-checked-out";
+  if (s === "cancelled" || s === "canceled") return "status-cancelled";
+  return "status-pending";
+};
+
+// -------------------------------------------------------------------------
+// Toast
+// -------------------------------------------------------------------------
+const Toast = ({ toast, onClose }) => {
+  if (!toast) return null;
+  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
+  return (
+    <div
+      className={`reservation-toast ${toast.kind}`}
+      role={toast.kind === "success" ? "status" : "alert"}
+      aria-live={toast.kind === "success" ? "polite" : "assertive"}
+    >
+      <Icon size={18} aria-hidden="true" />
+      <span>{toast.text}</span>
+      <button
+        type="button"
+        className="reservation-toast-close"
+        onClick={onClose}
+        aria-label="Dismiss notification"
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+};
+
+// -------------------------------------------------------------------------
+// Confirm dialog
+// -------------------------------------------------------------------------
+const ConfirmDialog = ({
+  open,
+  title,
+  body,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  tone = "danger",
+  onConfirm,
+  onCancel,
+  loading = false,
+}) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === "Escape" && !loading) onCancel(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onCancel, loading]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="modal-container"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-modal-title"
+      onClick={(e) => { if (e.target === e.currentTarget && !loading) onCancel(); }}
+    >
+      <div className="modal-content confirm-modal">
+        <div className="modal-header">
+          <h2 className="modal-title" id="confirm-modal-title">{title}</h2>
+          <button
+            type="button"
+            className="modal-close-btn"
+            onClick={onCancel}
+            aria-label="Close confirmation"
+            disabled={loading}
+          >
+            <X size={22} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <p>{body}</p>
+        </div>
+        <div className="modal-footer">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`}
+            onClick={onConfirm}
+            disabled={loading}
+            aria-busy={loading}
+          >
+            {loading ? "Working…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// -------------------------------------------------------------------------
+// Reservation page
+// -------------------------------------------------------------------------
 const Reservation = () => {
-  const [data, setData] = useState([]);
+  const [data, setData] = useState(null); // null = loading
+  const [error, setError] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+
   const [selectedReservation, setSelectedReservation] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState(null);
+
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [rowLocks, setRowLocks] = useState({});
+  const [toast, setToast] = useState(null);
+
   const [identityTypes, setIdentityTypes] = useState([]);
   const [roomTypes, setRoomTypes] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [taxTypes, setTaxTypes] = useState([]);
+  const [discountTypes, setDiscountTypes] = useState([]);
 
-  const getStatusBadgeClass = (status) => {
-    const statusLower = status?.toLowerCase();
-    switch (statusLower) {
-      case 'pending':
-        return "status-pending";
-      case 'confirmed':
-        return "status-confirmed";
-      case 'checked-in':
-        return "status-checked-in";
-      case 'checked-out':
-        return "status-checked-out";
-      case 'cancelled':
-        return "status-cancelled";
-      default:
-        return "status-pending";
-    }
-  };
+  const mounted = useRef(true);
 
-  const getAllroomReservation = async () => {
+  const showToast = useCallback((kind, text) => {
+    setToast({ kind, text, at: Date.now() });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const loadReservations = useCallback(async () => {
     try {
-      const AllroomReservation = await APICall.getT("/hotel/room_reservation");
-      setData(AllroomReservation.data);
-    } catch (error) {
-      console.error("Error fetching reservations:", error);
+      const res = await APICall.getT("/hotel/room_reservation");
+      if (!mounted.current) return;
+      setData(Array.isArray(res?.data) ? res.data : []);
+      setError(null);
+    } catch (err) {
+      if (!mounted.current) return;
+      setData([]);
+      setError(errMsg(err, "Failed to load reservations."));
     }
-  };
+  }, []);
 
-  const UpdateRoomReservation = async (id, formData) => {
-    try {
-      const formDataToSend = new FormData();
+  useEffect(() => {
+    mounted.current = true;
+    setData(null);
+    loadReservations();
 
-      Object.keys(formData).forEach(key => {
-        if (key === 'room_type_ids' || key === 'room_ids' || key === 'rate_type') {
-          formDataToSend.append(key, Array.isArray(formData[key]) ? JSON.stringify(formData[key]) : formData[key]);
-        } else {
-          formDataToSend.append(key, formData[key]);
-        }
-      });
+    Promise.allSettled([
+      APICall.getT("/masterdata/identity_proof"),
+      APICall.getT("/masterdata/room_types"),
+      APICall.getT("/masterdata/room"),
+      APICall.getT("/masterdata/payment_methods"),
+      APICall.getT("/masterdata/tax"),
+      APICall.getT("/masterdata/discount"),
+    ]).then((results) => {
+      if (!mounted.current) return;
+      const [rIdent, rRT, rRoom, rPM, rTax, rDisc] = results;
+      setIdentityTypes(rIdent.status === "fulfilled" ? readList(rIdent.value) : []);
+      setRoomTypes(rRT.status === "fulfilled" ? readList(rRT.value) : []);
+      setRooms(rRoom.status === "fulfilled" ? readList(rRoom.value) : []);
+      setPaymentMethods(rPM.status === "fulfilled" ? readList(rPM.value) : []);
+      setTaxTypes(rTax.status === "fulfilled" ? readList(rTax.value) : []);
+      setDiscountTypes(rDisc.status === "fulfilled" ? readList(rDisc.value) : []);
+    });
 
-      formDataToSend.append('id', id);
+    return () => {
+      mounted.current = false;
+    };
+  }, [loadReservations, refreshTick]);
 
-      await APICall.putT(`/hotel/room_reservation`, formDataToSend);
-      getAllroomReservation();
-      setIsEditModalOpen(false);
-    } catch (error) {
-      console.error("Error updating reservation:", error);
-    }
-  };
+  // Escape closes the topmost modal.
+  useEffect(() => {
+    if (!isViewModalOpen && !isEditModalOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (isEditModalOpen && !editSaving) setIsEditModalOpen(false);
+      else if (isViewModalOpen) setIsViewModalOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isViewModalOpen, isEditModalOpen, editSaving]);
 
-  const DeleteRoomReservation = async (id) => {
-    try {
-      await APICall.deleteT(`/hotel/room_reservation/${id}`);
-      getAllroomReservation();
-    } catch (error) {
-      console.error("Error deleting reservation:", error);
-    }
-  };
+  // Lock body scroll while a modal is open.
+  useEffect(() => {
+    const anyOpen = isViewModalOpen || isEditModalOpen || Boolean(pendingDelete);
+    if (!anyOpen) return undefined;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = original; };
+  }, [isViewModalOpen, isEditModalOpen, pendingDelete]);
 
-  const getAllIdentityTypes = async () => {
-    const res = await APICall.getT("/masterdata/identity_proof");
-    setIdentityTypes(res.data?.data || res.data || []);
-  };
-
-  const getroomTypes = async () => {
-    const res = await APICall.getT("/masterdata/room_types");
-    setRoomTypes(res.data?.data || res.data || []);
-
-  }
-
-  const getAllrooms = async () => {
-    const res = await APICall.getT("/masterdata/room")
-    setRooms(res.data?.data || res.data || [])
-  }
-
-
+  // -----------------------------------------------------------------------
+  // Row action handlers
+  // -----------------------------------------------------------------------
   const handleApprove = async (id) => {
+    setRowLocks((m) => ({ ...m, [id]: "checkin" }));
     try {
-      const res = await APICall.postT(`/hotel/room_reservation_checkin/${id}`);
-
-      alert("Guest checked in successfully ");
-
-      getAllroomReservation();
-    } catch (error) {
-      console.error(error);
-      alert(
-        error.response?.data?.detail || "Check-in failed"
-      );
+      await APICall.postT(`/hotel/room_reservation_checkin/${id}`);
+      showToast("success", "Guest checked in.");
+      loadReservations();
+    } catch (err) {
+      showToast("error", errMsg(err, "Check-in failed."));
+    } finally {
+      if (!mounted.current) return;
+      setRowLocks((m) => {
+        const next = { ...m };
+        delete next[id];
+        return next;
+      });
     }
   };
 
-  const handleCheckout = async (token) => {
+  const handleCheckout = async (id, token) => {
+    if (!token) {
+      showToast("error", "This reservation has no checkout token — please refresh.");
+      return;
+    }
+    setRowLocks((m) => ({ ...m, [id]: "checkout" }));
     try {
-      const res = await APICall.postT(`/hotel/room_reservation_checkout/${token}`);
-
-      alert("Checked out successfully");
-
-      getAllroomReservation();
-    } catch (error) {
-      console.error(error);
-      alert(
-        error.response?.data?.detail || "Check-out failed"
-      );
+      await APICall.postT(`/hotel/room_reservation_checkout/${encodeURIComponent(token)}`);
+      showToast("success", "Guest checked out.");
+      loadReservations();
+    } catch (err) {
+      showToast("error", errMsg(err, "Check-out failed."));
+    } finally {
+      if (!mounted.current) return;
+      setRowLocks((m) => {
+        const next = { ...m };
+        delete next[id];
+        return next;
+      });
     }
   };
 
+  const handleDelete = (row) => setPendingDelete(row);
 
-
-  const handlePrint = (row) => {
-    const printWindow = window.open('', '_blank');
-    const printContent = `
-      <html>
-        <head>
-          <title>Reservation Receipt - ${row.room_reservation_id}</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 40px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .section { margin-bottom: 20px; }
-            .section h3 { border-bottom: 2px solid #000; padding-bottom: 5px; }
-            .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-            .detail-item { margin-bottom: 8px; }
-            .label { font-weight: bold; color: #555; }
-            .total { font-size: 18px; font-weight: bold; margin-top: 20px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Reservation Receipt</h1>
-            <p>Reservation ID: ${row.room_reservation_id}</p>
-            <p>Date: ${new Date().toLocaleDateString()}</p>
-          </div>
-          
-          <div class="section">
-            <h3>Guest Information</h3>
-            <div class="grid">
-              <div class="detail-item">
-                <span class="label">Name:</span> ${row.first_name} ${row.last_name}
-              </div>
-              <div class="detail-item">
-                <span class="label">Phone:</span> ${row.phone_number}
-              </div>
-              <div class="detail-item">
-                <span class="label">Email:</span> ${row.email || "N/A"}
-              </div>
-              <div class="detail-item">
-                <span class="label">Reservation Type:</span> ${row.reservation_type}
-              </div>
-              <div class="detail-item">
-                <span class="label">Status:</span> ${row.reservation_status}
-              </div>
-              <div class="detail-item">
-                <span class="label">Confirmation Code:</span> ${row.confirmation_code || "N/A"}
-              </div>
-            </div>
-          </div>
-          
-          <div class="section">
-            <h3>Stay Information</h3>
-            <div class="grid">
-              <div class="detail-item">
-                <span class="label">Arrival Date:</span> ${row.arrival_date}
-              </div>
-              <div class="detail-item">
-                <span class="label">Departure Date:</span> ${row.departure_date}
-              </div>
-              <div class="detail-item">
-                <span class="label">Nights:</span> ${row.no_of_nights}
-              </div>
-              <div class="detail-item">
-                <span class="label">Rooms:</span> ${row.no_of_rooms}
-              </div>
-              <div class="detail-item">
-                <span class="label">Adults:</span> ${row.no_of_adults}
-              </div>
-              <div class="detail-item">
-                <span class="label">Children:</span> ${row.no_of_children}
-              </div>
-              <div class="detail-item">
-                <span class="label">Extra Beds:</span> ${row.extra_bed_count || 0}
-              </div>
-              <div class="detail-item">
-                <span class="label">Payment Method:</span> ${row.payment_method_id}
-              </div>
-            </div>
-          </div>
-          
-          <div class="section">
-            <h3>Payment Summary</h3>
-            <div class="detail-item">
-              <span class="label">Total Amount:</span> $${row.total_amount}
-            </div>
-            <div class="detail-item">
-              <span class="label">Tax Amount:</span> $${row.tax_amount || 0}
-            </div>
-            <div class="detail-item">
-              <span class="label">Discount Amount:</span> $${row.discount_amount || 0}
-            </div>
-            <div class="detail-item">
-              <span class="label">Extra Charges:</span> $${row.extra_charges || 0}
-            </div>
-            <div class="detail-item">
-              <span class="label">Paid Amount:</span> $${row.paid_amount || 0}
-            </div>
-            <div class="detail-item">
-              <span class="label">Balance Amount:</span> $${row.balance_amount || 0}
-            </div>
-            <div class="detail-item total">
-              <span class="label">Overall Amount:</span> $${row.overall_amount}
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.print();
-  };
-
-  const handleDelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this reservation?")) {
-      DeleteRoomReservation(id);
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleteLoading(true);
+    try {
+      await APICall.deleteT(`/hotel/room_reservation/${pendingDelete.id}`);
+      showToast("success", "Reservation deleted.");
+      setPendingDelete(null);
+      loadReservations();
+    } catch (err) {
+      showToast("error", errMsg(err, "Failed to delete reservation."));
+    } finally {
+      if (mounted.current) setDeleteLoading(false);
     }
   };
 
@@ -245,210 +335,410 @@ const Reservation = () => {
 
   const handleEdit = (row) => {
     setSelectedReservation(row);
-    const roomTypeIds = Array.isArray(row.room_type_ids) ? row.room_type_ids : JSON.parse(row.room_type_ids || '[]');
-    const roomIds = Array.isArray(row.room_ids) ? row.room_ids : JSON.parse(row.room_ids || '[]');
-    const rateType = Array.isArray(row.rate_type) ? row.rate_type : JSON.parse(row.rate_type || '[]');
-
     setEditFormData({
       ...row,
-      room_type_ids: roomTypeIds,
-      room_ids: roomIds,
-      rate_type: rateType
+      room_type_ids: parseArr(row.room_type_ids),
+      room_ids: parseArr(row.room_ids),
+      rate_type: parseArr(row.rate_type),
+      arrival_date: isoDay(row.arrival_date),
+      departure_date: isoDay(row.departure_date),
     });
+    setEditError(null);
     setIsEditModalOpen(true);
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setEditFormData({
-      ...editFormData,
-      [name]: value
+    setEditFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSingleIdChange = (name) => (e) => {
+    const v = e.target.value;
+    setEditFormData((prev) => ({ ...prev, [name]: v ? [Number(v)] : [] }));
+  };
+
+  const handleRateTypeChange = (index, value) => {
+    setEditFormData((prev) => {
+      const next = [...(prev.rate_type || [])];
+      next[index] = value;
+      return { ...prev, rate_type: next };
     });
   };
 
-  const handleEditSubmit = (e) => {
-    e.preventDefault();
-
-    const updatedData = {
-      ...editFormData,
-      arrival_date: editFormData.arrival_date,
-      departure_date: editFormData.departure_date,
-      no_of_nights: editFormData.no_of_nights,
-      room_type_ids: JSON.stringify(editFormData.room_type_ids || []),
-      room_ids: JSON.stringify(editFormData.room_ids || []),
-      rate_type: JSON.stringify(editFormData.rate_type || []),
-      total_amount: parseFloat(editFormData.total_amount) || 0,
-      overall_amount: parseFloat(editFormData.overall_amount) || 0,
-      paid_amount: parseFloat(editFormData.paid_amount) || 0,
-      balance_amount: parseFloat(editFormData.balance_amount) || 0,
-      extra_amount: parseFloat(editFormData.extra_amount) || 0,
-      tax_amount: parseFloat(editFormData.tax_amount) || 0,
-      discount_amount: parseFloat(editFormData.discount_amount) || 0,
-      extra_charges: parseFloat(editFormData.extra_charges) || 0,
-      extra_bed_cost: parseFloat(editFormData.extra_bed_cost) || 0,
-      extra_bed_count: parseInt(editFormData.extra_bed_count) || 0,
-      no_of_rooms: parseInt(editFormData.no_of_rooms) || 1,
-      no_of_adults: parseInt(editFormData.no_of_adults) || 1,
-      no_of_children: parseInt(editFormData.no_of_children) || 0,
-      payment_method_id: parseInt(editFormData.payment_method_id) || 1,
-      booking_status_id: parseInt(editFormData.booking_status_id) || 1,
-      identity_type_id: parseInt(editFormData.identity_type_id) || 1
-    };
-
-    UpdateRoomReservation(selectedReservation.id, updatedData);
+  const validateEdit = (form) => {
+    if (!form.first_name?.trim()) return "First name is required.";
+    if (!form.phone_number?.trim()) return "Phone number is required.";
+    if (!form.arrival_date || !form.departure_date) return "Arrival and departure dates are required.";
+    if (isoDay(form.arrival_date) > isoDay(form.departure_date)) return "Departure date must be on or after arrival.";
+    if (num(form.no_of_nights) < 1) return "Number of nights must be at least 1.";
+    if (num(form.no_of_adults) < 1) return "At least one adult is required.";
+    if (num(form.no_of_rooms) < 1) return "At least one room is required.";
+    if (!form.identity_type_id) return "Identity type is required.";
+    if (!form.reservation_status || !RESERVATION_STATUSES.includes(form.reservation_status)) {
+      return `Reservation status must be one of: ${RESERVATION_STATUSES.join(", ")}`;
+    }
+    if (num(form.overall_amount) < 0) return "Overall amount cannot be negative.";
+    if (num(form.total_amount) < 0) return "Total amount cannot be negative.";
+    if (num(form.tax_percentage) < 0 || num(form.tax_percentage) > 100) return "Tax percentage must be between 0 and 100.";
+    if (num(form.discount_percentage) < 0 || num(form.discount_percentage) > 100) return "Discount percentage must be between 0 and 100.";
+    return null;
   };
 
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    const v = validateEdit(editFormData);
+    if (v) {
+      setEditError(v);
+      return;
+    }
+    if (!selectedReservation?.id) {
+      setEditError("Missing reservation id.");
+      return;
+    }
 
-  useEffect(() => {
-    getAllroomReservation();
-    getAllIdentityTypes();
-    getroomTypes();
-    getAllrooms();
-  }, []);
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const fd = new FormData();
+      const put = (k, val) => {
+        if (val === undefined || val === null) return;
+        fd.append(k, typeof val === "object" ? JSON.stringify(val) : String(val));
+      };
+      Object.keys(editFormData).forEach((k) => put(k, editFormData[k]));
 
+      const numeric = {
+        no_of_nights: num(editFormData.no_of_nights),
+        no_of_rooms: num(editFormData.no_of_rooms) || 1,
+        no_of_adults: num(editFormData.no_of_adults) || 1,
+        no_of_children: num(editFormData.no_of_children),
+        extra_bed_count: num(editFormData.extra_bed_count),
+        extra_bed_cost: num(editFormData.extra_bed_cost),
+        total_amount: num(editFormData.total_amount),
+        tax_percentage: num(editFormData.tax_percentage),
+        tax_amount: num(editFormData.tax_amount),
+        discount_percentage: num(editFormData.discount_percentage),
+        discount_amount: num(editFormData.discount_amount),
+        extra_charges: num(editFormData.extra_charges),
+        overall_amount: num(editFormData.overall_amount),
+        paid_amount: num(editFormData.paid_amount),
+        balance_amount: num(editFormData.balance_amount),
+        extra_amount: num(editFormData.extra_amount),
+        payment_method_id: num(editFormData.payment_method_id) || 1,
+        booking_status_id: num(editFormData.booking_status_id) || 1,
+        identity_type_id: num(editFormData.identity_type_id) || 1,
+      };
+      Object.entries(numeric).forEach(([k, val]) => fd.set(k, String(val)));
+      fd.set("room_type_ids", JSON.stringify(editFormData.room_type_ids || []));
+      fd.set("room_ids", JSON.stringify(editFormData.room_ids || []));
+      fd.set("rate_type", JSON.stringify((editFormData.rate_type || []).filter(Boolean)));
+      fd.set("id", String(selectedReservation.id));
+
+      await APICall.putT("/hotel/room_reservation", fd);
+      showToast("success", "Reservation updated.");
+      setIsEditModalOpen(false);
+      loadReservations();
+    } catch (err) {
+      setEditError(errMsg(err, "Failed to update reservation."));
+    } finally {
+      if (mounted.current) setEditSaving(false);
+    }
+  };
+
+  // -----------------------------------------------------------------------
+  // Print — HTML-escapes every user-controlled field.
+  // -----------------------------------------------------------------------
+  const handlePrint = (row) => {
+    const printWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      showToast("error", "The print window was blocked. Please allow pop-ups for this site.");
+      return;
+    }
+    const content = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Reservation Receipt ${escapeHtml(row.room_reservation_id)}</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 40px; color: #111827; }
+  .header { text-align: center; margin-bottom: 30px; }
+  .section { margin-bottom: 20px; }
+  .section h3 { border-bottom: 2px solid #000; padding-bottom: 5px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .detail-item { margin-bottom: 8px; }
+  .label { font-weight: bold; color: #555; }
+  .total { font-size: 18px; font-weight: bold; margin-top: 20px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Reservation Receipt</h1>
+    <p>Reservation ID: ${escapeHtml(row.room_reservation_id)}</p>
+    <p>Date: ${escapeHtml(new Date().toLocaleDateString())}</p>
+  </div>
+  <div class="section">
+    <h3>Guest Information</h3>
+    <div class="grid">
+      <div class="detail-item"><span class="label">Name:</span> ${escapeHtml(`${row.first_name || ""} ${row.last_name || ""}`.trim() || "—")}</div>
+      <div class="detail-item"><span class="label">Phone:</span> ${escapeHtml(row.phone_number || "—")}</div>
+      <div class="detail-item"><span class="label">Email:</span> ${escapeHtml(row.email || "N/A")}</div>
+      <div class="detail-item"><span class="label">Reservation Type:</span> ${escapeHtml(row.reservation_type || "")}</div>
+      <div class="detail-item"><span class="label">Status:</span> ${escapeHtml(row.reservation_status || "")}</div>
+      <div class="detail-item"><span class="label">Confirmation Code:</span> ${escapeHtml(row.confirmation_code || "N/A")}</div>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Stay Information</h3>
+    <div class="grid">
+      <div class="detail-item"><span class="label">Arrival Date:</span> ${escapeHtml(row.arrival_date || "")}</div>
+      <div class="detail-item"><span class="label">Departure Date:</span> ${escapeHtml(row.departure_date || "")}</div>
+      <div class="detail-item"><span class="label">Nights:</span> ${escapeHtml(row.no_of_nights ?? "")}</div>
+      <div class="detail-item"><span class="label">Rooms:</span> ${escapeHtml(row.no_of_rooms ?? "")}</div>
+      <div class="detail-item"><span class="label">Adults:</span> ${escapeHtml(row.no_of_adults ?? "")}</div>
+      <div class="detail-item"><span class="label">Children:</span> ${escapeHtml(row.no_of_children ?? 0)}</div>
+      <div class="detail-item"><span class="label">Extra Beds:</span> ${escapeHtml(row.extra_bed_count ?? 0)}</div>
+      <div class="detail-item"><span class="label">Payment Method:</span> ${escapeHtml(row.payment_method_id ?? "")}</div>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Payment Summary</h3>
+    <div class="detail-item"><span class="label">Total Amount:</span> ${escapeHtml(row.total_amount ?? 0)}</div>
+    <div class="detail-item"><span class="label">Tax Amount:</span> ${escapeHtml(row.tax_amount ?? 0)}</div>
+    <div class="detail-item"><span class="label">Discount Amount:</span> ${escapeHtml(row.discount_amount ?? 0)}</div>
+    <div class="detail-item"><span class="label">Extra Charges:</span> ${escapeHtml(row.extra_charges ?? 0)}</div>
+    <div class="detail-item"><span class="label">Paid Amount:</span> ${escapeHtml(row.paid_amount ?? 0)}</div>
+    <div class="detail-item"><span class="label">Balance Amount:</span> ${escapeHtml(row.balance_amount ?? 0)}</div>
+    <div class="detail-item total"><span class="label">Overall Amount:</span> ${escapeHtml(row.overall_amount ?? 0)}</div>
+  </div>
+  <script>window.addEventListener("load", function(){ window.print(); });<\/script>
+</body>
+</html>`;
+    printWindow.document.write(content);
+    printWindow.document.close();
+  };
+
+  // -----------------------------------------------------------------------
+  // CSV export
+  // -----------------------------------------------------------------------
+  const handleExportCsv = () => {
+    const list = Array.isArray(data) ? data : [];
+    if (list.length === 0) {
+      showToast("error", "No reservations to export.");
+      return;
+    }
+    const header = [
+      "Reservation ID", "Type", "Name", "Phone", "Email",
+      "Arrival", "Departure", "Nights", "Rooms", "Adults", "Children",
+      "Status", "Overall Amount", "Paid", "Balance",
+    ];
+    const rows = list.map((r) => [
+      r.room_reservation_id ?? "",
+      r.reservation_type ?? "",
+      `${r.first_name || ""} ${r.last_name || ""}`.trim(),
+      r.phone_number ?? "",
+      r.email ?? "",
+      r.arrival_date ?? "",
+      r.departure_date ?? "",
+      r.no_of_nights ?? "",
+      r.no_of_rooms ?? "",
+      r.no_of_adults ?? "",
+      r.no_of_children ?? "",
+      r.reservation_status ?? "",
+      r.overall_amount ?? "",
+      r.paid_amount ?? "",
+      r.balance_amount ?? "",
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => {
+        const s = String(cell ?? "");
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      }).join(","))
+      .join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reservations-${isoDay(new Date().toISOString())}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const isLoading = data === null;
+  const tableData = Array.isArray(data) ? data : [];
+
+  // -----------------------------------------------------------------------
+  // Render
+  // -----------------------------------------------------------------------
   return (
     <>
-      <TableTemplate
-        title="Reservation List"
-        variant="striped"
-        pagination
-        pageSize={5}
-        searchable
-        exportable
-        hasActionButton
-        actionButton={{
-          icon: <Download size={18} />,
-          label: "Export Reservations",
-          onClick: () => { },
-          size: "small",
-          variant: "outline",
-        }}
-        columns={[
-          {
-            key: "room_reservation_id",
-            title: "Reservation ID",
-            align: "center",
-            width: "160px",
-          },
-          {
-            key: "reservation_type",
-            title: "Reservation Type",
-            align: "center"
-          },
-          {
-            key: "first_name",
-            title: "Name",
-            align: "center",
-            render: (row) => `${row.first_name} ${row.last_name || ''}`
-          },
-          {
-            key: "phone_number",
-            title: "Phone",
-            align: "center"
-          },
-          {
-            key: "arrival_date",
-            title: "Arrival Date",
-            align: "center",
-          },
-          {
-            key: "departure_date",
-            title: "Departure Date",
-            align: "center",
-          },
-          {
-            key: "reservation_status",
-            title: "Reservation Status",
-            align: "center",
-            type: "badge",
-          },
-          {
-            key: "actions",
-            title: "Actions",
-            align: "center",
-            type: "custom",
-            render: (row) => (
-              <div className="table-actions">
-                <button
-                  className="table-action-btn print"
-                  title="Print"
-                  onClick={() => handlePrint(row)}
-                >
-                  <Printer size={16} />
-                </button>
+      {error && (
+        <div className="reservation-alert" role="alert">
+          <span>{error}</span>
+          <button
+            type="button"
+            className="reservation-alert-action"
+            onClick={() => setRefreshTick((n) => n + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
-                {row.reservation_status === 'Confirmed' && (
-                  <button
-                    className="table-action-btn approve"
-                    title="Approve"
-                    onClick={() => handleApprove(row.id)}
-                  >
-                    <Check size={16} />
-                  </button>
-                )}
+      {isLoading && (
+        <div className="reservation-loading" role="status" aria-live="polite">
+          Loading reservations…
+        </div>
+      )}
 
-                {row.reservation_status === 'Arrived' && (
-                  <button
-                    className="table-action-btn checkout"
-                    title="Check Out"
-                    onClick={() => handleCheckout(row.token)}
-                  >
-                    <LogOut size={16} />
-                  </button>
-                )}
+      {!isLoading && (
+        <TableTemplate
+          title="Reservation List"
+          variant="striped"
+          pagination
+          pageSize={5}
+          searchable
+          exportable
+          hasActionButton
+          actionButton={{
+            icon: <Download size={18} />,
+            label: "Export CSV",
+            onClick: handleExportCsv,
+            size: "small",
+            variant: "outline",
+          }}
+          columns={[
+            { key: "room_reservation_id", title: "Reservation ID", align: "center", width: "160px" },
+            { key: "reservation_type", title: "Reservation Type", align: "center" },
+            {
+              key: "first_name",
+              title: "Name",
+              align: "center",
+              render: (row) => `${row.first_name || ""} ${row.last_name || ""}`.trim() || "—",
+            },
+            { key: "phone_number", title: "Phone", align: "center" },
+            { key: "arrival_date", title: "Arrival Date", align: "center" },
+            { key: "departure_date", title: "Departure Date", align: "center" },
+            { key: "reservation_status", title: "Reservation Status", align: "center", type: "badge" },
+            {
+              key: "actions",
+              title: "Actions",
+              align: "center",
+              type: "custom",
+              render: (row) => {
+                const lock = rowLocks[row.id];
+                const status = row.reservation_status;
+                const isLocked = LOCKED_STATUSES.has(status);
+                return (
+                  <div className="table-actions">
+                    <button
+                      type="button"
+                      className="table-action-btn print"
+                      title="Print receipt"
+                      aria-label={`Print reservation ${row.room_reservation_id}`}
+                      onClick={() => handlePrint(row)}
+                    >
+                      <Printer size={16} />
+                    </button>
 
-                <button
-                  className="table-action-btn view"
-                  title="View"
-                  onClick={() => handleView(row)}
-                >
-                  <Eye size={16} />
-                </button>
+                    {CAN_CHECKIN.has(status) && (
+                      <button
+                        type="button"
+                        className="table-action-btn approve"
+                        title="Check in"
+                        aria-label={`Check in ${row.first_name || "guest"}`}
+                        onClick={() => handleApprove(row.id)}
+                        disabled={lock === "checkin"}
+                        aria-busy={lock === "checkin"}
+                      >
+                        <Check size={16} />
+                      </button>
+                    )}
 
+                    {CAN_CHECKOUT.has(status) && (
+                      <button
+                        type="button"
+                        className="table-action-btn checkout"
+                        title="Check out"
+                        aria-label={`Check out ${row.first_name || "guest"}`}
+                        onClick={() => handleCheckout(row.id, row.token)}
+                        disabled={lock === "checkout"}
+                        aria-busy={lock === "checkout"}
+                      >
+                        <LogOut size={16} />
+                      </button>
+                    )}
 
-                {!['Arrived', 'Departures', 'Cancelled'].includes(row.reservation_status) && (
-                  <button
-                    className="table-action-btn edit"
-                    title="Edit"
-                    onClick={() => handleEdit(row)}
-                  >
-                    <Pencil size={16} />
-                  </button>
-                )}
-                {!['Arrived', 'Departures', 'Cancelled'].includes(row.reservation_status) && (
-                  <button
-                    className="table-action-btn delete"
-                    title="Delete"
-                    onClick={() => handleDelete(row.id)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </div>
+                    <button
+                      type="button"
+                      className="table-action-btn view"
+                      title="View details"
+                      aria-label={`View reservation ${row.room_reservation_id}`}
+                      onClick={() => handleView(row)}
+                    >
+                      <Eye size={16} />
+                    </button>
 
-            ),
-          },
-        ]}
-        data={data}
-      />
+                    {!isLocked && (
+                      <button
+                        type="button"
+                        className="table-action-btn edit"
+                        title="Edit"
+                        aria-label={`Edit reservation ${row.room_reservation_id}`}
+                        onClick={() => handleEdit(row)}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
 
-      {/* View Modal */}
+                    {!isLocked && (
+                      <button
+                        type="button"
+                        className="table-action-btn delete"
+                        title="Delete"
+                        aria-label={`Delete reservation ${row.room_reservation_id}`}
+                        onClick={() => handleDelete(row)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
+                  </div>
+                );
+              },
+            },
+          ]}
+          data={tableData}
+        />
+      )}
+
+      {!isLoading && tableData.length === 0 && !error && (
+        <div className="reservation-empty">
+          No reservations yet. Use “Add New Reservation” to create the first one.
+        </div>
+      )}
+
+      {/* -------------------------------------------------------------- */}
+      {/* View Modal                                                     */}
+      {/* -------------------------------------------------------------- */}
       {isViewModalOpen && selectedReservation && (
-        <div className="modal-container" onClick={(e) => {
-          if (e.target === e.currentTarget) setIsViewModalOpen(false);
-        }}>
+        <div
+          className="modal-container"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="view-modal-title"
+          onClick={(e) => { if (e.target === e.currentTarget) setIsViewModalOpen(false); }}
+        >
           <div className="modal-content view-modal">
             <div className="modal-header">
-              <h2 className="modal-title">
+              <h2 className="modal-title" id="view-modal-title">
                 Reservation Details
-                <span className="reservation-id">
-                  #{selectedReservation.room_reservation_id}
-                </span>
+                <span className="reservation-id">#{selectedReservation.room_reservation_id}</span>
               </h2>
               <button
+                type="button"
                 className="modal-close-btn"
                 onClick={() => setIsViewModalOpen(false)}
-                aria-label="Close modal"
+                aria-label="Close reservation details"
               >
                 <X size={24} />
               </button>
@@ -456,7 +746,6 @@ const Reservation = () => {
 
             <div className="modal-body">
               <div className="view-modal-grid">
-                {/* Guest Information */}
                 <div className="view-section">
                   <h3 className="section-title">Guest Information</h3>
                   <div className="field-pair">
@@ -466,13 +755,13 @@ const Reservation = () => {
                     </div>
                     <div className="field-group">
                       <span className="field-label">First Name</span>
-                      <span className="field-value">{selectedReservation.first_name}</span>
+                      <span className="field-value">{selectedReservation.first_name || "—"}</span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Last Name</span>
-                      <span className="field-value">{selectedReservation.last_name}</span>
+                      <span className="field-value">{selectedReservation.last_name || "—"}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Email</span>
@@ -482,108 +771,95 @@ const Reservation = () => {
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Phone Number</span>
-                      <span className="field-value phone-value">{selectedReservation.phone_number}</span>
+                      <span className="field-value phone-value">{selectedReservation.phone_number || "—"}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Reservation Status</span>
                       <span className={`field-value status-badge ${getStatusBadgeClass(selectedReservation.reservation_status)}`}>
-                        {selectedReservation.reservation_status}
+                        {selectedReservation.reservation_status || "—"}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Stay Information */}
                 <div className="view-section">
                   <h3 className="section-title">Stay Information</h3>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Arrival Date</span>
-                      <span className="field-value">{selectedReservation.arrival_date}</span>
+                      <span className="field-value">{selectedReservation.arrival_date || "—"}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Departure Date</span>
-                      <span className="field-value">{selectedReservation.departure_date}</span>
+                      <span className="field-value">{selectedReservation.departure_date || "—"}</span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">No. of Nights</span>
-                      <span className="field-value">{selectedReservation.no_of_nights}</span>
+                      <span className="field-value">{selectedReservation.no_of_nights ?? "—"}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">No. of Rooms</span>
-                      <span className="field-value">{selectedReservation.no_of_rooms}</span>
+                      <span className="field-value">{selectedReservation.no_of_rooms ?? "—"}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Room Details */}
                 <div className="view-section">
                   <h3 className="section-title">Room Details</h3>
                   <div className="field-pair">
-
                     <div className="field-group">
                       <span className="field-label">Room Type</span>
                       <span className="field-value json-value">
-                        {selectedReservation?.room_type_ids?.length > 0
-                          ? selectedReservation.room_type_ids
-                            .map(id => roomTypes.find(rt => rt.id === id)?.room_type_name)
-                            .filter(Boolean)
-                            .join(", ")
-                          : "N/A"}
+                        {parseArr(selectedReservation.room_type_ids)
+                          .map((id) => roomTypes.find((rt) => rt.id === id)?.room_type_name)
+                          .filter(Boolean)
+                          .join(", ") || "N/A"}
                       </span>
                     </div>
-
-
                     <div className="field-group">
                       <span className="field-label">Room Number</span>
                       <span className="field-value json-value">
-                        {selectedReservation?.room_ids?.length > 0
-                          ? selectedReservation.room_ids
-                            .map(id => rooms.find(rt => rt.id === id)?.room_no)
-                            .filter(Boolean)
-                            .join(", ")
-                          : "N/A"}
+                        {parseArr(selectedReservation.room_ids)
+                          .map((id) => rooms.find((r) => r.id === id)?.room_no)
+                          .filter(Boolean)
+                          .join(", ") || "N/A"}
                       </span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Rate Types</span>
                       <span className="field-value json-value">
-                        {Array.isArray(selectedReservation.rate_type)
-                          ? selectedReservation.rate_type.join(", ")
-                          : selectedReservation.rate_type}
+                        {parseArr(selectedReservation.rate_type).join(", ") || "N/A"}
                       </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Occupancy */}
                 <div className="view-section">
                   <h3 className="section-title">Occupancy</h3>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">No. of Adults</span>
-                      <span className="field-value">{selectedReservation.no_of_adults}</span>
+                      <span className="field-value">{selectedReservation.no_of_adults ?? "—"}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">No. of Children</span>
-                      <span className="field-value">{selectedReservation.no_of_children || 0}</span>
+                      <span className="field-value">{selectedReservation.no_of_children ?? 0}</span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Extra Bed Count</span>
-                      <span className="field-value">{selectedReservation.extra_bed_count || 0}</span>
+                      <span className="field-value">{selectedReservation.extra_bed_count ?? 0}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Extra Bed Cost</span>
-                      <span className="field-value">${selectedReservation.extra_bed_cost || 0}</span>
+                      <span className="field-value">{selectedReservation.extra_bed_cost ?? 0}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Complementary */}
                 <div className="view-section">
                   <h3 className="section-title">Complementary</h3>
                   <div className="field-pair">
@@ -598,97 +874,107 @@ const Reservation = () => {
                   </div>
                 </div>
 
-                {/* Payment Details */}
                 <div className="view-section">
                   <h3 className="section-title">Payment Details</h3>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Total Amount</span>
-                      <span className="field-value amount">${selectedReservation.total_amount || 0}</span>
+                      <span className="field-value amount">{selectedReservation.total_amount ?? 0}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Tax Percentage</span>
-                      <span className="field-value">{selectedReservation.tax_percentage || 0}%</span>
+                      <span className="field-value">{selectedReservation.tax_percentage ?? 0}%</span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Tax Amount</span>
-                      <span className="field-value amount">${selectedReservation.tax_amount || 0}</span>
+                      <span className="field-value amount">{selectedReservation.tax_amount ?? 0}</span>
                     </div>
                     <div className="field-group">
-                      <span className="field-label">Tax Type ID</span>
-                      <span className="field-value">{selectedReservation.tax_type_id || "N/A"}</span>
+                      <span className="field-label">Tax Type</span>
+                      <span className="field-value">
+                        {taxTypes.find((t) => t.id === selectedReservation.tax_type_id)?.tax_name || "N/A"}
+                      </span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Discount Percentage</span>
-                      <span className="field-value">{selectedReservation.discount_percentage || 0}%</span>
+                      <span className="field-value">{selectedReservation.discount_percentage ?? 0}%</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Discount Amount</span>
-                      <span className="field-value amount discount">-${selectedReservation.discount_amount || 0}</span>
+                      <span className="field-value amount discount">-{selectedReservation.discount_amount ?? 0}</span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
-                      <span className="field-label">Discount Type ID</span>
-                      <span className="field-value">{selectedReservation.discount_type_id || "N/A"}</span>
+                      <span className="field-label">Discount Type</span>
+                      <span className="field-value">
+                        {discountTypes.find((d) => d.id === selectedReservation.discount_type_id)?.discount_name
+                          || discountTypes.find((d) => d.id === selectedReservation.discount_type_id)?.name
+                          || "N/A"}
+                      </span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Extra Charges</span>
-                      <span className="field-value amount">${selectedReservation.extra_charges || 0}</span>
+                      <span className="field-value amount">{selectedReservation.extra_charges ?? 0}</span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Room Amount</span>
-                      <span className="field-value amount">${selectedReservation.room_amount || 0}</span>
+                      <span className="field-value amount">{selectedReservation.room_amount ?? 0}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Overall Amount</span>
-                      <span className="field-value amount total">${selectedReservation.overall_amount || 0}</span>
+                      <span className="field-value amount total">{selectedReservation.overall_amount ?? 0}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Payment Status */}
                 <div className="view-section">
                   <h3 className="section-title">Payment Status</h3>
                   <div className="field-pair">
                     <div className="field-group">
-                      <span className="field-label">Payment Method ID</span>
-                      <span className="field-value">{selectedReservation.payment_method_id}</span>
+                      <span className="field-label">Payment Method</span>
+                      <span className="field-value">
+                        {paymentMethods.find((p) => p.id === selectedReservation.payment_method_id)?.payment_method
+                          || selectedReservation.payment_method_id
+                          || "N/A"}
+                      </span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Paying Amount</span>
-                      <span className="field-value amount">${selectedReservation.paying_amount || 0}</span>
+                      <span className="field-value amount">{selectedReservation.paying_amount ?? 0}</span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Paid Amount</span>
-                      <span className="field-value amount paid">${selectedReservation.paid_amount || 0}</span>
+                      <span className="field-value amount paid">{selectedReservation.paid_amount ?? 0}</span>
                     </div>
                     <div className="field-group">
                       <span className="field-label">Balance Amount</span>
-                      <span className="field-value amount balance">${selectedReservation.balance_amount || 0}</span>
+                      <span className="field-value amount balance">{selectedReservation.balance_amount ?? 0}</span>
                     </div>
                   </div>
                   <div className="field-pair">
                     <div className="field-group">
                       <span className="field-label">Extra Amount</span>
-                      <span className="field-value amount">${selectedReservation.extra_amount || 0}</span>
+                      <span className="field-value amount">{selectedReservation.extra_amount ?? 0}</span>
                     </div>
                     <div className="field-group">
-                      <span className="field-label">Identity Type ID</span>
-                      <span className="field-value">{selectedReservation.identity_type_id}</span>
+                      <span className="field-label">Identity Type</span>
+                      <span className="field-value">
+                        {identityTypes.find((i) => i.id === selectedReservation.identity_type_id)?.proof_name
+                          || "N/A"}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Additional Information */}
                 <div className="view-section">
                   <h3 className="section-title">Additional Information</h3>
                   <div className="field-pair">
@@ -718,6 +1004,7 @@ const Reservation = () => {
             <div className="modal-footer">
               <div className="footer-actions">
                 <button
+                  type="button"
                   className="btn btn-icon"
                   onClick={() => handlePrint(selectedReservation)}
                   title="Print receipt"
@@ -727,20 +1014,24 @@ const Reservation = () => {
                 </button>
                 <div className="action-buttons">
                   <button
+                    type="button"
                     className="btn btn-secondary"
                     onClick={() => setIsViewModalOpen(false)}
                   >
                     Close
                   </button>
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => {
-                      setIsViewModalOpen(false);
-                      handleEdit(selectedReservation);
-                    }}
-                  >
-                    Edit Reservation
-                  </button>
+                  {!LOCKED_STATUSES.has(selectedReservation.reservation_status) && (
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={() => {
+                        setIsViewModalOpen(false);
+                        handleEdit(selectedReservation);
+                      }}
+                    >
+                      Edit Reservation
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -748,94 +1039,128 @@ const Reservation = () => {
         </div>
       )}
 
+      {/* -------------------------------------------------------------- */}
+      {/* Edit Modal                                                     */}
+      {/* -------------------------------------------------------------- */}
       {isEditModalOpen && selectedReservation && (
-
-        <div className="modal-container" onClick={(e) => {
-          if (e.target === e.currentTarget) setIsEditModalOpen(false);
-        }}>
+        <div
+          className="modal-container"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-modal-title"
+          onClick={(e) => { if (e.target === e.currentTarget && !editSaving) setIsEditModalOpen(false); }}
+        >
           <div className="modal-content edit-modal">
             <div className="modal-header">
-              <h2 className="modal-title">Edit Reservation</h2>
+              <h2 className="modal-title" id="edit-modal-title">Edit Reservation</h2>
               <button
+                type="button"
                 className="modal-close-btn"
                 onClick={() => setIsEditModalOpen(false)}
+                aria-label="Close edit reservation"
+                disabled={editSaving}
               >
                 <X size={24} />
               </button>
             </div>
-            <form onSubmit={handleEditSubmit} className="edit-modal-form">
+
+            <form onSubmit={handleEditSubmit} className="edit-modal-form" noValidate>
+              {editError && (
+                <div className="reservation-alert inline" role="alert">
+                  {editError}
+                </div>
+              )}
+
               <div className="modal-body edit-modal-body">
                 <div className="modal-body-content">
+                  {/* Guest Information */}
                   <div className="modal-section">
                     <h3 className="section-title">Guest Information</h3>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Salutation</label>
+                        <label className="form-label" htmlFor="edit-salutation">Salutation</label>
                         <select
+                          id="edit-salutation"
                           name="salutation"
                           value={editFormData.salutation || ""}
                           onChange={handleInputChange}
                           className="form-select"
                         >
                           <option value="">Select</option>
-                          <option value="Mr.">Mr.</option>
-                          <option value="Mrs.">Mrs.</option>
-                          <option value="Ms.">Ms.</option>
-                          <option value="Dr.">Dr.</option>
+                          {SALUTATIONS.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">First Name *</label>
+                        <label className="form-label" htmlFor="edit-first-name">First Name *</label>
                         <input
+                          id="edit-first-name"
                           type="text"
                           name="first_name"
                           value={editFormData.first_name || ""}
                           onChange={handleInputChange}
                           required
+                          maxLength={100}
+                          autoComplete="given-name"
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Last Name</label>
+                        <label className="form-label" htmlFor="edit-last-name">Last Name</label>
                         <input
+                          id="edit-last-name"
                           type="text"
                           name="last_name"
                           value={editFormData.last_name || ""}
                           onChange={handleInputChange}
+                          maxLength={100}
+                          autoComplete="family-name"
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Phone Number *</label>
+                        <label className="form-label" htmlFor="edit-phone">Phone Number *</label>
                         <input
-                          type="text"
+                          id="edit-phone"
+                          type="tel"
                           name="phone_number"
+                          inputMode="tel"
                           value={editFormData.phone_number || ""}
                           onChange={handleInputChange}
                           required
+                          maxLength={20}
+                          autoComplete="tel"
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Email</label>
+                        <label className="form-label" htmlFor="edit-email">Email</label>
                         <input
+                          id="edit-email"
                           type="email"
                           name="email"
+                          inputMode="email"
                           value={editFormData.email || ""}
                           onChange={handleInputChange}
+                          maxLength={100}
+                          autoComplete="email"
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label>Identity Type <span className="required">*</span></label>
+                        <label className="form-label" htmlFor="edit-identity-type">
+                          Identity Type <span className="required">*</span>
+                        </label>
                         <select
+                          id="edit-identity-type"
                           style={{ height: "40px" }}
                           value={editFormData.identity_type_id || ""}
                           onChange={handleInputChange}
                           name="identity_type_id"
                           required
                         >
-                          <option value="">- select -</option>
+                          <option value="">— select —</option>
                           {identityTypes.map((identity) => (
                             <option key={identity.id} value={identity.id}>
                               {identity.proof_name}
@@ -846,12 +1171,14 @@ const Reservation = () => {
                     </div>
                   </div>
 
+                  {/* Stay Information */}
                   <div className="modal-section">
                     <h3 className="section-title">Stay Information</h3>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Arrival Date *</label>
+                        <label className="form-label" htmlFor="edit-arrival">Arrival Date *</label>
                         <input
+                          id="edit-arrival"
                           type="date"
                           name="arrival_date"
                           value={editFormData.arrival_date || ""}
@@ -861,22 +1188,25 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Departure Date *</label>
+                        <label className="form-label" htmlFor="edit-departure">Departure Date *</label>
                         <input
+                          id="edit-departure"
                           type="date"
                           name="departure_date"
                           value={editFormData.departure_date || ""}
                           onChange={handleInputChange}
                           required
+                          min={editFormData.arrival_date || undefined}
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Number of Nights *</label>
+                        <label className="form-label" htmlFor="edit-nights">Number of Nights *</label>
                         <input
+                          id="edit-nights"
                           type="number"
                           name="no_of_nights"
-                          value={editFormData.no_of_nights || ""}
+                          value={editFormData.no_of_nights ?? ""}
                           onChange={handleInputChange}
                           required
                           min="1"
@@ -886,19 +1216,23 @@ const Reservation = () => {
                     </div>
                   </div>
 
+                  {/* Room Information */}
                   <div className="modal-section">
                     <h3 className="section-title">Room Information</h3>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label>Room Type <span className="required">*</span></label>
+                        <label className="form-label" htmlFor="edit-room-type">
+                          Room Type <span className="required">*</span>
+                        </label>
                         <select
+                          id="edit-room-type"
                           style={{ height: "40px" }}
-                          value={editFormData.room_type_ids || ""}
-                          onChange={handleInputChange}
+                          value={(editFormData.room_type_ids && editFormData.room_type_ids[0]) || ""}
+                          onChange={handleSingleIdChange("room_type_ids")}
                           name="room_type_ids"
                           required
                         >
-                          <option value="">- select -</option>
+                          <option value="">— select —</option>
                           {roomTypes.map((roomType) => (
                             <option key={roomType.id} value={roomType.id}>
                               {roomType.room_type_name}
@@ -907,36 +1241,45 @@ const Reservation = () => {
                         </select>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Room Number</label>
-                        <input className="form-input" type="text" readOnly
-                          name="room_ids"
-                          value={editFormData?.room_ids?.length > 0
-                            ? editFormData.room_ids
-                              .map(id => rooms.find(rt => rt.id === id)?.room_no)
-                              .filter(Boolean)
-                              .join(", ")
-                            : "N/A"}>
-                        </input>
-                      </div>
-
-
-                      <div className="form-group">
-                        <label className="form-label">Rate Type*</label>
+                        <label className="form-label" htmlFor="edit-room-number">Room Number</label>
                         <input
+                          id="edit-room-number"
+                          className="form-input"
                           type="text"
-                          name="rate_type"
-                          value={JSON.stringify(editFormData.rate_type || [])}
-                          onChange={handleInputChange}
-                          required
-                          className="form-input json-input"
+                          readOnly
+                          aria-readonly="true"
+                          title="Room assignment is managed under Booking / Room View"
+                          name="room_ids_display"
+                          value={
+                            (editFormData?.room_ids?.length > 0
+                              ? editFormData.room_ids
+                                  .map((id) => rooms.find((rt) => rt.id === id)?.room_no)
+                                  .filter(Boolean)
+                                  .join(", ")
+                              : "—")
+                          }
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Number of Rooms *</label>
+                        <label className="form-label" htmlFor="edit-rate-type">Rate Type</label>
                         <input
+                          id="edit-rate-type"
+                          type="text"
+                          name="rate_type_input"
+                          value={(editFormData.rate_type && editFormData.rate_type[0]) || ""}
+                          onChange={(e) => handleRateTypeChange(0, e.target.value)}
+                          placeholder="e.g. STANDARD"
+                          maxLength={50}
+                          className="form-input"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="edit-no-rooms">Number of Rooms *</label>
+                        <input
+                          id="edit-no-rooms"
                           type="number"
                           name="no_of_rooms"
-                          value={editFormData.no_of_rooms || ""}
+                          value={editFormData.no_of_rooms ?? ""}
                           onChange={handleInputChange}
                           required
                           min="1"
@@ -944,11 +1287,12 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Adults *</label>
+                        <label className="form-label" htmlFor="edit-adults">Adults *</label>
                         <input
+                          id="edit-adults"
                           type="number"
                           name="no_of_adults"
-                          value={editFormData.no_of_adults || ""}
+                          value={editFormData.no_of_adults ?? ""}
                           onChange={handleInputChange}
                           required
                           min="1"
@@ -956,33 +1300,36 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Children</label>
+                        <label className="form-label" htmlFor="edit-children">Children</label>
                         <input
+                          id="edit-children"
                           type="number"
                           name="no_of_children"
-                          value={editFormData.no_of_children || ""}
+                          value={editFormData.no_of_children ?? ""}
                           onChange={handleInputChange}
                           min="0"
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Extra Bed Count</label>
+                        <label className="form-label" htmlFor="edit-extra-bed-count">Extra Bed Count</label>
                         <input
+                          id="edit-extra-bed-count"
                           type="number"
                           name="extra_bed_count"
-                          value={editFormData.extra_bed_count || 0}
+                          value={editFormData.extra_bed_count ?? 0}
                           onChange={handleInputChange}
                           min="0"
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Extra Bed Cost</label>
+                        <label className="form-label" htmlFor="edit-extra-bed-cost">Extra Bed Cost</label>
                         <input
+                          id="edit-extra-bed-cost"
                           type="number"
                           name="extra_bed_cost"
-                          value={editFormData.extra_bed_cost || 0}
+                          value={editFormData.extra_bed_cost ?? 0}
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
@@ -992,95 +1339,110 @@ const Reservation = () => {
                     </div>
                   </div>
 
+                  {/* Reservation Details */}
                   <div className="modal-section">
                     <h3 className="section-title">Reservation Details</h3>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Payment Method ID *</label>
-                        <input
-                          type="number"
+                        <label className="form-label" htmlFor="edit-payment-method">Payment Method *</label>
+                        <select
+                          id="edit-payment-method"
                           name="payment_method_id"
-                          value={editFormData.payment_method_id || 1}
+                          value={editFormData.payment_method_id || ""}
                           onChange={handleInputChange}
                           required
-                          min="1"
-                          className="form-input"
-                        />
+                          className="form-select"
+                        >
+                          <option value="">— select —</option>
+                          {paymentMethods.map((pm) => (
+                            <option key={pm.id} value={pm.id}>{pm.payment_method}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Booking Status ID *</label>
+                        <label className="form-label" htmlFor="edit-booking-status">Booking Status *</label>
                         <input
+                          id="edit-booking-status"
                           type="number"
                           name="booking_status_id"
-                          value={editFormData.booking_status_id || 1}
+                          value={editFormData.booking_status_id ?? 1}
                           onChange={handleInputChange}
                           required
                           min="1"
                           className="form-input"
+                          title="Booking status ID — dropdown pending master-data endpoint"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Reservation Type *</label>
+                        <label className="form-label" htmlFor="edit-reservation-type">Reservation Type *</label>
                         <select
+                          id="edit-reservation-type"
                           name="reservation_type"
                           value={editFormData.reservation_type || ""}
                           onChange={handleInputChange}
                           required
                           className="form-select"
                         >
-                          <option value="RESERVATION">RESERVATION</option>
-                          <option value="GROUP_RESERVATION">GROUP_RESERVATION</option>
-                          <option value="CHECKIN">CHECKIN</option>
+                          <option value="">— select —</option>
+                          {RESERVATION_TYPES.map((rt) => (
+                            <option key={rt} value={rt}>{rt}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Reservation Status *</label>
+                        <label className="form-label" htmlFor="edit-reservation-status">Reservation Status *</label>
                         <select
+                          id="edit-reservation-status"
                           name="reservation_status"
                           value={editFormData.reservation_status || ""}
                           onChange={handleInputChange}
                           required
                           className="form-select"
                         >
-                          <option value="Pending">Pending</option>
-                          <option value="Confirmed">Confirmed</option>
-                          <option value="Checked-in">Checked-in</option>
-                          <option value="Checked-out">Checked-out</option>
-                          <option value="Cancelled">Cancelled</option>
+                          <option value="">— select —</option>
+                          {RESERVATION_STATUSES.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Room Complementary</label>
+                        <label className="form-label" htmlFor="edit-room-comp">Room Complementary</label>
                         <input
+                          id="edit-room-comp"
                           type="text"
                           name="room_complementary"
                           value={editFormData.room_complementary || ""}
                           onChange={handleInputChange}
+                          maxLength={200}
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Common Complementary</label>
+                        <label className="form-label" htmlFor="edit-common-comp">Common Complementary</label>
                         <input
+                          id="edit-common-comp"
                           type="text"
                           name="common_complementary"
                           value={editFormData.common_complementary || ""}
                           onChange={handleInputChange}
+                          maxLength={200}
                           className="form-input"
                         />
                       </div>
                     </div>
                   </div>
 
+                  {/* Payment Information */}
                   <div className="modal-section">
                     <h3 className="section-title">Payment Information</h3>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Total Amount *</label>
+                        <label className="form-label" htmlFor="edit-total-amount">Total Amount *</label>
                         <input
+                          id="edit-total-amount"
                           type="number"
                           name="total_amount"
-                          value={editFormData.total_amount || ""}
+                          value={editFormData.total_amount ?? ""}
                           onChange={handleInputChange}
                           required
                           min="0"
@@ -1089,23 +1451,43 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Tax Percentage</label>
+                        <label className="form-label" htmlFor="edit-tax-type">Tax Type</label>
+                        <select
+                          id="edit-tax-type"
+                          name="tax_type_id"
+                          value={editFormData.tax_type_id || ""}
+                          onChange={handleInputChange}
+                          className="form-select"
+                        >
+                          <option value="">— select —</option>
+                          {taxTypes.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.tax_name} ({t.tax_percentage}%)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="edit-tax-percentage">Tax Percentage</label>
                         <input
+                          id="edit-tax-percentage"
                           type="number"
                           name="tax_percentage"
-                          value={editFormData.tax_percentage || 0}
+                          value={editFormData.tax_percentage ?? 0}
                           onChange={handleInputChange}
                           min="0"
+                          max="100"
                           step="0.01"
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Tax Amount</label>
+                        <label className="form-label" htmlFor="edit-tax-amount">Tax Amount</label>
                         <input
+                          id="edit-tax-amount"
                           type="number"
                           name="tax_amount"
-                          value={editFormData.tax_amount || 0}
+                          value={editFormData.tax_amount ?? 0}
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
@@ -1113,23 +1495,43 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Discount Percentage</label>
+                        <label className="form-label" htmlFor="edit-discount-type">Discount Type</label>
+                        <select
+                          id="edit-discount-type"
+                          name="discount_type_id"
+                          value={editFormData.discount_type_id || ""}
+                          onChange={handleInputChange}
+                          className="form-select"
+                        >
+                          <option value="">— select —</option>
+                          {discountTypes.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.discount_name || d.name || `#${d.id}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label" htmlFor="edit-discount-percentage">Discount Percentage</label>
                         <input
+                          id="edit-discount-percentage"
                           type="number"
                           name="discount_percentage"
-                          value={editFormData.discount_percentage || 0}
+                          value={editFormData.discount_percentage ?? 0}
                           onChange={handleInputChange}
                           min="0"
+                          max="100"
                           step="0.01"
                           className="form-input"
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Discount Amount</label>
+                        <label className="form-label" htmlFor="edit-discount-amount">Discount Amount</label>
                         <input
+                          id="edit-discount-amount"
                           type="number"
                           name="discount_amount"
-                          value={editFormData.discount_amount || 0}
+                          value={editFormData.discount_amount ?? 0}
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
@@ -1137,11 +1539,12 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Extra Charges</label>
+                        <label className="form-label" htmlFor="edit-extra-charges">Extra Charges</label>
                         <input
+                          id="edit-extra-charges"
                           type="number"
                           name="extra_charges"
-                          value={editFormData.extra_charges || 0}
+                          value={editFormData.extra_charges ?? 0}
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
@@ -1149,11 +1552,12 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Overall Amount *</label>
+                        <label className="form-label" htmlFor="edit-overall">Overall Amount *</label>
                         <input
+                          id="edit-overall"
                           type="number"
                           name="overall_amount"
-                          value={editFormData.overall_amount || ""}
+                          value={editFormData.overall_amount ?? ""}
                           onChange={handleInputChange}
                           required
                           min="0"
@@ -1162,11 +1566,12 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Paid Amount</label>
+                        <label className="form-label" htmlFor="edit-paid">Paid Amount</label>
                         <input
+                          id="edit-paid"
                           type="number"
                           name="paid_amount"
-                          value={editFormData.paid_amount || 0}
+                          value={editFormData.paid_amount ?? 0}
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
@@ -1174,11 +1579,12 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Balance Amount</label>
+                        <label className="form-label" htmlFor="edit-balance">Balance Amount</label>
                         <input
+                          id="edit-balance"
                           type="number"
                           name="balance_amount"
-                          value={editFormData.balance_amount || 0}
+                          value={editFormData.balance_amount ?? 0}
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
@@ -1186,11 +1592,12 @@ const Reservation = () => {
                         />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Extra Amount</label>
+                        <label className="form-label" htmlFor="edit-extra-amount">Extra Amount</label>
                         <input
+                          id="edit-extra-amount"
                           type="number"
                           name="extra_amount"
-                          value={editFormData.extra_amount || 0}
+                          value={editFormData.extra_amount ?? 0}
                           onChange={handleInputChange}
                           min="0"
                           step="0.01"
@@ -1199,28 +1606,48 @@ const Reservation = () => {
                       </div>
                     </div>
                   </div>
-
                 </div>
               </div>
+
               <div className="modal-footer">
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => setIsEditModalOpen(false)}
+                  disabled={editSaving}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="btn"
+                  className="btn btn-primary"
+                  disabled={editSaving}
+                  aria-busy={editSaving}
                 >
-                  Update Reservation
+                  {editSaving ? "Updating…" : "Update Reservation"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        open={Boolean(pendingDelete)}
+        title="Delete reservation"
+        body={
+          pendingDelete
+            ? `Delete reservation ${pendingDelete.room_reservation_id} for ${pendingDelete.first_name || "guest"}? This action cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+        loading={deleteLoading}
+      />
+
+      <Toast toast={toast} onClose={() => setToast(null)} />
     </>
   );
 };

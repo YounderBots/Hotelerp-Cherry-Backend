@@ -1,41 +1,63 @@
-from enum import verify
-from fastapi import APIRouter, Depends, Form, status, HTTPException, Request, UploadFile, File
-from fastapi.responses import JSONResponse
-from httpx import request
-from sqlalchemy.orm import Session 
-from sqlalchemy import func, Integer
-from typing import Optional
+import logging
 import os
 import uuid
-import shutil
 
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
+from fastapi.responses import JSONResponse
+from sqlalchemy import Integer, func
+from sqlalchemy.orm import Session
+from typing import Optional
+
+from configs.base_config import BaseConfig, CommonWords
+from models import get_db, models
 from resources.utils import verify_authentication
-from models import models
-from models import get_db
-from configs.base_config import CommonWords
+
+logger = logging.getLogger("masterdataservice.controller")
 
 UPLOAD_PATH = "./templates/static/upload_image"
 os.makedirs(UPLOAD_PATH, exist_ok=True)
 
-router = APIRouter()
+# Whitelist enforced against uploaded room images.
+ALLOWED_UPLOAD_EXTS = BaseConfig.UPLOAD_ALLOWED_EXTENSIONS
+UPLOAD_MAX_BYTES = BaseConfig.UPLOAD_MAX_BYTES
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
 
-from fastapi import Header
+def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
+    """Validate and read an incoming UploadFile.
 
-from models import models, get_db
-from resources.utils import verify_authentication
-from configs.base_config import CommonWords
+    Returns ``(safe_extension, raw_bytes)``. Raises HTTPException on any
+    violation (bad extension, oversized payload, unreadable filename).
+    """
+    if not upload or not upload.filename:
+        raise HTTPException(status_code=400, detail="File is required")
+    ext = os.path.splitext(upload.filename)[1].lstrip(".").lower()
+    if not ext or ext not in ALLOWED_UPLOAD_EXTS:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    data = upload.file.read(UPLOAD_MAX_BYTES + 1)
+    if len(data) > UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds size limit")
+    return ext, data
 
-router = APIRouter()
 
-from fastapi import APIRouter, Depends, Request, HTTPException, status
-from sqlalchemy.orm import Session
+def _write_upload(data: bytes, ext: str) -> str:
+    """Persist bytes under UPLOAD_PATH using a random filename; return the URL path."""
+    safe_name = f"{uuid.uuid4().hex}.{ext}"
+    dest = os.path.join(UPLOAD_PATH, safe_name)
+    with open(dest, "wb") as fh:
+        fh.write(data)
+    # Return relative URL that the static mount serves.
+    return f"/templates/static/upload_image/{safe_name}"
 
-from models import models, get_db
-from configs.base_config import CommonWords
-from resources.utils import verify_authentication
 
 router = APIRouter()
 
@@ -104,10 +126,11 @@ def get_facilities(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -205,10 +228,11 @@ async def create_facility(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # Unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Internal server error",
         )
     
 # =====================================================
@@ -280,10 +304,11 @@ def get_facility_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
     
 # =====================================================
@@ -408,10 +433,11 @@ async def update_facility(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail="Internal server error",
         )
 
 # =====================================================
@@ -484,10 +510,11 @@ def delete_facility(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -564,10 +591,11 @@ def get_room_types(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
     
 # =====================================================
@@ -702,9 +730,10 @@ async def create_room_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -785,10 +814,11 @@ def get_room_type_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -947,10 +977,11 @@ async def update_room_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1022,9 +1053,10 @@ def delete_room_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1089,10 +1121,11 @@ def get_bed_types(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Only unexpected errors become 500
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1195,9 +1228,10 @@ async def create_bed_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
     
 # =====================================================
@@ -1268,9 +1302,10 @@ def get_bed_type_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
     
 # =====================================================
@@ -1394,9 +1429,10 @@ async def update_bed_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1468,9 +1504,10 @@ def delete_bed_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1535,10 +1572,11 @@ def get_hall_floors(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1641,9 +1679,10 @@ async def create_hall_floor(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
     
 # =====================================================
@@ -1714,9 +1753,10 @@ def get_hall_floor_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1840,9 +1880,10 @@ async def update_hall_floor(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1914,9 +1955,10 @@ def delete_hall_floor(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -1995,9 +2037,10 @@ def get_rooms(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2071,17 +2114,13 @@ async def create_room(
             )
 
         # -------------------------------------------------
-        # IMAGE SAVE HELPER
+        # IMAGE SAVE (extension whitelist + size cap)
         # -------------------------------------------------
-        def save_image(file: UploadFile | None):
-            if not file:
+        def save_image(upload: UploadFile | None):
+            if not upload or not upload.filename:
                 return None
-            ext = file.filename.split(".")[-1]
-            filename = f"{uuid.uuid4()}.{ext}"
-            filepath = os.path.join(UPLOAD_PATH, filename)
-            with open(filepath, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            return filename
+            ext, data = _sanitize_upload(upload)
+            return _write_upload(data, ext)
 
         img1 = save_image(image_1)
         img2 = save_image(image_2)
@@ -2139,9 +2178,10 @@ async def create_room(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2227,9 +2267,10 @@ def get_room_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2325,19 +2366,15 @@ async def update_room(
             )
 
         # -------------------------------------------------
-        # IMAGE SAVE / REPLACE HELPER
+        # IMAGE REPLACE (extension whitelist + size cap; a random
+        # filename is always minted so a poisoned old filename cannot
+        # be replayed).
         # -------------------------------------------------
-        def save_or_replace_image(file: UploadFile, old_name: str | None):
-            ext = file.filename.split(".")[-1]
-            filename = (
-                f"{uuid.uuid4()}.{ext}"
-                if not old_name
-                else f"{old_name.split('.')[0]}.{ext}"
-            )
-            filepath = os.path.join(UPLOAD_PATH, filename)
-            with open(filepath, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            return filename
+        def save_or_replace_image(upload: UploadFile, _old_name: str | None):
+            if not upload or not upload.filename:
+                return _old_name
+            ext, data = _sanitize_upload(upload)
+            return _write_upload(data, ext)
 
         if image_1:
             room.Room_Image_1 = save_or_replace_image(image_1, room.Room_Image_1)
@@ -2385,9 +2422,10 @@ async def update_room(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2459,9 +2497,10 @@ def delete_room(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2527,9 +2566,10 @@ def get_discounts(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2641,9 +2681,10 @@ async def create_discount(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2716,9 +2757,10 @@ def get_discount_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2870,9 +2912,10 @@ async def update_discount(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -2949,9 +2992,10 @@ def delete_discount(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3026,9 +3070,10 @@ def get_taxes(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3179,9 +3224,10 @@ async def create_tax(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3267,10 +3313,11 @@ def get_tax_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )   
 
 # =====================================================
@@ -3440,9 +3487,10 @@ async def update_tax(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3514,9 +3562,10 @@ def delete_tax(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3580,9 +3629,10 @@ def get_payment_methods(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3682,9 +3732,10 @@ async def create_payment_method(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3755,9 +3806,10 @@ def get_payment_method_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3879,9 +3931,10 @@ async def update_payment_method(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -3958,9 +4011,10 @@ def delete_payment_method(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4025,10 +4079,11 @@ def get_identity_proofs(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4131,9 +4186,10 @@ async def create_identity_proof(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4205,10 +4261,11 @@ def get_identity_proof_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4334,10 +4391,11 @@ async def update_identity_proof(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4410,10 +4468,11 @@ def delete_identity_proof(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4479,9 +4538,10 @@ def get_country_currency(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4601,9 +4661,10 @@ async def create_country_currency(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4676,9 +4737,10 @@ def get_country_currency_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4820,9 +4882,10 @@ async def update_country_currency(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4899,9 +4962,10 @@ def delete_country_currency(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -4967,10 +5031,11 @@ def get_task_types(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5083,10 +5148,11 @@ async def create_task_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5159,10 +5225,11 @@ def get_task_type_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5297,10 +5364,11 @@ async def update_task_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5373,10 +5441,11 @@ def delete_task_type(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5442,10 +5511,11 @@ def get_room_complementries(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5553,10 +5623,11 @@ async def create_room_complementry(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5629,10 +5700,11 @@ def get_room_complementry_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5762,10 +5834,11 @@ async def update_room_complementry(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5843,10 +5916,11 @@ def delete_room_complementry(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -5912,10 +5986,11 @@ def get_reservation_status(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -6028,9 +6103,10 @@ async def create_reservation_status(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
     
 # =====================================================
@@ -6103,10 +6179,11 @@ def get_reservation_status_by_id(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -6242,10 +6319,11 @@ async def update_reservation_status(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )
 
 # =====================================================
@@ -6318,8 +6396,9 @@ def delete_reservation_status(
         raise
 
     except Exception as e:
+        logger.exception("unhandled_exception")
         # ❌ Unexpected errors only
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Internal server error"
         )

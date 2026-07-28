@@ -1,0 +1,343 @@
+/* =========================
+   REGISTER — PAGE
+   Scoped to .register-page / .register-card to co-exist with the
+   shared Authentication.css (still used by ForgotPassword, LockScreen, OTP)
+   without style bleed in either direction.
+========================= */
+
+.register-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-image: linear-gradient(
+      rgba(243, 238, 238, 0.562),
+      rgba(240, 240, 240, 0.753)
+    ),
+    url('../../assets/cherryBackground.jpg');
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.register-card {
+  width: 560px;
+  max-width: 100%;
+  padding: 44px 44px 32px;
+  background: var(--bg-primary);
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--border-color);
+}
+
+.register-card .auth-logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.register-card .auth-logo-wrap img {
+  width: 64px;
+  height: auto;
+}
+
+.register-card .auth-header {
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.register-card .auth-header h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.register-card .auth-header p {
+  margin-top: 8px;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* =========================
+   FORM (scoped)
+========================= */
+.register-card .auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.register-card .form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+  gap: 0;
+}
+
+.register-card .form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.register-card .optional {
+  font-weight: 500;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.register-card .form-group input[type="text"],
+.register-card .form-group input[type="email"],
+.register-card .form-group input[type="tel"],
+.register-card .form-group textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-dark);
+  font-size: 14.5px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.register-card textarea {
+  resize: vertical;
+  min-height: 78px;
+  line-height: 1.45;
+}
+
+.register-card input:focus-visible,
+.register-card textarea:focus-visible {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(133, 1, 38, 0.12);
+}
+
+.register-card input:disabled,
+.register-card textarea:disabled {
+  background: #f9fafb;
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.register-card [aria-invalid="true"] {
+  border-color: #dc2626;
+}
+
+.register-card [aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.14);
+}
+
+/* =========================
+   FIELD ERRORS / HELPS
+========================= */
+.field-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #b91c1c;
+  line-height: 1.35;
+}
+
+.field-help {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.field-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* =========================
+   CHECKBOX ROW
+========================= */
+.checkbox-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 500 !important;
+  font-size: 13.5px !important;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+}
+
+/* =========================
+   ALERTS (reuse Login palette)
+========================= */
+.register-card .error-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.register-card .error-text svg { flex-shrink: 0; margin-top: 2px; }
+
+.register-card .success-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  background: #f0fdf4;
+  color: #14532d;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.register-card .success-text svg { flex-shrink: 0; margin-top: 2px; }
+
+/* =========================
+   LINKS
+========================= */
+.register-card .auth-link {
+  color: var(--primary-color);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.register-card .auth-link.inline {
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.register-card .auth-link:hover {
+  color: var(--primary-dark);
+  text-decoration: underline;
+}
+
+.register-card .auth-link:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* =========================
+   BUTTON
+========================= */
+.register-card .primary-btn {
+  margin-top: 6px;
+  padding: 13px 15px;
+  background: linear-gradient(135deg, var(--primary-mild), var(--primary-mild));
+  color: var(--text-white);
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast),
+    opacity var(--transition-fast);
+  box-shadow: var(--shadow-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  width: 100%;
+}
+
+.register-card .primary-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.register-card .primary-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-md);
+}
+
+.register-card .primary-btn:focus-visible {
+  outline: 2px solid var(--primary-dark);
+  outline-offset: 2px;
+}
+
+.register-card .primary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.spin {
+  animation: registerSpin 0.9s linear infinite;
+}
+
+@keyframes registerSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* =========================
+   FOOTERS
+========================= */
+.register-card .auth-footer-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.register-card .auth-footer {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+@media (max-width: 560px) {
+  .register-card {
+    padding: 32px 22px;
+  }
+  .register-card .auth-header h2 { font-size: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .register-card .primary-btn,
+  .register-card input,
+  .register-card textarea { transition: none; }
+  .register-card .primary-btn:hover:not(:disabled) { transform: none; }
+  .spin { animation: none; }
+}

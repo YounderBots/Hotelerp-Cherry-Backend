@@ -1,5 +1,11 @@
+import os
+
 from configs.base_config import BaseConfig
+
 
 class Configuration(BaseConfig):
     DEBUG = True
-    DB_URI = 'mysql+pymysql://root:Admin123@localhost/hotelerp_masterdata' 
+    DB_URI = os.getenv(
+        "DB_URI",
+        "mysql+pymysql://hotelerp_app:CHANGE_ME@localhost/hotelerp_masterdata",
+    )

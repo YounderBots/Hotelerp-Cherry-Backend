@@ -1,44 +1,293 @@
-import React,{useState,useEffect} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye,X } from "lucide-react";
-import "../../MasterData/MasterData.css";
-import APICall from "../../APICalls/APICalls";
+import {
+  ArrowLeft,
+  Download,
+  Eye,
+  RefreshCw,
+  X,
+  AlertCircle,
+  CheckCircle,
+} from "lucide-react";
+import APICall, { ApiError } from "../../APICalls/APICalls";
+import "./NightAudit.css";
+import "../Reservation/Reservation.css";
 
+// -------------------------------------------------------------------------
+// Helpers (mirror Page 14's shared conventions)
+// -------------------------------------------------------------------------
+const readList = (res) =>
+  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
+
+const errMsg = (err, fallback) =>
+  err instanceof ApiError && err.message ? err.message : fallback;
+
+const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
+const isPlainDate = (v) => /^\d{4}-\d{2}-\d{2}(T|$)/.test(String(v || ""));
+
+const formatDate = (v) => {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+};
+
+const humaniseKey = (k) =>
+  String(k || "")
+    .replace(/_/g, " ")
+    .replace(/([A-Z])/g, " $1")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+const isSensitive = (k) => {
+  const key = String(k || "").toLowerCase();
+  return (
+    key === "id" ||
+    key === "token" ||
+    key === "company_id" ||
+    key === "created_by" ||
+    key === "updated_by" ||
+    key === "created_at" ||
+    key === "updated_at" ||
+    key === "status" ||
+    key === "proof_document"
+  );
+};
+
+const displayValue = (v) => {
+  if (v === null || v === undefined || v === "") return "—";
+  if (Array.isArray(v)) return v.length > 0 ? v.join(", ") : "—";
+  if (typeof v === "object") {
+    try { return JSON.stringify(v); } catch { return "—"; }
+  }
+  if (isPlainDate(v)) return formatDate(v);
+  return String(v);
+};
+
+const guestFullName = (r) =>
+  [r?.salutation, r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "—";
+
+const statusClass = (status) => {
+  const s = String(status || "").toLowerCase();
+  if (s === "pending") return "status-pending";
+  if (s === "confirmed") return "status-confirmed";
+  if (s === "arrived" || s === "checked-in") return "status-checked-in";
+  if (s === "departures" || s === "checked-out") return "status-checked-out";
+  if (s === "cancelled" || s === "canceled") return "status-cancelled";
+  return "status-pending";
+};
+
+// -------------------------------------------------------------------------
+// Toast + Details modal (matches Page 14's shared patterns)
+// -------------------------------------------------------------------------
+const Toast = ({ toast, onClose }) => {
+  if (!toast) return null;
+  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
+  return (
+    <div
+      className={`reservation-toast ${toast.kind}`}
+      role={toast.kind === "success" ? "status" : "alert"}
+      aria-live={toast.kind === "success" ? "polite" : "assertive"}
+    >
+      <Icon size={18} aria-hidden="true" />
+      <span>{toast.text}</span>
+      <button
+        type="button"
+        className="reservation-toast-close"
+        onClick={onClose}
+        aria-label="Dismiss notification"
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+};
+
+const DetailsModal = ({ open, title, entity, onClose }) => {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = original; };
+  }, [open]);
+
+  if (!open || !entity) return null;
+
+  const entries = Object.entries(entity).filter(([k]) => !isSensitive(k));
+
+  return (
+    <div
+      className="modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rb-details-title"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="modal-card large">
+        <div className="modal-header">
+          <h3 id="rb-details-title">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={`Close ${title}`}
+          >
+            <X size={18} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="modal-body grid view">
+          {entries.map(([key, value]) => (
+            <div className="form-group" key={key}>
+              <label htmlFor={`rb-detail-${key}`}>{humaniseKey(key)}</label>
+              <input
+                id={`rb-detail-${key}`}
+                value={displayValue(value)}
+                readOnly
+                aria-readonly="true"
+              />
+            </div>
+          ))}
+        </div>
+
+        <div className="modal-footer">
+          <button
+            type="button"
+            className="btn secondary"
+            onClick={onClose}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// -------------------------------------------------------------------------
+// Page
+// -------------------------------------------------------------------------
 const RoomBooked = () => {
-    const [data, setData] = useState([]);
+  const navigate = useNavigate();
+  const mounted = useRef(true);
+
+  const [data, setData] = useState(null); // null = loading
+  const [error, setError] = useState(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [viewReservation, setViewReservation] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const load = useCallback(() => {
+    setData(null);
+    setError(null);
+    APICall.getT("/hotel/room_reservation")
+      .then((res) => {
+        if (!mounted.current) return;
+        setData(Array.isArray(res?.data) ? res.data : readList(res));
+      })
+      .catch((err) => {
+        if (!mounted.current) return;
+        setData([]);
+        setError(errMsg(err, "Failed to load room bookings."));
+      });
+  }, []);
+
+  useEffect(() => {
+    mounted.current = true;
+    load();
+    return () => { mounted.current = false; };
+  }, [load, refreshTick]);
+
+  const handleBack = () => navigate("/reservation");
+  const handleRefresh = () => setRefreshTick((n) => n + 1);
+
+  const handleExportCsv = () => {
+    const list = Array.isArray(data) ? data : [];
+    if (list.length === 0) {
+      showToast("error", "No bookings to export.");
+      return;
+    }
+    const header = ["Reservation ID", "Guest", "Phone", "Arrival", "Departure", "Nights", "Rooms", "Adults", "Children", "Status"];
+    const rows = list.map((r) => [
+      r.room_reservation_id ?? r.id,
+      guestFullName(r),
+      r.phone_number ?? "",
+      r.arrival_date ?? "",
+      r.departure_date ?? "",
+      r.no_of_nights ?? "",
+      r.no_of_rooms ?? "",
+      r.no_of_adults ?? "",
+      r.no_of_children ?? "",
+      r.reservation_status ?? "",
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => {
+        const s = String(cell ?? "");
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      }).join(","))
+      .join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `room-booked-${isoDay(new Date().toISOString())}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const isLoading = data === null;
+  const tableData = Array.isArray(data) ? data : [];
+
   const columns = [
-    {
-      key: "room_reservation_id",
-      title: "Room Reservation ID",
-      align: "center",
-    },
+    { key: "room_reservation_id", title: "Reservation ID", align: "center", width: "160px" },
     {
       key: "first_name",
-      title: "Name",
-      type: "custom",
-      render: (row) => [row.first_name, row.last_name].filter(Boolean).join(" "),
+      title: "Guest",
+      render: (row) => guestFullName(row),
     },
-    {
-      key: "phone_number",
-      title: "Phone Number",
-      align: "center",
-    },
+    { key: "phone_number", title: "Phone", align: "center" },
     {
       key: "arrival_date",
-      title: "Arrival Date",
+      title: "Arrival",
       align: "center",
+      render: (row) => formatDate(row.arrival_date),
     },
     {
       key: "departure_date",
-      title: "Departure Date",
+      title: "Departure",
       align: "center",
+      render: (row) => formatDate(row.departure_date),
     },
+    { key: "no_of_nights", title: "Nights", align: "center" },
+    { key: "no_of_rooms", title: "Rooms", align: "center" },
     {
       key: "reservation_status",
-      title: "Reservation Status",
+      title: "Status",
       align: "center",
-      type: "badge",
+      type: "custom",
+      render: (row) => (
+        <span className={`rvw-status-chip ${statusClass(row.reservation_status)}`}>
+          {row.reservation_status || "—"}
+        </span>
+      ),
     },
     {
       key: "action",
@@ -47,77 +296,95 @@ const RoomBooked = () => {
       type: "custom",
       render: (row) => (
         <button
+          type="button"
           className="table-action-btn view"
-          title={`View ${row.reservationId}`}
+          title="View details"
+          aria-label={`View booking ${row.room_reservation_id || row.id}`}
           onClick={() => setViewReservation(row)}
         >
-          <Eye size={16} />
+          <Eye size={16} aria-hidden="true" />
         </button>
       ),
     },
   ];
 
-  const getAllroomReservation = async () => {
-    try {
-      const response = await APICall.getT("/hotel/room_reservation");
-      console.log("Full Response:", response);
-      setData(response.data); 
-    } catch (error) {
-      console.error("Error fetching reservations:", error);
-    }
-  };
-
-    useEffect(() => {
-      getAllroomReservation();
-    }, [])
-
   return (
-    <>
-    <TableTemplate
-      title="Room Booked"
-      columns={columns}
-      data={data}
-      has ActionButton
-      pageSize={2}
-      searchable
-      pagination
-      exportable
-    />
+    <div className="userreserved-wrapper">
+      <div className="ur-toolbar">
+        <button
+          type="button"
+          className="rmv-back-btn"
+          onClick={handleBack}
+          aria-label="Back to reservations"
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Back</span>
+        </button>
+        <div className="ur-header">
+          <span className="rmv-eyebrow">Night Audit</span>
+          <h1 className="rmv-title">Room Booked</h1>
+        </div>
+        <div className="rmv-toolbar-actions">
+          <button
+            type="button"
+            className="rmv-toolbar-btn"
+            onClick={handleRefresh}
+            aria-label="Refresh"
+            disabled={isLoading}
+          >
+            <RefreshCw size={16} aria-hidden="true" />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
 
-    {viewReservation && (
-        <div className="modal-overlay">
-          <div className="modal-card large">
-            <div className="modal-header">
-              <h3>Booking Details</h3>
-              <button onClick={() => setViewReservation(null)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body grid view">
-              {Object.entries(viewReservation).map(
-                ([key, value]) =>
-                  key !== "id" && (
-                    <div className="form-group" key={key}>
-                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                      <input value={value} disabled />
-                    </div>
-                  )
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button
-                className="btn secondary"
-                onClick={() => setViewReservation(null)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
+      {error && (
+        <div className="rmv-alert" role="alert">
+          <span>{error}</span>
+          <button type="button" className="rmv-alert-action" onClick={handleRefresh}>Retry</button>
         </div>
       )}
-    </>
+
+      {isLoading && (
+        <div className="rmv-loading" role="status" aria-live="polite">
+          Loading room bookings…
+        </div>
+      )}
+
+      {!isLoading && (
+        <TableTemplate
+          title="Room Booked"
+          variant="striped"
+          pagination
+          pageSize={10}
+          searchable
+          exportable
+          hasActionButton
+          actionButton={{
+            icon: <Download size={18} />,
+            label: "Export CSV",
+            onClick: handleExportCsv,
+            size: "small",
+            variant: "outline",
+          }}
+          columns={columns}
+          data={tableData}
+        />
+      )}
+
+      {!isLoading && !error && tableData.length === 0 && (
+        <div className="rmv-empty">No room bookings yet.</div>
+      )}
+
+      <DetailsModal
+        open={Boolean(viewReservation)}
+        title="Booking Details"
+        entity={viewReservation}
+        onClose={() => setViewReservation(null)}
+      />
+
+      <Toast toast={toast} onClose={() => setToast(null)} />
+    </div>
   );
 };
 
