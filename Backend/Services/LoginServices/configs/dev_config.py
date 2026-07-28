@@ -8,5 +8,5 @@ class Configuration(BaseConfig):
     DB_URI = os.getenv(
         "DB_URI",
         # Local developer fallback only. Production must set DB_URI explicitly.
-        "mysql+pymysql://hotelerp_app:CHANGE_ME@localhost/hotelerp_users",
+        "mysql+pymysql://root@localhost/hotelerp_users",
     )

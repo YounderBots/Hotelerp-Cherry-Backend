@@ -58,6 +58,13 @@ const Tabs = ({
     }
   }, [value]);
 
+  // Re-sync when the parent re-renders with new tab content (e.g. a tab's
+  // children reflecting freshly-fetched data). Without this, `tabs` stays
+  // frozen at whatever `children` looked like on first mount.
+  useEffect(() => {
+    setTabs(React.Children.toArray(children));
+  }, [children]);
+
   // Check if scroll buttons are needed
   useEffect(() => {
     const checkScroll = () => {

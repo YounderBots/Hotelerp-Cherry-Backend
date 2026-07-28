@@ -706,6 +706,97 @@ async def create_room_reservation(
 
 
 # =====================================================
+# CHECK ROOM AVAILABILITY FOR A DATE RANGE
+# =====================================================
+@router.get("/room_availability", status_code=status.HTTP_200_OK)
+def get_room_availability(
+    request: Request,
+    arrival_date: date,
+    departure_date: date,
+    db: Session = Depends(get_db),
+):
+    try:
+        # -------------------------------------------------
+        # AUTHENTICATION
+        # -------------------------------------------------
+        user_id, role_id, company_id, token = verify_authentication(request)
+        if not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+            )
+
+        # -------------------------------------------------
+        # DATE VALIDATION
+        # -------------------------------------------------
+        if departure_date <= arrival_date:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="departure_date must be greater than arrival_date",
+            )
+
+        # -------------------------------------------------
+        # FIND RESERVATIONS THAT OVERLAP THE REQUESTED STAY
+        # -------------------------------------------------
+        overlapping = (
+            db.query(models.RoomReservation)
+            .filter(
+                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.status == STATUS,
+                models.RoomReservation.arrival_date < departure_date,
+                models.RoomReservation.departure_date > arrival_date,
+            )
+            .all()
+        )
+
+        # A reservation that was cancelled / never arrived never occupies the room.
+        NON_BLOCKING_STATUSES = {"cancelled", "no show", "no-show"}
+        raw_ranges_by_room = {}  # room_id -> [(start, end), ...], clipped to the query window
+        for r in overlapping:
+            if (r.reservation_status or "").strip().lower() in NON_BLOCKING_STATUSES:
+                continue
+            clipped_start = max(r.arrival_date, arrival_date)
+            clipped_end = min(r.departure_date, departure_date)
+            for rid in (r.room_ids or []):
+                try:
+                    rid = int(rid)
+                except (TypeError, ValueError):
+                    continue
+                raw_ranges_by_room.setdefault(rid, []).append((clipped_start, clipped_end))
+
+        # Merge overlapping/adjacent conflict windows per room so a room double
+        # booked by two guests still reports one clean set of blocked nights.
+        conflicts_by_room = {}
+        for rid, ranges in raw_ranges_by_room.items():
+            merged = []
+            for start, end in sorted(ranges):
+                if merged and start <= merged[-1][1]:
+                    merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+                else:
+                    merged.append((start, end))
+            conflicts_by_room[rid] = [
+                {"arrival_date": s, "departure_date": e} for s, e in merged
+            ]
+
+        return {
+            "status": "success",
+            "data": {
+                "arrival_date": arrival_date,
+                "departure_date": departure_date,
+                "booked_room_ids": sorted(conflicts_by_room.keys()),
+                "conflicts": conflicts_by_room,
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+
+
+# =====================================================
 # GET ALL ROOM RESERVATIONS
 # =====================================================
 @router.get("/room_reservation", status_code=status.HTTP_200_OK)

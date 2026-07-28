@@ -721,6 +721,23 @@ label {
   transform: translateY(-4px);
 }
 
+.room-card.unavailable {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background-color: #f3f4f6;
+  filter: grayscale(0.6);
+}
+
+.room-card.unavailable:hover {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  transform: none;
+}
+
+.room-card.unavailable .room-status {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 
 
 .room-card-header {
@@ -839,8 +856,11 @@ select:focus {
   height: 40px;
 }
 
-.readonly-input {
+.form-group input.readonly-input,
+.form-group select.readonly-input {
   background: #edf2f7;
+  color: #6b7280;
+  cursor: not-allowed;
 }
 
 .file-upload {
@@ -2362,6 +2382,63 @@ input[type="number"] {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.anr-dates-card {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--white, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: var(--border-radius-md, 0.625rem);
+}
+
+.anr-dates-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.anr-dates-grid {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.anr-dates-grid .form-group {
+  min-width: 180px;
+}
+
+.anr-nights-pill {
+  padding: 8px 14px;
+  border-radius: var(--border-radius-md, 0.625rem);
+  background: var(--primary-lightest, #fff1f4);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.anr-dates-status {
+  font-size: 0.9rem;
+  color: var(--text-muted, #6b7280);
+}
+
+.anr-dates-status.error {
+  color: #b91c1c;
+}
+
+.anr-dates-status.ok {
+  color: #15803d;
+}
+
+.anr-dates-prompt {
+  padding: 1rem;
+  color: var(--text-muted, #6b7280);
+  background: var(--white, #fff);
+  border: 1px dashed var(--border-color, #e5e7eb);
+  border-radius: var(--border-radius-md, 0.625rem);
+  text-align: center;
 }
 
 .anr-selection-bar {

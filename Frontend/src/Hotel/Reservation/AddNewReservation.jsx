@@ -39,6 +39,13 @@ const MAX_FILE_MB = 5;
 const ALLOWED_FILE_EXT = ["pdf", "jpg", "jpeg", "png"];
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const formatShortDate = (iso) => {
+  const day = isoDay(iso);
+  if (day.length !== 10) return iso || "";
+  const [, m, d] = day.split("-").map(Number);
+  return m >= 1 && m <= 12 ? `${MONTH_SHORT[m - 1]} ${d}` : iso;
+};
 const num = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -85,7 +92,7 @@ const Toast = ({ toast, onClose }) => {
   );
 };
 
-const RoomGrid = ({ rooms, isSelected, onSelect }) => (
+const RoomGrid = ({ rooms, isSelected, onSelect, isUnavailable, unavailableReason }) => (
   <div className="anr-room-grid">
     {rooms.length === 0 ? (
       <p className="anr-empty-cat">No rooms available in this category.</p>
@@ -96,6 +103,8 @@ const RoomGrid = ({ rooms, isSelected, onSelect }) => (
           room={room}
           isSelected={isSelected(room)}
           onSelect={onSelect}
+          unavailable={isUnavailable(room)}
+          unavailableReason={unavailableReason(room)}
         />
       ))
     )}
@@ -121,6 +130,12 @@ const AddNewReservation = () => {
   // Room selection state
   const [selectedRoomIds, setSelectedRoomIds] = useState([]); // ordered ints
   const [perRoom, setPerRoom] = useState({}); // { [roomId]: { adults, children, rateType, complementary } }
+
+  // Date-first availability state — populated once both stay dates are chosen
+  const [bookedRoomIds, setBookedRoomIds] = useState(new Set());
+  const [roomConflicts, setRoomConflicts] = useState({}); // { [roomId]: [{arrival_date, departure_date}] }
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState(null);
 
   // Reservation form
   const [formData, setFormData] = useState({
@@ -198,10 +213,77 @@ const AddNewReservation = () => {
   }, []);
 
   // ----------------------------------------------------------------
+  // Date-first availability — a stay must be picked before rooms show.
+  // Re-checks whenever either date changes, and drops any already-picked
+  // room that turns out to be booked for the new dates.
+  // ----------------------------------------------------------------
+  const datesValid = Boolean(
+    formData.arrival_date &&
+    formData.departure_date &&
+    isoDay(formData.arrival_date) < isoDay(formData.departure_date),
+  );
+
+  useEffect(() => {
+    // Nothing to check yet — the room grid stays hidden until dates are valid,
+    // so stale booked-ids/error state from a prior selection is never shown.
+    if (!datesValid) return undefined;
+    let cancelled = false;
+    setAvailabilityLoading(true);
+    setAvailabilityError(null);
+    APICall.getT("/hotel/room_availability", {
+      arrival_date: formData.arrival_date,
+      departure_date: formData.departure_date,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        const ids = new Set((res?.data?.booked_room_ids || []).map(Number));
+        setBookedRoomIds(ids);
+        setRoomConflicts(res?.data?.conflicts || {});
+        setSelectedRoomIds((prev) => {
+          const stillFree = prev.filter((id) => !ids.has(id));
+          if (stillFree.length !== prev.length) {
+            showToast("error", "Some selected rooms are already booked for these dates and were removed.");
+          }
+          return stillFree;
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setAvailabilityError(errMsg(err, "Failed to check room availability for these dates."));
+        setBookedRoomIds(new Set());
+        setRoomConflicts({});
+      })
+      .finally(() => {
+        if (!cancelled) setAvailabilityLoading(false);
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.arrival_date, formData.departure_date, datesValid]);
+
+  // ----------------------------------------------------------------
   // Room selection — track per-room state by id (not by index)
   // ----------------------------------------------------------------
+  const isRoomBlockedByMaster = (room) => {
+    const bs = (room?.booking_status || "").trim().toLowerCase();
+    return Boolean(bs) && bs !== "available";
+  };
+  const isRoomBookedForDates = (room) => bookedRoomIds.has(Number(room?.id));
+  const isRoomUnavailable = (room) => isRoomBlockedByMaster(room) || isRoomBookedForDates(room);
+  const unavailableReasonFor = (room) => {
+    if (isRoomBlockedByMaster(room)) return room.booking_status;
+    const windows = roomConflicts[room?.id] || [];
+    if (windows.length > 0) {
+      const ranges = windows
+        .map((w) => `${formatShortDate(w.arrival_date)} – ${formatShortDate(w.departure_date)}`)
+        .join(", ");
+      return `Booked ${ranges}`;
+    }
+    if (isRoomBookedForDates(room)) return "Booked for these dates";
+    return "";
+  };
+
   const handleSelectRoom = (room) => {
-    if (!room?.id) return;
+    if (!room?.id || isRoomUnavailable(room)) return;
     setSelectedRoomIds((prev) => {
       const exists = prev.includes(room.id);
       if (exists) {
@@ -441,7 +523,61 @@ const AddNewReservation = () => {
         </div>
       )}
 
-      {roomTypes.length === 0 && !masterError ? (
+      {/* Step 1 — stay dates must be picked before room availability can be known */}
+      <div className="anr-dates-card">
+        <h3 className="anr-dates-title">1. Select your stay dates</h3>
+        <div className="anr-dates-grid">
+          <div className="form-group">
+            <label htmlFor="anr-arrival-top">Arrival Date <span className="required">*</span></label>
+            <input
+              id="anr-arrival-top"
+              type="date"
+              value={formData.arrival_date}
+              min={isoDay(new Date().toISOString())}
+              onChange={(e) => setFormData((f) => ({ ...f, arrival_date: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="anr-departure-top">Departure Date <span className="required">*</span></label>
+            <input
+              id="anr-departure-top"
+              type="date"
+              value={formData.departure_date}
+              min={formData.arrival_date || undefined}
+              onChange={(e) => setFormData((f) => ({ ...f, departure_date: e.target.value }))}
+              required
+            />
+          </div>
+          {datesValid && (
+            <div className="anr-nights-pill">
+              <strong>{totalNights}</strong> night{totalNights === 1 ? "" : "s"}
+            </div>
+          )}
+        </div>
+        {!datesValid && (
+          <p className="anr-dates-status">
+            Pick an arrival and departure date to see which rooms are available.
+          </p>
+        )}
+        {datesValid && availabilityLoading && (
+          <p className="anr-dates-status">Checking room availability…</p>
+        )}
+        {datesValid && !availabilityLoading && availabilityError && (
+          <p className="anr-dates-status error">{availabilityError}</p>
+        )}
+        {datesValid && !availabilityLoading && !availabilityError && (
+          <p className="anr-dates-status ok">
+            Showing room availability for {formData.arrival_date} to {formData.departure_date}.
+          </p>
+        )}
+      </div>
+
+      {!datesValid ? (
+        <div className="anr-dates-prompt">
+          Select your arrival and departure dates above to view room availability.
+        </div>
+      ) : roomTypes.length === 0 && !masterError ? (
         <div className="rmv-loading" role="status" aria-live="polite">
           Loading room types…
         </div>
@@ -456,27 +592,31 @@ const AddNewReservation = () => {
                 )}
                 isSelected={isRoomSelected}
                 onSelect={handleSelectRoom}
+                isUnavailable={isRoomUnavailable}
+                unavailableReason={unavailableReasonFor}
               />
             </Tab>
           ))}
         </Tabs>
       ) : null}
 
-      <div className="anr-selection-bar">
-        <div>
-          <strong>Rooms:</strong>{" "}
-          {selectedRooms.length === 0
-            ? "Pick one or more rooms above."
-            : selectedRooms.map((r) => `Room ${r.room_no}`).join(", ")}
+      {datesValid && (
+        <div className="anr-selection-bar">
+          <div>
+            <strong>Rooms:</strong>{" "}
+            {selectedRooms.length === 0
+              ? "Pick one or more available rooms above."
+              : selectedRooms.map((r) => `Room ${r.room_no}`).join(", ")}
+          </div>
+          <div>
+            {selectedRooms.length > 0 && (
+              <Button className="nxt-btn" onClick={() => setModalView(true)}>
+                Next
+              </Button>
+            )}
+          </div>
         </div>
-        <div>
-          {selectedRooms.length > 0 && (
-            <Button className="nxt-btn" onClick={() => setModalView(true)}>
-              Next
-            </Button>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Payment modal (final step) */}
       <Modal
@@ -616,9 +756,8 @@ const AddNewReservation = () => {
                 id="anr-arrival"
                 type="date"
                 value={formData.arrival_date}
-                min={isoDay(new Date().toISOString())}
-                onChange={(e) => setFormData((f) => ({ ...f, arrival_date: e.target.value }))}
-                required
+                disabled
+                className="readonly-input"
               />
             </div>
 
@@ -628,9 +767,8 @@ const AddNewReservation = () => {
                 id="anr-departure"
                 type="date"
                 value={formData.departure_date}
-                min={formData.arrival_date || undefined}
-                onChange={(e) => setFormData((f) => ({ ...f, departure_date: e.target.value }))}
-                required
+                disabled
+                className="readonly-input"
               />
             </div>
 
@@ -642,6 +780,7 @@ const AddNewReservation = () => {
                 value={totalNights}
                 readOnly
                 aria-readonly="true"
+                className="readonly-input"
               />
             </div>
 

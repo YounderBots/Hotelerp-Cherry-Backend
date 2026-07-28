@@ -1,5 +1,5 @@
 import io
-from turtle import pd
+import pandas as pd
 from fastapi import APIRouter, Depends, Request, status, Query
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, RedirectResponse, StreamingResponse

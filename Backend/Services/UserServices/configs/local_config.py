@@ -7,5 +7,5 @@ class Configuration(BaseConfig):
     DEBUG = True
     DB_URI = os.getenv(
         "DB_URI",
-        "mysql+pymysql://hotelerp_app:CHANGE_ME@localhost/hotelerp_users",
+        "mysql+pymysql://root@localhost/hotelerp_users",
     )
