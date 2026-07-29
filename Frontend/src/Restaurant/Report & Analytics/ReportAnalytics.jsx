@@ -1,244 +1,150 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye } from "lucide-react";
+import APICall, { ApiError } from "../../APICalls/APICalls";
+
+const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const REPORTS = {
+  "Sales Reports": {
+    endpoint: "/restaurant/reports/item_sales",
+    columns: [
+      { key: "item_name", title: "Item Name" },
+      { key: "quantity_sold", title: "Quantity Sold", align: "center" },
+      { key: "total_amount", title: "Total Amount", align: "right" },
+    ],
+  },
+  "Order Reports": {
+    endpoint: "/restaurant/reports/cancelled_orders",
+    columns: [
+      { key: "order_number", title: "Order No" },
+      { key: "order_type", title: "Order Type" },
+      { key: "guest_name", title: "Guest Name" },
+      { key: "order_status", title: "Status", type: "badge", align: "center" },
+    ],
+  },
+  "Kitchen Reports": {
+    endpoint: "/restaurant/reports/kitchen_performance",
+    columns: [
+      { key: "kitchen_name", title: "Kitchen" },
+      { key: "total_kots", title: "Total KOTs", align: "center" },
+      { key: "completed_kots", title: "Completed", align: "center" },
+      { key: "avg_preparation_time_minutes", title: "Avg Prep (min)", align: "center" },
+    ],
+  },
+  "Staff Reports": {
+    endpoint: "/restaurant/reports/staff_performance",
+    columns: [
+      { key: "employee_name", title: "Staff Name" },
+      { key: "role", title: "Role" },
+      { key: "sales_target", title: "Sales Target", align: "center" },
+      { key: "actual_sales", title: "Actual Sales", align: "center" },
+      { key: "shift_status", title: "Status", type: "badge", align: "center" },
+    ],
+  },
+  "Table & Floor Reports": {
+    endpoint: "/restaurant/reports/table_turnover",
+    columns: [
+      { key: "table_code", title: "Table" },
+      { key: "orders_count", title: "Orders Today", align: "center" },
+    ],
+  },
+  "Inventory Reports": {
+    endpoint: "/restaurant/inventory_stock/low_stock",
+    dateless: true,
+    columns: [
+      { key: "item_name", title: "Item Name" },
+      { key: "available_quantity", title: "Available Qty", align: "center" },
+      { key: "min_stock_level", title: "Reorder Level", align: "center" },
+    ],
+  },
+  "Financial Reports": {
+    endpoint: "/restaurant/reports/payment_mode",
+    columns: [
+      { key: "payment_method", title: "Payment Mode" },
+      { key: "total_amount", title: "Total Amount", align: "right" },
+    ],
+  },
+};
+
+const reportTabs = Object.keys(REPORTS);
 
 const ReportAnalytics = () => {
-  const [activeReport, setActiveReport] = useState("Sales Reports");
+  const [activeReport, setActiveReport] = useState(reportTabs[0]);
+  const [reportDate, setReportDate] = useState(todayIso());
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  /* ================= REPORT DATA ================= */
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    const config = REPORTS[activeReport];
+    const params = config.dateless ? {} : { report_date: reportDate };
 
-  const REPORT_DATA = {
-    "Sales Reports": [
-      {
-        id: 1,
-        reportName: "Daily Sales",
-        date: "2025-01-10",
-        totalOrders: 128,
-        grossSales: "₹1,24,500",
-        discount: "₹5,200",
-        tax: "₹9,600",
-        netSales: "₹1,28,900",
-      },
-      {
-        id: 2,
-        reportName: "Yesterday Sales",
-        date: "2025-01-09",
-        totalOrders: 104,
-        grossSales: "₹98,300",
-        discount: "₹4,100",
-        tax: "₹7,600",
-        netSales: "₹1,01,800",
-      },
-    ],
+    Promise.allSettled([
+      APICall.getT(config.endpoint, params),
+      activeReport === "Sales Reports" ? APICall.getT("/restaurant/reports/daily_sales", { report_date: reportDate }) : Promise.resolve(null),
+    ]).then(([res, dailyRes]) => {
+      if (res.status === "fulfilled") {
+        setRows(Array.isArray(res.value?.data) ? res.value.data : []);
+      } else {
+        setRows([]);
+        setError(errMsg(res.reason, "Failed to load report."));
+      }
+      setSummary(dailyRes && dailyRes.status === "fulfilled" ? dailyRes.value?.data : null);
+      setLoading(false);
+    });
+  }, [activeReport, reportDate]);
 
-    "Order Reports": [
-      {
-        id: 1,
-        reportName: "Completed Orders",
-        date: "2025-01-10",
-        totalOrders: 95,
-        cancelled: 12,
-        pending: 8,
-      },
-      {
-        id: 2,
-        reportName: "Cancelled Orders",
-        date: "2025-01-09",
-        totalOrders: 18,
-        cancelled: 18,
-        pending: 0,
-      },
-    ],
-
-    "Kitchen Reports": [
-      {
-        id: 1,
-        reportName: "KOT Summary",
-        date: "2025-01-10",
-        prepared: 210,
-        pending: 18,
-        delayed: 6,
-      },
-    ],
-
-    "Staff Reports": [
-      {
-        id: 1,
-        reportName: "Staff Performance",
-        staffName: "Arun Kumar",
-        ordersHandled: 48,
-        avgPrepTime: "12 mins",
-      },
-      {
-        id: 2,
-        reportName: "Staff Attendance",
-        staffName: "Suresh",
-        ordersHandled: 39,
-        avgPrepTime: "14 mins",
-      },
-    ],
-
-    "Table & Floor Reports": [
-      {
-        id: 1,
-        reportName: "Floor Utilization",
-        floor: "Ground Floor",
-        tablesUsed: 14,
-        peakTime: "8:00 PM",
-      },
-    ],
-
-    "Inventory Reports": [
-      {
-        id: 1,
-        reportName: "Low Stock Items",
-        itemName: "Basmati Rice",
-        availableQty: "5 Kg",
-        reorderLevel: "10 Kg",
-      },
-    ],
-
-    "Guest Reports": [
-      {
-        id: 1,
-        reportName: "Repeat Guests",
-        guestName: "Rahul",
-        visits: 6,
-        lastVisit: "2025-01-08",
-      },
-    ],
-
-    "Financial Reports": [
-      {
-        id: 1,
-        reportName: "Payment Summary",
-        cash: "₹45,000",
-        card: "₹55,000",
-        upi: "₹28,900",
-      },
-    ],
-  };
-
-  const reportTabs = Object.keys(REPORT_DATA);
-
-  /* ================= COLUMN MAP ================= */
-
-  const COLUMN_MAP = {
-    "Sales Reports": [
-      { key: "reportName", title: "Report Name" },
-      { key: "date", title: "Date" },
-      { key: "totalOrders", title: "Orders", align: "center" },
-      { key: "grossSales", title: "Gross Sales" },
-      { key: "discount", title: "Discount" },
-      { key: "tax", title: "Tax" },
-      { key: "netSales", title: "Net Sales" },
-    ],
-
-    "Order Reports": [
-      { key: "reportName", title: "Report Name" },
-      { key: "date", title: "Date" },
-      { key: "totalOrders", title: "Total Orders", align: "center" },
-      { key: "cancelled", title: "Cancelled", align: "center" },
-      { key: "pending", title: "Pending", align: "center" },
-    ],
-
-    "Kitchen Reports": [
-      { key: "reportName", title: "Report Name" },
-      { key: "date", title: "Date" },
-      { key: "prepared", title: "Prepared", align: "center" },
-      { key: "pending", title: "Pending", align: "center" },
-      { key: "delayed", title: "Delayed", align: "center" },
-    ],
-
-    "Staff Reports": [
-      { key: "reportName", title: "Report Name" },
-      { key: "staffName", title: "Staff Name" },
-      { key: "ordersHandled", title: "Orders Handled", align: "center" },
-      { key: "avgPrepTime", title: "Avg Prep Time", align: "center" },
-    ],
-
-    "Table & Floor Reports": [
-      { key: "reportName", title: "Report Name" },
-      { key: "floor", title: "Floor" },
-      { key: "tablesUsed", title: "Tables Used", align: "center" },
-      { key: "peakTime", title: "Peak Time", align: "center" },
-    ],
-
-    "Inventory Reports": [
-      { key: "reportName", title: "Report Name" },
-      { key: "itemName", title: "Item Name" },
-      { key: "availableQty", title: "Available Qty", align: "center" },
-      { key: "reorderLevel", title: "Reorder Level", align: "center" },
-    ],
-
-    "Guest Reports": [
-      { key: "reportName", title: "Report Name" },
-      { key: "guestName", title: "Guest Name" },
-      { key: "visits", title: "Visits", align: "center" },
-      { key: "lastVisit", title: "Last Visit" },
-    ],
-
-    "Financial Reports": [
-      { key: "reportName", title: "Report Name" },
-      { key: "cash", title: "Cash" },
-      { key: "card", title: "Card" },
-      { key: "upi", title: "UPI" },
-    ],
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <>
-      {/* ================= REPORT TABS (SINGLE ROW) ================= */}
       <div className="page-card" style={{ marginBottom: 20 }}>
         <div className="modal-body single">
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              overflowX: "auto",
-              whiteSpace: "nowrap",
-              paddingBottom: 4,
-            }}
-          >
+          <div style={{ display: "flex", gap: 10, overflowX: "auto", whiteSpace: "nowrap", paddingBottom: 4, alignItems: "center" }}>
             {reportTabs.map((tab) => (
               <button
                 key={tab}
-                className={`btn ${
-                  activeReport === tab ? "primary" : "secondary"
-                }`}
+                className={`btn ${activeReport === tab ? "primary" : "secondary"}`}
                 style={{ flexShrink: 0 }}
                 onClick={() => setActiveReport(tab)}
               >
                 {tab}
               </button>
             ))}
+            {!REPORTS[activeReport].dateless && (
+              <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} style={{ marginLeft: "auto" }} />
+            )}
           </div>
         </div>
       </div>
 
-      {/* ================= REPORT TABLE ================= */}
+      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+
+      {summary && (
+        <div className="page-card" style={{ marginBottom: 16, padding: "12px 16px", display: "flex", gap: 24, flexWrap: "wrap" }}>
+          <span><strong>Orders:</strong> {summary.total_orders}</span>
+          <span><strong>Bills:</strong> {summary.total_bills}</span>
+          <span><strong>Gross Sales:</strong> {summary.total_sales}</span>
+          <span><strong>Tax:</strong> {summary.total_tax}</span>
+          <span><strong>Discount:</strong> {summary.total_discount}</span>
+          <span><strong>Grand Total:</strong> {summary.grand_total}</span>
+        </div>
+      )}
+
       <TableTemplate
         title={activeReport}
         searchable
         pagination
-        columns={[
-          ...COLUMN_MAP[activeReport],
-          {
-            key: "actions",
-            title: "Action",
-            align: "center",
-            type: "custom",
-            render: () => (
-              <button
-                className="table-action-btn view"
-                style={{ margin: "0 auto" }}
-              >
-                <Eye size={16} />
-              </button>
-            ),
-          },
-        ]}
-        data={REPORT_DATA[activeReport]}
+        loading={loading}
+        emptyMessage="No data for the selected date"
+        columns={REPORTS[activeReport].columns}
+        data={rows}
       />
     </>
   );

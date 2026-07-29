@@ -239,6 +239,80 @@ class RestaurantTableReservation(Base):
 
 # =====================================================
 # RESTAURANT MANAGEMENT
+# Waitlist
+# =====================================================
+class RestaurantWaitlist(Base):
+    __tablename__ = "restaurant_waitlist"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    waitlist_code = Column(String(100), unique=True, nullable=False, index=True)
+
+    guest_name = Column(String(100), nullable=False, index=True)
+    guest_mobile = Column(String(20), nullable=False, index=True)
+    party_size = Column(Integer, nullable=False)
+
+    floor_id = Column(Integer, nullable=True, index=True)
+    section = Column(String(100), nullable=True, index=True)
+
+    wait_start_time = Column(DateTime, server_default=func.now())
+    estimated_wait_minutes = Column(Integer, nullable=True)
+
+    waitlist_status = Column(String(50), nullable=False, index=True)
+    # Waiting | Notified | Seated | Cancelled
+
+    notified_at = Column(DateTime, nullable=True)
+    seated_at = Column(DateTime, nullable=True)
+
+    table_id = Column(Integer, nullable=True, index=True)   # restaurant_table.id, filled once seated
+
+    status = Column(String(50), nullable=False, index=True, default="ACTIVE")
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True)
+
+    company_id = Column(String(100), nullable=False, index=True)
+
+# =====================================================
+# RESTAURANT MANAGEMENT
+# Table Merge (event log) + Merge Details (member tables)
+# =====================================================
+class RestaurantTableMerge(Base):
+    __tablename__ = "restaurant_table_merge"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    merge_code = Column(String(100), unique=True, nullable=False, index=True)
+    merged_table_name = Column(String(150), nullable=False)
+
+    merged_by = Column(String(100), nullable=False)
+    merge_datetime = Column(DateTime, server_default=func.now())
+    unmerged_at = Column(DateTime, nullable=True)
+
+    is_active = Column(String(10), nullable=False, default="Yes")
+    # Yes while merged, No once split back apart
+
+    status = Column(String(50), nullable=False, index=True, default="ACTIVE")
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True)
+
+    company_id = Column(String(100), nullable=False, index=True)
+
+class RestaurantTableMergeDetail(Base):
+    __tablename__ = "restaurant_table_merge_detail"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    merge_id = Column(Integer, nullable=False, index=True)   # restaurant_table_merge.id
+    table_id = Column(Integer, nullable=False, index=True)   # restaurant_table.id
+
+    created_at = Column(DateTime, server_default=func.now())
+
+# =====================================================
+# RESTAURANT MANAGEMENT
 # Menu Category
 # =====================================================
 class MenuCategory(Base):
@@ -374,8 +448,13 @@ class MenuModifier(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    menu_id = Column(Integer, nullable=False, index=True)   # restaurant_menu.id
+
     modifier_name = Column(String(100), nullable=False, index=True)
     price = Column(Float, nullable=True)
+
+    modifier_type = Column(String(50), nullable=True)
+    # Add-on | Remove
 
     status = Column(String(50), nullable=False, index=True, default="ACTIVE")
 
@@ -388,26 +467,42 @@ class MenuModifier(Base):
 
 # =====================================================
 # RESTAURANT MANAGEMENT
-# Menu Recipe Mapping
+# Combo / Package Deals
 # =====================================================
-class MenuRecipe(Base):
-    __tablename__ = "menu_recipe"
+class ComboDeal(Base):
+    __tablename__ = "combo_deal"
 
     id = Column(Integer, primary_key=True, index=True)
 
-    menu_id = Column(Integer, nullable=False, index=True)
+    combo_code = Column(String(100), unique=True, nullable=False, index=True)
+    combo_name = Column(String(150), nullable=False, index=True)
+    description = Column(String(255), nullable=True)
 
-    ingredients = Column(JSON, nullable=False)
-    # [{ingredient_id, quantity, unit}]
+    combo_price = Column(Float, nullable=False)
+
+    valid_from = Column(DateTime, nullable=True)
+    valid_to = Column(DateTime, nullable=True)
+
+    is_active = Column(String(10), nullable=False, default="Yes")
 
     status = Column(String(50), nullable=False, index=True, default="ACTIVE")
-
     created_by = Column(String(100), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
     updated_by = Column(String(100), nullable=True)
 
     company_id = Column(String(100), nullable=False, index=True)
+
+class ComboItem(Base):
+    __tablename__ = "combo_item"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    combo_id = Column(Integer, nullable=False, index=True)   # combo_deal.id
+    menu_id = Column(Integer, nullable=False, index=True)    # restaurant_menu.id
+    quantity = Column(Integer, nullable=False, default=1)
+
+    created_at = Column(DateTime, server_default=func.now())
 
 class Kitchen(Base):
     __tablename__ = "kitchen"
@@ -460,12 +555,30 @@ class KitchenOrderTicket(Base):
     kot_number = Column(String(100), unique=True, nullable=False, index=True)
     order_id = Column(Integer, nullable=False, index=True)
 
+    parent_kot_id = Column(Integer, nullable=True, index=True)
+    # Set for Supplementary/Modification/Cancellation KOTs -> kitchen_order_ticket.id of the original
+
+    kot_type = Column(String(50), nullable=False, default="Original", index=True)
+    # Original | Supplementary | Modification | Cancellation
+
     kitchen_id = Column(Integer, nullable=False, index=True)
 
     kot_status = Column(String(50), nullable=False, index=True)
-    # New | In Progress | Completed
+    # New | Acknowledged | In Progress | Completed | Cancelled
 
     priority = Column(String(20), nullable=True)
+    # Normal | High | ASAP
+
+    print_count = Column(Integer, default=0)
+    printed_by = Column(String(100), nullable=True)
+
+    acknowledged_by = Column(String(100), nullable=True)
+    acknowledged_at = Column(DateTime, nullable=True)
+
+    completed_by = Column(String(100), nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    remarks = Column(String(255), nullable=True)
 
     status = Column(String(50), nullable=False, index=True, default="ACTIVE")
     created_by = Column(String(100), nullable=False)
@@ -485,8 +598,31 @@ class KitchenOrderItem(Base):
     preparation_status = Column(String(50), nullable=False, index=True)
     # Pending | Preparing | Ready
 
+    prep_start_time = Column(DateTime, nullable=True)
+    prep_end_time = Column(DateTime, nullable=True)
+
     status = Column(String(50), nullable=False, index=True, default="ACTIVE")
     created_at = Column(DateTime, server_default=func.now())
+
+# =====================================================
+# RESTAURANT MANAGEMENT
+# KOT Modifications (add / remove / change against an already-fired KOT)
+# =====================================================
+class KitchenOrderModification(Base):
+    __tablename__ = "kitchen_order_modification"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    kot_id = Column(Integer, nullable=False, index=True)          # kitchen_order_ticket.id being modified
+    original_kot_item_id = Column(Integer, nullable=True, index=True)  # kitchen_order_item.id, if changing an existing line
+
+    modification_type = Column(String(50), nullable=False, index=True)
+    # Add | Remove | Change
+
+    modification_details = Column(String(255), nullable=True)
+
+    modified_by = Column(String(100), nullable=False)
+    modification_datetime = Column(DateTime, server_default=func.now())
 
 # =====================================================
 # RESTAURANT MANAGEMENT
@@ -631,6 +767,41 @@ class RestaurantBillPayment(Base):
     updated_by = Column(String(100), nullable=True)
 
     company_id = Column(String(100), nullable=False, index=True)
+
+# =====================================================
+# RESTAURANT MANAGEMENT
+# Bill Split (event log) + Split Details (resulting child bills)
+# =====================================================
+class RestaurantBillSplit(Base):
+    __tablename__ = "restaurant_bill_split"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    original_bill_id = Column(Integer, nullable=False, index=True)   # restaurant_bill.id
+
+    split_type = Column(String(50), nullable=False)
+    # By Person | By Item | By Amount
+
+    split_count = Column(Integer, nullable=False)
+    split_datetime = Column(DateTime, server_default=func.now())
+
+    status = Column(String(50), nullable=False, index=True, default="ACTIVE")
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    company_id = Column(String(100), nullable=False, index=True)
+
+class RestaurantBillSplitDetail(Base):
+    __tablename__ = "restaurant_bill_split_detail"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    split_id = Column(Integer, nullable=False, index=True)         # restaurant_bill_split.id
+    child_bill_id = Column(Integer, nullable=False, index=True)    # restaurant_bill.id of the resulting split bill
+    split_number = Column(Integer, nullable=False)
+    split_amount = Column(Float, nullable=False)
+
+    created_at = Column(DateTime, server_default=func.now())
 
 # =====================================================
 # INVENTORY MANAGEMENT
@@ -1004,6 +1175,73 @@ class PaymentModeReport(Base):
     total_amount = Column(Float, default=0)
 
     created_at = Column(DateTime, server_default=func.now())
+    company_id = Column(String(100), nullable=False, index=True)
+
+# =====================================================
+# STAFF MANAGEMENT
+# Restaurant Staff Assignment (shift/section/table for an existing employee)
+# =====================================================
+class RestaurantStaffAssignment(Base):
+    __tablename__ = "restaurant_staff_assignment"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    employee_id = Column(Integer, nullable=False, index=True)   # UserServices employee id (not duplicated here)
+    employee_name = Column(String(150), nullable=True)
+
+    role = Column(String(50), nullable=False, index=True)
+    # Waiter | Bartender | Chef | Cashier | Manager
+
+    shift_date = Column(Date, nullable=False, index=True)
+    shift_start = Column(Time, nullable=False)
+    shift_end = Column(Time, nullable=True)
+
+    section = Column(String(100), nullable=True, index=True)
+    floor_id = Column(Integer, nullable=True, index=True)
+
+    sales_target = Column(Float, nullable=True)
+    actual_sales = Column(Float, default=0)
+
+    clock_in_at = Column(DateTime, nullable=True)
+    clock_out_at = Column(DateTime, nullable=True)
+
+    opening_cash_float = Column(Float, nullable=True)
+    closing_cash_amount = Column(Float, nullable=True)
+
+    shift_status = Column(String(50), nullable=False, index=True, default="Scheduled")
+    # Scheduled | On Shift | On Break | Closed
+
+    status = Column(String(50), nullable=False, index=True, default="ACTIVE")
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True)
+
+    company_id = Column(String(100), nullable=False, index=True)
+
+# =====================================================
+# SETTINGS & CONFIGURATION
+# Key/value business settings (operating hours, tax, printers, numbering formats...)
+# =====================================================
+class RestaurantSettings(Base):
+    __tablename__ = "restaurant_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    setting_key = Column(String(100), unique=True, nullable=False, index=True)
+    setting_value = Column(String(255), nullable=True)
+
+    setting_group = Column(String(100), nullable=True, index=True)
+    # OperatingHours | Tax | ServiceCharge | Printer | Numbering | Discount | Language
+
+    description = Column(String(255), nullable=True)
+
+    status = Column(String(50), nullable=False, index=True, default="ACTIVE")
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True)
+
     company_id = Column(String(100), nullable=False, index=True)
 
 

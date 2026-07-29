@@ -186,9 +186,14 @@ def _build_proxy(prefix: str, upstream_base: str):
         verify_authentication(request)
 
         content_type = request.headers.get("content-type", "")
-        forward_headers = {
-            "Authorization": request.headers["Authorization"],
-        }
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            session_token = getattr(request, "session", {}).get("access_token")
+            if session_token:
+                auth_header = f"Bearer {session_token}"
+        forward_headers = {}
+        if auth_header:
+            forward_headers["Authorization"] = auth_header
         # NOTE: We intentionally do NOT forward client-supplied `company_id`
         # headers. Downstream services derive company_id from JWT claims.
         for h in ("accept", "accept-language", "user-agent", "x-request-id"):
@@ -273,5 +278,10 @@ router.add_api_route(
 router.add_api_route(
     "/user/{path:path}",
     _build_proxy("user", ServiceURL.USER_SERVICE_URL),
+    methods=["GET", "POST", "PUT", "DELETE"],
+)
+router.add_api_route(
+    "/restaurant/{path:path}",
+    _build_proxy("restaurant", ServiceURL.RESTAURANT_SERVICE_URL),
     methods=["GET", "POST", "PUT", "DELETE"],
 )

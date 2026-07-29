@@ -1,0 +1,415 @@
+import uuid
+from datetime import date, datetime
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from models import get_db, models
+from resources.utils import verify_authentication
+from configs.base_config import CommonWords
+
+router = APIRouter()
+
+STATUS = CommonWords.STATUS
+UNSTATUS = CommonWords.UNSTATUS
+
+
+def gen_code(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
+
+
+def _auth(request: Request):
+    user_id, role_id, company_id, token = verify_authentication(request)
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token")
+    return user_id, role_id, company_id
+
+
+# =====================================================
+# SCHEMAS
+# =====================================================
+class OrderIn(BaseModel):
+    order_type: str  # Dine-In | Takeaway | Delivery | Room Service
+    table_id: Optional[int] = None
+    room_no: Optional[str] = None
+    guest_name: Optional[str] = None
+    guest_mobile: Optional[str] = None
+    no_of_guests: Optional[int] = None
+    server_id: Optional[str] = None
+    server_name: Optional[str] = None
+    special_notes: Optional[str] = None
+
+
+class OrderItemIn(BaseModel):
+    menu_id: int
+    variant_id: Optional[int] = None
+    quantity: int
+    special_instructions: Optional[str] = None
+
+
+class OrderItemsIn(BaseModel):
+    items: List[OrderItemIn]
+
+
+class OrderItemUpdate(BaseModel):
+    quantity: Optional[int] = None
+    item_status: Optional[str] = None
+
+
+class OrderConfirmIn(BaseModel):
+    priority: Optional[str] = "Normal"  # Normal | High | ASAP
+
+
+class OrderStatusIn(BaseModel):
+    order_status: str
+
+
+# =====================================================
+# HELPERS
+# =====================================================
+def _resolve_price_and_kitchen(db: Session, company_id: str, created_by: str, item: OrderItemIn):
+    menu = (
+        db.query(models.RestaurantMenu)
+        .filter(models.RestaurantMenu.id == item.menu_id, models.RestaurantMenu.company_id == company_id)
+        .first()
+    )
+    if not menu:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"menu_id {item.menu_id} does not exist")
+    if menu.availability_status != "Available":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{menu.item_name} is not available")
+
+    price = menu.price
+    if item.variant_id:
+        variant = (
+            db.query(models.MenuVariant)
+            .filter(models.MenuVariant.id == item.variant_id, models.MenuVariant.menu_id == item.menu_id)
+            .first()
+        )
+        if not variant:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="variant_id does not match menu_id")
+        price = variant.price
+
+    kitchen = (
+        db.query(models.Kitchen)
+        .filter(models.Kitchen.kitchen_type == menu.kitchen_section, models.Kitchen.company_id == company_id, models.Kitchen.is_active == "Yes")
+        .first()
+    )
+    if not kitchen:
+        # This app only ever routes KOTs to one of the four fixed kitchen displays
+        # (Main/Grill/Dessert/Bar), so there's nothing for an admin to meaningfully
+        # configure here - provision it on first use instead of blocking the order.
+        kitchen = models.Kitchen(
+            kitchen_code=gen_code("KTC"),
+            kitchen_name=f"{menu.kitchen_section} Kitchen",
+            kitchen_type=menu.kitchen_section,
+            is_active="Yes",
+            created_by=created_by,
+            company_id=company_id,
+        )
+        db.add(kitchen)
+        db.flush()
+    return menu, price, kitchen
+
+
+def _recalculate_totals(db: Session, order: models.RestaurantOrder):
+    items = (
+        db.query(models.RestaurantOrderItem)
+        .filter(models.RestaurantOrderItem.order_id == order.id, models.RestaurantOrderItem.status == STATUS)
+        .all()
+    )
+    sub_total = sum((i.price or 0) * (i.quantity or 0) for i in items)
+    order.sub_total = sub_total
+    order.grand_total = sub_total + (order.tax_amount or 0) + (order.service_charge or 0) - (order.discount_amount or 0)
+
+
+# =====================================================
+# ORDERS
+# =====================================================
+@router.post("/order", status_code=status.HTTP_201_CREATED)
+def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+
+    if payload.order_type == "Dine-In" and not payload.table_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="table_id is required for Dine-In orders")
+    if payload.order_type == "Room Service" and not payload.room_no:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="room_no is required for Room Service orders")
+
+    table = None
+    if payload.table_id:
+        table = (
+            db.query(models.RestaurantTable)
+            .filter(models.RestaurantTable.id == payload.table_id, models.RestaurantTable.company_id == company_id)
+            .first()
+        )
+        if not table:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="table_id does not exist")
+        if table.table_status == "Occupied" and table.current_order_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Table already has an active order")
+
+    try:
+        now = datetime.now()
+        order = models.RestaurantOrder(
+            order_number=gen_code("ORD"),
+            order_date=now.date(),
+            order_time=now.time(),
+            order_status="New",
+            payment_status="Pending",
+            table_code=table.table_code if table else None,
+            floor_id=table.floor_id if table else None,
+            floor_code=table.floor_code if table else None,
+            created_by=user_id,
+            company_id=company_id,
+            **payload.dict(),
+        )
+        db.add(order)
+        db.flush()
+
+        if table:
+            table.table_status = "Occupied"
+            table.current_order_id = order.order_number
+            table.updated_by = user_id
+
+        db.commit()
+        db.refresh(order)
+        return {"status": "success", "data": {"id": order.id, "order_number": order.order_number, "token": order.token}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/order", status_code=status.HTTP_200_OK)
+def list_orders(
+    request: Request,
+    order_status_filter: Optional[str] = Query(None, alias="order_status"),
+    order_type: Optional[str] = Query(None),
+    table_id: Optional[int] = Query(None),
+    order_date: Optional[date] = Query(None),
+    db: Session = Depends(get_db),
+):
+    user_id, role_id, company_id = _auth(request)
+    q = db.query(models.RestaurantOrder).filter(
+        models.RestaurantOrder.company_id == company_id, models.RestaurantOrder.status == STATUS
+    )
+    if order_status_filter:
+        q = q.filter(models.RestaurantOrder.order_status == order_status_filter)
+    if order_type:
+        q = q.filter(models.RestaurantOrder.order_type == order_type)
+    if table_id is not None:
+        q = q.filter(models.RestaurantOrder.table_id == table_id)
+    if order_date is not None:
+        q = q.filter(models.RestaurantOrder.order_date == order_date)
+    rows = q.order_by(models.RestaurantOrder.id.desc()).all()
+    return {"status": "success", "count": len(rows), "data": rows}
+
+
+@router.get("/order/{order_id}", status_code=status.HTTP_200_OK)
+def get_order(order_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    order = (
+        db.query(models.RestaurantOrder)
+        .filter(models.RestaurantOrder.id == order_id, models.RestaurantOrder.company_id == company_id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    items = (
+        db.query(models.RestaurantOrderItem)
+        .filter(models.RestaurantOrderItem.order_id == order_id, models.RestaurantOrderItem.status == STATUS)
+        .all()
+    )
+    return {"status": "success", "data": {**order.__dict__, "items": items}}
+
+
+@router.post("/order/{order_id}/items", status_code=status.HTTP_201_CREATED)
+def add_order_items(order_id: int, payload: OrderItemsIn, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    order = (
+        db.query(models.RestaurantOrder)
+        .filter(models.RestaurantOrder.id == order_id, models.RestaurantOrder.company_id == company_id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if order.order_status in ("Completed", "Cancelled"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot add items to a {order.order_status} order")
+
+    try:
+        created = []
+        for item in payload.items:
+            if item.quantity < 1:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="quantity must be at least 1")
+            menu, price, kitchen = _resolve_price_and_kitchen(db, company_id, user_id, item)
+            row = models.RestaurantOrderItem(
+                order_id=order.id,
+                menu_id=menu.id,
+                kitchen_id=kitchen.id,
+                quantity=item.quantity,
+                price=price,
+                item_status="Pending",
+                created_by=user_id,
+                company_id=company_id,
+            )
+            db.add(row)
+            created.append(row)
+
+        db.flush()
+        _recalculate_totals(db, order)
+        db.commit()
+        return {"status": "success", "count": len(created), "data": [c.id for c in created]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.put("/order/item/{order_item_id}", status_code=status.HTTP_200_OK)
+def update_order_item(order_item_id: int, payload: OrderItemUpdate, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    item = (
+        db.query(models.RestaurantOrderItem)
+        .filter(models.RestaurantOrderItem.id == order_item_id, models.RestaurantOrderItem.company_id == company_id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order item not found")
+    for field, value in payload.dict(exclude_unset=True).items():
+        setattr(item, field, value)
+    item.updated_by = user_id
+    db.flush()
+    order = db.query(models.RestaurantOrder).filter(models.RestaurantOrder.id == item.order_id).first()
+    if order:
+        _recalculate_totals(db, order)
+    db.commit()
+    return {"status": "success", "message": "Order item updated"}
+
+
+@router.delete("/order/item/{order_item_id}", status_code=status.HTTP_200_OK)
+def cancel_order_item(order_item_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    item = (
+        db.query(models.RestaurantOrderItem)
+        .filter(models.RestaurantOrderItem.id == order_item_id, models.RestaurantOrderItem.company_id == company_id)
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order item not found")
+    item.status = UNSTATUS
+    item.item_status = "Cancelled"
+    item.updated_by = user_id
+    db.flush()
+    order = db.query(models.RestaurantOrder).filter(models.RestaurantOrder.id == item.order_id).first()
+    if order:
+        _recalculate_totals(db, order)
+    db.commit()
+    return {"status": "success", "message": "Order item cancelled"}
+
+
+# =====================================================
+# ORDER CONFIRM -> GENERATE KOTs (split by kitchen)
+# =====================================================
+@router.post("/order/{order_id}/confirm", status_code=status.HTTP_201_CREATED)
+def confirm_order(order_id: int, payload: OrderConfirmIn, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    order = (
+        db.query(models.RestaurantOrder)
+        .filter(models.RestaurantOrder.id == order_id, models.RestaurantOrder.company_id == company_id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    items = (
+        db.query(models.RestaurantOrderItem)
+        .filter(
+            models.RestaurantOrderItem.order_id == order_id,
+            models.RestaurantOrderItem.status == STATUS,
+            models.RestaurantOrderItem.item_status == "Pending",
+        )
+        .all()
+    )
+    if not items:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending items to send to the kitchen")
+
+    is_supplementary = order.order_status in ("In Progress", "Ready", "Served")
+    kot_type = "Supplementary" if is_supplementary else "Original"
+
+    try:
+        by_kitchen = {}
+        for it in items:
+            by_kitchen.setdefault(it.kitchen_id, []).append(it)
+
+        created_kots = []
+        for kitchen_id, kitchen_items in by_kitchen.items():
+            parent_kot_id = None
+            if is_supplementary:
+                original = (
+                    db.query(models.KitchenOrderTicket)
+                    .filter(models.KitchenOrderTicket.order_id == order_id, models.KitchenOrderTicket.kitchen_id == kitchen_id)
+                    .order_by(models.KitchenOrderTicket.id.asc())
+                    .first()
+                )
+                parent_kot_id = original.id if original else None
+
+            kot = models.KitchenOrderTicket(
+                kot_number=gen_code("KOT"),
+                order_id=order_id,
+                parent_kot_id=parent_kot_id,
+                kot_type=kot_type,
+                kitchen_id=kitchen_id,
+                kot_status="New",
+                priority=payload.priority,
+                created_by=user_id,
+                company_id=company_id,
+            )
+            db.add(kot)
+            db.flush()
+
+            for it in kitchen_items:
+                db.add(models.KitchenOrderItem(kot_id=kot.id, order_item_id=it.id, preparation_status="Pending"))
+                it.item_status = "Preparing"
+
+            created_kots.append({"id": kot.id, "kot_number": kot.kot_number, "kitchen_id": kitchen_id})
+
+        order.order_status = "In Progress"
+        order.updated_by = user_id
+        db.commit()
+        return {"status": "success", "data": {"kots": created_kots}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.put("/order/{order_id}/status", status_code=status.HTTP_200_OK)
+def update_order_status(order_id: int, payload: OrderStatusIn, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    order = (
+        db.query(models.RestaurantOrder)
+        .filter(models.RestaurantOrder.id == order_id, models.RestaurantOrder.company_id == company_id)
+        .first()
+    )
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    order.order_status = payload.order_status
+    order.updated_by = user_id
+
+    if payload.order_status in ("Completed", "Cancelled") and order.table_code:
+        table = (
+            db.query(models.RestaurantTable)
+            .filter(models.RestaurantTable.table_code == order.table_code, models.RestaurantTable.company_id == company_id)
+            .first()
+        )
+        if table:
+            table.table_status = "Cleaning" if payload.order_status == "Completed" else "Available"
+            table.current_order_id = None
+            table.updated_by = user_id
+
+    db.commit()
+    return {"status": "success", "message": "Order status updated"}
