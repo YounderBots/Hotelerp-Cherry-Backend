@@ -15,14 +15,16 @@ const iconMap = {
   revenue: DollarSign,
 };
 
-const KPICard = ({ title, value, note, type, loading = false }) => {
+const KPICard = ({ title, value, note, type, loading = false, index = 0 }) => {
   const Icon = iconMap[type] || Calendar;
+  const isHero = type === "revenue";
 
   return (
     <div
-      className={`kpi-card ${loading ? "loading" : ""}`}
+      className={`kpi-card kpi-card--${type} ${isHero ? "kpi-card--hero" : ""} ${loading ? "loading" : ""}`}
       role="group"
       aria-label={`${title}: ${loading ? "loading" : value}`}
+      style={{ "--kpi-delay": `${index * 60}ms` }}
     >
       <div className="kpi-top">
         <span className="kpi-title">{title}</span>

@@ -15,9 +15,8 @@ import {
 import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
-// Backend reservation_status vocabulary — must match reservationController.py
-// (checkin flips Confirmed → Arrived; checkout flips Arrived → Departures).
-const RESERVATION_STATUSES = ["Pending", "Confirmed", "Arrived", "Departures", "Cancelled"];
+// reservation_status is master-data-driven (see /masterdata/reservation_status);
+// checkin flips Confirmed → Arrived, checkout flips Arrived → Departures.
 const CAN_CHECKIN = new Set(["Confirmed"]);
 const CAN_CHECKOUT = new Set(["Arrived"]);
 const LOCKED_STATUSES = new Set(["Arrived", "Departures", "Cancelled"]);
@@ -193,6 +192,7 @@ const Reservation = () => {
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [taxTypes, setTaxTypes] = useState([]);
   const [discountTypes, setDiscountTypes] = useState([]);
+  const [reservationStatuses, setReservationStatuses] = useState([]);
 
   const mounted = useRef(true);
 
@@ -231,15 +231,17 @@ const Reservation = () => {
       APICall.getT("/masterdata/payment_methods"),
       APICall.getT("/masterdata/tax"),
       APICall.getT("/masterdata/discount"),
+      APICall.getT("/masterdata/reservation_status"),
     ]).then((results) => {
       if (!mounted.current) return;
-      const [rIdent, rRT, rRoom, rPM, rTax, rDisc] = results;
+      const [rIdent, rRT, rRoom, rPM, rTax, rDisc, rStatus] = results;
       setIdentityTypes(rIdent.status === "fulfilled" ? readList(rIdent.value) : []);
       setRoomTypes(rRT.status === "fulfilled" ? readList(rRT.value) : []);
       setRooms(rRoom.status === "fulfilled" ? readList(rRoom.value) : []);
       setPaymentMethods(rPM.status === "fulfilled" ? readList(rPM.value) : []);
       setTaxTypes(rTax.status === "fulfilled" ? readList(rTax.value) : []);
       setDiscountTypes(rDisc.status === "fulfilled" ? readList(rDisc.value) : []);
+      setReservationStatuses(rStatus.status === "fulfilled" ? readList(rStatus.value) : []);
     });
 
     return () => {
@@ -374,8 +376,9 @@ const Reservation = () => {
     if (num(form.no_of_adults) < 1) return "At least one adult is required.";
     if (num(form.no_of_rooms) < 1) return "At least one room is required.";
     if (!form.identity_type_id) return "Identity type is required.";
-    if (!form.reservation_status || !RESERVATION_STATUSES.includes(form.reservation_status)) {
-      return `Reservation status must be one of: ${RESERVATION_STATUSES.join(", ")}`;
+    const statusLabels = reservationStatuses.map((s) => s.reservation_status);
+    if (!form.reservation_status || (statusLabels.length > 0 && !statusLabels.includes(form.reservation_status))) {
+      return `Reservation status must be one of: ${statusLabels.join(", ")}`;
     }
     if (num(form.overall_amount) < 0) return "Overall amount cannot be negative.";
     if (num(form.total_amount) < 0) return "Total amount cannot be negative.";
@@ -1400,8 +1403,8 @@ const Reservation = () => {
                           className="form-select"
                         >
                           <option value="">— select —</option>
-                          {RESERVATION_STATUSES.map((s) => (
-                            <option key={s} value={s}>{s}</option>
+                          {reservationStatuses.map((s) => (
+                            <option key={s.id} value={s.reservation_status}>{s.reservation_status}</option>
                           ))}
                         </select>
                       </div>

@@ -123,12 +123,12 @@ const AdminDashboard = () => {
     return [...roomActs, ...keeperActs].slice(0, 8);
   }, [activity]);
 
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ");
   const displayName = (
+    fullName ||
     user?.name ||
     user?.username ||
-    user?.first_name ||
-    user?.email ||
-    user?.company_email ||
+    user?.role_name ||
     "back"
   );
 

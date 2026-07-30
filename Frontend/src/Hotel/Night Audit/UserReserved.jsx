@@ -343,7 +343,7 @@ const UserReserved = () => {
       align: "center",
       type: "custom",
       render: (row) => (
-        <span className={`rvw-status-chip ${statusClass(row.reservation_status)}`}>
+        <span className={`rmv-status-badge ${statusClass(row.reservation_status)}`}>
           {row.reservation_status || "—"}
         </span>
       ),
@@ -389,7 +389,7 @@ const UserReserved = () => {
       align: "center",
       type: "custom",
       render: (row) => (
-        <span className={`rvw-status-chip ${taskStatusClass(row.task_status)}`}>
+        <span className={`rmv-status-badge ${taskStatusClass(row.task_status)}`}>
           {row.task_status || "—"}
         </span>
       ),

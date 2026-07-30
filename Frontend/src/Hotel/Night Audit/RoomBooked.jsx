@@ -284,7 +284,7 @@ const RoomBooked = () => {
       align: "center",
       type: "custom",
       render: (row) => (
-        <span className={`rvw-status-chip ${statusClass(row.reservation_status)}`}>
+        <span className={`rmv-status-badge ${statusClass(row.reservation_status)}`}>
           {row.reservation_status || "—"}
         </span>
       ),

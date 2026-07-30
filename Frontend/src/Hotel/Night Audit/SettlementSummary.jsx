@@ -355,7 +355,7 @@ const SettlementSummary = () => {
       render: (row) => {
         const bucket = settlementBucket(row);
         return (
-          <span className={`rvw-status-chip ${SETTLEMENT_CLASS[bucket]}`}>
+          <span className={`rmv-status-badge ${SETTLEMENT_CLASS[bucket]}`}>
             {SETTLEMENT_LABEL[bucket]}
           </span>
         );

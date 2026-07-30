@@ -175,18 +175,23 @@ const APICall = {
     },
 
     // -------------------------
-    // PUT (With Token)
+    // PUT (With Token) — supports FormData and JSON
     // -------------------------
-    putT: (endpoint, payload = {}, opts = {}) =>
-        runRequest(
+    putT: (endpoint, payload = {}, opts = {}) => {
+        const isFormData = typeof FormData !== "undefined" && payload instanceof FormData;
+        return runRequest(
             `${baseURL}${endpoint}`,
             {
                 method: "PUT",
-                headers: { "Content-Type": "application/json", ...getAuthHeader() },
-                body: JSON.stringify(payload),
+                headers: {
+                    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+                    ...getAuthHeader(),
+                },
+                body: isFormData ? payload : JSON.stringify(payload),
             },
             opts,
-        ),
+        );
+    },
 
     // -------------------------
     // DELETE (With Token)

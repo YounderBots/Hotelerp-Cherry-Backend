@@ -7,8 +7,7 @@ import RoomCard from "./Pages/Card";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
-// Backend reservation_status vocabulary (shared with Reservation.jsx).
-const RESERVATION_STATUSES = ["Pending", "Confirmed", "Arrived", "Departures", "Cancelled"];
+// Locked once a reservation reaches one of these (master-data-driven) statuses.
 const LOCKED_STATUSES = new Set(["Arrived", "Departures", "Cancelled"]);
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
@@ -76,6 +75,7 @@ const ReservationListEdit = () => {
 
   const [roomTypes, setRoomTypes] = useState([]);
   const [roomsData, setRoomsData] = useState([]);
+  const [reservationStatuses, setReservationStatuses] = useState([]);
   const [masterError, setMasterError] = useState(null);
 
   const [selectedRoomIds, setSelectedRoomIds] = useState([]); // ordered ints
@@ -107,13 +107,16 @@ const ReservationListEdit = () => {
     Promise.allSettled([
       APICall.getT("/masterdata/room_types"),
       APICall.getT("/masterdata/room"),
-    ]).then(([rRT, rRoom]) => {
+      APICall.getT("/masterdata/reservation_status"),
+    ]).then(([rRT, rRoom, rStatus]) => {
       if (!mounted.current) return;
       if (rRT.status === "fulfilled") setRoomTypes(readList(rRT.value));
       if (rRoom.status === "fulfilled") setRoomsData(readList(rRoom.value));
+      if (rStatus.status === "fulfilled") setReservationStatuses(readList(rStatus.value));
       const errs = [];
       if (rRT.status === "rejected") errs.push(errMsg(rRT.reason, "room types"));
       if (rRoom.status === "rejected") errs.push(errMsg(rRoom.reason, "rooms"));
+      if (rStatus.status === "rejected") errs.push(errMsg(rStatus.reason, "reservation statuses"));
       setMasterError(errs.length ? `Failed to load: ${errs.join(", ")}` : null);
     });
     return () => { mounted.current = false; };
@@ -230,12 +233,14 @@ const ReservationListEdit = () => {
   // --------------------------------------------------------------------
   // Save (PUT /hotel/room_reservation as FormData)
   // --------------------------------------------------------------------
+  const statusLabels = reservationStatuses.map((s) => s.reservation_status);
+
   const validate = () => {
     if (!reservation?.id) return "Missing reservation reference.";
     if (!dates.arrival_date || !dates.departure_date) return "Arrival and departure dates are required.";
     if (isoDay(dates.arrival_date) > isoDay(dates.departure_date)) return "Departure must be on or after arrival.";
-    if (!RESERVATION_STATUSES.includes(dates.reservation_status)) {
-      return `Reservation status must be one of: ${RESERVATION_STATUSES.join(", ")}`;
+    if (statusLabels.length > 0 && !statusLabels.includes(dates.reservation_status)) {
+      return `Reservation status must be one of: ${statusLabels.join(", ")}`;
     }
     if (selectedRoomIds.length === 0) return "Select at least one room.";
     for (const id of selectedRoomIds) {
@@ -500,8 +505,8 @@ const ReservationListEdit = () => {
                 disabled={isLocked}
               >
                 <option value="">— select —</option>
-                {RESERVATION_STATUSES.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                {reservationStatuses.map((s) => (
+                  <option key={s.id} value={s.reservation_status}>{s.reservation_status}</option>
                 ))}
               </select>
             </div>

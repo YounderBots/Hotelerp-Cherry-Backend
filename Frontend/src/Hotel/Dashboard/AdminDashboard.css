@@ -36,24 +36,54 @@
    Header row (greeting + actions)
 ========================================================= */
 .dashboard-header {
+  position: relative;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 2rem;
-  background: var(--white);
-  padding: 1.5rem 2rem;
-  border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow);
-  border: 1px solid var(--border-color);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+  background: linear-gradient(135deg, var(--primary-lightest) 0%, var(--white) 60%);
+  padding: 1.85rem 2.25rem;
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border-light);
 }
 
 .dashboard-header-inline {
-  background: transparent;
-  box-shadow: none;
-  border: none;
-  padding: 0 0 1rem 0;
   margin-bottom: 0;
+}
+
+.dashboard-greeting {
+  display: flex;
   align-items: center;
+  gap: 1.1rem;
+}
+
+.dashboard-avatar {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius-lg);
+  background: var(--primary-lighter);
+  border: 1px solid var(--primary-light);
+  color: var(--primary-color);
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
+}
+
+.dashboard-eyebrow {
+  display: inline-block;
+  margin-bottom: 0.3rem;
+  color: var(--text-muted, var(--gray-600));
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
 }
 
 .dashboard-hello {
@@ -65,9 +95,16 @@
 }
 
 .dashboard-subtitle {
-  margin: 0.25rem 0 0 0;
+  margin: 0.3rem 0 0 0;
   color: var(--text-secondary, var(--gray-600));
   font-size: 0.9rem;
+}
+
+@media (max-width: 640px) {
+  .dashboard-header { padding: 1.5rem; }
+  .dashboard-actions { width: 100%; }
+  .dashboard-actions .btn-primary,
+  .dashboard-actions .btn-outline { flex: 1; justify-content: center; }
 }
 
 .dashboard-actions {
@@ -176,10 +213,53 @@
   color: var(--text-primary);
   padding: 1.5rem;
   border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-md);
   border: 1px solid var(--border-light);
   position: relative;
   overflow: hidden;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+  animation: kpi-rise 0.45s cubic-bezier(0.16, 0.84, 0.44, 1) both;
+  animation-delay: var(--kpi-delay, 0ms);
+}
+
+.kpi-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--accent, var(--primary-mild));
+}
+
+.kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
+  border-color: var(--accent, var(--primary-light));
+}
+
+.kpi-card--bookings  { --accent: var(--primary-mild); --accent-tint: var(--primary-lightest); }
+.kpi-card--checkin   { --accent: var(--success-color); --accent-tint: var(--success-light); }
+.kpi-card--checkout  { --accent: var(--warning-color); --accent-tint: var(--warning-light); }
+.kpi-card--available { --accent: var(--info-color); --accent-tint: var(--info-light); }
+.kpi-card--revenue   { --accent: var(--primary-color); --accent-tint: var(--primary-lighter); }
+
+.kpi-card--hero {
+  background: var(--primary-pale);
+}
+
+.kpi-card--hero .kpi-value {
+  color: var(--primary-color);
+}
+
+@keyframes kpi-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-card { animation: none; }
+  .kpi-card:hover { transform: none; }
 }
 
 .kpi-top {
@@ -201,11 +281,16 @@
   width: 40px;
   height: 40px;
   border-radius: var(--border-radius-md);
-  background: var(--primary-lightest);
-  color: var(--primary-color);
+  background: var(--accent-tint, var(--primary-lightest));
+  color: var(--accent, var(--primary-color));
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform var(--transition-fast);
+}
+
+.kpi-card:hover .kpi-icon {
+  transform: scale(1.08);
 }
 
 .kpi-value {
@@ -248,19 +333,38 @@
   background: var(--white);
   padding: 1.5rem;
   border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-md);
   border: 1px solid var(--border-color);
   height: 100%;
   display: flex;
   flex-direction: column;
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--primary-lighter);
 }
 
 .card h4 {
+  position: relative;
   margin: 0 0 1rem 0;
+  padding-left: 0.75rem;
   color: var(--secondary-dark);
   font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: 0.3px;
+}
+
+.card h4::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.15em;
+  bottom: 0.15em;
+  width: 4px;
+  border-radius: var(--border-radius-full);
+  background: linear-gradient(180deg, var(--primary-mild), var(--primary-color));
 }
 
 .card-header-inline {
@@ -364,15 +468,14 @@
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.25rem;
-  background: var(--primary-lightest);
   border: 1px solid var(--border-light);
   border-radius: var(--border-radius-md);
-  transition: transform var(--transition-fast), background var(--transition-fast);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .availability > div:hover {
-  background: var(--primary-lighter);
   transform: translateX(4px);
+  box-shadow: var(--shadow-sm);
 }
 
 .availability > div span {
@@ -463,6 +566,7 @@
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   padding: 4px 12px;
   border-radius: var(--border-radius-full);
   font-size: 0.72rem;
@@ -471,6 +575,15 @@
   letter-spacing: 0.5px;
   background: var(--primary-lightest);
   color: var(--primary-color);
+}
+
+.badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .badge.success { background: var(--success-light); color: var(--success-color); }

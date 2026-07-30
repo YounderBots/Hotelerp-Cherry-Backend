@@ -4,6 +4,19 @@ import { Plus, RefreshCw } from "lucide-react";
 
 const numberFmt = new Intl.NumberFormat(undefined);
 
+const dateFmt = new Intl.DateTimeFormat(undefined, {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+});
+
+const initialsOf = (name) => {
+  if (!name || name === "back") return "★";
+  const parts = String(name).trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
 const formatCount = (n) => (Number.isFinite(n) ? numberFmt.format(n) : "—");
 
 const formatCurrency = (n) => {
@@ -38,9 +51,13 @@ const KPISection = ({
   return (
     <div className="kpi-section">
       <div className="dashboard-header dashboard-header-inline">
-        <div>
-          <h2 className="dashboard-hello">Welcome back, {displayName}</h2>
-          <p className="dashboard-subtitle">Hotel operations overview</p>
+        <div className="dashboard-greeting">
+          <span className="dashboard-avatar" aria-hidden="true">{initialsOf(displayName)}</span>
+          <div>
+            <span className="dashboard-eyebrow">{dateFmt.format(new Date())}</span>
+            <h2 className="dashboard-hello">Welcome back, {displayName}</h2>
+            <p className="dashboard-subtitle">Hotel operations overview</p>
+          </div>
         </div>
 
         <div className="dashboard-actions">

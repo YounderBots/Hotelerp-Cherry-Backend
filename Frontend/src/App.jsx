@@ -127,8 +127,9 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
   const { user, logout } = useAuth();
   const profileRef = useRef(null);
 
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ");
   const displayName =
-    user?.name || user?.username || user?.email || user?.company_email || "Signed in user";
+    fullName || user?.name || user?.username || user?.role_name || "Signed in user";
   const displayRole = user?.role_name || user?.role || "Staff";
 
   useClickOutside(profileRef, () => setProfileOpen(false), profileOpen);

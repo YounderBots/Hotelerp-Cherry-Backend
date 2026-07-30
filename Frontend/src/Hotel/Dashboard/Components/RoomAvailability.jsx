@@ -2,9 +2,16 @@ import React from "react";
 
 const COLORS = {
   Occupied: "var(--primary-color)",
-  Reserved: "var(--primary-dark)",
-  Available: "var(--primary-mild)",
-  "Not Ready": "var(--primary-light)",
+  Reserved: "var(--info-color)",
+  Available: "var(--success-color)",
+  "Not Ready": "var(--warning-color)",
+};
+
+const TINTS = {
+  Occupied: "var(--primary-lightest)",
+  Reserved: "var(--info-light)",
+  Available: "var(--success-light)",
+  "Not Ready": "var(--warning-light)",
 };
 
 const RoomAvailability = ({ counts, total = 0, loading = false, error = null }) => {
@@ -52,7 +59,11 @@ const RoomAvailability = ({ counts, total = 0, loading = false, error = null }) 
               <div
                 key={row.status}
                 role="listitem"
-                style={{ borderLeft: `5px solid ${color}`, paddingLeft: "1.25rem" }}
+                style={{
+                  borderLeft: `5px solid ${color}`,
+                  background: TINTS[row.status],
+                  paddingLeft: "1.25rem",
+                }}
               >
                 <span>{row.status}</span>
                 <b style={{ color }}>{row.count}</b>

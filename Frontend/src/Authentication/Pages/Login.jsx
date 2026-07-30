@@ -29,7 +29,8 @@ const messageForApi = (err) => {
 
 const displayName = (user) => {
   if (!user || typeof user !== "object") return "back";
-  return user.name || user.username || user.email || user.company_email || "back";
+  const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
+  return fullName || user.name || user.username || user.role_name || "back";
 };
 
 const Login = () => {

@@ -1,12 +1,12 @@
 import React from "react";
 
 const data = [
-  { label: "Direct Booking", value: 61, color: "var(--primary-mild)" },
-  { label: "Booking.com",    value: 12, color: "var(--primary-color)" },
-  { label: "Agoda",          value: 11, color: "var(--primary-light)" },
-  { label: "Airbnb",         value:  9, color: "var(--primary-lighter)" },
-  { label: "Hotels.com",     value:  5, color: "var(--primary-lightest)" },
-  { label: "Others",         value:  2, color: "var(--primary-pale)" },
+  { label: "Direct Booking", value: 61, color: "#2a78d6" },
+  { label: "Booking.com",    value: 12, color: "#eb6834" },
+  { label: "Agoda",          value: 11, color: "#1baf7a" },
+  { label: "Airbnb",         value:  9, color: "#eda100" },
+  { label: "Hotels.com",     value:  5, color: "#e87ba4" },
+  { label: "Others",         value:  2, color: "#008300" },
 ];
 
 const BookingPlatform = () => {
@@ -35,7 +35,12 @@ const BookingPlatform = () => {
           role="img"
           aria-label="Donut chart of booking sources — sample data"
         >
-          <g transform="translate(100,100)">
+          <defs>
+            <filter id="donutShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000" floodOpacity="0.14" />
+            </filter>
+          </defs>
+          <g transform="translate(100,100)" filter="url(#donutShadow)">
             {data.map((item, index) => {
               const dash = (item.value / 100) * circumference;
               const dashArray = `${dash} ${circumference}`;
@@ -62,7 +67,7 @@ const BookingPlatform = () => {
               dy="-0.1em"
               fontSize="30"
               fontWeight="900"
-              fill="var(--primary-color)"
+              fill="var(--secondary-dark)"
             >
               61%
             </text>
@@ -71,7 +76,7 @@ const BookingPlatform = () => {
               dy="1.6em"
               fontSize="14"
               fontWeight="600"
-              fill="var(--gray-600)"
+              fill="var(--gray-500)"
             >
               Direct Booking
             </text>

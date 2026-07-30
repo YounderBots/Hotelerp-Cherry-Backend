@@ -515,6 +515,15 @@ def verify_credentials(payload: dict, db: Session = Depends(get_db)):
         if not ok:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+        role = (
+            db.query(models.Roles)
+            .filter(
+                models.Roles.id == user.Role_ID,
+                models.Roles.company_id == user.company_id,
+            )
+            .first()
+        )
+
         return {
             "status": "success",
             "data": {
@@ -525,6 +534,7 @@ def verify_credentials(payload: dict, db: Session = Depends(get_db)):
                 "last_name": user.Last_Name,
                 "company_email": user.Company_Email,
                 "role_id": user.Role_ID,
+                "role_name": role.role_name if role else None,
                 "company_id": user.company_id,
                 "status": user.status,
             },

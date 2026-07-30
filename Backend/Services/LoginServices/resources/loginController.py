@@ -160,7 +160,11 @@ async def login_post(
         "user": {
             "id": user_data.get("id"),
             "email": user_data.get("company_email"),
+            "username": user_data.get("username"),
+            "first_name": user_data.get("first_name"),
+            "last_name": user_data.get("last_name"),
             "role_id": user_data.get("role_id"),
+            "role_name": user_data.get("role_name"),
             "company_id": user_data.get("company_id"),
         },
         "menus": menus,

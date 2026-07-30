@@ -499,7 +499,7 @@ const GuestEnquiry = () => {
       align: "center",
       type: "custom",
       render: (row) => (
-        <span className={`rvw-status-chip ${inquiryStatusClass(row.inquiry_status)}`}>
+        <span className={`rmv-status-badge ${inquiryStatusClass(row.inquiry_status)}`}>
           {row.inquiry_status || "—"}
         </span>
       ),

@@ -205,7 +205,7 @@ const ReservationView = () => {
                     <h4>{guestName(r)}</h4>
                     <span className="rvv-card-id">#{r.room_reservation_id || r.id}</span>
                   </div>
-                  <span className={`rvw-status-chip ${BUCKET_CLASS[bucket]}`}>
+                  <span className={`rmv-status-badge ${BUCKET_CLASS[bucket]}`}>
                     {BUCKET_LABEL[bucket]}
                   </span>
                 </div>
