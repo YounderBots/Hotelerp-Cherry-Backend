@@ -521,6 +521,25 @@ main {
     padding: 24px;
 }
 
+/* Visually hidden until focused, so keyboard users get a way past the nav
+   without adding anything to the visual design. */
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 1000;
+    padding: 0.75rem 1rem;
+    color: var(--text-white);
+    background: var(--primary-color);
+    border-radius: 0 0 var(--border-radius) 0;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.skip-link:focus {
+    left: 0;
+}
+
 .content-box {
     margin-top: 16px;
     padding: 20px;
