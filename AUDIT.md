@@ -20,14 +20,11 @@ on the `production-audit` branch.
 | 11 | Bar + backend | Pending |
 | 12 | Dashboards | Pending |
 
-## Carried findings (found early, fixed in their own module)
+## Carried findings
 
-- **RoomIncidentLog.jsx — edit silently duplicates.** `handleEdit` sets `editId`
-  and fills the form, but `handleSave` always calls `createRoomIncidentLog()`,
-  which POSTs. Editing an incident creates a second record instead of updating
-  the first. `editId` is written and never read. Also: no View action despite
-  `showViewModal` state existing, `alert()` used for validation where the rest
-  of the app uses toasts, and `console.error` left in the catch. → Module 9.
+- ~~RoomIncidentLog edit duplicates~~ — fixed in Module 7. A sweep of every page
+  with an `editId` confirmed this was isolated to that one file; every other
+  page branches correctly and has a PUT.
 
 - **`react-hooks/set-state-in-effect` (79 occurrences, ~40 files).** React 19's
   compiler flags synchronous `setState` inside an effect body — each one causes
