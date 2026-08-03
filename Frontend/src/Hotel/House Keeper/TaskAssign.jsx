@@ -9,6 +9,11 @@ import APICall from "../../APICalls/APICalls";
 
 const TaskAssign = () => {
   const [data, setData] = useState([]);
+  // This page had no way to report a failure at all: both save paths logged
+  // to the console and the modal closed regardless, so a rejected save looked
+  // exactly like a successful one.
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -57,6 +62,7 @@ const TaskAssign = () => {
   const closeModal = () => {
     setEditId(null);
     setShowModal(false);
+    setFormError("");
   };
 
   const handleChange = (e) => {
@@ -83,83 +89,89 @@ const TaskAssign = () => {
   }
 
   const createHousekeeperTtasks = async () => {
-    try {
-      await APICall.postT("/hotel/housekeeper_tasks", {
-        employee_id: formData.employeeId,
-        first_name: formData.firstName,
-        last_name: formData.lastName,
-        room_no: Number(formData.roomNo),
-        assign_staff: Number(formData.assignedStaff),
-        schedule_date: formData.scheduleDate,
-        schedule_time: formData.scheduleTime,
-        task_status: formData.taskStatus,
-        task_type: formData.taskType,
-        lost_found: formData.lostAndFound,
-        room_status: formData.roomStatus,
-        special_instructions: formData.specialInstruction,
+    await APICall.postT("/hotel/housekeeper_tasks", {
+      employee_id: formData.employeeId,
+      first_name: formData.firstName,
+      last_name: formData.lastName,
+      room_no: Number(formData.roomNo),
+      assign_staff: Number(formData.assignedStaff),
+      schedule_date: formData.scheduleDate,
+      schedule_time: formData.scheduleTime,
+      task_status: formData.taskStatus,
+      task_type: formData.taskType,
+      lost_found: formData.lostAndFound,
+      room_status: formData.roomStatus,
+      special_instructions: formData.specialInstruction,
 
-      });
+    });
 
-      getTaskAssign();
-    } catch (error) {
-      console.error("Create error:", error.response?.data || error);
-    }
+    getTaskAssign();
   };
   const updateHousekeeperTtasks = async () => {
-    try {
-      await APICall.putT("/hotel/housekeeper_tasks", {
-        id: editId,
-        employee_id: formData.employeeId,
-        first_name: formData.firstName,
-        last_name: formData.lastName,
-        room_no: formData.roomNo,
-        assign_staff: formData.assignedStaff,
-        schedule_date: formData.scheduleDate,
-        schedule_time: formData.scheduleTime,
-        task_status: formData.taskStatus,
-        task_type: formData.taskType,
-        lost_found: formData.lostAndFound,
-        room_status: formData.roomStatus,
-        special_instructions: formData.specialInstruction,
+    await APICall.putT("/hotel/housekeeper_tasks", {
+      id: editId,
+      employee_id: formData.employeeId,
+      first_name: formData.firstName,
+      last_name: formData.lastName,
+      room_no: formData.roomNo,
+      assign_staff: formData.assignedStaff,
+      schedule_date: formData.scheduleDate,
+      schedule_time: formData.scheduleTime,
+      task_status: formData.taskStatus,
+      task_type: formData.taskType,
+      lost_found: formData.lostAndFound,
+      room_status: formData.roomStatus,
+      special_instructions: formData.specialInstruction,
 
-      });
+    });
 
-      getTaskAssign();
-    } catch (error) {
-      console.error("Create error:", error.response?.data || error);
-    }
+    getTaskAssign();
   };
 
   const deleteHousekeeperTtasks = async (id) => {
+    // The original returned the error object from its catch, which the caller
+    // ignored, so a failed delete looked identical to a successful one.
     try {
-      await APICall.deleteT(`/hotel/housekeeper_tasks/${id}`)
+      await APICall.deleteT(`/hotel/housekeeper_tasks/${id}`);
+      await getTaskAssign();
+    } catch (error) {
+      setFormError(error?.message || "Could not delete the task assignment.");
     }
-    catch (error) {
-      return error
-    }
-  }
+  };
 
   useEffect(() => {
     getTaskAssign();
     getEmployee();
     getAllRooms();
   }, [])
-  const employee_name = (row) =>
-    `${row?.first_name || ""} ${row?.last_name || ""}`.trim();
 
 
 
 
-  const handleSave = () => {
-    if (!formData.firstName || !formData.roomNo) return;
-
-    if (editId) {
-      updateHousekeeperTtasks();
-    } else {
-      createHousekeeperTtasks();
+  const handleSave = async () => {
+    // A bare `return` gave no feedback — the button simply did nothing.
+    if (!formData.firstName || !formData.roomNo) {
+      setFormError("Staff first name and room number are required.");
+      return;
     }
 
-    closeModal();
+    setFormError("");
+    setSaving(true);
+    try {
+      // Awaited now. These were fired and forgotten, and closeModal() ran
+      // immediately, so the dialog closed before the request had resolved —
+      // a rejected save looked exactly like a successful one.
+      if (editId) {
+        await updateHousekeeperTtasks();
+      } else {
+        await createHousekeeperTtasks();
+      }
+      closeModal();
+    } catch (error) {
+      setFormError(error?.message || "Could not save the task assignment.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleEdit = (row) => {
@@ -194,6 +206,14 @@ const TaskAssign = () => {
 
   return (
     <>
+      {/* Delete runs from the table, not the dialog, so its failures need a
+          home outside the modal — otherwise they are set and never seen. */}
+      {formError && !showModal && (
+        <div role="alert" style={{ marginBottom: 12, color: "var(--error-color)" }}>
+          {formError}
+        </div>
+      )}
+
       <TableTemplate
         title="Task Assign"
         hasActionButton
@@ -268,10 +288,20 @@ const TaskAssign = () => {
           size="xlarge"
           bodyLayout="grid"
           actions={[
-            { label: "Close", variant: "secondary", onClick: closeModal },
-            { label: "Submit", variant: "primary", onClick: handleSave },
+            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
+            {
+              label: saving ? "Saving…" : (editId ? "Update" : "Submit"),
+              variant: "primary",
+              onClick: handleSave,
+              disabled: saving,
+            },
           ]}
         >
+          {formError && (
+            <div role="alert" style={{ gridColumn: "1 / -1", color: "var(--error-color)" }}>
+              {formError}
+            </div>
+          )}
           <Select
             label="Employee ID"
             placeholder="Select ID"

@@ -77,7 +77,10 @@ const RoomType = () => {
       const res = await APICall.getT("/masterdata/room_types");
       setData(res.data.data || res.data || []);
     } catch (error) {
-      console.error("Get room types error", error);
+      // Swallowed into the console before, so a failed load looked like an
+      // empty list rather than an error.
+      setData([]);
+      showAlert(error?.message || "Failed to load room types.", "error");
     }
   };
 

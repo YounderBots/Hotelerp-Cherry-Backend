@@ -130,33 +130,37 @@ const Rooms = () => {
 
 
   const getAllRooms = async () => {
-    const response = await APICall.getT("/masterdata/room");
-
-    console.log("Rooms Response:", response.data);
-
-    const formatted = response.data.map((room) => ({
-      ...room,
-      images: room.images,
-    }));
-
-    setData(formatted);
+    try {
+      const response = await APICall.getT("/masterdata/room");
+      const rows = Array.isArray(response?.data) ? response.data : [];
+      setData(rows.map((room) => ({ ...room, images: room.images })));
+    } catch (err) {
+      // Previously uncaught: the request rejected, nothing handled it, and the
+      // table just stayed empty as though there were no rooms.
+      setData([]);
+      showAlert(err?.message || "Failed to load rooms.", "error");
+    }
   };
 
 
   const getAllroom_type_ids = async () => {
-    const res = await APICall.getT("/masterdata/room_types");
-
-    console.log("Room Types Response:", res.data);
-
-    setRoomTypes(res.data || []);
+    try {
+      const res = await APICall.getT("/masterdata/room_types");
+      setRoomTypes(Array.isArray(res?.data) ? res.data : []);
+    } catch (err) {
+      setRoomTypes([]);
+      showAlert(err?.message || "Failed to load room types.", "error");
+    }
   };
 
   const getAllbed_type_ids = async () => {
-    const res = await APICall.getT("/masterdata/bed_types");
-
-    console.log("Bed Types Response:", res.data);
-
-    setBedTypes(res.data || []);
+    try {
+      const res = await APICall.getT("/masterdata/bed_types");
+      setBedTypes(Array.isArray(res?.data) ? res.data : []);
+    } catch (err) {
+      setBedTypes([]);
+      showAlert(err?.message || "Failed to load bed types.", "error");
+    }
   };
 
 
@@ -181,7 +185,7 @@ const Rooms = () => {
       form.append("working_status", formData.working_status);
       form.append("room_status", formData.room_status);
       if (!formData.images[0]) {
-        alert("Please upload Image 1");
+        showAlert("Please upload Image 1", "error");
         return;
       }
 
@@ -265,29 +269,29 @@ const Rooms = () => {
 
   const handleSave = () => {
     if (!formData.room_no || !formData.room_name) {
-      alert("Room No and Room Name are required");
+      showAlert("Room No and Room Name are required", "error");
       return;
     }
 
     if (!formData.room_telephone) {
-      alert("Room Telephone is required");
+      showAlert("Room Telephone is required", "error");
       return;
     }
 
     if (!formData.images[0]) {
-      alert("Please upload Image 1");
+      showAlert("Please upload Image 1", "error");
       return;
     }
     if (!formData.images[1]) {
-      alert("Please upload Image 2");
+      showAlert("Please upload Image 2", "error");
       return;
     }
     if (!formData.images[2]) {
-      alert("Please upload Image 3");
+      showAlert("Please upload Image 3", "error");
       return;
     }
     if (!formData.images[3]) {
-      alert("Please upload Image 4");
+      showAlert("Please upload Image 4", "error");
       return;
     }
 

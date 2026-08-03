@@ -82,7 +82,9 @@ const DiscountType = () => {
       const res = await APICall.getT("/masterdata/country_currency");
       setCountries(res.data);
     } catch (error) {
-      console.error("Get country error", error);
+      // Swallowed into the console before: the picker silently stayed empty.
+      setCountries([]);
+      showAlert(error?.message || "Failed to load countries.", "error");
     }
   };
 
