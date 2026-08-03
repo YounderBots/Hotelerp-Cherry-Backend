@@ -1,8 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, Activity, X } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, Pencil, Activity } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../../MasterData/MasterData.css";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
@@ -117,7 +121,7 @@ const Stock = () => {
         <div style={{ fontSize: 13, color: "#64748b" }}>Restaurant → Inventory → Stock</div>
       </div>
 
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Stock List"
@@ -141,15 +145,9 @@ const Stock = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", justifyContent: "center", gap: "8px", flexWrap: "nowrap" }}>
-                <button className="table-action-btn view" title="View" onClick={() => openModal("view", row)}>
-                  <Eye size={16} />
-                </button>
-                <button className="table-action-btn edit" title="Adjust" onClick={() => openModal("adjust", row)}>
-                  <Pencil size={16} />
-                </button>
-                <button className="table-action-btn delete" title="Movements" onClick={() => openModal("movement", row)}>
-                  <Activity size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openModal("view", row)} />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} ariaLabel="Adjust" onClick={() => openModal("adjust", row)} />
+                <IconButton variant="danger-ghost" size="small" icon={<Activity size={16} />} ariaLabel="Movements" onClick={() => openModal("movement", row)} />
               </div>
             ),
           },
@@ -158,141 +156,121 @@ const Stock = () => {
       />
 
       {activeModal === "view" && selectedItem && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: 500 }}>
-            <div className="modal-header">
-              <h3>Stock Details – {selectedItem.item_name}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
-            <div className="modal-body single">
-              <p><strong>Store:</strong> {selectedItem.kitchen_id ? `Kitchen #${selectedItem.kitchen_id}` : "Main Store"}</p>
-              <p><strong>Available Qty:</strong> {selectedItem.available_quantity} {selectedItem.unit}</p>
-              <p><strong>Minimum Stock:</strong> {selectedItem.min_stock_level}</p>
-              <p><strong>Last Updated:</strong> {selectedItem.last_updated_date}</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>Close</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen
+          title={`Stock Details – ${selectedItem.item_name}`}
+          onClose={closeModal}
+          size="medium"
+          bodyLayout="single"
+          showFooter
+          actions={[{ label: "Close", variant: "secondary", onClick: closeModal }]}
+        >
+          <p><strong>Store:</strong> {selectedItem.kitchen_id ? `Kitchen #${selectedItem.kitchen_id}` : "Main Store"}</p>
+          <p><strong>Available Qty:</strong> {selectedItem.available_quantity} {selectedItem.unit}</p>
+          <p><strong>Minimum Stock:</strong> {selectedItem.min_stock_level}</p>
+          <p><strong>Last Updated:</strong> {selectedItem.last_updated_date}</p>
+        </Modal>
       )}
 
       {activeModal === "add-item" && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: 480 }}>
-            <div className="modal-header">
-              <h3>Add Inventory Item</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Item Name</label>
-                <input value={newItemForm.item_name} onChange={(e) => setNewItemForm((p) => ({ ...p, item_name: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label>Unit</label>
-                <select value={newItemForm.unit} onChange={(e) => setNewItemForm((p) => ({ ...p, unit: e.target.value }))}>
-                  <option>Kg</option>
-                  <option>Gram</option>
-                  <option>Litre</option>
-                  <option>ml</option>
-                  <option>Nos</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Minimum Stock Level</label>
-                <input type="number" value={newItemForm.min_stock_level} onChange={(e) => setNewItemForm((p) => ({ ...p, min_stock_level: e.target.value }))} />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={saveNewItem} disabled={saving}>{saving ? "Saving…" : "Save Item"}</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen
+          title="Add Inventory Item"
+          onClose={closeModal}
+          size="medium"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeModal, disabled: saving },
+            { label: saving ? "Saving…" : "Save Item", variant: "primary", onClick: saveNewItem, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
+          <Input label="Item Name" value={newItemForm.item_name} onChange={(e) => setNewItemForm((p) => ({ ...p, item_name: e.target.value }))} />
+          <Select
+            label="Unit"
+            value={newItemForm.unit}
+            onChange={(e) => setNewItemForm((p) => ({ ...p, unit: e.target.value }))}
+            options={["Kg", "Gram", "Litre", "ml", "Nos"]}
+          />
+          <Input label="Minimum Stock Level" type="number" value={newItemForm.min_stock_level} onChange={(e) => setNewItemForm((p) => ({ ...p, min_stock_level: e.target.value }))} />
+        </Modal>
       )}
 
       {activeModal === "adjust" && selectedItem && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: 520 }}>
-            <div className="modal-header">
-              <h3>Adjust Stock – {selectedItem.item_name}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Adjustment Type</label>
-                <select value={adjustForm.direction} onChange={(e) => setAdjustForm((p) => ({ ...p, direction: e.target.value }))}>
-                  <option>Add</option>
-                  <option>Reduce</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Quantity</label>
-                <input type="number" value={adjustForm.quantity} onChange={(e) => setAdjustForm((p) => ({ ...p, quantity: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label>Reason</label>
-                <select value={adjustForm.transaction_type} onChange={(e) => setAdjustForm((p) => ({ ...p, transaction_type: e.target.value }))}>
-                  <option value="ADJUSTMENT">Correction</option>
-                  <option value="WASTE">Wastage / Damage</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Remarks</label>
-                <textarea rows="2" value={adjustForm.remarks} onChange={(e) => setAdjustForm((p) => ({ ...p, remarks: e.target.value }))} />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={saveAdjustment} disabled={saving}>{saving ? "Saving…" : "Save Adjustment"}</button>
-            </div>
+        <Modal
+          isOpen
+          title={`Adjust Stock – ${selectedItem.item_name}`}
+          onClose={closeModal}
+          size="medium"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeModal, disabled: saving },
+            { label: saving ? "Saving…" : "Save Adjustment", variant: "primary", onClick: saveAdjustment, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
+          <Select
+            label="Adjustment Type"
+            value={adjustForm.direction}
+            onChange={(e) => setAdjustForm((p) => ({ ...p, direction: e.target.value }))}
+            options={["Add", "Reduce"]}
+          />
+          <Input label="Quantity" type="number" value={adjustForm.quantity} onChange={(e) => setAdjustForm((p) => ({ ...p, quantity: e.target.value }))} />
+          <Select
+            label="Reason"
+            value={adjustForm.transaction_type}
+            onChange={(e) => setAdjustForm((p) => ({ ...p, transaction_type: e.target.value }))}
+            options={[
+              { value: "ADJUSTMENT", label: "Correction" },
+              { value: "WASTE", label: "Wastage / Damage" },
+            ]}
+          />
+          <div className="form-group">
+            <label>Remarks</label>
+            <textarea rows="2" value={adjustForm.remarks} onChange={(e) => setAdjustForm((p) => ({ ...p, remarks: e.target.value }))} />
           </div>
-        </div>
+        </Modal>
       )}
 
       {activeModal === "movement" && selectedItem && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: 900 }}>
-            <div className="modal-header">
-              <h3>Stock Movements – {selectedItem.item_name}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
-            <div className="modal-body single">
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Date & Time</th>
-                    <th>Type</th>
-                    <th>Qty</th>
-                    <th>Reference</th>
-                    <th>Remarks</th>
+        <Modal
+          isOpen
+          title={`Stock Movements – ${selectedItem.item_name}`}
+          onClose={closeModal}
+          size="xlarge"
+          bodyLayout="single"
+          showFooter
+          actions={[{ label: "Close", variant: "secondary", onClick: closeModal }]}
+        >
+          <table className="table table-hover">
+            <thead>
+              <tr>
+                <th>Date & Time</th>
+                <th>Type</th>
+                <th>Qty</th>
+                <th>Reference</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movements.length === 0 ? (
+                <tr><td colSpan="5" style={{ textAlign: "center" }}>No movements found</td></tr>
+              ) : (
+                movements.map((m) => (
+                  <tr key={m.id}>
+                    <td>{new Date(m.created_at).toLocaleString()}</td>
+                    <td>{m.transaction_type}</td>
+                    <td>{m.quantity}</td>
+                    <td>{m.reference_type}{m.reference_id ? ` (${m.reference_id})` : ""}</td>
+                    <td>{m.remarks || "-"}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {movements.length === 0 ? (
-                    <tr><td colSpan="5" style={{ textAlign: "center" }}>No movements found</td></tr>
-                  ) : (
-                    movements.map((m) => (
-                      <tr key={m.id}>
-                        <td>{new Date(m.created_at).toLocaleString()}</td>
-                        <td>{m.transaction_type}</td>
-                        <td>{m.quantity}</td>
-                        <td>{m.reference_type}{m.reference_id ? ` (${m.reference_id})` : ""}</td>
-                        <td>{m.remarks || "-"}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>Close</button>
-            </div>
-          </div>
-        </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </Modal>
       )}
     </>
   );

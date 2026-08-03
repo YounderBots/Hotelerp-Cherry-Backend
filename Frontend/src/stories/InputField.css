@@ -26,6 +26,8 @@
   box-shadow: 0 0 0 0 transparent;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   overflow: hidden;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* focus state */
@@ -79,6 +81,16 @@
 .InputField--medium { width: 50%; min-width: 240px; }
 .InputField--large  { width: 75%; min-width: 320px; }
 .InputField--full   { width: 100%; min-width: 320px; }
+
+@media (max-width: 480px) {
+  .InputField--small,
+  .InputField--medium,
+  .InputField--large,
+  .InputField--full {
+    width: 100%;
+    min-width: 0;
+  }
+}
 
 /* custom width will be applied inline via style attribute */
 

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import './TableTemplate.css';
 import InputField from './InputField'; // Assuming you have this component
+import Button from './Button';
 import { ClipboardPaste, FileText, Printer, Settings, Table2, Plus } from 'lucide-react';
 
 // Import existing cell components
@@ -149,23 +150,21 @@ const FilterModal = ({ columns, visibleColumns, onColumnToggle, onClose, isOpen,
   );
 };
 
-// Action Button Variant Component
-const TableActionButton = ({ 
-  onClick, 
-  label = "Add New", 
+// Action Button Variant Component — delegates to the shared Storybook Button
+// so every "Add X" button in the app renders identically to Submit/Cancel
+// buttons elsewhere (same color, padding, height, focus/disabled states).
+const TableActionButton = ({
+  onClick,
+  label = "Add New",
   icon = <Plus size={18} />,
   variant = "primary",
-  size = "medium" 
-}) => {
-  const buttonClass = `table-action-button table-action-button--${variant} table-action-button--${size}`;
-  
-  return (
-    <button className={buttonClass} onClick={onClick}>
-      {icon}
-      {label && <span>{label}</span>}
-    </button>
-  );
-};
+  size = "medium",
+}) => (
+  <Button variant={variant} size={size} onClick={onClick} className="table-action-button">
+    {icon}
+    {label && <span>{label}</span>}
+  </Button>
+);
 
 // Main TableTemplate Component
 const TableTemplate = ({

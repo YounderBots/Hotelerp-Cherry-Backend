@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Textarea from "../../stories/Form/Textarea";
+import IconButton from "../../stories/IconButton";
 import {
   ArrowLeft,
   RefreshCw,
@@ -14,8 +17,8 @@ import {
   CheckCircle,
 } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../../MasterData/MasterData.css";
 import "../Reservation/Reservation.css";
+import "./HRM.css";
 
 // -------------------------------------------------------------------------
 // Helpers (shared conventions)
@@ -320,33 +323,27 @@ const Role = () => {
       type: "custom",
       render: (row) => (
         <div className="table-actions">
-          <button
-            type="button"
-            className="table-action-btn view"
-            title="View"
-            aria-label={`View role ${row.role_name || row.id}`}
+          <IconButton
+            variant="ghost"
+            size="small"
+            icon={<Eye size={16} />}
             onClick={() => openViewModal(row)}
-          >
-            <Eye size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn edit"
-            title="Edit"
-            aria-label={`Edit role ${row.role_name || row.id}`}
+            ariaLabel={`View role ${row.role_name || row.id}`}
+          />
+          <IconButton
+            variant="subtle"
+            size="small"
+            icon={<Pencil size={16} />}
             onClick={() => handleEdit(row)}
-          >
-            <Pencil size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn delete"
-            title="Delete"
-            aria-label={`Delete role ${row.role_name || row.id}`}
+            ariaLabel={`Edit role ${row.role_name || row.id}`}
+          />
+          <IconButton
+            variant="danger-ghost"
+            size="small"
+            icon={<Trash2 size={16} />}
             onClick={() => handleDeleteClick(row)}
-          >
-            <Trash2 size={16} aria-hidden="true" />
-          </button>
+            ariaLabel={`Delete role ${row.role_name || row.id}`}
+          />
         </div>
       ),
     },
@@ -411,7 +408,6 @@ const Role = () => {
           exportable
           hasActionButton
           actionButton={{
-            icon: <Download size={18} />,
             label: "Add Role",
             onClick: openAddModal,
             size: "medium",
@@ -448,28 +444,12 @@ const Role = () => {
           isOpen={showViewModal}
           title={`View Role — ${viewData.role_name || `#${viewData.id}`}`}
           onClose={closeViewModal}
+          size="medium"
+          bodyLayout="single"
+          viewMode
         >
-          <div className="modal-body single view">
-            <div className="form-group">
-              <label htmlFor="rl-view-name">Role Name</label>
-              <input
-                id="rl-view-name"
-                value={viewData.role_name || "—"}
-                readOnly
-                aria-readonly="true"
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="rl-view-desc">Description</label>
-              <textarea
-                id="rl-view-desc"
-                value={viewData.description || ""}
-                readOnly
-                aria-readonly="true"
-                rows={4}
-              />
-            </div>
-          </div>
+          <Input label="Role Name" value={viewData.role_name || "—"} readOnly disabled />
+          <Textarea label="Description" value={viewData.description || ""} readOnly disabled rows={4} />
         </Modal>
       )}
 
@@ -480,7 +460,7 @@ const Role = () => {
           title={editId ? "Edit Role" : "Add Role"}
           onClose={closeModal}
           showFooter
-          size="large"
+          size="medium"
           bodyLayout="single"
           actions={[
             {
@@ -502,34 +482,26 @@ const Role = () => {
             </div>
           )}
 
-          <div className="modal-body single">
-            <div className="form-group">
-              <label htmlFor="rl-name">Role Name <span className="required">*</span></label>
-              <input
-                id="rl-name"
-                type="text"
-                name="roleName"
-                value={formData.roleName}
-                onChange={handleChange}
-                disabled={saving}
-                maxLength={100}
-                required
-              />
-            </div>
+          <Input
+            label="Role Name"
+            required
+            type="text"
+            name="roleName"
+            value={formData.roleName}
+            onChange={handleChange}
+            disabled={saving}
+            maxLength={100}
+          />
 
-            <div className="form-group">
-              <label htmlFor="rl-desc">Description</label>
-              <textarea
-                id="rl-desc"
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                disabled={saving}
-                maxLength={500}
-                rows={4}
-              />
-            </div>
-          </div>
+          <Textarea
+            label="Description"
+            name="description"
+            value={formData.description}
+            onChange={handleChange}
+            disabled={saving}
+            maxLength={500}
+            rows={4}
+          />
         </Modal>
       )}
 

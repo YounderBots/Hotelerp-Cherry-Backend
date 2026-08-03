@@ -419,9 +419,12 @@ const AddNewReservation = () => {
     fd.append("payment_method_id", String(num(paymentdata.payment_method_id)));
     fd.append("extra_bed_count", String(num(paymentdata.extra_bed_count)));
     fd.append("extra_bed_cost", String(num(paymentdata.extra_bed_cost)));
+    fd.append("room_amount", String(num(paymentdata.room_amount)));
+    if (paymentdata.tax_type_id) fd.append("tax_type_id", String(num(paymentdata.tax_type_id)));
     fd.append("total_amount", String(num(paymentdata.total_amount)));
     fd.append("tax_percentage", String(num(paymentdata.tax_percentage)));
     fd.append("tax_amount", String(num(paymentdata.tax_amount)));
+    if (paymentdata.discount_type_id) fd.append("discount_type_id", String(num(paymentdata.discount_type_id)));
     fd.append("discount_percentage", String(num(paymentdata.discount_percentage)));
     fd.append("discount_amount", String(num(paymentdata.discount_amount)));
     fd.append("extra_charges", String(num(paymentdata.extra_charges)));
@@ -435,7 +438,7 @@ const AddNewReservation = () => {
     const selectedStatus = reservationStatusTypes.find(
       (s) => s.id === Number(formData.booking_status_id),
     );
-    fd.append("reservation_status", selectedStatus?.reservation_status || "Pending");
+    fd.append("reservation_status", selectedStatus?.reservation_status || "Booked");
 
     // Aggregate the first-room's complementary as the "room_complementary" field to match backend shape.
     const firstComplementary = selectedRoomIds
@@ -649,6 +652,8 @@ const AddNewReservation = () => {
           paymentMethods={paymentMethods}
           selectedRooms={selectedRooms}
           roomTypes={roomTypes}
+          perRoom={perRoom}
+          totalNights={totalNights}
           setpaymentData={setPaymentdata}
         />
       </Modal>

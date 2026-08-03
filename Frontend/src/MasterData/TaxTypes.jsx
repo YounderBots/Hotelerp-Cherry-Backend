@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import Modal from "../stories/Modal";
+import Modal, { ConfirmModal } from "../stories/Modal";
+import Input from "../stories/Form/Input";
+import Select from "../stories/Form/Select";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const TaxTypes = () => {
@@ -12,6 +15,7 @@ const TaxTypes = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
   const [taxcountry, setTaxNewCountry] = useState([])
 
   const initialForm = {
@@ -167,11 +171,14 @@ const TaxTypes = () => {
 
 
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this Tax Type?")) {
-      await deleteTax(id);
-      await getTax();
-    }
+  const handleDelete = (id) => {
+    setDeleteId(id);
+  };
+
+  const confirmDelete = async () => {
+    await deleteTax(deleteId);
+    await getTax();
+    setDeleteId(null);
   };
 
   useEffect(() => {
@@ -227,31 +234,15 @@ const TaxTypes = () => {
                   justifyContent: "center",
                 }}
               >
-                <button
-                  className="table-action-btn view"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handleDelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
         ]}
         data={data}
       />
-      <p>Countries loaded: {taxcountry.length}</p>
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
@@ -260,27 +251,12 @@ const TaxTypes = () => {
           title="View Tax Type"
           onClose={() => setShowViewModal(false)}
           size="medium"
+          bodyLayout="grid"
         >
-          <div className="modal-body single view">
-            <div className="form-group">
-              <label>Tax Country</label>
-              <input value={countryMap[viewData.country_id]} disabled />
-            </div>
-
-            <div className="form-group">
-              <label>Tax Name</label>
-              <input value={viewData.tax_name} disabled />
-            </div>
-
-            <div className="form-group">
-              <label>Tax Percentage</label>
-              <input value={viewData.tax_percentage} disabled />
-            </div>
-          </div>
+          <Input label="Tax Country" disabled value={countryMap[viewData.country_id]} />
+          <Input label="Tax Name" disabled value={viewData.tax_name} />
+          <Input label="Tax Percentage" disabled value={viewData.tax_percentage} />
         </Modal>
-
-
-
 
       )}
 
@@ -291,8 +267,8 @@ const TaxTypes = () => {
           title={editId ? "Edit Tax Type" : "Add Tax Type"}
           onClose={() => setShowModal(false)}
           showFooter
-          size="large"
-          bodyLayout="single"
+          size="medium"
+          bodyLayout="grid"
           actions={[
             {
               label: "Close",
@@ -307,57 +283,42 @@ const TaxTypes = () => {
             },
           ]}
         >
-
-          <div className="modal-body single">
-            <div className="form-group">
-              <label>Country Name</label>
-              <select
-                name="taxCountry"
-                value={formData.taxCountry}
-                onChange={handleChange}
-              >
-                <option value="">Select Country</option>
-                {taxcountry.map((e) => (
-                  <option key={e.id} value={e.id}>{e.country_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Tax Name</label>
-              <input
-                name="taxName"
-                value={formData.taxName}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Tax Percentage</label>
-              <input
-                type="number"
-                name="taxPercentage"
-                value={formData.taxPercentage}
-                onChange={handleChange}
-              />
-            </div>
-          </div>
+          <Select
+            label="Country Name"
+            name="taxCountry"
+            value={formData.taxCountry}
+            onChange={handleChange}
+            placeholder="Select Country"
+            options={taxcountry.map((e) => ({ value: e.id, label: e.country_name }))}
+          />
+          <Input
+            label="Tax Name"
+            name="taxName"
+            value={formData.taxName}
+            onChange={handleChange}
+          />
+          <Input
+            label="Tax Percentage"
+            type="number"
+            name="taxPercentage"
+            value={formData.taxPercentage}
+            onChange={handleChange}
+          />
         </Modal>
       )}
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Tax Type"
+        confirmText="Delete"
+        destructive
+      >
+        Are you sure you want to delete this tax type? This action cannot be undone.
+      </ConfirmModal>
+
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
     </>
   );
 };

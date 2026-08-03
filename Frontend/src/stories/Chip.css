@@ -1,0 +1,32 @@
+/* Chip.css */
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--border-radius-full, 999px);
+  background: var(--gray-100, #f1f5f9);
+  color: var(--text-secondary, #334155);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.chip__remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.chip__remove:hover {
+  color: var(--error-color, #dc2626);
+}

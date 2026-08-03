@@ -1,0 +1,73 @@
+/* RepeatableRowEditor.css */
+.repeatable-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.repeatable-row {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .repeatable-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+.repeatable-row input,
+.repeatable-row select {
+  padding: 9px 12px;
+  border-radius: var(--border-radius-md, 8px);
+  border: 1px solid var(--border-color, #d1d5db);
+  background: var(--bg-primary, #ffffff);
+  font-family: inherit;
+}
+
+.repeatable-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.repeatable-row-remove {
+  border: none;
+  background: var(--error-light, #fee2e2);
+  color: var(--error-color, #b91c1c);
+  border-radius: var(--border-radius-md, 8px);
+  padding: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.repeatable-row-remove:hover {
+  filter: brightness(0.96);
+}
+
+.repeatable-add-btn {
+  align-self: flex-start;
+  border: 1px dashed var(--border-color, #94a3b8);
+  background: var(--bg-secondary, #f8fafc);
+  color: var(--text-secondary, #334155);
+  border-radius: var(--border-radius-md, 8px);
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.repeatable-add-btn:hover {
+  background: var(--gray-100, #f1f5f9);
+}
+
+.repeatable-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+  font-style: italic;
+}

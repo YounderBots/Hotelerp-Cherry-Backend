@@ -1,6 +1,12 @@
 from fastapi import APIRouter
 
-from resources.loginController import router as loginRouter
+# NOTE: this service intentionally exposes no auth or proxy routes. It used to
+# carry a copy of the login gateway (`/login_post` plus proxies to masterdata,
+# hotel and user). That copy had no rate limiting, so it was an unthrottled
+# credential-stuffing endpoint sitting beside the gateway's throttled one, and
+# its proxies forwarded any request carrying any Authorization header without
+# ever verifying it. Authentication belongs to LoginServices alone.
+
 from resources.tableController import router as tableRouter
 from resources.menuController import router as menuRouter
 from resources.orderController import router as orderRouter
@@ -14,7 +20,6 @@ from resources.settingsController import router as settingsRouter
 
 router = APIRouter()
 
-router.include_router(loginRouter, prefix='', tags=['Auth & Proxy'])
 router.include_router(tableRouter, prefix='', tags=['Table Management'])
 router.include_router(menuRouter, prefix='', tags=['Menu Management'])
 router.include_router(orderRouter, prefix='', tags=['Order Taking'])

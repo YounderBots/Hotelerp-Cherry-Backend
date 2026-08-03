@@ -5,6 +5,12 @@ import {
   LogOut,
   BedDouble,
   DollarSign,
+  Wallet,
+  ShoppingBag,
+  Receipt,
+  Calculator,
+  XCircle,
+  Users,
 } from "lucide-react";
 
 const iconMap = {
@@ -13,11 +19,19 @@ const iconMap = {
   checkout: LogOut,
   available: BedDouble,
   revenue: DollarSign,
+  sales: Wallet,
+  orders: ShoppingBag,
+  bills: Receipt,
+  avgcheck: Calculator,
+  cancelled: XCircle,
+  staff: Users,
 };
+
+const HERO_TYPES = new Set(["revenue", "sales"]);
 
 const KPICard = ({ title, value, note, type, loading = false, index = 0 }) => {
   const Icon = iconMap[type] || Calendar;
-  const isHero = type === "revenue";
+  const isHero = HERO_TYPES.has(type);
 
   return (
     <div

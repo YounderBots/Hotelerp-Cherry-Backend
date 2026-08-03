@@ -26,32 +26,33 @@ const formatDate = (v) => {
 const guestName = (r) =>
   [r?.salutation, r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "Guest";
 
-// Bucket by backend reservation_status vocabulary (Pending / Confirmed / Arrived / Departures / Cancelled).
-// Also tolerates the legacy Checked-in / Checked-out labels.
+// Bucket by the real reservation_status master data vocabulary
+// (Booked / Checked-In / Checked-Out / Cancelled / No Show).
+// Also tolerates the legacy Confirmed/Arrived/Departures/Pending labels.
 const bucketOf = (r) => {
   const s = String(r?.reservation_status || "").toLowerCase();
-  if (s === "arrived" || s === "checked-in") return "arrived";
-  if (s === "departures" || s === "checked-out") return "departures";
-  if (s === "confirmed") return "confirmed";
+  if (s === "checked-in" || s === "arrived") return "checked_in";
+  if (s === "checked-out" || s === "departures") return "checked_out";
   if (s === "cancelled" || s === "canceled") return "cancelled";
-  if (s === "pending") return "pending";
-  return "pending";
+  if (s === "no show" || s === "no-show") return "no_show";
+  if (s === "booked" || s === "confirmed" || s === "pending") return "booked";
+  return "booked";
 };
 
 const BUCKET_LABEL = {
-  pending: "Pending",
-  confirmed: "Confirmed",
-  arrived: "Arrivals",
-  departures: "Departures",
+  booked: "Booked",
+  checked_in: "Checked-In",
+  checked_out: "Checked-Out",
   cancelled: "Cancelled",
+  no_show: "No Show",
 };
 
 const BUCKET_CLASS = {
-  pending: "status-pending",
-  confirmed: "status-confirmed",
-  arrived: "status-checked-in",
-  departures: "status-checked-out",
+  booked: "status-pending",
+  checked_in: "status-checked-in",
+  checked_out: "status-checked-out",
   cancelled: "status-cancelled",
+  no_show: "status-cancelled",
 };
 
 const ReservationView = () => {
@@ -86,7 +87,7 @@ const ReservationView = () => {
 
   const counts = useMemo(() => {
     const list = reservations || [];
-    const c = { all: list.length, pending: 0, confirmed: 0, arrived: 0, departures: 0, cancelled: 0 };
+    const c = { all: list.length, booked: 0, checked_in: 0, checked_out: 0, cancelled: 0, no_show: 0 };
     for (const r of list) {
       const b = bucketOf(r);
       c[b] = (c[b] || 0) + 1;
@@ -147,11 +148,11 @@ const ReservationView = () => {
       <div className="rvw-tabs" role="tablist" aria-label="Filter reservations by status">
         {[
           { key: "all", label: "All" },
-          { key: "pending", label: "Pending" },
-          { key: "confirmed", label: "Confirmed" },
-          { key: "arrived", label: "Arrivals" },
-          { key: "departures", label: "Departures" },
+          { key: "booked", label: "Booked" },
+          { key: "checked_in", label: "Checked-In" },
+          { key: "checked_out", label: "Checked-Out" },
           { key: "cancelled", label: "Cancelled" },
+          { key: "no_show", label: "No Show" },
         ].map((tab) => {
           const active = activeTab === tab.key;
           return (

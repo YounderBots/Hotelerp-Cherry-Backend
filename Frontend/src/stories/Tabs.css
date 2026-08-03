@@ -373,6 +373,28 @@ body.dark .tabs-vertical .tabs-header {
     border-right: none;
     border-bottom: 1px solid var(--border-color);
   }
+
+  .tabs-content,
+  .tabs-vertical .tabs-content {
+    padding: var(--spacing-lg);
+  }
+}
+
+@media (max-width: 480px) {
+  .tab-trigger {
+    min-width: 96px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 0.8125rem;
+  }
+
+  .tabs-content,
+  .tabs-vertical .tabs-content {
+    padding: var(--spacing-md);
+  }
+
+  .tabs-vertical .tab-trigger {
+    min-width: 0;
+  }
 }
 
 /* Animation Variants */

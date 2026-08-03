@@ -1,13 +1,22 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, X } from "lucide-react";
+import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import IconButton from "../../stories/IconButton";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-const StaffMaster = () => {
+// Today's restaurant floor roster — cross-references the shared HRM employee
+// directory (/user/users) with today's restaurant shift assignments. Lives
+// under HRM (not Restaurant) since staffing is an HR concern; the restaurant
+// module only contributes the day-to-day shift/section data.
+const RestaurantRoster = () => {
   const [employees, setEmployees] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -104,10 +113,11 @@ const StaffMaster = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
-        title="Staff List (Today's Roster)"
+        title="Restaurant Roster (Today)"
+        hasActionButton
         searchable
         pagination
         loading={loading}
@@ -126,9 +136,7 @@ const StaffMaster = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
-                  <Eye size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
               </div>
             ),
           },
@@ -137,85 +145,81 @@ const StaffMaster = () => {
       />
 
       {showStaffModal && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "900px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>Assign Staff for Today</h3>
-              <button onClick={closeAddModal}><X size={18} /></button>
-            </div>
-
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-
-            <div className="modal-body single">
-              <div className="grid-3">
-                <div className="form-group">
-                  <label>Employee</label>
-                  <select name="employee_id" value={formData.employee_id} onChange={handleChange}>
-                    <option value="">— select —</option>
-                    {employees.map((e) => (
-                      <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Role</label>
-                  <select name="role" value={formData.role} onChange={handleChange}>
-                    <option>Waiter</option>
-                    <option>Bartender</option>
-                    <option>Chef</option>
-                    <option>Cashier</option>
-                    <option>Manager</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Section</label>
-                  <input name="section" value={formData.section} onChange={handleChange} placeholder="Restaurant / Bar / Outdoor" />
-                </div>
-
-                <div className="form-group">
-                  <label>Shift Date</label>
-                  <input type="date" name="shift_date" value={formData.shift_date} onChange={handleChange} />
-                </div>
-
-                <div className="form-group">
-                  <label>Shift Start</label>
-                  <input type="time" name="shift_start" value={formData.shift_start} onChange={handleChange} />
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeAddModal} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={saveStaff} disabled={saving}>{saving ? "Saving…" : "Save Staff"}</button>
-            </div>
+        <Modal
+          isOpen={showStaffModal}
+          title="Assign Staff for Today"
+          onClose={closeAddModal}
+          showFooter
+          size="xlarge"
+          bodyLayout="grid"
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeAddModal, disabled: saving },
+            { label: saving ? "Saving…" : "Save Staff", variant: "primary", onClick: saveStaff, disabled: saving },
+          ]}
+        >
+          <div style={{ gridColumn: "1 / -1" }}>
+            <ErrorAlert message={formError} />
           </div>
-        </div>
+
+          <Select
+            label="Employee"
+            name="employee_id"
+            value={formData.employee_id}
+            onChange={handleChange}
+            placeholder="— select —"
+            options={employees.map((e) => ({ value: e.id, label: `${e.first_name} ${e.last_name}` }))}
+          />
+
+          <Select
+            label="Role"
+            name="role"
+            value={formData.role}
+            onChange={handleChange}
+            options={[
+              { value: "Waiter", label: "Waiter" },
+              { value: "Chef", label: "Chef" },
+              { value: "Cashier", label: "Cashier" },
+              { value: "Manager", label: "Manager" },
+            ]}
+          />
+
+          <Input label="Section" name="section" value={formData.section} onChange={handleChange} placeholder="Restaurant / Bar / Outdoor" />
+
+          <Input label="Shift Date" type="date" name="shift_date" value={formData.shift_date} onChange={handleChange} />
+
+          <Input label="Shift Start" type="time" name="shift_start" value={formData.shift_start} onChange={handleChange} />
+        </Modal>
       )}
 
       {showViewModal && selectedRow && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "500px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>Staff Details</h3>
-              <button onClick={closeViewModal}><X size={18} /></button>
-            </div>
-            <div className="modal-body single">
-              <p><strong>Name:</strong> {selectedRow.name}</p>
-              <p><strong>Contact:</strong> {selectedRow.phone}</p>
-              <p><strong>Role:</strong> {selectedRow.role}</p>
-              <p><strong>Section:</strong> {selectedRow.section}</p>
-              <p><strong>Status:</strong> {selectedRow.shift_status}</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>Close</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen={showViewModal}
+          title="Staff Details"
+          onClose={closeViewModal}
+          showFooter
+          size="medium"
+          bodyLayout="single"
+          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
+        >
+          <p>
+            <strong>Name:</strong> {selectedRow.name}
+          </p>
+          <p>
+            <strong>Contact:</strong> {selectedRow.phone}
+          </p>
+          <p>
+            <strong>Role:</strong> {selectedRow.role}
+          </p>
+          <p>
+            <strong>Section:</strong> {selectedRow.section}
+          </p>
+          <p>
+            <strong>Status:</strong> {selectedRow.shift_status}
+          </p>
+        </Modal>
       )}
     </>
   );
 };
 
-export default StaffMaster;
+export default RestaurantRoster;

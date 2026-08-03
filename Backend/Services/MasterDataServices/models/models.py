@@ -1,9 +1,8 @@
 from configs import BaseConfig
 import os
 from sqlalchemy import Boolean, Column, String, DateTime, LargeBinary, func, UniqueConstraint
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Time, Date, DateTime, BLOB, JSON, Float
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 from models import engine
 import bcrypt

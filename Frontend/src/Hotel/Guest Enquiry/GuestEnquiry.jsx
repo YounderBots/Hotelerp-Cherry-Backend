@@ -602,7 +602,6 @@ const GuestEnquiry = () => {
           exportable
           hasActionButton
           actionButton={{
-            icon: <Download size={18} />,
             label: "Add New Enquiry",
             onClick: openAddModal,
             size: "medium",

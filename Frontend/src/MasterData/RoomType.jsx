@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from "react";
-import Modal from "../stories/Modal";
+﻿import React, { useState, useEffect } from "react";
+import Modal, { ConfirmModal } from "../stories/Modal";
 import TableTemplate from "../stories/TableTemplate";
+import Input from "../stories/Form/Input";
+import Select from "../stories/Form/Select";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import {
   UserPlus, X, Pencil, Trash2, Eye, CheckCircle,
   AlertTriangle,
 } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const RoomType = () => {
@@ -15,6 +18,7 @@ const RoomType = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
   const [complementary, setComplementary] = useState([])
 
   const [alerts, setAlerts] = useState({
@@ -199,9 +203,12 @@ const RoomType = () => {
   };
 
   const handleDelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this Facilities?")) {
-      deleteRoomType(id);
-    }
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    deleteRoomType(deleteId);
+    setDeleteId(null);
   };
 
 
@@ -247,24 +254,9 @@ const RoomType = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button
-                  className="table-action-btn view"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handleDelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -278,9 +270,9 @@ const RoomType = () => {
           isOpen={showViewModal}
           title="View Room Type"
           onClose={() => setShowViewModal(false)}
-          size="medium"
+          size="large"
         >
-          <div className="modal-body grid view">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "18px 20px" }}>
             {[
               ["Room Type", "room_type_name"],
               ["Room Cost", "room_cost"],
@@ -293,27 +285,23 @@ const RoomType = () => {
               ["Full Board Rate", "full_board_rate"],
               ["Status", "status"],
             ].map(([label, key]) => (
-              <div className="form-group" key={key}>
-                <label>{label}</label>
-                <input
-                  value={viewData?.[key] ?? "-"}
-                  disabled
-                />
-              </div>
+              <Input
+                key={key}
+                label={label}
+                disabled
+                value={viewData?.[key] ?? "-"}
+              />
             ))}
 
-            <div className="form-group">
-              <label>Complementary</label>
-              <input
-               style={{width:"110%"}}
-                disabled
-                value={
-                  complementary.find(
-                    (c) => String(c.id) === String(viewData?.complementry)
-                  )?.complementry_name || "-"
-                }
-              />
-            </div>
+            <Input
+              label="Complementary"
+              disabled
+              value={
+                complementary.find(
+                  (c) => String(c.id) === String(viewData?.complementry)
+                )?.complementry_name || "-"
+              }
+            />
           </div>
         </Modal >
 
@@ -328,7 +316,6 @@ const RoomType = () => {
             onClose={() => setShowModal(false)}
             showFooter
             size="large"
-            bodyLayout="single"
             actions={[
               {
                 label: "Close",
@@ -344,7 +331,7 @@ const RoomType = () => {
             ]}
           >
 
-            <div className="modal-body grid">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "18px 20px" }}>
               {[
                 ["Room Type", "roomType"],
                 ["Room Cost", "roomCost"],
@@ -356,52 +343,45 @@ const RoomType = () => {
                 ["Half Board Rate", "halfBoardRate"],
                 ["Full Board Rate", "fullBoardRate"],
               ].map(([label, name]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input
-                    type={name === "roomType" ? "text" : "number"}
-                    name={name}
-                    value={formData[name]}
-                    onChange={handleChange}
-                  />
-                </div>
+                <Input
+                  key={name}
+                  label={label}
+                  type={name === "roomType" ? "text" : "number"}
+                  name={name}
+                  value={formData[name]}
+                  onChange={handleChange}
+                />
               ))}
 
-              <div className="form-group">
-                <label>Complementary</label>
-                <select
-                  name="complementary"
-                  value={formData.complementary}
-                  onChange={handleChange}
-                >
-                  <option value="" disabled>Select Complementary</option>
-                  {complementary.map((e) => (
-                    <option key={e.id} value={e.id}>{e.complementry_name}</option>
-                  ))}
-                </select>
-              </div>
+              <Select
+                label="Complementary"
+                name="complementary"
+                value={formData.complementary}
+                onChange={handleChange}
+                options={[
+                  { value: "", label: "Select Complementary", disabled: true },
+                  ...complementary.map((e) => ({ value: e.id, label: e.complementry_name })),
+                ]}
+              />
             </div>
 
 
           </Modal>
         )
       }
-      {
-        alerts.show && (
-          <div
-            className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-              }`}
-          >
-            <span className="toast-icon">
-              {alerts.type === "success" && <CheckCircle />}
-              {alerts.type === "update" && <Pencil />}
-              {alerts.type === "delete" && <Trash2 />}
-              {alerts.type === "error" && <AlertTriangle />}
-            </span>
-            <span>{alerts.message}</span>
-          </div>
-        )
-      }
+
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Room Type"
+        confirmText="Delete"
+        destructive
+      >
+        Are you sure you want to delete this room type? This action cannot be undone.
+      </ConfirmModal>
+
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
     </>
   );
 };

@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import Textarea from "../../stories/Form/Textarea";
+import IconButton from "../../stories/IconButton";
 import {
   ArrowLeft,
   RefreshCw,
@@ -14,8 +18,8 @@ import {
   CheckCircle,
 } from "lucide-react";
 import APICall, { ApiError, baseURL } from "../../APICalls/APICalls";
-import "../../MasterData/MasterData.css";
 import "../Reservation/Reservation.css";
+import "./HRM.css";
 
 // -------------------------------------------------------------------------
 // Constants
@@ -553,33 +557,27 @@ const Employee = () => {
       type: "custom",
       render: (row) => (
         <div className="table-actions">
-          <button
-            type="button"
-            className="table-action-btn view"
-            title="View"
-            aria-label={`View employee ${row.username || row.id}`}
+          <IconButton
+            variant="ghost"
+            size="small"
+            icon={<Eye size={16} />}
             onClick={() => openViewModal(row)}
-          >
-            <Eye size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn edit"
-            title="Edit"
-            aria-label={`Edit employee ${row.username || row.id}`}
+            ariaLabel={`View employee ${row.username || row.id}`}
+          />
+          <IconButton
+            variant="subtle"
+            size="small"
+            icon={<Pencil size={16} />}
             onClick={() => handleEdit(row)}
-          >
-            <Pencil size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn delete"
-            title="Delete"
-            aria-label={`Delete employee ${row.username || row.id}`}
+            ariaLabel={`Edit employee ${row.username || row.id}`}
+          />
+          <IconButton
+            variant="danger-ghost"
+            size="small"
+            icon={<Trash2 size={16} />}
             onClick={() => handleDeleteClick(row)}
-          >
-            <Trash2 size={16} aria-hidden="true" />
-          </button>
+            ariaLabel={`Delete employee ${row.username || row.id}`}
+          />
         </div>
       ),
     },
@@ -648,7 +646,6 @@ const Employee = () => {
           exportable
           hasActionButton
           actionButton={{
-            icon: <Download size={18} />,
             label: "Add Employee",
             onClick: openAddModal,
             size: "medium",
@@ -686,44 +683,36 @@ const Employee = () => {
           title={`View Employee — ${viewData.username || `#${viewData.id}`}`}
           onClose={closeViewModal}
           size="large"
+          bodyLayout="grid"
+          viewMode
         >
-          <div className="modal-body grid view">
-            {viewEntries.map(([key, value]) => {
-              if (key === "photo") {
-                const src = resolveImage(value);
-                return (
-                  <div className="form-group" key={key}>
-                    <label>Photo</label>
-                    {src ? (
-                      <img
-                        src={src}
-                        alt={`Employee ${viewData.username || ""}`}
-                        style={{
-                          width: 120, height: 120, borderRadius: 10,
-                          objectFit: "cover", border: "1px solid #ccc",
-                        }}
-                        onError={(e) => { e.currentTarget.style.display = "none"; }}
-                      />
-                    ) : (
-                      <p>No image</p>
-                    )}
-                  </div>
-                );
-              }
-              const label = humaniseKey(key);
+          {viewEntries.map(([key, value]) => {
+            if (key === "photo") {
+              const src = resolveImage(value);
               return (
                 <div className="form-group" key={key}>
-                  <label htmlFor={`emp-view-${key}`}>{label}</label>
-                  <input
-                    id={`emp-view-${key}`}
-                    value={displayValue(value)}
-                    readOnly
-                    aria-readonly="true"
-                  />
+                  <label>Photo</label>
+                  {src ? (
+                    <img
+                      src={src}
+                      alt={`Employee ${viewData.username || ""}`}
+                      style={{
+                        width: 120, height: 120, borderRadius: 10,
+                        objectFit: "cover", border: "1px solid #ccc",
+                      }}
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    />
+                  ) : (
+                    <p>No image</p>
+                  )}
                 </div>
               );
-            })}
-          </div>
+            }
+            const label = humaniseKey(key);
+            return (
+              <Input key={key} label={label} value={displayValue(value)} readOnly disabled />
+            );
+          })}
         </Modal>
       )}
 
@@ -735,7 +724,7 @@ const Employee = () => {
           onClose={closeModal}
           showFooter
           size="large"
-          bodyLayout="single"
+          bodyLayout="grid"
           actions={[
             {
               label: "Close",
@@ -751,330 +740,255 @@ const Employee = () => {
           ]}
         >
           {formError && (
-            <div className="reservation-alert inline" role="alert" style={{ marginBottom: 12 }}>
+            <div className="reservation-alert inline" role="alert" style={{ marginBottom: 12, gridColumn: "1 / -1" }}>
               {formError}
             </div>
           )}
 
-          <div className="modal-body grid">
-            <div className="form-group">
-              <label htmlFor="emp-photo">Photo (JPG/PNG, ≤ {MAX_PHOTO_MB} MB)</label>
+          <Input
+            label={`Photo (JPG/PNG, ≤ ${MAX_PHOTO_MB} MB)`}
+            type="file"
+            name="photo"
+            accept=".jpg,.jpeg,.png"
+            onChange={handlePhotoChange}
+            disabled={saving}
+            helperText={formData.photo ? `Selected: ${formData.photo.name}` : undefined}
+          />
+
+          <Input
+            label="Username"
+            required
+            type="text" name="username" autoComplete="username"
+            value={formData.username} onChange={handleChange}
+            disabled={saving} maxLength={64}
+          />
+
+          <Input
+            label="First Name"
+            required
+            type="text" name="first_name" autoComplete="given-name"
+            value={formData.first_name} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <Input
+            label="Last Name"
+            required
+            type="text" name="last_name" autoComplete="family-name"
+            value={formData.last_name} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <Input
+            label="Personal Email"
+            type="email" inputMode="email" name="personal_email"
+            autoComplete="email"
+            value={formData.personal_email} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <Input
+            label="Company Email"
+            required
+            type="email" inputMode="email" name="company_email"
+            autoComplete="email"
+            value={formData.company_email} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <Input
+            label={editId ? "Password (leave blank to keep current)" : "Password"}
+            required={!editId}
+            type="password" name="password"
+            autoComplete={editId ? "new-password" : "new-password"}
+            value={formData.password} onChange={handleChange}
+            disabled={saving} minLength={6} maxLength={255}
+          />
+
+          <Input
+            label="Mobile"
+            required
+            type="tel" inputMode="tel" name="mobile"
+            autoComplete="tel"
+            value={formData.mobile} onChange={handleChange}
+            disabled={saving} maxLength={20}
+          />
+
+          <Input
+            label="Alternative Mobile"
+            type="tel" inputMode="tel" name="alternative_mobile"
+            value={formData.alternative_mobile} onChange={handleChange}
+            disabled={saving} maxLength={20}
+          />
+
+          <Input
+            label="Date of Birth"
+            type="date" name="dob"
+            value={isoDay(formData.dob)} onChange={handleChange}
+            disabled={saving}
+            max={isoDay(new Date().toISOString())}
+          />
+
+          <Select
+            label="Gender"
+            name="gender" value={formData.gender} onChange={handleChange}
+            disabled={saving}
+            placeholder="Select gender"
+            options={GENDERS.map((g) => ({ value: g, label: g }))}
+          />
+
+          <Select
+            label="Marital Status"
+            name="marital_status" value={formData.marital_status} onChange={handleChange}
+            disabled={saving}
+            placeholder="Select marital status"
+            options={MARITAL_STATUSES.map((m) => ({ value: m, label: m }))}
+          />
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Textarea
+              label="Address"
+              name="address" rows={2} maxLength={500}
+              value={formData.address} onChange={handleChange}
+              disabled={saving}
+            />
+          </div>
+
+          <Input
+            label="City"
+            type="text" name="city" autoComplete="address-level2"
+            value={formData.city} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <Input
+            label="State"
+            type="text" name="state" autoComplete="address-level1"
+            value={formData.state} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <Input
+            label="Postal Code"
+            type="text" name="postal_code" autoComplete="postal-code"
+            value={formData.postal_code} onChange={handleChange}
+            disabled={saving} maxLength={20}
+          />
+
+          <Input
+            label="Country"
+            type="text" name="country" autoComplete="country-name"
+            value={formData.country} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Select
+              label="Department"
+              name="department_id"
+              value={formData.department_id} onChange={handleChange}
+              disabled={saving}
+              placeholder="Select a department"
+              options={departments.map((d) => ({ value: d.id, label: d.department_name }))}
+            />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Select
+              label="Designation"
+              name="designation_id"
+              value={formData.designation_id} onChange={handleChange}
+              disabled={saving}
+              placeholder="Select a designation"
+              options={designations.map((d) => ({ value: d.id, label: d.designation_name }))}
+            />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Select
+              label="Role"
+              name="role_id"
+              value={formData.role_id} onChange={handleChange}
+              disabled={saving}
+              placeholder="Select a role"
+              options={roles.map((r) => ({ value: r.id, label: r.role_name }))}
+            />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Select
+              label="Shift"
+              name="shift_id"
+              value={formData.shift_id} onChange={handleChange}
+              disabled={saving}
+              placeholder="Select a shift"
+              options={shifts.map((s) => ({ value: s.id, label: s.shift_name }))}
+            />
+          </div>
+
+          <Input
+            label="Date of Joining"
+            type="date" name="date_of_joining"
+            value={isoDay(formData.date_of_joining)} onChange={handleChange}
+            disabled={saving}
+            min={isoDay(formData.dob) || undefined}
+          />
+
+          <Input
+            label="Experience"
+            type="text" name="experience"
+            value={formData.experience} onChange={handleChange}
+            disabled={saving} maxLength={100}
+            placeholder="e.g. 3 years"
+          />
+
+          <Input
+            label="Salary Details"
+            type="text" name="salary_details"
+            value={formData.salary_details} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <Input
+            label="Register Code"
+            type="text" name="register_code"
+            value={formData.register_code} onChange={handleChange}
+            disabled={saving} maxLength={64}
+          />
+
+          <Input
+            label="Emergency Contact Name"
+            type="text" name="emergency_name"
+            value={formData.emergency_name} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <Input
+            label="Emergency Contact Number"
+            type="tel" inputMode="tel" name="emergency_contact"
+            value={formData.emergency_contact} onChange={handleChange}
+            disabled={saving} maxLength={20}
+          />
+
+          <Input
+            label="Emergency Contact Relationship"
+            type="text" name="emergency_relationship"
+            value={formData.emergency_relationship} onChange={handleChange}
+            disabled={saving} maxLength={100}
+          />
+
+          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <label htmlFor="emp-ack" className="emp-ack-label">
               <input
-                id="emp-photo"
-                type="file"
-                name="photo"
-                accept=".jpg,.jpeg,.png"
-                onChange={handlePhotoChange}
+                id="emp-ack"
+                type="checkbox"
+                name="acknowledgment_of_hotel_policies"
+                checked={formData.acknowledgment_of_hotel_policies}
+                onChange={handleChange}
                 disabled={saving}
               />
-              {formData.photo && (
-                <p className="emp-hint">Selected: {formData.photo.name}</p>
-              )}
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-username">Username <span className="required">*</span></label>
-              <input
-                id="emp-username"
-                type="text" name="username" autoComplete="username"
-                value={formData.username} onChange={handleChange}
-                disabled={saving} maxLength={64} required
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-first">First Name <span className="required">*</span></label>
-              <input
-                id="emp-first"
-                type="text" name="first_name" autoComplete="given-name"
-                value={formData.first_name} onChange={handleChange}
-                disabled={saving} maxLength={100} required
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-last">Last Name <span className="required">*</span></label>
-              <input
-                id="emp-last"
-                type="text" name="last_name" autoComplete="family-name"
-                value={formData.last_name} onChange={handleChange}
-                disabled={saving} maxLength={100} required
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-personal-email">Personal Email</label>
-              <input
-                id="emp-personal-email"
-                type="email" inputMode="email" name="personal_email"
-                autoComplete="email"
-                value={formData.personal_email} onChange={handleChange}
-                disabled={saving} maxLength={100}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-company-email">Company Email <span className="required">*</span></label>
-              <input
-                id="emp-company-email"
-                type="email" inputMode="email" name="company_email"
-                autoComplete="email"
-                value={formData.company_email} onChange={handleChange}
-                disabled={saving} maxLength={100} required
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-password">
-                Password {editId ? "" : <span className="required">*</span>}
-                {editId && <em style={{ fontWeight: 400, marginLeft: 6, fontSize: 12 }}>(leave blank to keep current)</em>}
-              </label>
-              <input
-                id="emp-password"
-                type="password" name="password"
-                autoComplete={editId ? "new-password" : "new-password"}
-                value={formData.password} onChange={handleChange}
-                disabled={saving} minLength={6} maxLength={255}
-                required={!editId}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-mobile">Mobile <span className="required">*</span></label>
-              <input
-                id="emp-mobile"
-                type="tel" inputMode="tel" name="mobile"
-                autoComplete="tel"
-                value={formData.mobile} onChange={handleChange}
-                disabled={saving} maxLength={20} required
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-alt-mobile">Alternative Mobile</label>
-              <input
-                id="emp-alt-mobile"
-                type="tel" inputMode="tel" name="alternative_mobile"
-                value={formData.alternative_mobile} onChange={handleChange}
-                disabled={saving} maxLength={20}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-dob">Date of Birth</label>
-              <input
-                id="emp-dob"
-                type="date" name="dob"
-                value={isoDay(formData.dob)} onChange={handleChange}
-                disabled={saving}
-                max={isoDay(new Date().toISOString())}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-gender">Gender</label>
-              <select
-                id="emp-gender"
-                name="gender" value={formData.gender} onChange={handleChange}
-                disabled={saving}
-              >
-                <option value="">Select gender</option>
-                {GENDERS.map((g) => (<option key={g} value={g}>{g}</option>))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-marital">Marital Status</label>
-              <select
-                id="emp-marital"
-                name="marital_status" value={formData.marital_status} onChange={handleChange}
-                disabled={saving}
-              >
-                <option value="">Select marital status</option>
-                {MARITAL_STATUSES.map((m) => (<option key={m} value={m}>{m}</option>))}
-              </select>
-            </div>
-
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-              <label htmlFor="emp-address">Address</label>
-              <textarea
-                id="emp-address"
-                name="address" rows={2} maxLength={500}
-                value={formData.address} onChange={handleChange}
-                disabled={saving}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-city">City</label>
-              <input
-                id="emp-city" type="text" name="city" autoComplete="address-level2"
-                value={formData.city} onChange={handleChange}
-                disabled={saving} maxLength={100}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-state">State</label>
-              <input
-                id="emp-state" type="text" name="state" autoComplete="address-level1"
-                value={formData.state} onChange={handleChange}
-                disabled={saving} maxLength={100}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-postal">Postal Code</label>
-              <input
-                id="emp-postal" type="text" name="postal_code" autoComplete="postal-code"
-                value={formData.postal_code} onChange={handleChange}
-                disabled={saving} maxLength={20}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-country">Country</label>
-              <input
-                id="emp-country" type="text" name="country" autoComplete="country-name"
-                value={formData.country} onChange={handleChange}
-                disabled={saving} maxLength={100}
-              />
-            </div>
-
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-              <label htmlFor="emp-department">Department</label>
-              <select
-                id="emp-department" name="department_id"
-                value={formData.department_id} onChange={handleChange}
-                disabled={saving}
-              >
-                <option value="">Select a department</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>{d.department_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-              <label htmlFor="emp-designation">Designation</label>
-              <select
-                id="emp-designation" name="designation_id"
-                value={formData.designation_id} onChange={handleChange}
-                disabled={saving}
-              >
-                <option value="">Select a designation</option>
-                {designations.map((d) => (
-                  <option key={d.id} value={d.id}>{d.designation_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-              <label htmlFor="emp-role">Role</label>
-              <select
-                id="emp-role" name="role_id"
-                value={formData.role_id} onChange={handleChange}
-                disabled={saving}
-              >
-                <option value="">Select a role</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>{r.role_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-              <label htmlFor="emp-shift">Shift</label>
-              <select
-                id="emp-shift" name="shift_id"
-                value={formData.shift_id} onChange={handleChange}
-                disabled={saving}
-              >
-                <option value="">Select a shift</option>
-                {shifts.map((s) => (
-                  <option key={s.id} value={s.id}>{s.shift_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-joining">Date of Joining</label>
-              <input
-                id="emp-joining" type="date" name="date_of_joining"
-                value={isoDay(formData.date_of_joining)} onChange={handleChange}
-                disabled={saving}
-                min={isoDay(formData.dob) || undefined}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-experience">Experience</label>
-              <input
-                id="emp-experience" type="text" name="experience"
-                value={formData.experience} onChange={handleChange}
-                disabled={saving} maxLength={100}
-                placeholder="e.g. 3 years"
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-salary">Salary Details</label>
-              <input
-                id="emp-salary" type="text" name="salary_details"
-                value={formData.salary_details} onChange={handleChange}
-                disabled={saving} maxLength={100}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-register-code">Register Code</label>
-              <input
-                id="emp-register-code" type="text" name="register_code"
-                value={formData.register_code} onChange={handleChange}
-                disabled={saving} maxLength={64}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-emerg-name">Emergency Contact Name</label>
-              <input
-                id="emp-emerg-name" type="text" name="emergency_name"
-                value={formData.emergency_name} onChange={handleChange}
-                disabled={saving} maxLength={100}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-emerg-contact">Emergency Contact Number</label>
-              <input
-                id="emp-emerg-contact" type="tel" inputMode="tel" name="emergency_contact"
-                value={formData.emergency_contact} onChange={handleChange}
-                disabled={saving} maxLength={20}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="emp-emerg-rel">Emergency Contact Relationship</label>
-              <input
-                id="emp-emerg-rel" type="text" name="emergency_relationship"
-                value={formData.emergency_relationship} onChange={handleChange}
-                disabled={saving} maxLength={100}
-              />
-            </div>
-
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-              <label htmlFor="emp-ack" className="emp-ack-label">
-                <input
-                  id="emp-ack"
-                  type="checkbox"
-                  name="acknowledgment_of_hotel_policies"
-                  checked={formData.acknowledgment_of_hotel_policies}
-                  onChange={handleChange}
-                  disabled={saving}
-                />
-                <span>I acknowledge that I have read, understood, and agree to comply with the hotel's policies.</span>
-              </label>
-            </div>
+              <span>I acknowledge that I have read, understood, and agree to comply with the hotel's policies.</span>
+            </label>
           </div>
         </Modal>
       )}

@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Trash2, X, Plus, Send } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Button from "../../stories/Button";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, Trash2, Plus, Send } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
@@ -32,6 +38,7 @@ const Orders = () => {
   const [formData, setFormData] = useState(initialForm);
 
   const [pickMenuId, setPickMenuId] = useState("");
+  const [pickVariantId, setPickVariantId] = useState("");
   const [pickQty, setPickQty] = useState(1);
   const [pickNote, setPickNote] = useState("");
 
@@ -111,6 +118,7 @@ const Orders = () => {
       const res = await APICall.getT(`/restaurant/order/${row.id}`);
       setDetailOrder(res?.data || row);
       setPickMenuId("");
+      setPickVariantId("");
       setPickQty(1);
       setPickNote("");
       setShowDetailModal(true);
@@ -134,9 +142,17 @@ const Orders = () => {
     setFormError(null);
     try {
       await APICall.postT(`/restaurant/order/${detailOrder.id}/items`, {
-        items: [{ menu_id: Number(pickMenuId), quantity: Number(pickQty), special_instructions: pickNote || null }],
+        items: [
+          {
+            menu_id: Number(pickMenuId),
+            variant_id: pickVariantId ? Number(pickVariantId) : null,
+            quantity: Number(pickQty),
+            special_instructions: pickNote || null,
+          },
+        ],
       });
       setPickMenuId("");
+      setPickVariantId("");
       setPickQty(1);
       setPickNote("");
       refreshDetail();
@@ -190,7 +206,7 @@ const Orders = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Orders"
@@ -221,13 +237,9 @@ const Orders = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openDetail(row)}>
-                  <Eye size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openDetail(row)} />
                 {row.order_status === "New" && (
-                  <button className="table-action-btn delete" onClick={() => cancelOrder(row)}>
-                    <Trash2 size={16} />
-                  </button>
+                  <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} ariaLabel="Cancel" onClick={() => cancelOrder(row)} />
                 )}
               </div>
             ),
@@ -237,147 +249,136 @@ const Orders = () => {
       />
 
       {showNewModal && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Add Order</h3>
-              <button onClick={closeNewModal}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen
+          title="Add Order"
+          onClose={closeNewModal}
+          size="large"
+          bodyLayout="grid"
+          showFooter
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeNewModal, disabled: saving },
+            { label: saving ? "Creating…" : "Create & Add Items", variant: "primary", onClick: createOrder, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
+          <Select label="Order Type" name="order_type" value={formData.order_type} onChange={handleChange} options={ORDER_TYPES} />
 
-            <div className="modal-body grid">
-              <div className="form-group">
-                <label>Order Type</label>
-                <select name="order_type" value={formData.order_type} onChange={handleChange}>
-                  {ORDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
+          {formData.order_type === "Dine-In" && (
+            <Select
+              label="Table"
+              required
+              name="table_id"
+              value={formData.table_id}
+              onChange={handleChange}
+              placeholder="— select —"
+              options={tables.filter((t) => t.table_status === "Available").map((t) => ({ value: t.id, label: `${t.table_name} (${t.table_code})` }))}
+            />
+          )}
 
-              {formData.order_type === "Dine-In" && (
-                <div className="form-group">
-                  <label>Table <span className="required">*</span></label>
-                  <select name="table_id" value={formData.table_id} onChange={handleChange}>
-                    <option value="">— select —</option>
-                    {tables.filter((t) => t.table_status === "Available").map((t) => (
-                      <option key={t.id} value={t.id}>{t.table_name} ({t.table_code})</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+          {formData.order_type === "Room Service" && (
+            <Input label="Room No" required name="room_no" value={formData.room_no} onChange={handleChange} />
+          )}
 
-              {formData.order_type === "Room Service" && (
-                <div className="form-group">
-                  <label>Room No <span className="required">*</span></label>
-                  <input name="room_no" value={formData.room_no} onChange={handleChange} />
-                </div>
-              )}
-
-              <div className="form-group">
-                <label>Guest Name</label>
-                <input name="guest_name" value={formData.guest_name} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Guest Mobile</label>
-                <input name="guest_mobile" value={formData.guest_mobile} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>No. of Guests</label>
-                <input type="number" name="no_of_guests" value={formData.no_of_guests} onChange={handleChange} />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeNewModal} disabled={saving}>Close</button>
-              <button className="btn primary" onClick={createOrder} disabled={saving}>{saving ? "Creating…" : "Create & Add Items"}</button>
-            </div>
-          </div>
-        </div>
+          <Input label="Guest Name" name="guest_name" value={formData.guest_name} onChange={handleChange} />
+          <Input label="Guest Mobile" name="guest_mobile" value={formData.guest_mobile} onChange={handleChange} />
+          <Input label="No. of Guests" type="number" name="no_of_guests" value={formData.no_of_guests} onChange={handleChange} />
+        </Modal>
       )}
 
       {showDetailModal && detailOrder && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-lg">
-            <div className="modal-header">
-              <h3>Order {detailOrder.order_number}</h3>
-              <button onClick={closeDetail}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen
+          title={`Order ${detailOrder.order_number}`}
+          onClose={closeDetail}
+          size="large"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeDetail },
+            ...(pendingItemCount > 0 ? [{ label: `Send ${pendingItemCount} item(s) to Kitchen`, variant: "primary", icon: <Send size={14} />, onClick: sendToKitchen }] : []),
+            ...(canMarkServed ? [{ label: "Mark Served", variant: "primary", onClick: markServed }] : []),
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
+          <p><strong>Status:</strong> {detailOrder.order_status} &nbsp; <strong>Payment:</strong> {detailOrder.payment_status}</p>
 
-            <div className="modal-body single">
-              <p><strong>Status:</strong> {detailOrder.order_status} &nbsp; <strong>Payment:</strong> {detailOrder.payment_status}</p>
-
-              <table style={{ width: "100%", marginBottom: "16px" }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left" }}>Item</th>
-                    <th>Qty</th>
-                    <th>Price</th>
-                    <th>Status</th>
-                    <th></th>
+          <table style={{ width: "100%", marginBottom: "16px" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left" }}>Item</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {(detailOrder.items || []).map((it) => {
+                const menu = menuItems.find((m) => m.id === it.menu_id);
+                return (
+                  <tr key={it.id}>
+                    <td>
+                      {menu?.item_name || `#${it.menu_id}`}
+                      {it.variant_name ? ` — ${it.variant_name}` : ""}
+                      {it.special_instructions && (
+                        <div style={{ fontSize: "12px", color: "#64748b" }}>{it.special_instructions}</div>
+                      )}
+                    </td>
+                    <td style={{ textAlign: "center" }}>{it.quantity}</td>
+                    <td style={{ textAlign: "center" }}>{it.price}</td>
+                    <td style={{ textAlign: "center" }}>{it.item_status}</td>
+                    <td style={{ textAlign: "center" }}>
+                      {it.item_status === "Pending" && (
+                        <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={14} />} ariaLabel="Remove item" onClick={() => removeItem(it.id)} />
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {(detailOrder.items || []).map((it) => {
-                    const menu = menuItems.find((m) => m.id === it.menu_id);
-                    return (
-                      <tr key={it.id}>
-                        <td>{menu?.item_name || `#${it.menu_id}`}</td>
-                        <td style={{ textAlign: "center" }}>{it.quantity}</td>
-                        <td style={{ textAlign: "center" }}>{it.price}</td>
-                        <td style={{ textAlign: "center" }}>{it.item_status}</td>
-                        <td style={{ textAlign: "center" }}>
-                          {it.item_status === "Pending" && (
-                            <button className="table-action-btn delete" onClick={() => removeItem(it.id)}>
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {(!detailOrder.items || detailOrder.items.length === 0) && (
-                    <tr><td colSpan={5} style={{ textAlign: "center", color: "#9ca3af" }}>No items yet</td></tr>
-                  )}
-                </tbody>
-              </table>
+                );
+              })}
+              {(!detailOrder.items || detailOrder.items.length === 0) && (
+                <tr><td colSpan={5} style={{ textAlign: "center", color: "#9ca3af" }}>No items yet</td></tr>
+              )}
+            </tbody>
+          </table>
 
-              {detailOrder.order_status !== "Completed" && detailOrder.order_status !== "Cancelled" && (
-                <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", flexWrap: "wrap" }}>
-                  <div className="form-group" style={{ minWidth: "200px" }}>
-                    <label>Menu Item</label>
-                    <select value={pickMenuId} onChange={(e) => setPickMenuId(e.target.value)}>
-                      <option value="">— select —</option>
-                      {menuItems.filter((m) => m.availability_status === "Available").map((m) => (
-                        <option key={m.id} value={m.id}>{m.item_name} — {m.price}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ width: "90px" }}>
-                    <label>Qty</label>
-                    <input type="number" min="1" value={pickQty} onChange={(e) => setPickQty(e.target.value)} />
-                  </div>
-                  <div className="form-group" style={{ flex: 1, minWidth: "160px" }}>
-                    <label>Note</label>
-                    <input value={pickNote} onChange={(e) => setPickNote(e.target.value)} placeholder="Special instructions" />
-                  </div>
-                  <button className="btn primary" onClick={addItem}><Plus size={14} /> Add</button>
+          {detailOrder.order_status !== "Completed" && detailOrder.order_status !== "Cancelled" && (
+            <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div style={{ minWidth: "200px" }}>
+                <Select
+                  label="Menu Item"
+                  value={pickMenuId}
+                  onChange={(e) => {
+                    setPickMenuId(e.target.value);
+                    setPickVariantId("");
+                  }}
+                  placeholder="— select —"
+                  options={menuItems.filter((m) => m.availability_status === "Available").map((m) => ({ value: m.id, label: `${m.item_name} — ${m.price}` }))}
+                />
+              </div>
+              {(menuItems.find((m) => m.id === Number(pickMenuId))?.variants || []).length > 0 && (
+                <div style={{ minWidth: "150px" }}>
+                  <Select
+                    label="Variant"
+                    value={pickVariantId}
+                    onChange={(e) => setPickVariantId(e.target.value)}
+                    placeholder={`Standard — ${menuItems.find((m) => m.id === Number(pickMenuId))?.price}`}
+                    options={menuItems.find((m) => m.id === Number(pickMenuId)).variants.map((v) => ({ value: v.id, label: `${v.variant_name} — ${v.price}` }))}
+                  />
                 </div>
               )}
+              <div style={{ width: "90px" }}>
+                <Input label="Qty" type="number" min="1" value={pickQty} onChange={(e) => setPickQty(e.target.value)} />
+              </div>
+              <div style={{ flex: 1, minWidth: "160px" }}>
+                <Input label="Note" value={pickNote} onChange={(e) => setPickNote(e.target.value)} placeholder="Special instructions" />
+              </div>
+              <Button variant="primary" onClick={addItem}><Plus size={14} /> Add</Button>
             </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeDetail}>Close</button>
-              {pendingItemCount > 0 && (
-                <button className="btn primary" onClick={sendToKitchen}><Send size={14} /> Send {pendingItemCount} item(s) to Kitchen</button>
-              )}
-              {canMarkServed && (
-                <button className="btn primary" onClick={markServed}>Mark Served</button>
-              )}
-            </div>
-          </div>
-        </div>
+          )}
+        </Modal>
       )}
     </>
   );

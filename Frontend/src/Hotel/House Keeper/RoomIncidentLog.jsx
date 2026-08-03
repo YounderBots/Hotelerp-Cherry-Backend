@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, Trash2, X } from "lucide-react";
-import "../../MasterData/MasterData.css";
+import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import IconButton from "../../stories/IconButton";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import APICall from "../../APICalls/APICalls";
 
 const RoomIncidentLog = () => {
@@ -190,15 +193,9 @@ const RoomIncidentLog = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setViewData(row)}>
-                  <Eye size={16} />
-                </button>
-                <button onClick={() => handleEdit(row)}>
-                  <Pencil size={16} />
-                </button>
-                <button onClick={() => handleDelete(row.id)}>
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => setViewData(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -209,99 +206,81 @@ const RoomIncidentLog = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Incident</h3>
-              <button onClick={() => setViewData(null)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body single view">
-              {Object.entries(viewData).map(([k, v]) => (
-                <div className="form-group" key={k}>
-                  <label>{k.replace(/_/g, " ")}</label>
-                  <input value={v || ""} disabled />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen={!!viewData}
+          title="View Incident"
+          onClose={() => setViewData(null)}
+          size="large"
+          bodyLayout="grid"
+          viewMode
+        >
+          {Object.entries(viewData).map(([k, v]) => (
+            <Input key={k} label={k.replace(/_/g, " ")} value={v || ""} disabled />
+          ))}
+        </Modal>
       )}
 
       {/* ================= ADD MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Add Incident</h3>
-              <button onClick={() => setShowModal(false)}>
-                <X size={18} />
-              </button>
-            </div>
+        <Modal
+          isOpen={showModal}
+          title="Add Incident"
+          onClose={() => setShowModal(false)}
+          showFooter
+          size="xlarge"
+          bodyLayout="grid"
+          actions={[
+            { label: "Close", variant: "secondary", onClick: () => setShowModal(false) },
+            { label: "Submit", variant: "primary", onClick: handleSave },
+          ]}
+        >
+          <Select
+            label="Room Number"
+            name="roomNo"
+            value={formData.roomNo}
+            onChange={handleChange}
+            placeholder="Select Room"
+            options={rooms.map((r) => ({ value: r.id, label: r.room_no }))}
+          />
 
-            <div className="modal-body grid">
-              <div className="form-group">
-                <label>Room Number</label>
-                <select name="roomNo" value={formData.roomNo} onChange={handleChange}>
-                  <option value="">Select Room</option>
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.room_no}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {[
+            ["Incident Date", "incidentDate", "date"],
+            ["Incident Time", "incidentTime", "time"],
+            ["Description", "incidentDescription"],
+            ["Housekeeping Staff", "housekeepingStaff"],
+            ["Witnesses", "witnesses"],
+            ["Actions Taken", "actionsTaken"],
+            ["Reported By", "reportedBy"],
+            ["Report Date", "reportDate", "date"],
+          ].map(([label, name, type]) => (
+            <Input
+              key={name}
+              label={label}
+              type={type || "text"}
+              name={name}
+              value={formData[name]}
+              onChange={handleChange}
+            />
+          ))}
 
-              {[
-                ["Incident Date", "incidentDate", "date"],
-                ["Incident Time", "incidentTime", "time"],
-                ["Description", "incidentDescription"],
-                ["Housekeeping Staff", "housekeepingStaff"],
-                ["Witnesses", "witnesses"],
-                ["Actions Taken", "actionsTaken"],
-                ["Reported By", "reportedBy"],
-                ["Report Date", "reportDate", "date"],
-              ].map(([label, name, type]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input
-                    type={type || "text"}
-                    name={name}
-                    value={formData[name]}
-                    onChange={handleChange}
-                  />
-                </div>
-              ))}
+          <Select
+            label="Severity"
+            name="severity"
+            value={formData.severity}
+            onChange={handleChange}
+            placeholder="Select"
+            options={[
+              { value: "Low", label: "Low" },
+              { value: "Medium", label: "Medium" },
+              { value: "High", label: "High" },
+              { value: "Critical", label: "Critical" },
+            ]}
+          />
 
-              <div className="form-group">
-                <label>Severity</label>
-                <select name="severity" value={formData.severity} onChange={handleChange}>
-                  <option value="">Select</option>
-                  <option>Low</option>
-                  <option>Medium</option>
-                  <option>High</option>
-                  <option>Critical</option>
-                </select>
-              </div>
-
-              <div className="form-group" style={{ gridColumn: "1/-1" }}>
-                <label>Attachment</label>
-                <input type="file" onChange={handleFileChange} />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={() => setShowModal(false)}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
-            </div>
+          <div style={{ gridColumn: "1/-1" }}>
+            <Input label="Attachment" type="file" onChange={handleFileChange} />
           </div>
-        </div>
+        </Modal>
       )}
     </>
   );

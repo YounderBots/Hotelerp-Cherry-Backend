@@ -1,17 +1,22 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import Modal from "../stories/Modal";
+import Modal, { ConfirmModal } from "../stories/Modal";
+import Input from "../stories/Form/Input";
+import Select from "../stories/Form/Select";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import { X, Pencil, Trash2, Eye,CheckCircle,AlertTriangle } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const DiscountType = () => {
   const [data, setData] = useState([]);
+  const [countries, setCountries] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
 
   const initialForm = {
     discountCountry: "",
@@ -72,6 +77,15 @@ const DiscountType = () => {
     setViewData(null);
   };
 
+  const getCountry = async () => {
+    try {
+      const res = await APICall.getT("/masterdata/country_currency");
+      setCountries(res.data);
+    } catch (error) {
+      console.error("Get country error", error);
+    }
+  };
+
   const getDiscountType = async () => {
     const AllDiscount = await APICall.getT("/masterdata/discount")
     setData(AllDiscount.data)
@@ -80,7 +94,7 @@ const DiscountType = () => {
   const createDiscount = async () => {
     try {
       await APICall.postT("/masterdata/discount", {
-        country_id: formData.discountCountry,
+        country_id: Number(formData.discountCountry),
         discount_name: formData.discountName,
         discount_percentage: formData.discountPercentage,
       });
@@ -95,7 +109,7 @@ const DiscountType = () => {
     try {
       await APICall.putT("/masterdata/discount", {
         id: editId,
-        country_id: formData.discountCountry,
+        country_id: Number(formData.discountCountry),
         discount_name: formData.discountName,
         discount_percentage: formData.discountPercentage
       });
@@ -118,8 +132,13 @@ const DiscountType = () => {
 
   useEffect(() => {
     getDiscountType();
+    getCountry();
   }, []);
 
+  const countryMap = countries.reduce((map, c) => {
+    map[c.id] = c.country_name;
+    return map;
+  }, {});
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -154,8 +173,12 @@ const DiscountType = () => {
   };
 
   const handleDelete = (id) => {
-     if (window.confirm("Are you sure you want to delete this Discount Type?")) {
-    deleteDiscount(id);}
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    deleteDiscount(deleteId);
+    setDeleteId(null);
   };
 
   /* ================= UI ================= */
@@ -179,6 +202,8 @@ const DiscountType = () => {
             key: "country_id",
             title: "Discount Country",
             align: "center",
+            type: "custom",
+            render: (row) => countryMap[row.country_id] || "—",
           },
           {
             key: "discount_name",
@@ -203,24 +228,9 @@ const DiscountType = () => {
                   justifyContent: "center",
                 }}
               >
-                <button
-                  className="table-action-btn view"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handleDelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -235,24 +245,11 @@ const DiscountType = () => {
           title="View Discount Type"
           onClose={() => setShowViewModal(false)}
           size="medium"
+          bodyLayout="grid"
         >
-
-          <div className="modal-body single view">
-            <div className="form-group">
-              <label>Discount Country</label>
-              <input value={viewData.country_id} disabled />
-            </div>
-
-            <div className="form-group">
-              <label>Discount Name</label>
-              <input value={viewData.discount_name} disabled />
-            </div>
-
-            <div className="form-group">
-              <label>Discount Percentage</label>
-              <input value={viewData.discount_percentage} disabled />
-            </div>
-          </div>
+          <Input label="Discount Country" disabled value={countryMap[viewData.country_id] || ""} />
+          <Input label="Discount Name" disabled value={viewData.discount_name} />
+          <Input label="Discount Percentage" disabled value={viewData.discount_percentage} />
         </Modal>
 
       )}
@@ -264,8 +261,8 @@ const DiscountType = () => {
           title={editId ? "Edit  Discount Type" : "Add  Discount Type"}
           onClose={() => setShowModal(false)}
           showFooter
-          size="large"
-          bodyLayout="single"
+          size="medium"
+          bodyLayout="grid"
           actions={[
             {
               label: "Close",
@@ -280,53 +277,42 @@ const DiscountType = () => {
             },
           ]}
         >
-          <div className="modal-body single">
-            <div className="form-group">
-              <label>Country Name</label>
-              <input
-                name="discountCountry"
-                value={formData.discountCountry}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Discount Name</label>
-              <input
-                name="discountName"
-                value={formData.discountName}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Discount Percentage</label>
-              <input
-                type="number"
-                name="discountPercentage"
-                value={formData.discountPercentage}
-                onChange={handleChange}
-              />
-            </div>
-          </div>
-
+          <Select
+            label="Country Name"
+            name="discountCountry"
+            value={formData.discountCountry}
+            onChange={handleChange}
+            placeholder="Select Country"
+            options={countries.map((c) => ({ value: c.id, label: c.country_name }))}
+          />
+          <Input
+            label="Discount Name"
+            name="discountName"
+            value={formData.discountName}
+            onChange={handleChange}
+          />
+          <Input
+            label="Discount Percentage"
+            type="number"
+            name="discountPercentage"
+            value={formData.discountPercentage}
+            onChange={handleChange}
+          />
         </Modal>
       )}
 
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Discount Type"
+        confirmText="Delete"
+        destructive
+      >
+        Are you sure you want to delete this discount type? This action cannot be undone.
+      </ConfirmModal>
+
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
     </>
   );
 };

@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, Trash2, X, ToggleLeft, ToggleRight } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./FloorTable.css";
@@ -27,7 +32,7 @@ const FloorTable = () => {
     description: "",
     total_tables: "",
     total_capacity: "",
-    is_open: "Yes",
+    is_open: true,
   };
   const [formData, setFormData] = useState(initialForm);
 
@@ -62,6 +67,11 @@ const FloorTable = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((p) => ({ ...p, [name]: value }));
+  };
+
+  const handleBoolChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((p) => ({ ...p, [name]: value === "true" }));
   };
 
   const handleSave = async () => {
@@ -105,14 +115,14 @@ const FloorTable = () => {
       description: row.description || "",
       total_tables: row.total_tables ?? "",
       total_capacity: row.total_capacity ?? "",
-      is_open: row.is_open || "Yes",
+      is_open: row.is_open ?? true,
     });
     setShowModal(true);
   };
 
   const toggleOpen = async (row) => {
     try {
-      await APICall.putT(`/restaurant/floor/${row.id}`, { is_open: row.is_open === "Yes" ? "No" : "Yes" });
+      await APICall.putT(`/restaurant/floor/${row.id}`, { is_open: !row.is_open });
       load();
     } catch (err) {
       setError(errMsg(err, "Failed to update floor status."));
@@ -130,7 +140,7 @@ const FloorTable = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Floor Layout"
@@ -151,7 +161,7 @@ const FloorTable = () => {
           { key: "floor_type", title: "Type", align: "center" },
           { key: "total_tables", title: "Total Tables", align: "center" },
           { key: "total_capacity", title: "Capacity", align: "center" },
-          { key: "is_open", title: "Open", align: "center", type: "badge" },
+          { key: "is_open", title: "Open", align: "center", type: "custom", render: (row) => (row.is_open ? "Yes" : "No") },
           {
             key: "actions",
             title: "Actions",
@@ -159,18 +169,16 @@ const FloorTable = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => viewPage(row)}>
-                  <Eye size={16} />
-                </button>
-                <button className="table-action-btn edit" onClick={() => handleEdit(row)}>
-                  <Pencil size={16} />
-                </button>
-                <button className="table-action-btn delete" onClick={() => handleDelete(row.id)}>
-                  <Trash2 size={16} />
-                </button>
-                <button className="table-action-btn status" title="Toggle open/closed" onClick={() => toggleOpen(row)}>
-                  {row.is_open === "Yes" ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => viewPage(row)} />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} ariaLabel="Edit" onClick={() => handleEdit(row)} />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} ariaLabel="Delete" onClick={() => handleDelete(row.id)} />
+                <IconButton
+                  variant="subtle"
+                  size="small"
+                  icon={row.is_open ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                  ariaLabel="Toggle open/closed"
+                  onClick={() => toggleOpen(row)}
+                />
               </div>
             ),
           },
@@ -179,73 +187,63 @@ const FloorTable = () => {
       />
 
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Floor" : "Add Floor"}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit Floor" : "Add Floor"}
+          onClose={closeModal}
+          size="small"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
+            { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
+          <Input label="Floor Number" required type="number" name="floor_number" value={formData.floor_number} onChange={handleChange} />
 
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Floor Number <span className="required">*</span></label>
-                <input type="number" name="floor_number" value={formData.floor_number} onChange={handleChange} />
-              </div>
+          <Input label="Floor Name" required name="floor_name" value={formData.floor_name} onChange={handleChange} />
 
-              <div className="form-group">
-                <label>Floor Name <span className="required">*</span></label>
-                <input name="floor_name" value={formData.floor_name} onChange={handleChange} />
-              </div>
+          <Select
+            label="Floor Type"
+            name="floor_type"
+            value={formData.floor_type}
+            onChange={handleChange}
+            options={[
+              { value: "Restaurant", label: "Restaurant" },
+              { value: "Banquet", label: "Banquet" },
+              { value: "Outdoor", label: "Outdoor" },
+            ]}
+          />
 
-              <div className="form-group">
-                <label>Floor Type</label>
-                <select name="floor_type" value={formData.floor_type} onChange={handleChange}>
-                  <option value="Restaurant">Restaurant</option>
-                  <option value="Bar">Bar</option>
-                  <option value="Banquet">Banquet</option>
-                  <option value="Outdoor">Outdoor</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Description</label>
-                <textarea
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  rows={4}
-                  placeholder="Enter floor description"
-                  style={{ resize: "vertical", minHeight: "90px" }}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Total Tables</label>
-                <input type="number" name="total_tables" value={formData.total_tables} onChange={handleChange} />
-              </div>
-
-              <div className="form-group">
-                <label>Total Capacity</label>
-                <input type="number" name="total_capacity" value={formData.total_capacity} onChange={handleChange} />
-              </div>
-
-              <div className="form-group">
-                <label>Open for service</label>
-                <select name="is_open" value={formData.is_open} onChange={handleChange}>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal} disabled={saving}>Close</button>
-              <button className="btn primary" onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Submit"}</button>
-            </div>
+          <div className="form-group">
+            <label>Description</label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              rows={4}
+              placeholder="Enter floor description"
+              style={{ resize: "vertical", minHeight: "90px" }}
+            />
           </div>
-        </div>
+
+          <Input label="Total Tables" type="number" name="total_tables" value={formData.total_tables} onChange={handleChange} />
+
+          <Input label="Total Capacity" type="number" name="total_capacity" value={formData.total_capacity} onChange={handleChange} />
+
+          <Select
+            label="Open for service"
+            name="is_open"
+            value={String(formData.is_open)}
+            onChange={handleBoolChange}
+            options={[
+              { value: "true", label: "Yes" },
+              { value: "false", label: "No" },
+            ]}
+          />
+        </Modal>
       )}
     </>
   );

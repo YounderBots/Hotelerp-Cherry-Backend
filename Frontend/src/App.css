@@ -468,10 +468,8 @@ main {
 /* RIGHT SIDE */
 .content-area {
     display: flex;
-    flex: 1;    
-}
-.main-content::-webkit-scrollbar{
-    display: none;
+    flex: 1;
+    min-width: 0;
 }
 /* SUB MENU */
 .sub-menu {
@@ -519,6 +517,7 @@ main {
 /* MAIN CONTENT */
 .main-content {
     flex: 1;
+    min-width: 0;
     padding: 24px;
 }
 
@@ -842,6 +841,36 @@ main {
 
   .mobile-only {
     display: flex;
+  }
+}
+
+/* Very small phones — the navbar only has room for the logo, avatar and
+   menu button once the name/role text is dropped. */
+@media (max-width: 480px) {
+  .navbar {
+    height: 60px;
+    padding: 0 12px;
+  }
+
+  .logo-container img {
+    height: 44px;
+  }
+
+  .navbar-right {
+    gap: 8px;
+  }
+
+  .profile-info {
+    display: none;
+  }
+
+  .profile-box {
+    padding: 4px;
+  }
+
+  .icon-button.mobile-only {
+    width: 44px;
+    height: 44px;
   }
 }
 

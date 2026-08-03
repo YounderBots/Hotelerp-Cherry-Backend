@@ -7,7 +7,6 @@ import useClickOutside from './hooks/useClickOutside';
 import findMenuByPath from './functions/locationFunctions';
 import { ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
-import ViewFloor from './Restaurant/Floor & Table Setup/FloorPageView';
 import { useAuth } from './Context/AuthContext';
 import ReservationModelView from './Hotel/Reservation/ReservationModelView';
 import ReservationListEdit from './Hotel/Reservation/ReservationListEdit';
@@ -36,26 +35,41 @@ const SettlementSummary = lazy(() => import('./Hotel/Night Audit/SettlementSumma
 const GuestEnquiry = lazy(() => import('./Hotel/Guest Enquiry/GuestEnquiry'));
 const Employee = lazy(() => import('./Hotel/HRM/Employee'));
 const User = lazy(() => import('./Hotel/HRM/User'));
+const RestaurantRoster = lazy(() => import('./Hotel/HRM/RestaurantRoster'));
+const RestaurantShiftPlanning = lazy(() => import('./Hotel/HRM/RestaurantShiftPlanning'));
+const BarRoster = lazy(() => import('./Hotel/HRM/BarRoster'));
+const BarShiftPlanning = lazy(() => import('./Hotel/HRM/BarShiftPlanning'));
 const TaskAssign = lazy(() => import('./Hotel/House Keeper/TaskAssign'));
 const RoomIncidentLog = lazy(() => import('./Hotel/House Keeper/RoomIncidentLog'));
 
 // Restaurant Components - Lazy loaded with grouping
 const FloorLayout = lazy(() => import('./Restaurant/Floor & Table Setup/FloorLayout'));
+const ViewFloor = lazy(() => import('./Restaurant/Floor & Table Setup/FloorPageView'));
 const TableMaster = lazy(() => import('./Restaurant/Floor & Table Setup/TableMaster'));
 const Orders = lazy(() => import('./Restaurant/Order Management/Orders'));
 const TableReservation = lazy(() => import('./Restaurant/Table Reservation/TableReservation'));
 const MenuManagement = lazy(() => import('./Restaurant/Menu Management/MenuManagement'));
+const ComboDeals = lazy(() => import('./Restaurant/Menu Management/ComboDeals'));
 const MainKitchen = lazy(() => import('./Restaurant/Kitchen Orders/MainKitchen'));
 const Grill = lazy(() => import('./Restaurant/Kitchen Orders/Grill'));
 const Dessert = lazy(() => import('./Restaurant/Kitchen Orders/Dessert'));
-const Bar = lazy(() => import('./Restaurant/Kitchen Orders/Bar'));
 const BillingPayments = lazy(() => import('./Restaurant/Billing & Payments/BillingPayments'));
 const Stock = lazy(() => import('./Restaurant/Inventory/Stock'));
 const ReceipeManagement = lazy(() => import('./Restaurant/Inventory/ReceipeManagement'));
-const StaffMaster = lazy(() => import('./Restaurant/Staff Management/StaffMaster'));
-const StaffPlanning = lazy(() => import('./Restaurant/Staff Management/StaffPlanning'));
 const GuestManagement = lazy(() => import('./Restaurant/Guest Management/GuestManagement'));
 const ReportAnalytics = lazy(() => import('./Restaurant/Report & Analytics/ReportAnalytics'));
+
+// Bar Components - Lazy loaded with grouping
+const BarFloorLayout = lazy(() => import('./Bar/Floor & Table Setup/FloorLayout'));
+const BarTableMaster = lazy(() => import('./Bar/Floor & Table Setup/TableMaster'));
+const BarOrders = lazy(() => import('./Bar/Order Management/Orders'));
+const BarMenuManagement = lazy(() => import('./Bar/Menu Management/MenuManagement'));
+const BarStationDisplay = lazy(() => import('./Bar/Station Display/BarStationDisplay'));
+const BarBillingPayments = lazy(() => import('./Bar/Billing & Payments/BarBillingPayments'));
+const BarStock = lazy(() => import('./Bar/Inventory/BarStock'));
+const BarReceipeManagement = lazy(() => import('./Bar/Inventory/BarReceipeManagement'));
+const BarGuestManagement = lazy(() => import('./Bar/Guest Management/BarGuestManagement'));
+const BarReportAnalytics = lazy(() => import('./Bar/Report & Analytics/BarReportAnalytics'));
 
 // Master Data Components - Lazy loaded with grouping
 const Facilities = lazy(() => import('./MasterData/Facilities'));
@@ -550,6 +564,26 @@ const App = () => {
                 <Shift />
               </PageLoader>
             } />
+            <Route path="/restaurant_roster" element={
+              <PageLoader>
+                <RestaurantRoster />
+              </PageLoader>
+            } />
+            <Route path="/restaurant_shift_planning" element={
+              <PageLoader>
+                <RestaurantShiftPlanning />
+              </PageLoader>
+            } />
+            <Route path="/bar_roster" element={
+              <PageLoader>
+                <BarRoster />
+              </PageLoader>
+            } />
+            <Route path="/bar_shift_planning" element={
+              <PageLoader>
+                <BarShiftPlanning />
+              </PageLoader>
+            } />
             <Route path="/task_assign" element={
               <PageLoader>
                 <TaskAssign />
@@ -567,7 +601,11 @@ const App = () => {
                 <FloorLayout />
               </PageLoader>
             } />
-            <Route path="/view" element={<ViewFloor />} />
+            <Route path="/view" element={
+              <PageLoader>
+                <ViewFloor />
+              </PageLoader>
+            } />
             <Route path="/table_master" element={
               <PageLoader>
                 <TableMaster />
@@ -588,6 +626,11 @@ const App = () => {
                 <MenuManagement />
               </PageLoader>
             } />
+            <Route path="/combo_deals" element={
+              <PageLoader>
+                <ComboDeals />
+              </PageLoader>
+            } />
             <Route path="/kot/main_kitchen" element={
               <PageLoader>
                 <MainKitchen />
@@ -601,11 +644,6 @@ const App = () => {
             <Route path="/kot/dessert" element={
               <PageLoader>
                 <Dessert />
-              </PageLoader>
-            } />
-            <Route path="/kot/bar" element={
-              <PageLoader>
-                <Bar />
               </PageLoader>
             } />
             <Route path="/billing_payments" element={
@@ -623,16 +661,6 @@ const App = () => {
                 <ReceipeManagement />
               </PageLoader>
             } />
-            <Route path="/staff_master" element={
-              <PageLoader>
-                <StaffMaster />
-              </PageLoader>
-            } />
-            <Route path="/staff_planning" element={
-              <PageLoader>
-                <StaffPlanning />
-              </PageLoader>
-            } />
             <Route path="/guest_management" element={
               <PageLoader>
                 <GuestManagement />
@@ -641,6 +669,58 @@ const App = () => {
             <Route path="/reports_analytics" element={
               <PageLoader>
                 <ReportAnalytics />
+              </PageLoader>
+            } />
+
+            {/* Bar Routes */}
+            <Route path="/bar_floor_layout" element={
+              <PageLoader>
+                <BarFloorLayout />
+              </PageLoader>
+            } />
+            <Route path="/bar_table_master" element={
+              <PageLoader>
+                <BarTableMaster />
+              </PageLoader>
+            } />
+            <Route path="/bar_orders" element={
+              <PageLoader>
+                <BarOrders />
+              </PageLoader>
+            } />
+            <Route path="/bar_menus" element={
+              <PageLoader>
+                <BarMenuManagement />
+              </PageLoader>
+            } />
+            <Route path="/bar_station" element={
+              <PageLoader>
+                <BarStationDisplay />
+              </PageLoader>
+            } />
+            <Route path="/bar_billing_payments" element={
+              <PageLoader>
+                <BarBillingPayments />
+              </PageLoader>
+            } />
+            <Route path="/bar_stock" element={
+              <PageLoader>
+                <BarStock />
+              </PageLoader>
+            } />
+            <Route path="/bar_recipe_management" element={
+              <PageLoader>
+                <BarReceipeManagement />
+              </PageLoader>
+            } />
+            <Route path="/bar_guest_management" element={
+              <PageLoader>
+                <BarGuestManagement />
+              </PageLoader>
+            } />
+            <Route path="/bar_reports_analytics" element={
+              <PageLoader>
+                <BarReportAnalytics />
               </PageLoader>
             } />
 

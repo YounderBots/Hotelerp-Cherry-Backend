@@ -1,13 +1,22 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, LogIn, LogOut, X } from "lucide-react";
+import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import IconButton from "../../stories/IconButton";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, Pencil, LogIn, LogOut } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
-const StaffPlanning = () => {
+// Restaurant shift scheduling + clock in/out — lives under HRM (not
+// Restaurant) since staffing is an HR concern; the restaurant module only
+// contributes the day-to-day shift/section/cash-float data via
+// /restaurant/staff_assignment.
+const RestaurantShiftPlanning = () => {
   const [shifts, setShifts] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -150,10 +159,11 @@ const StaffPlanning = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
-        title="Shift Planning"
+        title="Restaurant Shift Planning"
+        hasActionButton
         searchable
         pagination
         loading={loading}
@@ -173,21 +183,13 @@ const StaffPlanning = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
-                  <Eye size={16} />
-                </button>
-                <button className="table-action-btn edit" onClick={() => openEditModal(row)}>
-                  <Pencil size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => openEditModal(row)} ariaLabel="Edit" />
                 {!row.clock_in_at && (
-                  <button className="table-action-btn" title="Clock In" onClick={() => openClockModal(row, "in")}>
-                    <LogIn size={16} />
-                  </button>
+                  <IconButton variant="subtle" size="small" icon={<LogIn size={16} />} onClick={() => openClockModal(row, "in")} ariaLabel="Clock In" />
                 )}
                 {row.clock_in_at && !row.clock_out_at && (
-                  <button className="table-action-btn" title="Clock Out" onClick={() => openClockModal(row, "out")}>
-                    <LogOut size={16} />
-                  </button>
+                  <IconButton variant="subtle" size="small" icon={<LogOut size={16} />} onClick={() => openClockModal(row, "out")} ariaLabel="Clock Out" />
                 )}
               </div>
             ),
@@ -197,116 +199,119 @@ const StaffPlanning = () => {
       />
 
       {showShiftModal && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "900px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>{editId ? "Edit Shift" : "Add Shift"}</h3>
-              <button onClick={closeShiftModal}><X size={18} /></button>
-            </div>
-
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-
-            <div className="modal-body single">
-              <div className="grid-4">
-                <div className="form-group">
-                  <label>Employee</label>
-                  <select name="employee_id" value={formData.employee_id} onChange={handleChange} disabled={!!editId}>
-                    <option value="">— select —</option>
-                    {employees.map((e) => (
-                      <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Shift Date</label>
-                  <input type="date" name="shift_date" value={formData.shift_date} onChange={handleChange} disabled={!!editId} />
-                </div>
-
-                <div className="form-group">
-                  <label>Start Time</label>
-                  <input type="time" name="shift_start" value={formData.shift_start} onChange={handleChange} />
-                </div>
-
-                <div className="form-group">
-                  <label>End Time</label>
-                  <input type="time" name="shift_end" value={formData.shift_end} onChange={handleChange} />
-                </div>
-
-                <div className="form-group">
-                  <label>Role</label>
-                  <select name="role" value={formData.role} onChange={handleChange}>
-                    <option>Waiter</option>
-                    <option>Bartender</option>
-                    <option>Chef</option>
-                    <option>Cashier</option>
-                    <option>Manager</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Section</label>
-                  <input name="section" value={formData.section} onChange={handleChange} />
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeShiftModal} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={saveShift} disabled={saving}>{saving ? "Saving…" : "Save Shift"}</button>
-            </div>
+        <Modal
+          isOpen={showShiftModal}
+          title={editId ? "Edit Shift" : "Add Shift"}
+          onClose={closeShiftModal}
+          showFooter
+          size="xlarge"
+          bodyLayout="grid"
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeShiftModal, disabled: saving },
+            { label: saving ? "Saving…" : "Save Shift", variant: "primary", onClick: saveShift, disabled: saving },
+          ]}
+        >
+          <div style={{ gridColumn: "1 / -1" }}>
+            <ErrorAlert message={formError} />
           </div>
-        </div>
+
+          <Select
+            label="Employee"
+            name="employee_id"
+            value={formData.employee_id}
+            onChange={handleChange}
+            placeholder="— select —"
+            disabled={!!editId}
+            options={employees.map((e) => ({ value: e.id, label: `${e.first_name} ${e.last_name}` }))}
+          />
+
+          <Input label="Shift Date" type="date" name="shift_date" value={formData.shift_date} onChange={handleChange} disabled={!!editId} />
+
+          <Input label="Start Time" type="time" name="shift_start" value={formData.shift_start} onChange={handleChange} />
+
+          <Input label="End Time" type="time" name="shift_end" value={formData.shift_end} onChange={handleChange} />
+
+          <Select
+            label="Role"
+            name="role"
+            value={formData.role}
+            onChange={handleChange}
+            options={[
+              { value: "Waiter", label: "Waiter" },
+              { value: "Chef", label: "Chef" },
+              { value: "Cashier", label: "Cashier" },
+              { value: "Manager", label: "Manager" },
+            ]}
+          />
+
+          <Input label="Section" name="section" value={formData.section} onChange={handleChange} />
+        </Modal>
       )}
 
       {showClockModal && selectedShift && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "480px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>{showClockModal === "in" ? "Clock In" : "Clock Out"} — {selectedShift.employee_name}</h3>
-              <button onClick={closeClockModal}><X size={18} /></button>
-            </div>
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>{showClockModal === "in" ? "Opening Cash Float" : "Closing Cash Amount"}</label>
-                <input type="number" value={clockAmount} onChange={(e) => setClockAmount(e.target.value)} />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeClockModal} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={submitClock} disabled={saving}>{saving ? "Saving…" : "Confirm"}</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen={!!showClockModal}
+          title={`${showClockModal === "in" ? "Clock In" : "Clock Out"} — ${selectedShift.employee_name}`}
+          onClose={closeClockModal}
+          showFooter
+          size="small"
+          bodyLayout="single"
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeClockModal, disabled: saving },
+            { label: saving ? "Saving…" : "Confirm", variant: "primary", onClick: submitClock, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
+          <Input
+            label={showClockModal === "in" ? "Opening Cash Float" : "Closing Cash Amount"}
+            type="number"
+            value={clockAmount}
+            onChange={(e) => setClockAmount(e.target.value)}
+          />
+        </Modal>
       )}
 
       {showViewModal && selectedShift && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "500px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>Shift Details</h3>
-              <button onClick={closeViewModal}><X size={18} /></button>
-            </div>
-            <div className="modal-body single">
-              <p><strong>Staff:</strong> {selectedShift.employee_name}</p>
-              <p><strong>Date:</strong> {selectedShift.shift_date}</p>
-              <p><strong>Role:</strong> {selectedShift.role}</p>
-              <p><strong>Time:</strong> {selectedShift.shift_start} – {selectedShift.shift_end || "-"}</p>
-              <p><strong>Status:</strong> {selectedShift.shift_status}</p>
-              <p><strong>Clock In:</strong> {selectedShift.clock_in_at ? new Date(selectedShift.clock_in_at).toLocaleTimeString() : "-"}</p>
-              <p><strong>Clock Out:</strong> {selectedShift.clock_out_at ? new Date(selectedShift.clock_out_at).toLocaleTimeString() : "-"}</p>
-              <p><strong>Opening Float:</strong> {selectedShift.opening_cash_float ?? "-"}</p>
-              <p><strong>Closing Cash:</strong> {selectedShift.closing_cash_amount ?? "-"}</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>Close</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen={showViewModal}
+          title="Shift Details"
+          onClose={closeViewModal}
+          showFooter
+          size="medium"
+          bodyLayout="single"
+          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
+        >
+          <p>
+            <strong>Staff:</strong> {selectedShift.employee_name}
+          </p>
+          <p>
+            <strong>Date:</strong> {selectedShift.shift_date}
+          </p>
+          <p>
+            <strong>Role:</strong> {selectedShift.role}
+          </p>
+          <p>
+            <strong>Time:</strong> {selectedShift.shift_start} – {selectedShift.shift_end || "-"}
+          </p>
+          <p>
+            <strong>Status:</strong> {selectedShift.shift_status}
+          </p>
+          <p>
+            <strong>Clock In:</strong> {selectedShift.clock_in_at ? new Date(selectedShift.clock_in_at).toLocaleTimeString() : "-"}
+          </p>
+          <p>
+            <strong>Clock Out:</strong> {selectedShift.clock_out_at ? new Date(selectedShift.clock_out_at).toLocaleTimeString() : "-"}
+          </p>
+          <p>
+            <strong>Opening Float:</strong> {selectedShift.opening_cash_float ?? "-"}
+          </p>
+          <p>
+            <strong>Closing Cash:</strong> {selectedShift.closing_cash_amount ?? "-"}
+          </p>
+        </Modal>
       )}
     </>
   );
 };
 
-export default StaffPlanning;
+export default RestaurantShiftPlanning;

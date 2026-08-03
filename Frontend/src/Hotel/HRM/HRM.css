@@ -23,7 +23,8 @@
 }
 
 .field select {
-  width: 250px;
+  width: 100%;
+  max-width: 250px;
   padding: 8px;
   border-radius: 6px;
   border: 1px solid #ccc;
@@ -341,5 +342,41 @@
   display: flex;
   justify-content: flex-end;
   padding: 0.5rem 0;
+}
+
+/* =====================================================
+   Shared responsive tuning for the HRM sub-pages above
+===================================================== */
+@media (max-width: 480px) {
+  .emp-page,
+  .usr-page,
+  .rol-page,
+  .dept-page,
+  .desig-page,
+  .shift-page,
+  .user-container {
+    padding: 1rem;
+  }
+
+  .emp-toolbar,
+  .usr-toolbar,
+  .rol-toolbar,
+  .dept-toolbar,
+  .desig-toolbar,
+  .shift-toolbar {
+    gap: 0.6rem;
+  }
+
+  .emp-export-bar,
+  .rol-export-bar,
+  .dept-export-bar,
+  .desig-export-bar,
+  .shift-export-bar {
+    justify-content: stretch;
+  }
+
+  .usr-role-picker {
+    max-width: 100%;
+  }
 }
 

@@ -136,6 +136,7 @@
 /* Radio Group Horizontal */
 .radio-group-horizontal {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--spacing-lg);
   align-items: center;
 }

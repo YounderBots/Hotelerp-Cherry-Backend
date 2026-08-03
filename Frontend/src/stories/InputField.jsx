@@ -39,7 +39,7 @@ export default function InputField({
   onClear,
   disabled = false,
   style={},
-  className,
+  className = '',
 
   'aria-label': ariaLabel = 'Search input',
 }) {
@@ -88,7 +88,7 @@ export default function InputField({
   const sizeClass = size === 'custom' ? '' : `InputField--${size}`;
 
   return (
-    <div className={`InputField-wrapper ${className}`} sb-InputField-preview style={{ opacity: disabled ? 0.6 : 1,...style }}>
+    <div className={`InputField-wrapper ${className}`} style={{ opacity: disabled ? 0.6 : 1,...style }}>
       <div className={`InputField ${sizeClass}`} style={innerStyle} role="search" aria-label={ariaLabel}>
         <span className="InputField__icon" aria-hidden>
           <IconSearch />

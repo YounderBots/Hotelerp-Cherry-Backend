@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import Modal from "../stories/Modal";
+import Modal, { ConfirmModal } from "../stories/Modal";
+import Input from "../stories/Form/Input";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import {
   Pencil,
   Trash2,
@@ -8,7 +11,6 @@ import {
   CheckCircle,
   AlertTriangle,
 } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const Facilities = () => {
@@ -18,6 +20,7 @@ const Facilities = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
 
   const [alerts, setAlerts] = useState({
     show: false,
@@ -125,10 +128,13 @@ const Facilities = () => {
   };
 
   const handledelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this Facilities?")) {
-      deleteFacility(id);
-    }
+    setDeleteId(id);
   }
+
+  const confirmDelete = () => {
+    deleteFacility(deleteId);
+    setDeleteId(null);
+  };
 
   useEffect(() => {
     getFacilitiesData();
@@ -158,24 +164,9 @@ const Facilities = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                <button
-                  className="table-action-btn view"
-                  onClick={() => handleView(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handledelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => handleView(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handledelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -189,12 +180,9 @@ const Facilities = () => {
           isOpen={showViewModal}
           title="View Facility"
           onClose={() => setShowViewModal(false)}
-          size="medium"
+          size="small"
         >
-          <div className="form-group">
-            <label>Facility Name</label>
-            <input value={viewData.facility_name} readOnly />
-          </div>
+          <Input label="Facility Name" value={viewData.facility_name} disabled />
         </Modal>
       )}
 
@@ -205,7 +193,7 @@ const Facilities = () => {
           title={editId ? "Edit Facility" : "Add Facility"}
           onClose={() => setShowModal(false)}
           showFooter
-          size="medium"
+          size="small"
           bodyLayout="single"
           actions={[
             {
@@ -221,34 +209,31 @@ const Facilities = () => {
             },
           ]}
         >
-          <div className="form-group">
-            <label>Facility Name</label>
-            <input
-              type="text"
-              value={formData.facility_name}
-              onChange={(e) =>
-                setFormData({ facility_name: e.target.value })
-              }
-            />
-          </div>
+          <Input
+            label="Facility Name"
+            type="text"
+            value={formData.facility_name}
+            onChange={(e) =>
+              setFormData({ facility_name: e.target.value })
+            }
+          />
         </Modal>
       )}
 
+      {/* ================= DELETE CONFIRM MODAL ================= */}
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Facility"
+        confirmText="Delete"
+        destructive
+      >
+        Are you sure you want to delete this facility? This action cannot be undone.
+      </ConfirmModal>
+
       {/* ================= TOAST ================= */}
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
     </>
   );
 };

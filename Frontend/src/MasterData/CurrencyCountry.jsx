@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import Modal from "../stories/Modal";
+import Modal, { ConfirmModal } from "../stories/Modal";
+import Input from "../stories/Form/Input";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import { X, Pencil, Trash2, Eye,CheckCircle,AlertTriangle } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const CurrencyCountry = () => {
@@ -12,6 +14,7 @@ const CurrencyCountry = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
 
   const initialForm = {
     countryName: "",
@@ -153,9 +156,12 @@ const CurrencyCountry = () => {
   };
 
   const handleDelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this Country and Currency?")) {
-      deleteCurrency(id);
-    }
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    deleteCurrency(deleteId);
+    setDeleteId(null);
   };
 
   /* ================= UI ================= */
@@ -203,24 +209,9 @@ const CurrencyCountry = () => {
                   justifyContent: "center",
                 }}
               >
-                <button
-                  className="table-action-btn view"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handleDelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -235,27 +226,12 @@ const CurrencyCountry = () => {
           title="View Currency/Country"
           onClose={() => setShowViewModal(false)}
           size="medium"
+          bodyLayout="grid"
         >
-          <div className="modal-body single view">
-            <div className="form-group">
-              <label>Country Name</label>
-              <input value={viewData.country_name} disabled />
-            </div>
-
-            <div className="form-group">
-              <label>Currency Symbol</label>
-              <input value={viewData.symbol} disabled />
-            </div>
-
-            <div className="form-group">
-              <label>Currency Name</label>
-              <input value={viewData.currency_name} disabled />
-            </div>
-          </div>
-
+          <Input label="Country Name" disabled value={viewData.country_name} />
+          <Input label="Currency Symbol" disabled value={viewData.symbol} />
+          <Input label="Currency Name" disabled value={viewData.currency_name} />
         </Modal>
-
-
 
       )}
 
@@ -266,8 +242,8 @@ const CurrencyCountry = () => {
           title={editId ? "Edit Currency/Country" : "Add Currency/Country"}
           onClose={() => setShowModal(false)}
           showFooter
-          size="large"
-          bodyLayout="single"
+          size="medium"
+          bodyLayout="grid"
           actions={[
             {
               label: "Close",
@@ -282,51 +258,39 @@ const CurrencyCountry = () => {
             },
           ]}
         >
-          <div className="modal-body single">
-            <div className="form-group">
-              <label>Country Name</label>
-              <input
-                name="countryName"
-                value={formData.countryName}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Currency Symbol</label>
-              <input
-                name="currencySymbol"
-                value={formData.currencySymbol}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Currency Name</label>
-              <input
-                name="currencyName"
-                value={formData.currencyName}
-                onChange={handleChange}
-              />
-            </div>
-          </div>
-
+          <Input
+            label="Country Name"
+            name="countryName"
+            value={formData.countryName}
+            onChange={handleChange}
+          />
+          <Input
+            label="Currency Symbol"
+            name="currencySymbol"
+            value={formData.currencySymbol}
+            onChange={handleChange}
+          />
+          <Input
+            label="Currency Name"
+            name="currencyName"
+            value={formData.currencyName}
+            onChange={handleChange}
+          />
         </Modal>
       )}
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Currency/Country"
+        confirmText="Delete"
+        destructive
+      >
+        Are you sure you want to delete this currency/country entry? This action cannot be undone.
+      </ConfirmModal>
+
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
     </>
   );
 };

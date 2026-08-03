@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, CreditCard, Printer, X, Receipt, Ban } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, CreditCard, Printer, Ban } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
@@ -194,7 +199,7 @@ const BillingPayments = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Billing & Payments"
@@ -219,17 +224,18 @@ const BillingPayments = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", justifyContent: "center", gap: "6px", whiteSpace: "nowrap" }}>
-                <button className="table-action-btn view" onClick={() => openViewBillModal(row)}>
-                  <Eye size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openViewBillModal(row)} />
                 {row.payment_status !== "Paid" && row.bill_status !== "Cancelled" && (
                   <>
-                    <button className="table-action-btn success" onClick={() => openPaymentModal(row)}>
-                      <CreditCard size={16} />
-                    </button>
-                    <button className="table-action-btn delete" title="Cancel bill (lets you generate a fresh one for this order)" onClick={() => openCancelModal(row)}>
-                      <Ban size={16} />
-                    </button>
+                    <IconButton variant="success" size="small" icon={<CreditCard size={16} />} ariaLabel="Collect payment" onClick={() => openPaymentModal(row)} />
+                    <IconButton
+                      variant="danger-ghost"
+                      size="small"
+                      icon={<Ban size={16} />}
+                      ariaLabel="Cancel bill"
+                      title="Cancel bill (lets you generate a fresh one for this order)"
+                      onClick={() => openCancelModal(row)}
+                    />
                   </>
                 )}
               </div>
@@ -240,223 +246,197 @@ const BillingPayments = () => {
       />
 
       {showGenerateModal && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3><Receipt size={16} /> Generate Bill</h3>
-              <button onClick={closeModals}><X size={18} /></button>
-            </div>
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Order <span className="required">*</span></label>
-                <select value={genOrderId} onChange={(e) => setGenOrderId(e.target.value)}>
-                  <option value="">— select —</option>
-                  {billableOrders.map((o) => (
-                    <option key={o.id} value={o.id}>{o.order_number} — {o.table_code || o.room_no || o.order_type}</option>
-                  ))}
-                </select>
-              </div>
+        <Modal
+          isOpen
+          title="Generate Bill"
+          onClose={closeModals}
+          size="large"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeModals, disabled: saving },
+            { label: saving ? "Generating…" : "Generate", variant: "primary", onClick: generateBill, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-              {genOrderId && (
-                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                  <label>Order Items</label>
-                  {genItemsLoading && <p className="small text-muted">Loading items…</p>}
-                  {genItemsError && <div className="rmv-alert" role="alert"><span>{genItemsError}</span></div>}
-                  {!genItemsLoading && !genItemsError && (
-                    <table className="table table-sm" style={{ width: "100%" }}>
-                      <thead>
-                        <tr><th style={{ textAlign: "left" }}>Item</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
-                      </thead>
-                      <tbody>
-                        {genOrderItems.map((it) => (
-                          <tr key={it.id}>
-                            <td>{menuName(it.menu_id)}</td>
-                            <td style={{ textAlign: "center" }}>{it.quantity}</td>
-                            <td style={{ textAlign: "center" }}>{it.price}</td>
-                            <td style={{ textAlign: "center" }}>{(it.price || 0) * (it.quantity || 0)}</td>
-                          </tr>
-                        ))}
-                        {genOrderItems.length === 0 && (
-                          <tr><td colSpan={4} style={{ textAlign: "center", color: "#9ca3af" }}>No items on this order</td></tr>
-                        )}
-                      </tbody>
-                      {genOrderItems.length > 0 && (
-                        <tfoot>
-                          <tr>
-                            <td colSpan={3} style={{ textAlign: "right", fontWeight: 600 }}>Subtotal</td>
-                            <td style={{ textAlign: "center", fontWeight: 600 }}>{genItemsSubtotal}</td>
-                          </tr>
-                        </tfoot>
-                      )}
-                    </table>
+          <Select
+            label="Order"
+            required
+            value={genOrderId}
+            onChange={(e) => setGenOrderId(e.target.value)}
+            placeholder="— select —"
+            options={billableOrders.map((o) => ({ value: o.id, label: `${o.order_number} — ${o.table_code || o.room_no || o.order_type}` }))}
+          />
+
+          {genOrderId && (
+            <div className="form-group">
+              <label>Order Items</label>
+              {genItemsLoading && <p className="small text-muted">Loading items…</p>}
+              <ErrorAlert message={genItemsError} />
+              {!genItemsLoading && !genItemsError && (
+                <table className="table table-sm" style={{ width: "100%" }}>
+                  <thead>
+                    <tr><th style={{ textAlign: "left" }}>Item</th><th>Qty</th><th>Price</th><th>Amount</th></tr>
+                  </thead>
+                  <tbody>
+                    {genOrderItems.map((it) => (
+                      <tr key={it.id}>
+                        <td>{menuName(it.menu_id)}</td>
+                        <td style={{ textAlign: "center" }}>{it.quantity}</td>
+                        <td style={{ textAlign: "center" }}>{it.price}</td>
+                        <td style={{ textAlign: "center" }}>{(it.price || 0) * (it.quantity || 0)}</td>
+                      </tr>
+                    ))}
+                    {genOrderItems.length === 0 && (
+                      <tr><td colSpan={4} style={{ textAlign: "center", color: "#9ca3af" }}>No items on this order</td></tr>
+                    )}
+                  </tbody>
+                  {genOrderItems.length > 0 && (
+                    <tfoot>
+                      <tr>
+                        <td colSpan={3} style={{ textAlign: "right", fontWeight: 600 }}>Subtotal</td>
+                        <td style={{ textAlign: "center", fontWeight: 600 }}>{genItemsSubtotal}</td>
+                      </tr>
+                    </tfoot>
                   )}
-                </div>
+                </table>
               )}
+            </div>
+          )}
 
-              <div className="form-group">
-                <label>CGST %</label>
-                <input type="number" value={genForm.cgst_percentage} onChange={(e) => setGenForm((p) => ({ ...p, cgst_percentage: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label>SGST %</label>
-                <input type="number" value={genForm.sgst_percentage} onChange={(e) => setGenForm((p) => ({ ...p, sgst_percentage: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label>Service Charge %</label>
-                <input type="number" value={genForm.service_charge_percentage} onChange={(e) => setGenForm((p) => ({ ...p, service_charge_percentage: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label>Discount Type</label>
-                <select value={genForm.discount_type} onChange={(e) => setGenForm((p) => ({ ...p, discount_type: e.target.value }))}>
-                  <option value="">None</option>
-                  <option value="Percentage">Percentage</option>
-                  <option value="Flat">Flat Amount</option>
-                </select>
-              </div>
-              {genForm.discount_type && (
-                <div className="form-group">
-                  <label>Discount Value</label>
-                  <input type="number" value={genForm.discount_value} onChange={(e) => setGenForm((p) => ({ ...p, discount_value: e.target.value }))} />
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModals} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={generateBill} disabled={saving}>{saving ? "Generating…" : "Generate"}</button>
-            </div>
-          </div>
-        </div>
+          <Input label="CGST %" type="number" value={genForm.cgst_percentage} onChange={(e) => setGenForm((p) => ({ ...p, cgst_percentage: e.target.value }))} />
+          <Input label="SGST %" type="number" value={genForm.sgst_percentage} onChange={(e) => setGenForm((p) => ({ ...p, sgst_percentage: e.target.value }))} />
+          <Input label="Service Charge %" type="number" value={genForm.service_charge_percentage} onChange={(e) => setGenForm((p) => ({ ...p, service_charge_percentage: e.target.value }))} />
+          <Select
+            label="Discount Type"
+            value={genForm.discount_type}
+            onChange={(e) => setGenForm((p) => ({ ...p, discount_type: e.target.value }))}
+            placeholder="None"
+            options={[
+              { value: "Percentage", label: "Percentage" },
+              { value: "Flat", label: "Flat Amount" },
+            ]}
+          />
+          {genForm.discount_type && (
+            <Input label="Discount Value" type="number" value={genForm.discount_value} onChange={(e) => setGenForm((p) => ({ ...p, discount_value: e.target.value }))} />
+          )}
+        </Modal>
       )}
 
       {showCancelModal && selectedBill && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Cancel Bill — {selectedBill.bill_number}</h3>
-              <button onClick={closeModals}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen
+          title={`Cancel Bill — ${selectedBill.bill_number}`}
+          onClose={closeModals}
+          size="medium"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModals, disabled: saving },
+            { label: saving ? "Cancelling…" : "Cancel Bill", variant: "primary", onClick: submitCancelBill, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-
-            <div className="modal-body single">
-              <p className="small text-muted mb-3">
-                This cancels the bill only — the order (<strong>{selectedBill.order_number}</strong>) stays open, so you
-                can add/change items if needed and use <strong>Generate Bill</strong> again for the same order.
-              </p>
-              <div className="form-group">
-                <label>Reason <span className="required">*</span></label>
-                <textarea rows="3" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="e.g. wrong tax applied, items changed" />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModals} disabled={saving}>Close</button>
-              <button className="btn primary" onClick={submitCancelBill} disabled={saving}>{saving ? "Cancelling…" : "Cancel Bill"}</button>
-            </div>
+          <p className="small text-muted mb-3">
+            This cancels the bill only — the order (<strong>{selectedBill.order_number}</strong>) stays open, so you
+            can add/change items if needed and use <strong>Generate Bill</strong> again for the same order.
+          </p>
+          <div className="form-group">
+            <label>Reason <span className="required">*</span></label>
+            <textarea rows="3" value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} placeholder="e.g. wrong tax applied, items changed" />
           </div>
-        </div>
+        </Modal>
       )}
 
       {showViewBillModal && selectedBill && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Bill Details – {selectedBill.bill_number}</h3>
-              <button onClick={closeModals}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen
+          title={`Bill Details – ${selectedBill.bill_number}`}
+          onClose={closeModals}
+          size="large"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModals },
+            { label: "Print Bill", variant: "outline", icon: <Printer size={16} />, onClick: printBill },
+          ]}
+        >
+          <p className="small text-muted mb-3">Date: {selectedBill.bill_date} {selectedBill.bill_time}</p>
 
-            <div className="modal-body">
-              <p className="small text-muted mb-3">Date: {selectedBill.bill_date} {selectedBill.bill_time}</p>
+          <table className="table table-sm">
+            <thead>
+              <tr><th>Item</th><th>Qty</th><th>Amount</th></tr>
+            </thead>
+            <tbody>
+              {(selectedBill.items || []).map((item) => (
+                <tr key={item.id}>
+                  <td>{item.item_name}</td>
+                  <td>{item.quantity}</td>
+                  <td>{item.amount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-              <table className="table table-sm">
-                <thead>
-                  <tr><th>Item</th><th>Qty</th><th>Amount</th></tr>
-                </thead>
-                <tbody>
-                  {(selectedBill.items || []).map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.item_name}</td>
-                      <td>{item.quantity}</td>
-                      <td>{item.amount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <hr />
+          <div className="d-flex justify-content-between"><span>Subtotal</span><span>{selectedBill.sub_total}</span></div>
+          <div className="d-flex justify-content-between"><span>CGST</span><span>{selectedBill.cgst_amount}</span></div>
+          <div className="d-flex justify-content-between"><span>SGST</span><span>{selectedBill.sgst_amount}</span></div>
+          <div className="d-flex justify-content-between"><span>Service Charge</span><span>{selectedBill.service_charge_amount}</span></div>
+          <div className="d-flex justify-content-between"><span>Discount</span><span>{selectedBill.discount_amount}</span></div>
+          <div className="d-flex justify-content-between fw-semibold"><span>Total Payable</span><span>{selectedBill.grand_total}</span></div>
 
+          {selectedBill.payments && selectedBill.payments.length > 0 && (
+            <>
               <hr />
-              <div className="d-flex justify-content-between"><span>Subtotal</span><span>{selectedBill.sub_total}</span></div>
-              <div className="d-flex justify-content-between"><span>CGST</span><span>{selectedBill.cgst_amount}</span></div>
-              <div className="d-flex justify-content-between"><span>SGST</span><span>{selectedBill.sgst_amount}</span></div>
-              <div className="d-flex justify-content-between"><span>Service Charge</span><span>{selectedBill.service_charge_amount}</span></div>
-              <div className="d-flex justify-content-between"><span>Discount</span><span>{selectedBill.discount_amount}</span></div>
-              <div className="d-flex justify-content-between fw-semibold"><span>Total Payable</span><span>{selectedBill.grand_total}</span></div>
-
-              {selectedBill.payments && selectedBill.payments.length > 0 && (
-                <>
-                  <hr />
-                  <p><strong>Payments</strong></p>
-                  {selectedBill.payments.map((p) => (
-                    <div className="d-flex justify-content-between" key={p.id}>
-                      <span>{p.payment_reference || "Payment"} ({p.payment_status})</span>
-                      <span>{p.paid_amount}</span>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModals}>Close</button>
-              <button className="btn outline" onClick={printBill}><Printer size={16} /> Print Bill</button>
-            </div>
-          </div>
-        </div>
+              <p><strong>Payments</strong></p>
+              {selectedBill.payments.map((p) => (
+                <div className="d-flex justify-content-between" key={p.id}>
+                  <span>{p.payment_reference || "Payment"} ({p.payment_status})</span>
+                  <span>{p.paid_amount}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </Modal>
       )}
 
       {showPaymentModal && selectedBill && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Collect Payment — {selectedBill.bill_number}</h3>
-              <button onClick={closeModals}><X size={18} /></button>
-            </div>
-
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-
-            <div className="modal-body" style={{ paddingTop: "20px" }}>
-              <div className="form-group mb-3">
-                <label>Payment Mode</label>
-                <select className="form-control" value={payForm.payment_method_id} onChange={(e) => setPayForm((p) => ({ ...p, payment_method_id: e.target.value }))}>
-                  <option value="">— select —</option>
-                  {paymentMethods.map((m) => (
-                    <option key={m.id} value={m.id}>{m.method_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group mb-3">
-                <label>Amount Paid</label>
-                <input type="number" className="form-control" value={payForm.paid_amount} onChange={(e) => setPayForm((p) => ({ ...p, paid_amount: e.target.value }))} />
-              </div>
-
-              <div className="form-group mb-3">
-                <label>Reference Number</label>
-                <input type="text" className="form-control" value={payForm.payment_reference} onChange={(e) => setPayForm((p) => ({ ...p, payment_reference: e.target.value }))} />
-              </div>
-
-              <div className="form-group mb-4">
-                <label>Remarks</label>
-                <textarea className="form-control" rows="3" value={payForm.remarks} onChange={(e) => setPayForm((p) => ({ ...p, remarks: e.target.value }))} />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModals} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={submitPayment} disabled={saving}>{saving ? "Submitting…" : "Submit Payment"}</button>
-            </div>
+        <Modal
+          isOpen
+          title={`Collect Payment — ${selectedBill.bill_number}`}
+          onClose={closeModals}
+          size="medium"
+          bodyLayout="grid"
+          showFooter
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeModals, disabled: saving },
+            { label: saving ? "Submitting…" : "Submit Payment", variant: "primary", onClick: submitPayment, disabled: saving },
+          ]}
+        >
+          <div style={{ gridColumn: "1 / -1" }}>
+            <ErrorAlert message={formError} />
           </div>
-        </div>
+
+          <Select
+            label="Payment Mode"
+            value={payForm.payment_method_id}
+            onChange={(e) => setPayForm((p) => ({ ...p, payment_method_id: e.target.value }))}
+            placeholder="— select —"
+            options={paymentMethods.map((m) => ({ value: m.id, label: m.method_name }))}
+          />
+
+          <Input label="Amount Paid" type="number" value={payForm.paid_amount} onChange={(e) => setPayForm((p) => ({ ...p, paid_amount: e.target.value }))} />
+
+          <Input label="Reference Number" type="text" value={payForm.payment_reference} onChange={(e) => setPayForm((p) => ({ ...p, payment_reference: e.target.value }))} />
+
+          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <label>Remarks</label>
+            <textarea rows="3" value={payForm.remarks} onChange={(e) => setPayForm((p) => ({ ...p, remarks: e.target.value }))} />
+          </div>
+        </Modal>
       )}
     </>
   );

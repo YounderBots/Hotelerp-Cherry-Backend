@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
+import Button from "../../stories/Button";
+import ErrorAlert from "../../stories/ErrorAlert";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
@@ -105,17 +107,17 @@ const ReportAnalytics = () => {
   return (
     <>
       <div className="page-card" style={{ marginBottom: 20 }}>
-        <div className="modal-body single">
+        <div style={{ padding: "20px 22px", display: "flex", flexDirection: "column", gap: "14px" }}>
           <div style={{ display: "flex", gap: 10, overflowX: "auto", whiteSpace: "nowrap", paddingBottom: 4, alignItems: "center" }}>
             {reportTabs.map((tab) => (
-              <button
+              <Button
                 key={tab}
-                className={`btn ${activeReport === tab ? "primary" : "secondary"}`}
+                variant={activeReport === tab ? "primary" : "secondary"}
                 style={{ flexShrink: 0 }}
                 onClick={() => setActiveReport(tab)}
               >
                 {tab}
-              </button>
+              </Button>
             ))}
             {!REPORTS[activeReport].dateless && (
               <input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} style={{ marginLeft: "auto" }} />
@@ -124,7 +126,7 @@ const ReportAnalytics = () => {
         </div>
       </div>
 
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       {summary && (
         <div className="page-card" style={{ marginBottom: 16, padding: "12px 16px", display: "flex", gap: 24, flexWrap: "wrap" }}>

@@ -7,6 +7,7 @@ import {
     ClipboardCheck,
     Utensils,
     Layers,
+    Wine,
 } from 'lucide-react';
 
 // Backend-safe icon lookup by string key. Server-provided menu payloads use
@@ -21,6 +22,7 @@ export const ICON_MAP = {
     "house-keeper": ClipboardCheck,
     hrm: Users,
     restaurant: Utensils,
+    bar: Wine,
     "master-data": Layers,
 };
 
@@ -79,6 +81,10 @@ export const MENU = [
             { label: "Department", path: "/department" },
             { label: "Designation", path: "/designation" },
             { label: "Shift", path: "/shift" },
+            { label: "Restaurant Roster", path: "/restaurant_roster" },
+            { label: "Restaurant Shift Planning", path: "/restaurant_shift_planning" },
+            { label: "Bar Roster", path: "/bar_roster" },
+            { label: "Bar Shift Planning", path: "/bar_shift_planning" },
         ],
     },
     {
@@ -86,6 +92,8 @@ export const MENU = [
         label: "Restaurant",
         icon: "restaurant",
         children: [
+            { label: "Menu Management", path: "/menus" },
+            { label: "Combo / Package Deals", path: "/combo_deals" },
             {
                 label: "Floor & Table Setup",
                 children: [
@@ -95,14 +103,12 @@ export const MENU = [
             },
             { label: "Order Management", path: "/orders" },
             { label: "Table Reservation", path: "/table_reservation" },
-            { label: "Menu Management", path: "/menus" },
             {
                 label: "Kitchen Orders",
                 children: [
                     { label: "Main Kitchen", path: "/kot/main_kitchen" },
                     { label: "Grill", path: "/kot/grill" },
                     { label: "Dessert", path: "/kot/dessert" },
-                    { label: "Bar", path: "/kot/bar" },
                 ],
             },
             { label: "Billing & Payments", path: "/billing_payments" },
@@ -113,15 +119,35 @@ export const MENU = [
                     { label: "Recipe Management", path: "/recipe_management" },
                 ],
             },
-            {
-                label: "Staff Management",
-                children: [
-                    { label: "Staff Master", path: "/staff_master" },
-                    { label: "Staff Planning", path: "/staff_planning" },
-                ],
-            },
             { label: "Guest Management", path: "/guest_management" },
             { label: "Report & Analytics", path: "/reports_analytics" },
+        ],
+    },
+    {
+        id: "bar",
+        label: "Bar",
+        icon: "bar",
+        children: [
+            { label: "Menu Management", path: "/bar_menus" },
+            {
+                label: "Floor & Table Setup",
+                children: [
+                    { label: "Floor Layout", path: "/bar_floor_layout" },
+                    { label: "Table Master", path: "/bar_table_master" },
+                ],
+            },
+            { label: "Order Management", path: "/bar_orders" },
+            { label: "Station Display", path: "/bar_station" },
+            { label: "Billing & Payments", path: "/bar_billing_payments" },
+            {
+                label: "Inventory",
+                children: [
+                    { label: "Stock", path: "/bar_stock" },
+                    { label: "Recipe Management", path: "/bar_recipe_management" },
+                ],
+            },
+            { label: "Guest Management", path: "/bar_guest_management" },
+            { label: "Report & Analytics", path: "/bar_reports_analytics" },
         ],
     },
     {

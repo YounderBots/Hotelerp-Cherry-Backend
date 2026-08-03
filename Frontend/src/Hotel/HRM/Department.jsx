@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import IconButton from "../../stories/IconButton";
 import {
   ArrowLeft,
   RefreshCw,
@@ -14,8 +16,8 @@ import {
   CheckCircle,
 } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../../MasterData/MasterData.css";
 import "../Reservation/Reservation.css";
+import "./HRM.css";
 
 // -------------------------------------------------------------------------
 // Helpers
@@ -307,33 +309,27 @@ const Department = () => {
       type: "custom",
       render: (row) => (
         <div className="table-actions">
-          <button
-            type="button"
-            className="table-action-btn view"
-            title="View"
-            aria-label={`View department ${row.department_name || row.id}`}
+          <IconButton
+            variant="ghost"
+            size="small"
+            icon={<Eye size={16} />}
             onClick={() => openViewModal(row)}
-          >
-            <Eye size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn edit"
-            title="Edit"
-            aria-label={`Edit department ${row.department_name || row.id}`}
+            ariaLabel={`View department ${row.department_name || row.id}`}
+          />
+          <IconButton
+            variant="subtle"
+            size="small"
+            icon={<Pencil size={16} />}
             onClick={() => handleEdit(row)}
-          >
-            <Pencil size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn delete"
-            title="Delete"
-            aria-label={`Delete department ${row.department_name || row.id}`}
+            ariaLabel={`Edit department ${row.department_name || row.id}`}
+          />
+          <IconButton
+            variant="danger-ghost"
+            size="small"
+            icon={<Trash2 size={16} />}
             onClick={() => handleDeleteClick(row)}
-          >
-            <Trash2 size={16} aria-hidden="true" />
-          </button>
+            ariaLabel={`Delete department ${row.department_name || row.id}`}
+          />
         </div>
       ),
     },
@@ -398,7 +394,6 @@ const Department = () => {
           exportable
           hasActionButton
           actionButton={{
-            icon: <Download size={18} />,
             label: "Add Department",
             onClick: openAddModal,
             size: "medium",
@@ -437,15 +432,7 @@ const Department = () => {
           onClose={closeViewModal}
           size="small"
         >
-          <div className="form-group">
-            <label htmlFor="dept-view-name">Department Name</label>
-            <input
-              id="dept-view-name"
-              value={viewData.department_name || "—"}
-              readOnly
-              aria-readonly="true"
-            />
-          </div>
+          <Input label="Department Name" value={viewData.department_name || "—"} readOnly disabled />
         </Modal>
       )}
 
@@ -473,19 +460,16 @@ const Department = () => {
               {formError}
             </div>
           )}
-          <div className="form-group">
-            <label htmlFor="dept-name">Department Name <span className="required">*</span></label>
-            <input
-              id="dept-name"
-              type="text"
-              name="department_name"
-              value={formData.department_name}
-              onChange={handleChange}
-              disabled={saving}
-              maxLength={100}
-              required
-            />
-          </div>
+          <Input
+            label="Department Name"
+            required
+            type="text"
+            name="department_name"
+            value={formData.department_name}
+            onChange={handleChange}
+            disabled={saving}
+            maxLength={100}
+          />
         </Modal>
       )}
 

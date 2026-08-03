@@ -1,331 +1,227 @@
-import { useLocation } from "react-router";
-import './FloorTable.css';
+import { useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import "./FloorTable.css";
 import Tabs, { Tab } from "../../stories/Tabs";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye,X } from "lucide-react";
-import { useState} from "react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Input from "../../stories/Form/Input";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { ArrowLeft, Eye } from "lucide-react";
+import APICall, { ApiError } from "../../APICalls/APICalls";
+
+const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
+const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+// An order is treated as "current" (still open) if it hasn't reached a
+// terminal status yet.
+const TERMINAL_ORDER_STATUSES = new Set(["Completed", "Cancelled"]);
 
 const ViewFloor = () => {
-  const { state } = useLocation();
-  const[ViewFlooorTable,setViewFloorTable]=useState(null);
-  const [viewOrder,setViewOrder]=useState(null);
-  const[viewStaff,setViewStaff]=useState(null);
+  const { state: floor } = useLocation();
+  const navigate = useNavigate();
 
-  if (!state) {
-    return <p>No data found</p>;
+  const [tables, setTables] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [viewTable, setViewTable] = useState(null);
+  const [viewOrder, setViewOrder] = useState(null);
+  const [viewStaff, setViewStaff] = useState(null);
+
+  const load = useCallback(() => {
+    if (!floor?.id) return;
+    setLoading(true);
+    setError(null);
+    Promise.allSettled([
+      APICall.getT("/restaurant/table", { floor_id: floor.id }),
+      // The order endpoint has no floor-level filter, so every order is
+      // fetched once and matched against this floor's table ids below.
+      APICall.getT("/restaurant/order"),
+      APICall.getT("/restaurant/staff_assignment", { shift_date: todayIso() }),
+    ]).then(([tRes, oRes, sRes]) => {
+      const tableRows = tRes.status === "fulfilled" ? readList(tRes.value) : [];
+      setTables(tableRows);
+
+      const tableIds = new Set(tableRows.map((t) => t.id));
+      const allOrders = oRes.status === "fulfilled" ? readList(oRes.value) : [];
+      setOrders(allOrders.filter((o) => tableIds.has(o.table_id)));
+
+      const allStaff = sRes.status === "fulfilled" ? readList(sRes.value) : [];
+      setStaff(allStaff.filter((s) => s.floor_id === floor.id));
+
+      if (tRes.status === "rejected") setError(errMsg(tRes.reason, "Failed to load tables for this floor."));
+      setLoading(false);
+    });
+  }, [floor?.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (!floor) {
+    return (
+      <ErrorAlert message='No floor was selected. Go back to Floor Layout and open a floor from there.' />
+    );
   }
 
-  const FloorTable=[
-    {
-      TableID: 'T001',
-      TableName: 'Window Side',
-      seatingCapacity: 4,
-      TableType:'Standard',
-      section:'Indoor',
-      CurrentStatus:'Active',
-      AssignedServer:'John Doe',
-    },
-    {
-      TableID: 'T002',
-      TableName: 'Center Hall',
-      seatingCapacity: 10,
-      TableType:'VIP',
-      section:'Outdoor',
-      CurrentStatus:'Active',
-      AssignedServer:'Jane Smith',
-    },
-  ];
+  const activeTables = tables.filter((t) => t.table_status !== "Blocked");
+  const inactiveTables = tables.filter((t) => t.table_status === "Blocked");
+  const currentOrders = orders.filter((o) => !TERMINAL_ORDER_STATUSES.has(o.order_status));
 
-  const FloorTableColumns = [
-    {key:"TableID",title:'Table ID' },
-    {key:"TableName",title:'Table Name' },
-    {key:"seatingCapacity",title:'Seating Capacity' },
-    {key:"TableType",title:'Table Type' },
-    {key:"section",title:'Section' },
-    {key:"CurrentStatus",title:'Current Status' },
-    {key:"AssignedServer",title:'Assigned Server' },
+  const tableColumns = [
+    { key: "table_number", title: "Table No" },
+    { key: "table_name", title: "Table Name" },
+    { key: "seating_capacity", title: "Seating Capacity" },
+    { key: "table_type", title: "Table Type" },
+    { key: "section", title: "Section" },
+    { key: "table_status", title: "Status", type: "badge", align: "center" },
+    { key: "server_name", title: "Assigned Server", type: "custom", render: (row) => row.server_name || "—" },
     {
       key: "action",
       title: "Action",
-      align: "left",
+      align: "center",
       type: "custom",
-      render: (row) => (
-        <button
-          className="table-action-btn view"
-          onClick={() => setViewFloorTable(row)}
-        >
-          <Eye size={16} />
-        </button>
-      ),
+      render: (row) => <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => setViewTable(row)} />,
     },
-  ]
-
-  const orderTable=[
-    {
-      orderId: 'ORD001',
-      tableId: 'T001',
-      orderType: 'Dine-In',
-      orderTime:'7:00 PM',
-      orderStatus:'In Progress',
-      AssignedServer:'Alice',
-    },
-    {
-      orderId: 'ORD002',
-      tableId: 'T002',
-      orderType: 'Takeout',
-      orderTime:'8:30 PM',
-      orderStatus:'Completed',
-      AssignedServer:'Bob',
-    }
   ];
 
-  const orderTableColumns=[
-    {key:"orderId",title:'Order ID' },
-    {key:"tableId",title:'Table ID' },
-    {key:"orderType",title:'Order Type' },
-    {key:"orderTime",title:'Order Time' },
-    {key:"orderStatus",title:'Order Status' },
-    {key:"AssignedServer",title:'Assigned Server' },
+  const orderColumns = [
+    { key: "order_number", title: "Order No" },
+    { key: "order_type", title: "Order Type" },
+    { key: "guest_name", title: "Guest", type: "custom", render: (row) => row.guest_name || "—" },
+    { key: "order_time", title: "Order Time" },
+    { key: "order_status", title: "Status", type: "badge", align: "center" },
+    { key: "grand_total", title: "Amount", align: "center" },
     {
       key: "action",
       title: "Action",
-      align: "left",
+      align: "center",
       type: "custom",
-      render: (row) => (
-        <button
-          className="table-action-btn view"
-          onClick={() => setViewOrder(row)}
-        > 
-          <Eye size={16} />
-        </button>
-      ),
-    }
+      render: (row) => <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => setViewOrder(row)} />,
+    },
   ];
 
-  const StaffTable=[
+  const staffColumns = [
+    { key: "employee_name", title: "Staff Name" },
+    { key: "role", title: "Role" },
+    { key: "section", title: "Section" },
+    { key: "shift_start", title: "Shift Start" },
+    { key: "shift_end", title: "Shift End" },
+    { key: "shift_status", title: "Status", type: "badge", align: "center" },
     {
-      StaffId: 'STF001',
-      StaffName: 'Emily Johnson',
-      Role: 'Server',
-      Shift:'Morning',
-      ContactNumber:'9888665544',
-      AssignedTables:8,
-      StaffStatus:'Active',
+      key: "action",
+      title: "Action",
+      align: "center",
+      type: "custom",
+      render: (row) => <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => setViewStaff(row)} />,
     },
-     {
-      StaffId: 'STF002',
-      StaffName: 'Ram Kumar',
-      Role: 'Waiter',
-      Shift:'Night',
-      ContactNumber:'9888567891',
-      AssignedTables:3,
-      StaffStatus:'Active',
-    }
-  ]
+  ];
 
-const StaffTableColums = [
-  { key: "StaffId", title: "Staff ID" },
-  { key: "StaffName", title: "Staff Name" },
-  { key: "Role", title: "Role" },
-  { key: "Shift", title: "Shift" },
-  { key: "ContactNumber", title: "Contact Number" },
-  { key: "AssignedTables", title: "Assigned Tables" },
-  { key: "StaffStatus", title: "Staff Status" },
-  {
-    key: "action",
-    title: "Action",
-    type: "custom",
-    render: (row) => (
-      <button
-        className="table-action-btn view"
-        onClick={() => setViewStaff(row)}
-        >
-        <Eye size={16} />
-      </button>
-    ),
-  },
-];
-
-
-
+  const renderDetailModal = (title, row, onClose) =>
+    row && (
+      <Modal isOpen={!!row} title={title} onClose={onClose} size="large" bodyLayout="grid" viewMode showFooter actions={[{ label: "Close", variant: "secondary", onClick: onClose }]}>
+        {Object.entries(row).map(
+          ([key, value]) => key !== "id" && <Input key={key} label={key.replace(/_/g, " ")} value={value ?? "—"} disabled />,
+        )}
+      </Modal>
+    );
 
   return (
     <div>
+      <button
+        type="button"
+        onClick={() => navigate("/floor_layout")}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "6px",
+          marginBottom: "16px",
+          padding: "8px 14px",
+          border: "1px solid #d1d5db",
+          borderRadius: "8px",
+          background: "#ffffff",
+          cursor: "pointer",
+          fontWeight: 600,
+          color: "#334155",
+        }}
+      >
+        <ArrowLeft size={16} />
+        <span>Back to Floor Layout</span>
+      </button>
+
+      <ErrorAlert message={error} />
+
       <h2>Floor Information</h2>
       <div className="form-card">
         <div className="floor-form">
           <div className="form-group">
-            <label>Floor ID</label>
-            <input type="text" value={state.floorId} readOnly />
+            <label>Floor Number</label>
+            <input type="text" value={floor.floor_number ?? "—"} readOnly />
           </div>
           <div className="form-group">
             <label>Floor Name</label>
-            <input type="text" value={state.floorName} readOnly />
+            <input type="text" value={floor.floor_name ?? "—"} readOnly />
           </div>
           <div className="form-group">
-            <label>Floor Status</label>
-            <input type="text" value={state.status} readOnly />
-         </div>
-         <div className="form-group">
-            <label>Operational Hours</label>
-            <input type="text" value={state.operatingHours} readOnly />
+            <label>Floor Type</label>
+            <input type="text" value={floor.floor_type ?? "—"} readOnly />
+          </div>
+          <div className="form-group">
+            <label>Open for Service</label>
+            <input type="text" value={floor.is_open ?? "—"} readOnly />
           </div>
           <div className="form-group">
             <label>Total Tables</label>
-            <input type="text" value={state.totalTables} readOnly />
+            <input type="text" value={floor.total_tables ?? tables.length} readOnly />
           </div>
           <div className="form-group">
-            <label>Active Table</label>
-            <input type="text" value={state.ActiveTables} readOnly />
+            <label>Active Tables</label>
+            <input type="text" value={activeTables.length} readOnly />
           </div>
           <div className="form-group">
-            <label>Inactive Tables</label>
-            <input type="text" value={state.InactiveTables} readOnly />
+            <label>Blocked Tables</label>
+            <input type="text" value={inactiveTables.length} readOnly />
           </div>
           <div className="form-group">
             <label>Max Seating Capacity</label>
-            <input type="text" value={state.seatingCapacity} readOnly />
+            <input type="text" value={floor.total_capacity ?? "—"} readOnly />
           </div>
           <div className="form-group">
-            <label>Total Orders</label>
-            <input type="text" value={state.TotalOrder} readOnly />
+            <label>Total Orders (loaded)</label>
+            <input type="text" value={orders.length} readOnly />
           </div>
           <div className="form-group">
             <label>Current Orders</label>
-            <input type="text" value={state.currentOrders} readOnly />
+            <input type="text" value={currentOrders.length} readOnly />
           </div>
           <div className="form-group">
-            <label>Total Staff</label>
-            <input type="text" value={state.assignedServers} readOnly />
+            <label>Staff on Shift Today</label>
+            <input type="text" value={staff.length} readOnly />
           </div>
         </div>
       </div>
 
       <div>
-         <Tabs varient="default">
-            <Tab label="View Tables">
-                <TableTemplate 
-                  columns={FloorTableColumns} 
-                  data={FloorTable} 
-                  title="Tables in This Floor"
-                />
-            </Tab>
-            <Tab label="View Orders">
-                <TableTemplate 
-                  columns={orderTableColumns} 
-                  data={orderTable} 
-                  title="Orders in This Floor"
-                />
-            </Tab>
-            <Tab label="View Staff">
-               <TableTemplate 
-               columns={StaffTableColums} 
-               data={StaffTable} 
-               title="Staff Assigned to the Floor" />
-             </Tab>
+        <Tabs variant="default">
+          <Tab label="View Tables">
+            <TableTemplate columns={tableColumns} data={activeTables.concat(inactiveTables)} title="Tables on This Floor" loading={loading} />
+          </Tab>
+          <Tab label="View Orders">
+            <TableTemplate columns={orderColumns} data={orders} title="Orders on This Floor" loading={loading} />
+          </Tab>
+          <Tab label="View Staff">
+            <TableTemplate columns={staffColumns} data={staff} title="Staff Assigned to This Floor Today" loading={loading} />
+          </Tab>
         </Tabs>
-        </div>
+      </div>
 
-        {ViewFlooorTable && (
-        <div className="modal-overlay">
-          <div className="modal-card large">
-            <div className="modal-header">
-              <h3>Table Details</h3>
-              <button onClick={() => setViewFloorTable(null)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body grid view">
-              {Object.entries(ViewFlooorTable).map(
-                ([key, value]) =>
-                  key !== "id" && (
-                    <div className="form-group" key={key}>
-                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                      <input value={value} disabled />
-                    </div>
-                  )
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button
-                className="btn secondary"
-                onClick={() => setViewFloorTable(null)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {viewOrder && (
-        <div className="modal-overlay">
-          <div className="modal-card large">
-            <div className="modal-header">
-              <h3>Order Details</h3>
-              <button onClick={() => setViewOrder(null)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="modal-body grid view">
-              {Object.entries(viewOrder).map(
-                ([key, value]) =>
-                  key !== "id" && (
-                    <div className="form-group" key={key}>
-                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                      <input value={value} disabled />
-                    </div>
-                  )
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button
-                className="btn secondary"
-                onClick={() => setViewOrder(null)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-       {viewStaff && (
-        <div className="modal-overlay">
-          <div className="modal-card large">
-            <div className="modal-header">
-              <h3>Staff Assigned</h3>
-              <button onClick={() => setViewStaff(null)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="modal-body grid view">
-              {Object.entries(viewStaff).map(
-                ([key, value]) =>
-                  key !== "id" && (
-                    <div className="form-group" key={key}>
-                      <label>{key.replace(/([A-Z])/g, " $1")}</label>
-                      <input value={value} disabled />
-                    </div>
-                  )
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button
-                className="btn secondary"
-                onClick={() => setViewStaff(null)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {renderDetailModal("Table Details", viewTable, () => setViewTable(null))}
+      {renderDetailModal("Order Details", viewOrder, () => setViewOrder(null))}
+      {renderDetailModal("Staff Details", viewStaff, () => setViewStaff(null))}
     </div>
   );
 };

@@ -90,7 +90,7 @@
       layout: 'fullscreen',
       docs: {
         description: {
-          component: 'A versatile modal component updated to match the new Premium Maroon theme. Features grid layouts for forms, view modes, and MasterData.css compatibility.'
+          component: 'A versatile modal component updated to match the new Premium Maroon theme. Features grid layouts for forms and view modes.'
         }
       }
     },
@@ -114,7 +114,7 @@
     );
   };
 
-  // Basic Modal Story - Matches MasterData.css
+  // Basic Modal Story
   export const Basic = Template.bind({});
   Basic.args = {
     title: 'Basic Modal',

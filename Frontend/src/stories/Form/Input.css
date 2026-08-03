@@ -147,6 +147,7 @@ select{
 .input-group .form-control {
   border-radius: 0;
   flex: 1;
+  min-width: 0;
 }
 
 .input-group-prepend,
@@ -194,4 +195,17 @@ select{
 .password-toggle >svg{
   width: 1.5rem;
   height: 1.5rem;
+}
+
+@media (max-width: 480px) {
+  .form-control,
+  select {
+    height: 3.25rem;
+  }
+
+  .input-group-prepend,
+  .input-group-append {
+    padding: 0 var(--spacing-sm);
+    font-size: 0.875rem;
+  }
 }

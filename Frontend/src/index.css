@@ -23,22 +23,24 @@ body {
 }
 
 /* =====================================================
-   PREMIUM MAROON • REFINED ADMIN THEME
+   CHERRY RED • LOGO-MATCHED ADMIN THEME
+   Primary ramp is derived from the Cherry Signature Condos
+   logo mark (cherry red #C3001E) — see brand hue H351.
    Elegant • Corporate • Hotel ERP Ready
 ===================================================== */
 :root {
-  /* ================= PRIMARY — MAROON ================= */
-  --primary-color: #850126;
-  /* Rich Maroon */
-  --primary-dark: #4a081b;
-  /* Deep Wine */
-  --primary-mild: #db1b4b;
-  /* Muted Maroon */
-  --primary-light: #d88c9a;
+  /* ================= PRIMARY — CHERRY RED (light) ================= */
+  --primary-color: #c11232;
+  /* Medium Cherry (headings / icons) */
+  --primary-dark: #ae0c28;
+  /* Medium-Deep Cherry (hover / active) */
+  --primary-mild: #e0294a;
+  /* Cherry Red — buttons / active tab / brand accent */
+  --primary-light: #da818e;
   /* Soft Rose */
-  --primary-lighter: #f3c9d2;
+  --primary-lighter: #f1c6cc;
   /* Blush Pink */
-  --primary-lightest: #fff1f4;
+  --primary-lightest: #fceef0;
   /* Very Soft Rose White */
   --primary-pale: #FFF9F4;
 
@@ -145,7 +147,8 @@ body {
    SCROLLBAR — MAROON ACCENT
 ===================================================== */
 ::-webkit-scrollbar {
-  display: none;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {

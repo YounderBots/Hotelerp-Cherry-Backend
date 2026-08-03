@@ -437,7 +437,6 @@ const Booking = () => {
           pagination
           exportable
           actionButton={{
-            icon: <Download size={18} />,
             label: "Add Booking",
             onClick: openAddModal,
             variant: "primary",

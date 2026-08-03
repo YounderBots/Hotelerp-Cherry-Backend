@@ -11,15 +11,17 @@ import {
   LogOut,
   AlertCircle,
   CheckCircle,
+  CreditCard,
+  HandCoins,
 } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
 // reservation_status is master-data-driven (see /masterdata/reservation_status);
-// checkin flips Confirmed → Arrived, checkout flips Arrived → Departures.
-const CAN_CHECKIN = new Set(["Confirmed"]);
-const CAN_CHECKOUT = new Set(["Arrived"]);
-const LOCKED_STATUSES = new Set(["Arrived", "Departures", "Cancelled"]);
+// checkin flips Booked → Checked-In, checkout flips Checked-In → Checked-Out.
+const CAN_CHECKIN = new Set(["Booked"]);
+const CAN_CHECKOUT = new Set(["Checked-In"]);
+const LOCKED_STATUSES = new Set(["Checked-Out", "Cancelled", "No Show"]);
 
 const RESERVATION_TYPES = ["RESERVATION", "GROUP_RESERVATION", "CHECKIN"];
 const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
@@ -61,11 +63,11 @@ const errMsg = (err, fallback) =>
 
 const getStatusBadgeClass = (status) => {
   const s = String(status || "").toLowerCase();
-  if (s === "pending") return "status-pending";
+  if (s === "booked" || s === "pending") return "status-pending";
   if (s === "confirmed") return "status-confirmed";
-  if (s === "arrived" || s === "checked-in") return "status-checked-in";
-  if (s === "departures" || s === "checked-out") return "status-checked-out";
-  if (s === "cancelled" || s === "canceled") return "status-cancelled";
+  if (s === "checked-in" || s === "arrived") return "status-checked-in";
+  if (s === "checked-out" || s === "departures") return "status-checked-out";
+  if (s === "cancelled" || s === "canceled" || s === "no show" || s === "no-show") return "status-cancelled";
   return "status-pending";
 };
 
@@ -194,6 +196,16 @@ const Reservation = () => {
   const [discountTypes, setDiscountTypes] = useState([]);
   const [reservationStatuses, setReservationStatuses] = useState([]);
 
+  const [paymentHistory, setPaymentHistory] = useState([]);
+
+  const [payModal, setPayModal] = useState(null); // { row, amount, method }
+  const [paySaving, setPaySaving] = useState(false);
+  const [payError, setPayError] = useState(null);
+
+  const [refundModal, setRefundModal] = useState(null); // { row, amount, method }
+  const [refundSaving, setRefundSaving] = useState(false);
+  const [refundError, setRefundError] = useState(null);
+
   const mounted = useRef(true);
 
   const showToast = useCallback((kind, text) => {
@@ -313,6 +325,88 @@ const Reservation = () => {
     }
   };
 
+  const openPayModal = (row) => {
+    setPayError(null);
+    setPayModal({ row, amount: "", method: "" });
+  };
+  const closePayModal = () => { if (!paySaving) setPayModal(null); };
+
+  const submitPay = async () => {
+    if (!payModal?.row?.token) {
+      setPayError("This reservation has no payment token — please refresh.");
+      return;
+    }
+    const amount = num(payModal.amount);
+    if (amount <= 0) {
+      setPayError("Enter an amount greater than 0.");
+      return;
+    }
+    if (amount > num(payModal.row.balance_amount)) {
+      setPayError("Amount cannot exceed the outstanding balance.");
+      return;
+    }
+    if (!payModal.method) {
+      setPayError("Select a payment method.");
+      return;
+    }
+    setPaySaving(true);
+    setPayError(null);
+    try {
+      await APICall.postT(`/hotel/room_reservation_pay/${encodeURIComponent(payModal.row.token)}`, {
+        paying_amount: amount,
+        payment_method: payModal.method,
+      });
+      showToast("success", "Payment recorded.");
+      setPayModal(null);
+      loadReservations();
+    } catch (err) {
+      setPayError(errMsg(err, "Failed to record payment."));
+    } finally {
+      if (mounted.current) setPaySaving(false);
+    }
+  };
+
+  const openRefundModal = (row) => {
+    setRefundError(null);
+    setRefundModal({ row, amount: "", method: "" });
+  };
+  const closeRefundModal = () => { if (!refundSaving) setRefundModal(null); };
+
+  const submitRefund = async () => {
+    if (!refundModal?.row?.token) {
+      setRefundError("This reservation has no refund token — please refresh.");
+      return;
+    }
+    const amount = num(refundModal.amount);
+    if (amount <= 0) {
+      setRefundError("Enter an amount greater than 0.");
+      return;
+    }
+    if (amount > num(refundModal.row.extra_amount)) {
+      setRefundError("Amount cannot exceed the refundable amount.");
+      return;
+    }
+    if (!refundModal.method) {
+      setRefundError("Select a refund method.");
+      return;
+    }
+    setRefundSaving(true);
+    setRefundError(null);
+    try {
+      await APICall.postT(`/hotel/room_reservation_refund/${encodeURIComponent(refundModal.row.token)}`, {
+        refund_amount: amount,
+        refund_method: refundModal.method,
+      });
+      showToast("success", "Refund processed.");
+      setRefundModal(null);
+      loadReservations();
+    } catch (err) {
+      setRefundError(errMsg(err, "Failed to process refund."));
+    } finally {
+      if (mounted.current) setRefundSaving(false);
+    }
+  };
+
   const handleDelete = (row) => setPendingDelete(row);
 
   const confirmDelete = async () => {
@@ -333,6 +427,14 @@ const Reservation = () => {
   const handleView = (row) => {
     setSelectedReservation(row);
     setIsViewModalOpen(true);
+    setPaymentHistory([]);
+    if (row?.token) {
+      APICall.getT(`/hotel/room_reservation_payments/${encodeURIComponent(row.token)}`)
+        .then((res) => {
+          if (mounted.current) setPaymentHistory(readList(res));
+        })
+        .catch(() => { /* history is best-effort; view still works without it */ });
+    }
   };
 
   const handleEdit = (row) => {
@@ -705,6 +807,30 @@ const Reservation = () => {
                         <Trash2 size={16} />
                       </button>
                     )}
+
+                    {num(row.balance_amount) > 0 && (
+                      <button
+                        type="button"
+                        className="table-action-btn pay"
+                        title="Record payment"
+                        aria-label={`Record payment for ${row.first_name || "guest"}`}
+                        onClick={() => openPayModal(row)}
+                      >
+                        <CreditCard size={16} />
+                      </button>
+                    )}
+
+                    {num(row.extra_amount) > 0 && (
+                      <button
+                        type="button"
+                        className="table-action-btn refund"
+                        title="Refund"
+                        aria-label={`Refund ${row.first_name || "guest"}`}
+                        onClick={() => openRefundModal(row)}
+                      >
+                        <HandCoins size={16} />
+                      </button>
+                    )}
                   </div>
                 );
               },
@@ -908,7 +1034,9 @@ const Reservation = () => {
                     </div>
                     <div className="field-group">
                       <span className="field-label">Discount Amount</span>
-                      <span className="field-value amount discount">-{selectedReservation.discount_amount ?? 0}</span>
+                      <span className="field-value amount discount">
+                        {selectedReservation.discount_amount ? `-${selectedReservation.discount_amount}` : 0}
+                      </span>
                     </div>
                   </div>
                   <div className="field-pair">
@@ -976,6 +1104,32 @@ const Reservation = () => {
                       </span>
                     </div>
                   </div>
+                </div>
+
+                <div className="view-section">
+                  <h3 className="section-title">Payment History</h3>
+                  {paymentHistory.length === 0 ? (
+                    <div className="rmv-empty inline">No payments recorded yet.</div>
+                  ) : (
+                    <table className="payment-history-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Method</th>
+                          <th>Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paymentHistory.map((p) => (
+                          <tr key={p.id}>
+                            <td>{p.paid_date}</td>
+                            <td>{p.payment_method}</td>
+                            <td>{p.amount}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
 
                 <div className="view-section">
@@ -1649,6 +1803,124 @@ const Reservation = () => {
         onCancel={() => setPendingDelete(null)}
         loading={deleteLoading}
       />
+
+      {/* Pay due amount */}
+      {payModal && (
+        <div
+          className="modal-container"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pay-modal-title"
+          onClick={(e) => { if (e.target === e.currentTarget) closePayModal(); }}
+        >
+          <div className="modal-content confirm-modal">
+            <div className="modal-header">
+              <h2 className="modal-title" id="pay-modal-title">Record Payment</h2>
+              <button type="button" className="modal-close-btn" onClick={closePayModal} aria-label="Close" disabled={paySaving}>
+                <X size={22} />
+              </button>
+            </div>
+            <div className="modal-body">
+              {payError && <div className="reservation-alert inline" role="alert">{payError}</div>}
+              <div className="form-group">
+                <label className="form-label">Due Amount</label>
+                <input className="form-input" type="text" value={payModal.row?.balance_amount ?? 0} readOnly />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="pay-amount">Paying Amount</label>
+                <input
+                  id="pay-amount"
+                  className="form-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={payModal.amount}
+                  onChange={(e) => setPayModal((m) => ({ ...m, amount: e.target.value }))}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="pay-method">Payment Method</label>
+                <select
+                  id="pay-method"
+                  className="form-select"
+                  value={payModal.method}
+                  onChange={(e) => setPayModal((m) => ({ ...m, method: e.target.value }))}
+                >
+                  <option value="">— select —</option>
+                  {paymentMethods.map((pm) => (
+                    <option key={pm.id} value={pm.payment_method}>{pm.payment_method}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={closePayModal} disabled={paySaving}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={submitPay} disabled={paySaving} aria-busy={paySaving}>
+                {paySaving ? "Saving…" : "Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Refund */}
+      {refundModal && (
+        <div
+          className="modal-container"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="refund-modal-title"
+          onClick={(e) => { if (e.target === e.currentTarget) closeRefundModal(); }}
+        >
+          <div className="modal-content confirm-modal">
+            <div className="modal-header">
+              <h2 className="modal-title" id="refund-modal-title">Refund Amount</h2>
+              <button type="button" className="modal-close-btn" onClick={closeRefundModal} aria-label="Close" disabled={refundSaving}>
+                <X size={22} />
+              </button>
+            </div>
+            <div className="modal-body">
+              {refundError && <div className="reservation-alert inline" role="alert">{refundError}</div>}
+              <div className="form-group">
+                <label className="form-label">Refundable Amount</label>
+                <input className="form-input" type="text" value={refundModal.row?.extra_amount ?? 0} readOnly />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="refund-amount">Refund Amount</label>
+                <input
+                  id="refund-amount"
+                  className="form-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={refundModal.amount}
+                  onChange={(e) => setRefundModal((m) => ({ ...m, amount: e.target.value }))}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="refund-method">Refund Method</label>
+                <select
+                  id="refund-method"
+                  className="form-select"
+                  value={refundModal.method}
+                  onChange={(e) => setRefundModal((m) => ({ ...m, method: e.target.value }))}
+                >
+                  <option value="">— select —</option>
+                  {paymentMethods.map((pm) => (
+                    <option key={pm.id} value={pm.payment_method}>{pm.payment_method}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={closeRefundModal} disabled={refundSaving}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={submitRefund} disabled={refundSaving} aria-busy={refundSaving}>
+                {refundSaving ? "Saving…" : "Submit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Toast toast={toast} onClose={() => setToast(null)} />
     </>

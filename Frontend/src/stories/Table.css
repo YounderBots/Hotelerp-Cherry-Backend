@@ -150,6 +150,31 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Opt-in sticky header — keeps column titles visible while a tall table
+   scrolls, either inside a max-height wrapper or against the page scroll. */
+.table-sticky-header thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: var(--gray-50);
+}
+
+/* Opt-in cell truncation — pair with a `title` attribute on the same
+   element in JSX so the full value shows as a native tooltip. */
+.table-cell-truncate {
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 480px) {
+  .table-cell-truncate {
+    max-width: 160px;
+  }
+}
+
 /* Loading State */
 .table-loading {
   position: relative;
