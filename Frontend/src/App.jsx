@@ -25,7 +25,7 @@ const Shift = lazy(() => import('./Hotel/HRM/Shift'));
 const ForgotPassword = lazy(() => import('./Authentication/Pages/ForgotPassword'));
 const LockScreen = lazy(() => import('./Authentication/Pages/LockScreen'));
 const Login = lazy(() => import('./Authentication/Pages/Login'));
-const OTP = lazy(() => import('./Authentication/Pages/OTP'));
+// OTP is deliberately not imported — see the note beside the auth routes below.
 const Register = lazy(() => import('./Authentication/Pages/Register'));
 
 // Hotel Components - Lazy loaded with grouping
@@ -492,11 +492,14 @@ const App = () => {
               <Register />
             </PageLoader>
           } />
-          <Route path="/authentication/otp" element={
-            <PageLoader>
-              <OTP />
-            </PageLoader>
-          } />
+          {/* /authentication/otp is intentionally not routed. The page calls
+              POST /verify_otp and POST /resend_otp, and no backend service
+              implements either — there is no OTP concept anywhere in the mesh,
+              and no login response ever asks for a second factor. Nothing links
+              to it, so the only way to reach it was to type the URL, which
+              landed on a screen where every action failed. The component is
+              kept in Authentication/Pages/OTP.jsx; restore this route once the
+              two endpoints exist. */}
 
           {/* Main App Layout Routes */}
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>

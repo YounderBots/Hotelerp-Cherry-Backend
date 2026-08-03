@@ -134,8 +134,11 @@ const Login = () => {
         </div>
 
         {/* ERROR */}
+        {/* id matches the aria-describedby on the inputs below, which pointed
+            at a non-existent element, so the error was never announced as the
+            description of the field that caused it. */}
         {error && (
-          <div className="error-text" role="alert" aria-live="assertive">
+          <div id="login-error" className="error-text" role="alert" aria-live="assertive">
             <FaExclamationCircle aria-hidden="true" />
             <span>{error}</span>
           </div>
@@ -191,6 +194,7 @@ const Login = () => {
                 maxLength={255}
                 required
                 aria-invalid={Boolean(error)}
+                aria-describedby={error ? "login-error" : undefined}
               />
 
               <button
