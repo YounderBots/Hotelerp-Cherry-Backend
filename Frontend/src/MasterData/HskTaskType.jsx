@@ -224,7 +224,7 @@ const HskTaskType = () => {
         <Modal
           isOpen={showViewModal}
           title="View HSK Task Type"
-          onClose={() => setShowViewModal(false)}
+          onClose={closeViewModal}
           size="small"
           bodyLayout="grid"
         >

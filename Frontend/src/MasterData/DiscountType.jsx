@@ -243,7 +243,7 @@ const DiscountType = () => {
         <Modal
           isOpen={showViewModal}
           title="View Discount Type"
-          onClose={() => setShowViewModal(false)}
+          onClose={closeViewModal}
           size="medium"
           bodyLayout="grid"
         >

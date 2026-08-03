@@ -201,7 +201,7 @@ const IdentificationProof = () => {
         <Modal
           isOpen={showViewModal}
           title="View Identify Proof"
-          onClose={() => setShowViewModal(false)}
+          onClose={closeViewModal}
           size="small"
         >
           <div className="modal-body single view">

@@ -208,7 +208,7 @@ const PaymentMethods = () => {
         <Modal
           isOpen={showViewModal}
           title="View Payment Method"
-          onClose={() => setShowViewModal(false)}
+          onClose={closeViewModal}
           size="small"
         >
 

@@ -274,7 +274,7 @@ const ReservationModelView = () => {
           <div><span>Balance</span><span>${escapeHtml(formatAmount(reservation.balance_amount))}</span></div>
         </div>
 
-        <script>window.addEventListener("load", function(){ window.print(); });<\/script>
+        <script>window.addEventListener("load", function(){ window.print(); });</script>
       </body></html>`;
     printWindow.document.write(content);
     printWindow.document.close();

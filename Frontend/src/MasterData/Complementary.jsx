@@ -229,7 +229,7 @@ const Complementary = () => {
         <Modal
           isOpen={showViewModal}
           title="View Complementry"
-          onClose={() => setShowViewModal(false)}
+          onClose={closeViewModal}
           size="medium"
         >
 

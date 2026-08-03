@@ -1,5 +1,5 @@
 // Radio.jsx
-import React from 'react';
+import React, { useId } from 'react';
 import './Radio.css';
 
 const Radio = ({
@@ -14,7 +14,8 @@ const Radio = ({
   className = '',
   ...props
 }) => {
-  const radioId = `radio-${Math.random().toString(36).substr(2, 9)}`;
+  // See Checkbox.jsx: a render-time random id breaks the label association.
+  const radioId = `radio-${useId()}`;
 
   const radioClasses = [
     'radio-custom',
@@ -72,7 +73,10 @@ export const RadioGroup = ({
   name,
   className = '',
 }) => {
-  const groupName = name || `radio-group-${Math.random().toString(36).substr(2, 9)}`;
+  const generatedGroupName = useId();
+  // A random group name regenerated each render splits the radios into
+  // separate groups, so more than one could appear selected at once.
+  const groupName = name || `radio-group-${generatedGroupName}`;
 
   const containerClasses = [
     layout === 'horizontal' ? 'radio-group-horizontal' : 'radio-group-container',

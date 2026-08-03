@@ -49,55 +49,77 @@ const TableToolbar = ({
   onPrint,
   onFilter,
   searchValue,
-  searchPlaceholder = "Search..."
+  searchPlaceholder = "Search...",
+  // `searchable` and `exportable` were accepted by TableTemplate and never read,
+  // so a caller passing searchable={false} still got a search box and the export
+  // buttons could not be hidden at all. They are honoured here.
+  searchable = true,
+  exportable = true,
 }) => {
   return (
     <div className="table-toolbar">
       <div className="toolbar-left">
-        <InputField
-          placeholder={searchPlaceholder}
-          size="small"
-          value={searchValue}
-          onChange={(e) => onSearch(e.target.value)}
-          style={{ width: '250px' }}
-        />
+        {searchable && (
+          <InputField
+            placeholder={searchPlaceholder}
+            size="small"
+            value={searchValue}
+            onChange={(e) => onSearch(e.target.value)}
+            style={{ width: '250px' }}
+            aria-label={searchPlaceholder}
+          />
+        )}
       </div>
       <div className="toolbar-right">
         <div className="toolbar-actions">
+          {exportable && (
+            <>
+              <button
+                type="button"
+                className="toolbar-btn nav-icon"
+                title="Copy as JSON"
+                aria-label="Copy table as JSON"
+                onClick={onCopyJSON}
+              >
+                <ClipboardPaste aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="toolbar-btn nav-icon"
+                title="Download CSV"
+                aria-label="Download table as CSV"
+                onClick={onDownloadCSV}
+              >
+                <Table2 aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="toolbar-btn nav-icon"
+                title="Download PDF"
+                aria-label="Download table as PDF"
+                onClick={onDownloadPDF}
+              >
+                <FileText aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="toolbar-btn nav-icon"
+                title="Print Table"
+                aria-label="Print table"
+                onClick={onPrint}
+              >
+                <Printer aria-hidden="true" />
+              </button>
+            </>
+          )}
           <button
-            className="toolbar-btn nav-icon"
-            title="Copy as JSON"
-            onClick={onCopyJSON}
-          >
-            <ClipboardPaste />
-          </button>
-          <button
-            className="toolbar-btn nav-icon"
-            title="Download CSV"
-            onClick={onDownloadCSV}
-          >
-            <Table2 />
-          </button>
-          <button
-            className="toolbar-btn nav-icon"
-            title="Download PDF"
-            onClick={onDownloadPDF}
-          >
-            <FileText />
-          </button>
-          <button
-            className="toolbar-btn nav-icon"
-            title="Print Table"
-            onClick={onPrint}
-          >
-            <Printer />
-          </button>
-          <button
+            type="button"
             className="toolbar-btn nav-icon"
             title="Filter Columns"
+            aria-label="Choose which columns are visible"
             onClick={onFilter}
           >
-            <Settings />
+            <Settings aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -478,6 +500,8 @@ const TableTemplate = ({
           onFilter={() => setShowFilterModal(true)}
           searchValue={searchTerm}
           searchPlaceholder={`Search ${filteredData.length} records...`}
+          searchable={searchable}
+          exportable={exportable}
         />
       </div>
 

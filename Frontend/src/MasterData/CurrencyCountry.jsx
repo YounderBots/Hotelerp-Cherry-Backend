@@ -224,7 +224,7 @@ const CurrencyCountry = () => {
         <Modal
           isOpen={showViewModal}
           title="View Currency/Country"
-          onClose={() => setShowViewModal(false)}
+          onClose={closeViewModal}
           size="medium"
           bodyLayout="grid"
         >

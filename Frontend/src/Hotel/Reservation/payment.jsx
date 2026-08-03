@@ -67,7 +67,7 @@ const Payment = ({
     const extraBedCost = bedCostPerNight * Math.max(1, totalNights || 1);
 
     setPaymentData(prev => ({ ...prev, room_amount: total, extra_bed_cost: extraBedCost }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [selectedRooms, roomTypes, perRoom, totalNights]);
 
   useEffect(() => {

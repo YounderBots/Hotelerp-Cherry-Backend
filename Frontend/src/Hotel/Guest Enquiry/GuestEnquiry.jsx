@@ -21,7 +21,7 @@ import "../Reservation/Reservation.css";
 const INQUIRY_MODES = ["Phone", "Email", "Walk-in", "Web", "Referral", "Other"];
 const INQUIRY_STATUSES = ["Open", "In Progress", "Resolved", "Pending", "Closed"];
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // eslint-disable-line no-unused-vars
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;  
 
 // -------------------------------------------------------------------------
 // Helpers (shared conventions from Pages 7-16)
@@ -317,7 +317,7 @@ const GuestEnquiry = () => {
     const onKey = (e) => { if (e.key === "Escape" && !saving) closeModal(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [showModal, saving]);
 
   useEffect(() => {

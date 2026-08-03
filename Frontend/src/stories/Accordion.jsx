@@ -1,32 +1,48 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import "./Accordion.css";
-import { LuAArrowDown } from "react-icons/lu";
 import { ChevronDown } from "lucide-react";
 
 const AccordionItem = ({
   item,
-  index,
   isOpen,
   onToggle,
-  variant
 }) => {
-  const renderIcon = () => {
-    return (
-      <span className={`accordion-icon ${isOpen ? "open" : ""}`}>
-        {/* Rotate handled by CSS */}
-        <ChevronDown />
-      </span>
-    );
-  };
+  // The header was a <div onClick>: not reachable by keyboard, not announced
+  // as expandable, and invisible to screen readers as a control. A real
+  // <button> restores Enter/Space and focus, and aria-expanded/aria-controls
+  // tie it to the panel it opens.
+  const panelId = useId();
+  const headerId = useId();
 
   return (
     <div className={`accordion-item ${isOpen ? "open" : ""}`}>
-      <div className={`accordion-header ${isOpen ? "open" : ""}`} onClick={onToggle}>
-        <h3 className={`accordion-title ${isOpen ? "open" : ""}`}>{item.title}</h3>
-        {renderIcon()}
-      </div>
+      <h3 className="accordion-heading">
+        <button
+          type="button"
+          id={headerId}
+          className={`accordion-header ${isOpen ? "open" : ""}`}
+          onClick={onToggle}
+          aria-expanded={isOpen}
+          aria-controls={panelId}
+        >
+          <span className={`accordion-title ${isOpen ? "open" : ""}`}>{item.title}</span>
+          <span className={`accordion-icon ${isOpen ? "open" : ""}`} aria-hidden="true">
+            {/* Rotation handled by CSS */}
+            <ChevronDown />
+          </span>
+        </button>
+      </h3>
 
-      <div className={`accordion-content ${isOpen ? "open" : ""}`}>
+      {/* `inert` rather than `hidden`: the collapse is animated with max-height,
+          which `hidden` (display:none) would cut short. `inert` still removes
+          the collapsed panel from the tab order and the accessibility tree. */}
+      <div
+        id={panelId}
+        role="region"
+        aria-labelledby={headerId}
+        inert={!isOpen}
+        className={`accordion-content ${isOpen ? "open" : ""}`}
+      >
         <div className="accordion-content-inner">
           {item.content}
         </div>
@@ -74,10 +90,8 @@ const Accordion = ({
         <AccordionItem
           key={index}
           item={item}
-          index={index}
           isOpen={openItems.includes(index)}
           onToggle={() => toggleItem(index)}
-          variant={variant}
         />
       ))}
     </div>

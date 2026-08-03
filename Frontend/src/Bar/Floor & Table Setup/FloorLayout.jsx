@@ -6,14 +6,12 @@ import Select from "../../stories/Form/Select";
 import IconButton from "../../stories/IconButton";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
 
 const FloorLayout = () => {
-  const navigate = useNavigate();
 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);

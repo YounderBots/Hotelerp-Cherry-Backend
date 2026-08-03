@@ -78,11 +78,12 @@ export default function InputField({
 
   const currentValue = isControlled ? value : internal;
 
-  // compute width style
-  const innerStyle = {};
-  if (size === 'custom' && customWidth) {
-    style.width = customWidth;
-  }
+  // A custom width applies to the field itself, not the wrapper. This used to
+  // assign to `style.width`, which mutated the caller's own style object — the
+  // width leaked back into the parent and persisted across renders — while
+  // `innerStyle` was built and then never populated, so the field never
+  // actually resized.
+  const innerStyle = size === 'custom' && customWidth ? { width: customWidth } : undefined;
 
   // class for percent widths
   const sizeClass = size === 'custom' ? '' : `InputField--${size}`;
@@ -103,6 +104,21 @@ export default function InputField({
           aria-label={ariaLabel}
           disabled={disabled}
         />
+
+        {/* The clear affordance was never rendered: IconClear, the documented
+            `onClear` prop and handleClear all existed, but nothing invoked
+            them, so onClear never fired for any consumer. */}
+        {currentValue && !disabled && (
+          <button
+            type="button"
+            className="InputField__clear"
+            onClick={handleClear}
+            aria-label="Clear search"
+            title="Clear"
+          >
+            <IconClear />
+          </button>
+        )}
 
       </div>
     </div>

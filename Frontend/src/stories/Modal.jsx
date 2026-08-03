@@ -71,13 +71,29 @@ const Modal = ({
     }
   }, [isOpen, isExiting]);
 
+  // Declared before handleEscape, which calls it. It used to be defined below
+  // and omitted from handleEscape's dependency list, so the Escape handler
+  // captured the very first handleClose and kept acting on the isExiting value
+  // from that render — pressing Escape mid-animation used stale state.
+  const handleClose = useCallback(() => {
+    if (!onClose || isExiting) return;
+
+    setIsExiting(true);
+    setIsActive(false);
+
+    setTimeout(() => {
+      setIsExiting(false);
+      onClose();
+    }, 200);
+  }, [onClose, isExiting]);
+
   // Handle escape key
   const handleEscape = useCallback((e) => {
     if (e.key === 'Escape' && closeOnEscape && onClose && !isExiting) {
       e.preventDefault();
       handleClose();
     }
-  }, [closeOnEscape, onClose, isExiting]);
+  }, [closeOnEscape, onClose, isExiting, handleClose]);
 
   useEffect(() => {
     if (isOpen && closeOnEscape) {
@@ -134,19 +150,6 @@ const Modal = ({
       previousActiveElement.current?.focus();
     }
   }, [isOpen, isExiting, autoFocus]);
-
-  // Handle close with smooth animation
-  const handleClose = useCallback(() => {
-    if (!onClose || isExiting) return;
-
-    setIsExiting(true);
-    setIsActive(false);
-
-    setTimeout(() => {
-      setIsExiting(false);
-      onClose();
-    }, 200);
-  }, [onClose, isExiting]);
 
   const handleConfirm = useCallback(() => {
     if (onConfirm) {

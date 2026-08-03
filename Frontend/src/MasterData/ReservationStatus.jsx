@@ -226,7 +226,7 @@ const ReservationStatus = () => {
         <Modal
           isOpen={showViewModal}
           title="View Reservation Status"
-          onClose={() => setShowViewModal(false)}
+          onClose={closeViewModal}
           size="small"
           bodyLayout="grid"
         >

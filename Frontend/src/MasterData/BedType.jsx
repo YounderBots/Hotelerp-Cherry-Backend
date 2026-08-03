@@ -192,7 +192,7 @@ const BedType = () => {
         <Modal
           isOpen={showViewModal}
           title="View Bed Type"
-          onClose={() => setShowViewModal(false)}
+          onClose={closeViewModal}
           size="small"
         >
           <div className="modal-body single view">

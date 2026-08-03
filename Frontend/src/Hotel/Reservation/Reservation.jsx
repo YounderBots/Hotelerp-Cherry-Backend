@@ -294,12 +294,16 @@ const Reservation = () => {
     } catch (err) {
       showToast("error", errMsg(err, "Check-in failed."));
     } finally {
-      if (!mounted.current) return;
-      setRowLocks((m) => {
-        const next = { ...m };
-        delete next[id];
-        return next;
-      });
+      // Guarded with `if (mounted)` rather than an early `return`: returning
+      // from a finally block discards any exception still propagating, so a
+      // throw inside the catch above would vanish silently.
+      if (mounted.current) {
+        setRowLocks((m) => {
+          const next = { ...m };
+          delete next[id];
+          return next;
+        });
+      }
     }
   };
 
@@ -316,12 +320,16 @@ const Reservation = () => {
     } catch (err) {
       showToast("error", errMsg(err, "Check-out failed."));
     } finally {
-      if (!mounted.current) return;
-      setRowLocks((m) => {
-        const next = { ...m };
-        delete next[id];
-        return next;
-      });
+      // Guarded with `if (mounted)` rather than an early `return`: returning
+      // from a finally block discards any exception still propagating, so a
+      // throw inside the catch above would vanish silently.
+      if (mounted.current) {
+        setRowLocks((m) => {
+          const next = { ...m };
+          delete next[id];
+          return next;
+        });
+      }
     }
   };
 
@@ -614,7 +622,7 @@ const Reservation = () => {
     <div class="detail-item"><span class="label">Balance Amount:</span> ${escapeHtml(row.balance_amount ?? 0)}</div>
     <div class="detail-item total"><span class="label">Overall Amount:</span> ${escapeHtml(row.overall_amount ?? 0)}</div>
   </div>
-  <script>window.addEventListener("load", function(){ window.print(); });<\/script>
+  <script>window.addEventListener("load", function(){ window.print(); });</script>
 </body>
 </html>`;
     printWindow.document.write(content);

@@ -154,14 +154,6 @@ const RoomType = () => {
     setEditId(null);
   };
 
-  const exceptField = [
-    "status",
-    "created_by",
-    "created_at",
-    "updated_at",
-    "company_id",
-  ]
-
   const handleChange = (e) => {
     const { name, value, type } = e.target;
 
