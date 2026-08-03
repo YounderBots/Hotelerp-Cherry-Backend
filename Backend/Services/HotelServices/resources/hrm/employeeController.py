@@ -1,3 +1,19 @@
+"""Employee/HR endpoints — NOT REGISTERED.
+
+This router is not included in routes/__init__.py, so none of these endpoints
+are reachable. The HRM Employee screen talks to UserServices (`/user/users`)
+instead; this controller is the superseded implementation.
+
+It is kept rather than deleted because the work is intact and may be intended,
+but it must not be mounted as it was written: every endpoint took `company_id`
+as a caller-supplied query or form field with no authentication at all. The
+worst was `POST /employee/password_change`, which accepted an employee id, a
+new password and a company id from anyone who could reach it. Mounting that
+router would have handed out cross-tenant account takeover. Each endpoint now
+authenticates and derives company_id from the token, so registering it is at
+least safe — but confirm it is actually wanted before doing so.
+"""
+
 from fastapi import APIRouter, Depends, Request, status, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -9,16 +25,18 @@ import bcrypt
 from models import models
 from models import get_db
 from configs.base_config import CommonWords
+from resources.utils import verify_authentication
 
 #==============================================>>> Employee Profiles
 
 router = APIRouter()
 
 @router.get("/employee", status_code=status.HTTP_200_OK)
-def get_employee_list(
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+def get_employee_list(request: Request,
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     employee_data = db.query(models.Employee_Data).filter(
         models.Employee_Data.company_id == company_id,
         models.Employee_Data.status == CommonWords.STATUS
@@ -32,10 +50,11 @@ def get_employee_list(
 #==============================================>>> Employee Add 
 
 @router.get("/employee_add", status_code=status.HTTP_200_OK)
-def employee_add_data(
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+def employee_add_data(request: Request,
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Generate Employee ID
     employee_count = db.query(models.Employee_Data).filter(
         models.Employee_Data.company_id == company_id,
@@ -60,11 +79,12 @@ def employee_add_data(
 #==============================================>>> Employee Edit  
 
 @router.get("/employee_edit/{employee_id}", status_code=status.HTTP_200_OK)
-def employee_edit_data(
+def employee_edit_data(request: Request,
     employee_id: str,
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Employee data
     emp_data = db.query(models.Employee_Data).filter(
         models.Employee_Data.Employee_ID == employee_id,
@@ -91,7 +111,7 @@ def employee_edit_data(
 #==============================================>>> Employee Create  
 
 @router.post("/employee", status_code=status.HTTP_201_CREATED)
-async def create_employee(
+async def create_employee(request: Request,
     employee_image: UploadFile = File(...),
     notes: str = Form(...),
     emy_name: str = Form(...),
@@ -116,12 +136,12 @@ async def create_employee(
     expericence: str = Form(...),
     marital: str = Form(...),
     policies: str = Form(...),
-
-    company_id: str = Form(...),
     created_by: str = Form(...),
 
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Duplicate check (email or mobile)
     existing_employee = db.query(models.Employee_Data).filter(
         (
@@ -207,11 +227,12 @@ async def create_employee(
 #==============================================>>> Employee View  
 
 @router.get("/employee/{employee_id}", status_code=status.HTTP_200_OK)
-def employee_view_data(
+def employee_view_data(request: Request,
     employee_id: str,
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     emp = db.query(models.Employee_Data).filter(
         models.Employee_Data.Employee_ID == employee_id,
         models.Employee_Data.company_id == company_id,
@@ -235,12 +256,13 @@ def employee_view_data(
 #==============================================>>> Employee Password Change  
 
 @router.post("/employee/password_change", status_code=status.HTTP_200_OK)
-async def change_employee_password(
+async def change_employee_password(request: Request,
     employee_id: str = Form(...),
     new_passkey: str = Form(...),
-    company_id: str = Form(...),
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Check employee exists
     employee = db.query(models.Employee_Data).filter(
         models.Employee_Data.Employee_ID == employee_id,
@@ -281,11 +303,12 @@ async def change_employee_password(
 #==============================================>>> Get Employee Role  
 
 @router.get("/employee/{employee_id}/role", status_code=status.HTTP_200_OK)
-def get_employee_role_data(
+def get_employee_role_data(request: Request,
     employee_id: str,
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Get employee
     employee = db.query(models.Employee_Data).filter(
         models.Employee_Data.Employee_ID == employee_id,
@@ -325,7 +348,7 @@ def get_employee_role_data(
 #==============================================>>> Employee Update  
 
 @router.put("/employee", status_code=status.HTTP_200_OK)
-async def update_employee(
+async def update_employee(request: Request,
     edit_employee_id: str = Form(...),
 
     edit_fir_name: str = Form(...),
@@ -351,12 +374,12 @@ async def update_employee(
     edit_emy_phone: str = Form(...),
     edit_emy_relate: str = Form(...),
 
-    company_id: str = Form(...),
-
     edit_employee_image: Optional[UploadFile] = File(None),
 
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Check employee exists
     employee = db.query(models.Employee_Data).filter(
         models.Employee_Data.Employee_ID == edit_employee_id,
@@ -457,11 +480,12 @@ async def update_employee(
 
 #==============================================>>> Employee Delete  
 @router.delete("/employee/{employee_id}", status_code=status.HTTP_200_OK)
-def delete_employee(
+def delete_employee(request: Request,
     employee_id: str,
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Check employee exists
     employee = db.query(models.Employee_Data).filter(
         models.Employee_Data.Employee_ID == employee_id,
@@ -489,10 +513,11 @@ def delete_employee(
 
 #=======================>>> Employee Attendance  
 @router.get("/employee_attendance", status_code=status.HTTP_200_OK)
-def get_employee_attendance_data(
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+def get_employee_attendance_data(request: Request,
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     employees = db.query(models.Employee_Data).filter(
         models.Employee_Data.company_id == company_id,
         models.Employee_Data.status == CommonWords.STATUS

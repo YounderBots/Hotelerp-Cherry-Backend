@@ -14,6 +14,7 @@ import datetime as dt
 from models import get_db, models
 from configs.base_config import BaseConfig, CommonWords
 from fastapi import HTTPException
+from resources.utils import verify_authentication
 
 
 router = APIRouter()
@@ -21,12 +22,13 @@ router = APIRouter()
 #=====================================>>> User Activity Log
 
 @router.get("/user_activity_log", status_code=status.HTTP_200_OK)
-def user_activity_log(
-    company_id: str,
+def user_activity_log(request: Request,
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # -------------------------------
     # Date validation (EXACT logic)
     # -------------------------------
@@ -117,11 +119,12 @@ def user_activity_log(
 #=====================================>>> Reservation Info
 
 @router.get("/reservation/{reservation_id}", status_code=status.HTTP_200_OK)
-def get_reservation_info(
+def get_reservation_info(request: Request,
     reservation_id: int,
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     reservation = db.query(models.RoomReservation).filter(
         models.RoomReservation.id == reservation_id,
         models.RoomReservation.company_id == company_id
@@ -144,11 +147,12 @@ def get_reservation_info(
 #=====================================>>> Keeper Info
 
 @router.get("/keeper_info/{task_id}", status_code=status.HTTP_200_OK)
-def keeper_info(
+def keeper_info(request: Request,
     task_id: int,
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     keeper = (
         db.query(models.HousekeeperTask)
         .filter(
@@ -189,10 +193,11 @@ def keeper_info(
 #=====================================>>> Get Paid Amount
 
 @router.get("/paid_amount", status_code=status.HTTP_200_OK)
-def get_paid_amount(
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+def get_paid_amount(request: Request,
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     today = date.today()
 
     total_paid_amount = db.query(
@@ -211,10 +216,11 @@ def get_paid_amount(
 #=====================================>>> Settlement Summary
 
 @router.get("/settlement_summary", status_code=status.HTTP_200_OK)
-def settlement_summary(
-    company_id: str,
-    db: Session = Depends(get_db)
-):
+def settlement_summary(request: Request,
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     current_date = date.today()
 
     # Room reservation list for today
@@ -252,12 +258,13 @@ def settlement_summary(
 #=====================================>>> Room Sales (REACT API)
 
 @router.get("/room_sales", status_code=status.HTTP_200_OK)
-def room_sales(
-    company_id: str,
+def room_sales(request: Request,
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # -------------------------------
     # Date validation (same logic)
     # -------------------------------
@@ -300,13 +307,14 @@ def room_sales(
 #-------------- User Activity Log  ------------------------
 
 @router.get("/export_user_activity", status_code=status.HTTP_200_OK)
-def export_user_activity(
-    company_id: str,
+def export_user_activity(request: Request,
     db: Session = Depends(get_db),
     format: str = Query("excel", enum=["excel", "json"]),
     from_date: Optional[str] = Query(None),
-    to_date: Optional[str] = Query(None)
-):
+    to_date: Optional[str] = Query(None)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # -------------------------------
     # Date validation (exact logic)
     # -------------------------------
@@ -389,13 +397,14 @@ def export_user_activity(
 #-------------- Room Booked Details Export ----------------
 
 @router.get("/export_room_booked_details", status_code=status.HTTP_200_OK)
-def export_room_booked_details(
-    company_id: str,
+def export_room_booked_details(request: Request,
     db: Session = Depends(get_db),
     format: str = Query("excel", enum=["excel", "json"]),
     from_date: Optional[str] = Query(None),
-    to_date: Optional[str] = Query(None)
-):
+    to_date: Optional[str] = Query(None)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # -------------------------------
     # Date validation
     # -------------------------------
@@ -474,12 +483,13 @@ def export_room_booked_details(
 #-------------- HSK Task Details Export ----------------
 
 @router.get("/export_hsk_details", status_code=status.HTTP_200_OK)
-def export_hsk_details(
-    company_id: str,
+def export_hsk_details(request: Request,
     db: Session = Depends(get_db),
     format: str = Query("excel", enum=["excel", "json"]),
-    sch_date: Optional[str] = Query(None)
-):
+    sch_date: Optional[str] = Query(None)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # -------------------------------
     # Date validation
     # -------------------------------
@@ -555,13 +565,14 @@ def export_hsk_details(
 # Settlement Summary Export
 
 @router.get("/export_settlement_summary")
-async def export_settlement_summary(
+async def export_settlement_summary(request: Request,
     db: Session = Depends(get_db),
     format: str = Query("excel"),
     from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    company_id: str = Query(...)
-):
+    to_date: Optional[str] = None):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Validate & prepare dates
     if from_date and to_date:
         try:
@@ -649,10 +660,11 @@ async def export_settlement_summary(
 # Night Audit Process (React API)
 
 @router.get("/night_audit_process")
-async def night_audit_process(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def night_audit_process(request: Request,
+    db: Session = Depends(get_db)):
+    # company_id now comes from the verified token. It used to be a
+    # caller-supplied parameter on an unauthenticated route.
+    user_id, role_id, company_id, token = verify_authentication(request)
     # Session validation
     if "sessid" not in request.session:
         return RedirectResponse(
