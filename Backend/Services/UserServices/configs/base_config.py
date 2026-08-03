@@ -21,6 +21,10 @@ class BaseConfig(object):
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     REFRESH_TOKEN_EXPIRE_MINUTES = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", "1440"))
 
+    # Must match the `iss` claim the login gateway mints, otherwise every
+    # token this service receives is rejected.
+    JWT_ISSUER = os.getenv("JWT_ISSUER", "hotelerp-login")
+
     IS_PRODUCTION = _IS_PROD
     ENVIRONMENT = _ENV
 

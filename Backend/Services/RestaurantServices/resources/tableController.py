@@ -32,7 +32,7 @@ class FloorIn(BaseModel):
     total_capacity: Optional[int] = None
     layout_json: Optional[dict] = None
     color_code: Optional[str] = None
-    is_open: str = "Yes"
+    is_open: bool = True
 
 
 class FloorUpdate(BaseModel):
@@ -44,7 +44,7 @@ class FloorUpdate(BaseModel):
     total_capacity: Optional[int] = None
     layout_json: Optional[dict] = None
     color_code: Optional[str] = None
-    is_open: Optional[str] = None
+    is_open: Optional[bool] = None
 
 
 class TableIn(BaseModel):
@@ -59,7 +59,7 @@ class TableIn(BaseModel):
     shape: Optional[str] = None
     color_code: Optional[str] = None
     table_status: str = "Available"
-    is_mergeable: str = "No"
+    is_mergeable: bool = False
 
 
 class TableUpdate(BaseModel):
@@ -76,8 +76,8 @@ class TableUpdate(BaseModel):
     shape: Optional[str] = None
     color_code: Optional[str] = None
     table_status: Optional[str] = None
-    is_mergeable: Optional[str] = None
-    current_order_id: Optional[str] = None
+    is_mergeable: Optional[bool] = None
+    current_order_id: Optional[int] = None
 
 
 class TableMergeIn(BaseModel):
@@ -311,7 +311,7 @@ def merge_tables(payload: TableMergeIn, request: Request, db: Session = Depends(
     if len(tables) != len(payload.table_ids):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="One or more tables were not found")
     for t in tables:
-        if t.is_mergeable != "Yes":
+        if not t.is_mergeable:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Table {t.table_name} is not mergeable")
         if t.table_status == "Occupied":
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Table {t.table_name} is currently occupied")
@@ -321,7 +321,7 @@ def merge_tables(payload: TableMergeIn, request: Request, db: Session = Depends(
             merge_code=gen_code("MRG"),
             merged_table_name=payload.merged_table_name,
             merged_by=user_id,
-            is_active="Yes",
+            is_active=True,
             created_by=user_id,
             company_id=company_id,
         )
@@ -329,7 +329,7 @@ def merge_tables(payload: TableMergeIn, request: Request, db: Session = Depends(
         db.flush()
 
         for t in tables:
-            db.add(models.RestaurantTableMergeDetail(merge_id=merge.id, table_id=t.id))
+            db.add(models.RestaurantTableMergeDetail(merge_id=merge.id, table_id=t.id, created_by=user_id, company_id=company_id))
             t.table_status = "Occupied"
             t.updated_by = user_id
 
@@ -351,7 +351,7 @@ def unmerge_tables(merge_id: int, request: Request, db: Session = Depends(get_db
         .filter(models.RestaurantTableMerge.id == merge_id, models.RestaurantTableMerge.company_id == company_id)
         .first()
     )
-    if not merge or merge.is_active != "Yes":
+    if not merge or not merge.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active merge not found")
 
     details = db.query(models.RestaurantTableMergeDetail).filter(models.RestaurantTableMergeDetail.merge_id == merge_id).all()
@@ -361,7 +361,7 @@ def unmerge_tables(merge_id: int, request: Request, db: Session = Depends(get_db
         t.table_status = "Cleaning"
         t.updated_by = user_id
 
-    merge.is_active = "No"
+    merge.is_active = False
     merge.unmerged_at = datetime.now()
     merge.updated_by = user_id
     db.commit()

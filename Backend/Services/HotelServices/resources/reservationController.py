@@ -568,9 +568,12 @@ async def create_room_reservation(
     payment_method_id: int = Form(...),
     extra_bed_count: int = Form(0),
     extra_bed_cost: float = Form(0),
+    room_amount: float = Form(0),
+    tax_type_id: int = Form(None),
     total_amount: float = Form(...),
     tax_percentage: float = Form(0),
     tax_amount: float = Form(0),
+    discount_type_id: int = Form(None),
     discount_percentage: float = Form(0),
     discount_amount: float = Form(0),
     extra_charges: float = Form(0),
@@ -655,10 +658,13 @@ async def create_room_reservation(
     reservation.extra_bed_count = extra_bed_count
     reservation.extra_bed_cost = extra_bed_cost
 
+    reservation.room_amount = room_amount
+    reservation.tax_type_id = tax_type_id
     reservation.total_amount = total_amount
     reservation.tax_percentage = tax_percentage
     reservation.tax_amount = tax_amount
 
+    reservation.discount_type_id = discount_type_id
     reservation.discount_percentage = discount_percentage
     reservation.discount_amount = discount_amount
 
@@ -855,9 +861,12 @@ def get_all_room_reservations(request: Request, db: Session = Depends(get_db)):
                 "payment_method_id": r.payment_method_id,
                 "extra_bed_count": r.extra_bed_count,
                 "extra_bed_cost": r.extra_bed_cost,
+                "room_amount": r.room_amount,
+                "tax_type_id": r.tax_type_id,
                 "total_amount": r.total_amount,
                 "tax_percentage": r.tax_percentage,
                 "tax_amount": r.tax_amount,
+                "discount_type_id": r.discount_type_id,
                 "discount_percentage": r.discount_percentage,
                 "discount_amount": r.discount_amount,
                 "extra_charges": r.extra_charges,
@@ -977,9 +986,12 @@ def get_room_reservation_by_id(
                 "payment_method_id": reservation.payment_method_id,
                 "extra_bed_count": reservation.extra_bed_count,
                 "extra_bed_cost": reservation.extra_bed_cost,
+                "room_amount": reservation.room_amount,
+                "tax_type_id": reservation.tax_type_id,
                 "total_amount": reservation.total_amount,
                 "tax_percentage": reservation.tax_percentage,
                 "tax_amount": reservation.tax_amount,
+                "discount_type_id": reservation.discount_type_id,
                 "discount_percentage": reservation.discount_percentage,
                 "discount_amount": reservation.discount_amount,
                 "extra_charges": reservation.extra_charges,
@@ -1046,9 +1058,12 @@ async def update_room_reservation(
     payment_method_id: int = Form(...),
     extra_bed_count: int = Form(0),
     extra_bed_cost: float = Form(0),
+    room_amount: float = Form(0),
+    tax_type_id: int = Form(None),
     total_amount: float = Form(...),
     tax_percentage: float = Form(0),
     tax_amount: float = Form(0),
+    discount_type_id: int = Form(None),
     discount_percentage: float = Form(0),
     discount_amount: float = Form(0),
     extra_charges: float = Form(0),
@@ -1122,9 +1137,12 @@ async def update_room_reservation(
         reservation.extra_bed_count = extra_bed_count
         reservation.extra_bed_cost = extra_bed_cost
 
+        reservation.room_amount = room_amount
+        reservation.tax_type_id = tax_type_id
         reservation.total_amount = total_amount
         reservation.tax_percentage = tax_percentage
         reservation.tax_amount = tax_amount
+        reservation.discount_type_id = discount_type_id
         reservation.discount_percentage = discount_percentage
         reservation.discount_amount = discount_amount
         reservation.extra_charges = extra_charges
@@ -1355,12 +1373,12 @@ def reservation_checkin(
         if not reservation:
             raise HTTPException(status_code=404, detail="Reservation not found")
 
-        if reservation.reservation_status != "Confirmed":
+        if reservation.reservation_status != "Booked":
             raise HTTPException(
-                status_code=400, detail="Only confirmed reservations can be checked in"
+                status_code=400, detail="Only booked reservations can be checked in"
             )
 
-        reservation.reservation_status = "Arrived"
+        reservation.reservation_status = "Checked-In"
         # reservation.checkin_time = datetime.utcnow()
 
         db.commit()
@@ -1409,12 +1427,12 @@ def reservation_checkout(
         if not reservation:
             raise HTTPException(status_code=404, detail="Reservation not found")
 
-        if reservation.reservation_status != "Arrived":
+        if reservation.reservation_status != "Checked-In":
             raise HTTPException(
-                status_code=400, detail="Only Arrived reservations can be checked out"
+                status_code=400, detail="Only checked-in reservations can be checked out"
             )
 
-        reservation.reservation_status = "Departures"
+        reservation.reservation_status = "Checked-Out"
         # reservation.checkout_time = datetime.utcnow()
 
         db.commit()
@@ -1424,6 +1442,223 @@ def reservation_checkout(
             "message": "Check-out successful",
             "reservation_id": reservation.id,
             "status": reservation.reservation_status,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+
+
+# =====================================================
+# RECORD A PARTIAL PAYMENT AGAINST THE BALANCE DUE
+# =====================================================
+@router.post("/room_reservation_pay/{token}", status_code=status.HTTP_200_OK)
+async def reservation_pay_due_amount(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        user_id, role_id, company_id, auth_token = verify_authentication(request)
+        if not user_id or not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+        paying_amount = payload.get("paying_amount")
+        payment_method = payload.get("payment_method")
+
+        if not payment_method:
+            raise HTTPException(status_code=400, detail="payment_method is required")
+
+        try:
+            paying_amount = float(paying_amount)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="paying_amount must be a number")
+
+        if paying_amount <= 0:
+            raise HTTPException(status_code=400, detail="paying_amount must be greater than 0")
+
+        reservation = (
+            db.query(models.RoomReservation)
+            .filter(
+                models.RoomReservation.token == token,
+                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.status == STATUS,
+            )
+            .first()
+        )
+        if not reservation:
+            raise HTTPException(status_code=404, detail="Reservation not found")
+
+        balance = reservation.balance_amount or 0
+        if paying_amount > balance:
+            raise HTTPException(
+                status_code=400,
+                detail="paying_amount cannot exceed the outstanding balance",
+            )
+
+        reservation.paid_amount = (reservation.paid_amount or 0) + paying_amount
+        reservation.balance_amount = balance - paying_amount
+        reservation.updated_by = user_id
+
+        db.add(
+            models.ReservationAmountPaidHistory(
+                reservation_id=str(reservation.id),
+                user_id=str(user_id),
+                amount=paying_amount,
+                paid_date=TODAY,
+                payment_method=payment_method,
+                status=STATUS,
+                created_by=user_id,
+                company_id=company_id,
+            )
+        )
+
+        db.commit()
+        db.refresh(reservation)
+
+        return {
+            "status": "success",
+            "message": "Payment recorded successfully",
+            "data": {
+                "paid_amount": reservation.paid_amount,
+                "balance_amount": reservation.balance_amount,
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+
+
+# =====================================================
+# REFUND PART OF AN OVERPAYMENT (EXTRA AMOUNT)
+# =====================================================
+@router.post("/room_reservation_refund/{token}", status_code=status.HTTP_200_OK)
+async def reservation_refund_extra_amount(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        user_id, role_id, company_id, auth_token = verify_authentication(request)
+        if not user_id or not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+        refund_amount = payload.get("refund_amount")
+        refund_method = payload.get("refund_method")
+
+        if not refund_method:
+            raise HTTPException(status_code=400, detail="refund_method is required")
+
+        try:
+            refund_amount = float(refund_amount)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="refund_amount must be a number")
+
+        if refund_amount <= 0:
+            raise HTTPException(status_code=400, detail="refund_amount must be greater than 0")
+
+        reservation = (
+            db.query(models.RoomReservation)
+            .filter(
+                models.RoomReservation.token == token,
+                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.status == STATUS,
+            )
+            .first()
+        )
+        if not reservation:
+            raise HTTPException(status_code=404, detail="Reservation not found")
+
+        extra = reservation.extra_amount or 0
+        if refund_amount > extra:
+            raise HTTPException(
+                status_code=400,
+                detail="refund_amount cannot exceed the refundable (extra) amount",
+            )
+
+        reservation.extra_amount = extra - refund_amount
+        reservation.updated_by = user_id
+
+        db.commit()
+        db.refresh(reservation)
+
+        return {
+            "status": "success",
+            "message": "Refund processed successfully",
+            "data": {"extra_amount": reservation.extra_amount},
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )
+
+
+# =====================================================
+# PAYMENT HISTORY FOR A RESERVATION
+# =====================================================
+@router.get("/room_reservation_payments/{token}", status_code=status.HTTP_200_OK)
+def get_reservation_payment_history(
+    token: str,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    try:
+        user_id, role_id, company_id, auth_token = verify_authentication(request)
+        if not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        reservation = (
+            db.query(models.RoomReservation)
+            .filter(
+                models.RoomReservation.token == token,
+                models.RoomReservation.company_id == company_id,
+            )
+            .first()
+        )
+        if not reservation:
+            raise HTTPException(status_code=404, detail="Reservation not found")
+
+        history = (
+            db.query(models.ReservationAmountPaidHistory)
+            .filter(
+                models.ReservationAmountPaidHistory.reservation_id == str(reservation.id),
+                models.ReservationAmountPaidHistory.status == STATUS,
+            )
+            .order_by(models.ReservationAmountPaidHistory.paid_date.desc(), models.ReservationAmountPaidHistory.id.desc())
+            .all()
+        )
+
+        return {
+            "status": "success",
+            "data": [
+                {
+                    "id": h.id,
+                    "amount": h.amount,
+                    "paid_date": h.paid_date,
+                    "payment_method": h.payment_method,
+                }
+                for h in history
+            ],
         }
 
     except HTTPException:

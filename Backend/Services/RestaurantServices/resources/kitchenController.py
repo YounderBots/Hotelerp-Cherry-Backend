@@ -33,7 +33,7 @@ def _auth(request: Request):
 # =====================================================
 class KitchenIn(BaseModel):
     kitchen_name: str
-    kitchen_type: str  # Main | Grill | Tandoor | Bar | Dessert
+    kitchen_type: str  # Main | Grill | Dessert
     printer_name: Optional[str] = None
 
 
@@ -52,7 +52,7 @@ class KotItemStatusIn(BaseModel):
 def create_kitchen(payload: KitchenIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
     kitchen = models.Kitchen(
-        kitchen_code=gen_code("KTC"), is_active="Yes", created_by=user_id, company_id=company_id, **payload.dict()
+        kitchen_code=gen_code("KTC"), is_active=True, created_by=user_id, company_id=company_id, **payload.dict()
     )
     db.add(kitchen)
     db.commit()
@@ -87,6 +87,15 @@ def _kot_with_items(db: Session, kot: models.KitchenOrderTicket):
     menus = db.query(models.RestaurantMenu).filter(models.RestaurantMenu.id.in_(menu_ids)).all() if menu_ids else []
     menu_by_id = {m.id: m for m in menus}
 
+    modifiers = (
+        db.query(models.RestaurantOrderItemModifier).filter(models.RestaurantOrderItemModifier.order_item_id.in_(order_item_ids)).all()
+        if order_item_ids
+        else []
+    )
+    modifiers_by_item = {}
+    for m in modifiers:
+        modifiers_by_item.setdefault(m.order_item_id, []).append(m.modifier_name)
+
     items = []
     for ki in kot_items:
         oi = order_items_by_id.get(ki.order_item_id)
@@ -100,6 +109,9 @@ def _kot_with_items(db: Session, kot: models.KitchenOrderTicket):
                 "preparation_status": ki.preparation_status,
                 "prep_start_time": ki.prep_start_time,
                 "prep_end_time": ki.prep_end_time,
+                "special_instructions": oi.special_instructions if oi else None,
+                "variant_name": oi.variant_name if oi else None,
+                "modifiers": modifiers_by_item.get(ki.order_item_id, []),
             }
         )
 

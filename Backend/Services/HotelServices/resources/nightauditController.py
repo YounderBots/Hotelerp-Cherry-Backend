@@ -2,7 +2,7 @@ import io
 import pandas as pd
 from fastapi import APIRouter, Depends, Request, status, Query
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse, RedirectResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from jose import JWTError
 import jwt
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ from fastapi import HTTPException
 
 router = APIRouter()
 
-#=====================================>>> User Activity Log  
+#=====================================>>> User Activity Log
 
 @router.get("/user_activity_log", status_code=status.HTTP_200_OK)
 def user_activity_log(
@@ -46,76 +46,55 @@ def user_activity_log(
         to_date = today
 
     # -------------------------------
-    # Room Reservation + Room Status
+    # Room Reservation Activity
     # -------------------------------
     room_data = (
-        db.query(
-            models.Room_Reservation,
-            models.Housekeeper_Task.Room_Status
-        )
-        .outerjoin(
-            models.Housekeeper_Task,
-            models.Room_Reservation.Room_No == models.Housekeeper_Task.Room_No
-        )
+        db.query(models.RoomReservation)
         .filter(
-            models.Room_Reservation.company_id == company_id,
-            models.Room_Reservation.Arrival_Date.between(from_date, to_date)
+            models.RoomReservation.company_id == company_id,
+            models.RoomReservation.arrival_date.between(from_date, to_date)
         )
         .all()
     )
 
     formatted_room_data = [
         {
-            "id": r.Room_Reservation.id,
-            "room_no": r.Room_Reservation.Room_No,
-            "reservation_id": r.Room_Reservation.Room_Reservation_ID,
-            "first_name": r.Room_Reservation.First_Name,
-            "last_name": r.Room_Reservation.Last_Name,
-            "phone": r.Room_Reservation.Phone_Number,
-            "email": r.Room_Reservation.Email,
-            "arrival_date": r.Room_Reservation.Arrival_Date,
-            "departure_date": r.Room_Reservation.Departure_Date,
-            "booking_status": r.Room_Reservation.Booking_Status,
-            "room_status": r.Room_Status if r.Room_Status else "Unknown"
+            "id": r.id,
+            "room_no": ", ".join(str(n) for n in r.room_no) if isinstance(r.room_no, list) else r.room_no,
+            "reservation_id": r.room_reservation_id,
+            "first_name": r.first_name,
+            "last_name": r.last_name,
+            "phone": r.phone_number,
+            "email": r.email,
+            "arrival_date": r.arrival_date,
+            "departure_date": r.departure_date,
+            "booking_status": r.reservation_status,
         }
         for r in room_data
     ]
 
     # -------------------------------
     # Housekeeping / Staff Activity
+    # (HousekeeperTask already carries staff name + task type inline —
+    # Employee_Data/Task_Type are separate microservices, not joinable here)
     # -------------------------------
     keeper_data = (
-        db.query(
-            models.Housekeeper_Task,
-            models.Employee_Data.First_Name,
-            models.Employee_Data.Last_Name,
-            models.Task_Type.Type_Name,
-            models.Task_Type.Color
-        )
-        .join(
-            models.Employee_Data,
-            models.Housekeeper_Task.Assign_Staff == models.Employee_Data.id
-        )
-        .join(
-            models.Task_Type,
-            models.Housekeeper_Task.Task_Type == models.Task_Type.id
-        )
+        db.query(models.HousekeeperTask)
         .filter(
-            models.Housekeeper_Task.company_id == company_id,
-            models.Housekeeper_Task.Sch_Date.between(from_date, to_date)
+            models.HousekeeperTask.company_id == company_id,
+            models.HousekeeperTask.schedule_date.between(from_date, to_date)
         )
         .all()
     )
 
     formatted_keeper_data = [
         {
-            "id": k.Housekeeper_Task.id,
-            "employee_id": k.Housekeeper_Task.Employee_ID,
-            "employee_name": f"{k.First_Name} {k.Last_Name}",
-            "room_no": k.Housekeeper_Task.Room_No,
-            "task_type": k.Type_Name,
-            "task_color": k.Color,
-            "task_status": k.Housekeeper_Task.Task_Status
+            "id": k.id,
+            "employee_id": k.employee_id,
+            "employee_name": f"{k.first_name} {k.last_name}",
+            "room_no": k.room_no,
+            "task_type": k.task_type,
+            "task_status": k.task_status
         }
         for k in keeper_data
     ]
@@ -143,9 +122,9 @@ def get_reservation_info(
     company_id: str,
     db: Session = Depends(get_db)
 ):
-    reservation = db.query(models.Room_Reservation).filter(
-        models.Room_Reservation.id == reservation_id,
-        models.Room_Reservation.company_id == company_id
+    reservation = db.query(models.RoomReservation).filter(
+        models.RoomReservation.id == reservation_id,
+        models.RoomReservation.company_id == company_id
     ).first()
 
     if not reservation:
@@ -159,10 +138,10 @@ def get_reservation_info(
 
     return {
         "status": "success",
-        "data": reservation
+        "data": jsonable_encoder(reservation)
     }
 
-#=====================================>>> Keeper Info  
+#=====================================>>> Keeper Info
 
 @router.get("/keeper_info/{task_id}", status_code=status.HTTP_200_OK)
 def keeper_info(
@@ -171,24 +150,10 @@ def keeper_info(
     db: Session = Depends(get_db)
 ):
     keeper = (
-        db.query(
-            models.Housekeeper_Task,
-            models.Employee_Data.First_Name,
-            models.Employee_Data.Last_Name,
-            models.Task_Type.Type_Name,
-            models.Task_Type.Color
-        )
-        .join(
-            models.Employee_Data,
-            models.Housekeeper_Task.Assign_Staff == models.Employee_Data.id
-        )
-        .join(
-            models.Task_Type,
-            models.Housekeeper_Task.Task_Type == models.Task_Type.id
-        )
+        db.query(models.HousekeeperTask)
         .filter(
-            models.Housekeeper_Task.id == task_id,
-            models.Housekeeper_Task.company_id == company_id
+            models.HousekeeperTask.id == task_id,
+            models.HousekeeperTask.company_id == company_id
         )
         .first()
     )
@@ -203,18 +168,17 @@ def keeper_info(
         )
 
     formatted_keeper_info = {
-        "id": keeper.Housekeeper_Task.id,
-        "employee_id": keeper.Housekeeper_Task.Employee_ID,
-        "employee_name": f"{keeper.First_Name} {keeper.Last_Name}",
-        "room_no": keeper.Housekeeper_Task.Room_No,
-        "task_type": keeper.Type_Name,
-        "task_color": keeper.Color,
-        "task_status": keeper.Housekeeper_Task.Task_Status,
-        "schedule_date": keeper.Housekeeper_Task.Sch_Date,
-        "schedule_time": keeper.Housekeeper_Task.Sch_Time,
-        "room_status": keeper.Housekeeper_Task.Room_Status,
-        "special_instructions": keeper.Housekeeper_Task.Special_Instructions,
-        "status": keeper.Housekeeper_Task.status
+        "id": keeper.id,
+        "employee_id": keeper.employee_id,
+        "employee_name": f"{keeper.first_name} {keeper.last_name}",
+        "room_no": keeper.room_no,
+        "task_type": keeper.task_type,
+        "task_status": keeper.task_status,
+        "schedule_date": keeper.schedule_date,
+        "schedule_time": keeper.schedule_time,
+        "room_status": keeper.room_status,
+        "special_instructions": keeper.special_instructions,
+        "status": keeper.status
     }
 
     return {
@@ -222,7 +186,7 @@ def keeper_info(
         "data": formatted_keeper_info
     }
 
-#=====================================>>> Get Paid Amount  
+#=====================================>>> Get Paid Amount
 
 @router.get("/paid_amount", status_code=status.HTTP_200_OK)
 def get_paid_amount(
@@ -232,10 +196,10 @@ def get_paid_amount(
     today = date.today()
 
     total_paid_amount = db.query(
-        func.coalesce(func.sum(models.Room_Reservation.Paid_Amount), 0)
+        func.coalesce(func.sum(models.RoomReservation.paid_amount), 0)
     ).filter(
-        models.Room_Reservation.company_id == company_id,
-        models.Room_Reservation.Arrival_Date == today
+        models.RoomReservation.company_id == company_id,
+        models.RoomReservation.arrival_date == today
     ).scalar()
 
     return {
@@ -244,7 +208,7 @@ def get_paid_amount(
         "total_paid_amount": float(total_paid_amount)
     }
 
-#=====================================>>> Settlement Summary  
+#=====================================>>> Settlement Summary
 
 @router.get("/settlement_summary", status_code=status.HTTP_200_OK)
 def settlement_summary(
@@ -254,25 +218,25 @@ def settlement_summary(
     current_date = date.today()
 
     # Room reservation list for today
-    room_data = db.query(models.Room_Reservation).filter(
-        models.Room_Reservation.company_id == company_id,
-        models.Room_Reservation.Arrival_Date == current_date
+    room_data = db.query(models.RoomReservation).filter(
+        models.RoomReservation.company_id == company_id,
+        models.RoomReservation.arrival_date == current_date
     ).all()
 
     # Total paid amount
     total_paid = db.query(
-        func.coalesce(func.sum(models.Room_Reservation.Paid_Amount), 0)
+        func.coalesce(func.sum(models.RoomReservation.paid_amount), 0)
     ).filter(
-        models.Room_Reservation.company_id == company_id,
-        models.Room_Reservation.Arrival_Date == current_date
+        models.RoomReservation.company_id == company_id,
+        models.RoomReservation.arrival_date == current_date
     ).scalar()
 
     # Total due amount
     total_due = db.query(
-        func.coalesce(func.sum(models.Room_Reservation.Balance_Amount), 0)
+        func.coalesce(func.sum(models.RoomReservation.balance_amount), 0)
     ).filter(
-        models.Room_Reservation.company_id == company_id,
-        models.Room_Reservation.Arrival_Date == current_date
+        models.RoomReservation.company_id == company_id,
+        models.RoomReservation.arrival_date == current_date
     ).scalar()
 
     return {
@@ -282,7 +246,7 @@ def settlement_summary(
             "total_paid": float(total_paid),
             "total_due": float(total_due)
         },
-        "data": room_data
+        "data": jsonable_encoder(room_data)
     }
 
 #=====================================>>> Room Sales (REACT API)
@@ -315,12 +279,12 @@ def room_sales(
     # -------------------------------
     # Room sales data
     # -------------------------------
-    room_data = db.query(models.Room_Reservation).filter(
-        models.Room_Reservation.company_id == company_id,
-        models.Room_Reservation.Booking_Status.in_(["confirmed", "available"]),
-        models.Room_Reservation.Arrival_Date.between(from_date, to_date)
+    room_data = db.query(models.RoomReservation).filter(
+        models.RoomReservation.company_id == company_id,
+        models.RoomReservation.status == CommonWords.STATUS,
+        models.RoomReservation.arrival_date.between(from_date, to_date)
     ).order_by(
-        models.Room_Reservation.Room_No
+        models.RoomReservation.arrival_date
     ).all()
 
     return {
@@ -329,7 +293,7 @@ def room_sales(
             "from_date": from_date,
             "to_date": to_date
         },
-        "data": room_data
+        "data": jsonable_encoder(room_data)
     }
 
 #-------------- Night Auditing Export -------------------------------
@@ -364,12 +328,12 @@ def export_user_activity(
     # -------------------------------
     # Fetch reservation data
     # -------------------------------
-    reservations = db.query(models.Room_Reservation).filter(
-        models.Room_Reservation.company_id == company_id,
+    reservations = db.query(models.RoomReservation).filter(
+        models.RoomReservation.company_id == company_id,
         (
-            models.Room_Reservation.Arrival_Date.between(from_date, to_date)
+            models.RoomReservation.arrival_date.between(from_date, to_date)
         ) | (
-            models.Room_Reservation.Departure_Date.between(from_date, to_date)
+            models.RoomReservation.departure_date.between(from_date, to_date)
         )
     ).all()
 
@@ -378,14 +342,14 @@ def export_user_activity(
     # -------------------------------
     data = []
     for reservation in reservations:
-        full_name = f"{reservation.First_Name} {reservation.Last_Name}"
+        full_name = f"{reservation.first_name} {reservation.last_name}"
         data.append({
-            "Reservation ID": reservation.Room_Reservation_ID,
+            "Reservation ID": reservation.room_reservation_id,
             "Guest Name": full_name,
-            "Phone Number": reservation.Phone_Number,
-            "Arrival Date": reservation.Arrival_Date,
-            "Departure Date": reservation.Departure_Date,
-            "Booking Status": reservation.Booking_Status
+            "Phone Number": reservation.phone_number,
+            "Arrival Date": reservation.arrival_date,
+            "Departure Date": reservation.departure_date,
+            "Booking Status": reservation.reservation_status
         })
 
     df = pd.DataFrame(data)
@@ -453,24 +417,24 @@ def export_room_booked_details(
     # -------------------------------
     # Fetch reservation data
     # -------------------------------
-    reservations = db.query(models.Room_Reservation).filter(
-        models.Room_Reservation.company_id == company_id,
-        models.Room_Reservation.Arrival_Date.between(from_date, to_date)
-    ).order_by(models.Room_Reservation.Arrival_Date.asc()).all()
+    reservations = db.query(models.RoomReservation).filter(
+        models.RoomReservation.company_id == company_id,
+        models.RoomReservation.arrival_date.between(from_date, to_date)
+    ).order_by(models.RoomReservation.arrival_date.asc()).all()
 
     # -------------------------------
     # Prepare export data
     # -------------------------------
     data = []
     for reservation in reservations:
-        full_name = f"{reservation.First_Name} {reservation.Last_Name}"
+        full_name = f"{reservation.first_name} {reservation.last_name}"
         data.append({
-            "Reservation ID": reservation.Room_Reservation_ID,
+            "Reservation ID": reservation.room_reservation_id,
             "Guest Name": full_name,
-            "Phone Number": reservation.Phone_Number,
-            "Arrival Date": reservation.Arrival_Date,
-            "Departure Date": reservation.Departure_Date,
-            "Booking Status": reservation.Booking_Status
+            "Phone Number": reservation.phone_number,
+            "Arrival Date": reservation.arrival_date,
+            "Departure Date": reservation.departure_date,
+            "Booking Status": reservation.reservation_status
         })
 
     df = pd.DataFrame(data)
@@ -533,25 +497,25 @@ def export_hsk_details(
     # -------------------------------
     # Fetch HSK task data
     # -------------------------------
-    hsk_tasks = db.query(models.Housekeeper_Task).filter(
-        models.Housekeeper_Task.company_id == company_id,
-        models.Housekeeper_Task.Sch_Date == sch_date
-    ).order_by(models.Housekeeper_Task.Room_No.asc()).all()
+    hsk_tasks = db.query(models.HousekeeperTask).filter(
+        models.HousekeeperTask.company_id == company_id,
+        models.HousekeeperTask.schedule_date == sch_date
+    ).order_by(models.HousekeeperTask.room_no.asc()).all()
 
     # -------------------------------
     # Prepare export data
     # -------------------------------
     data = []
     for task in hsk_tasks:
-        full_name = f"{task.First_Name} {task.Sur_Name}"
+        full_name = f"{task.first_name} {task.last_name}"
         data.append({
-            "Employee ID": task.Employee_ID,
+            "Employee ID": task.employee_id,
             "Employee Name": full_name,
-            "Room Number": task.Room_No,
-            "Task Type": task.Task_Type,
-            "Assigned Staff": task.Assign_Staff,
-            "Task Status": task.Task_Status,
-            "Schedule Date": task.Sch_Date
+            "Room Number": task.room_no,
+            "Task Type": task.task_type,
+            "Assigned Staff": task.assign_staff,
+            "Task Status": task.task_status,
+            "Schedule Date": task.schedule_date
         })
 
     df = pd.DataFrame(data)
@@ -614,9 +578,9 @@ async def export_settlement_summary(
         to_date = today
 
     # Fetch reservation data
-    settlement_data = db.query(models.Room_Reservation).filter(
-        models.Room_Reservation.company_id == company_id,
-        models.Room_Reservation.Arrival_Date.between(from_date, to_date)
+    settlement_data = db.query(models.RoomReservation).filter(
+        models.RoomReservation.company_id == company_id,
+        models.RoomReservation.arrival_date.between(from_date, to_date)
     ).all()
 
     data = []
@@ -624,21 +588,21 @@ async def export_settlement_summary(
     total_overall = 0
 
     for row in settlement_data:
-        paid_amount = row.Paid_Amount or 0
-        overall_amount = row.Overall_Amount or 0
+        paid_amount = row.paid_amount or 0
+        overall_amount = row.overall_amount or 0
 
         total_paid += paid_amount
         total_overall += overall_amount
 
         data.append({
-            "Room Reservation ID": row.Room_Reservation_ID,
-            "Name": f"{row.First_Name} {row.Last_Name}",
+            "Room Reservation ID": row.room_reservation_id,
+            "Name": f"{row.first_name} {row.last_name}",
             "Overall Amount": overall_amount,
             "Paid Amount": paid_amount,
-            "Balance Amount": row.Balance_Amount,
-            "Arrival Date": row.Arrival_Date,
-            "Departure Date": row.Departure_Date,
-            "Reservation Status": row.Booking_Status
+            "Balance Amount": row.balance_amount,
+            "Arrival Date": row.arrival_date,
+            "Departure Date": row.departure_date,
+            "Reservation Status": row.reservation_status
         })
 
     df = pd.DataFrame(data)
@@ -717,72 +681,55 @@ async def night_audit_process(
         # Audit date (yesterday)
         audit_date = (dt.datetime.now() - timedelta(days=1)).date()
 
-        # 1. Reservation Position Check
-        reservations = db.query(models.Room_Reservation).filter(
-            models.Room_Reservation.company_id == company_id,
-            models.Room_Reservation.Arrival_Date <= audit_date,
-            models.Room_Reservation.Departure_Date >= audit_date,
-            models.Room_Reservation.status == CommonWords.STATUS
+        # Reservation position for the audit date (stays spanning that night)
+        reservations = db.query(models.RoomReservation).filter(
+            models.RoomReservation.company_id == company_id,
+            models.RoomReservation.arrival_date <= audit_date,
+            models.RoomReservation.departure_date >= audit_date,
+            models.RoomReservation.status == CommonWords.STATUS
         ).all()
 
-        # 2. Room Tariff Verification
-        room_tariffs = db.query(models.Room_Tariff).filter(
-            models.Room_Tariff.company_id == company_id,
-            models.Room_Tariff.Effective_Date <= audit_date,
-            models.Room_Tariff.Expiry_Date >= audit_date,
-            models.Room_Tariff.status == CommonWords.STATUS
-        ).all()
-
-        # 3. Settlement Verification
-        settlements = db.query(models.Payment_Transactions).filter(
-            models.Payment_Transactions.company_id == company_id,
-            func.date(models.Payment_Transactions.Transaction_Date) == audit_date,
-            models.Payment_Transactions.status == CommonWords.STATUS
-        ).all()
-
-        # 4. Room Revenue Calculation
+        # Room revenue booked to arrive on the audit date
         room_revenue = db.query(
-            func.coalesce(func.sum(models.Room_Reservation.Paid_Amount), 0)
+            func.coalesce(func.sum(models.RoomReservation.room_amount), 0)
         ).filter(
-            models.Room_Reservation.company_id == company_id,
-            func.date(models.Room_Reservation.Arrival_Date) == audit_date,
-            models.Room_Reservation.status == CommonWords.STATUS
+            models.RoomReservation.company_id == company_id,
+            models.RoomReservation.arrival_date == audit_date,
+            models.RoomReservation.status == CommonWords.STATUS
         ).scalar()
 
-        # 5. Extra Charges Calculation
+        # Extra charges (RoomReservation carries this as a plain column here,
+        # not a separate Extra_Charges table)
         extra_charges = db.query(
-            func.coalesce(func.sum(models.Extra_Charges.Amount), 0)
+            func.coalesce(func.sum(models.RoomReservation.extra_charges), 0)
         ).filter(
-            models.Extra_Charges.company_id == company_id,
-            func.date(models.Extra_Charges.Charge_Date) == audit_date,
-            models.Extra_Charges.status == CommonWords.STATUS
+            models.RoomReservation.company_id == company_id,
+            models.RoomReservation.arrival_date == audit_date,
+            models.RoomReservation.status == CommonWords.STATUS
         ).scalar()
 
-        # 6. Payment Summary
+        # Payment summary by payment_method_id (PaymentMethod master lives in
+        # MasterDataServices, so only the id is available here)
         payment_summary_query = (
             db.query(
-                models.Payment_Mode.Mode_Name,
-                func.coalesce(func.sum(models.Payment_Transactions.Amount), 0).label("total_amount")
-            )
-            .join(
-                models.Payment_Transactions,
-                models.Payment_Transactions.Payment_Mode == models.Payment_Mode.id
+                models.RoomReservation.payment_method_id,
+                func.coalesce(func.sum(models.RoomReservation.paid_amount), 0).label("total_amount")
             )
             .filter(
-                models.Payment_Transactions.company_id == company_id,
-                func.date(models.Payment_Transactions.Transaction_Date) == audit_date,
-                models.Payment_Transactions.status == CommonWords.STATUS
+                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.arrival_date == audit_date,
+                models.RoomReservation.status == CommonWords.STATUS
             )
-            .group_by(models.Payment_Mode.Mode_Name)
+            .group_by(models.RoomReservation.payment_method_id)
             .all()
         )
 
         payment_summary = [
             {
-                "mode": mode,
+                "payment_method_id": payment_method_id,
                 "amount": amount
             }
-            for mode, amount in payment_summary_query
+            for payment_method_id, amount in payment_summary_query
         ]
 
         total_payments = sum(item["amount"] for item in payment_summary)
@@ -791,8 +738,6 @@ async def night_audit_process(
         audit_report = {
             "audit_date": audit_date,
             "reservations_count": len(reservations),
-            "room_tariffs_count": len(room_tariffs),
-            "settlements_count": len(settlements),
             "room_revenue": room_revenue,
             "extra_charges": extra_charges,
             "payment_summary": payment_summary,
@@ -814,128 +759,3 @@ async def night_audit_process(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
-
-# Settlement Summary (React API)
-
-@router.get("/settlement_summary")
-async def settlement_summary(
-    request: Request,
-    db: Session = Depends(get_db),
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None
-):
-    # Session validation
-    if "sessid" not in request.session:
-        return RedirectResponse(
-            CommonWords.LOGINER_URL,
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT
-        )
-
-    try:
-        # JWT validation
-        token = request.session["sessid"]
-        payload = jwt.decode(
-            token,
-            BaseConfig.SECRET_KEY,
-            algorithms=[BaseConfig.ALGORITHM]
-        )
-
-        created_by = payload.get("user_id")
-        company_id = payload.get("company_id")
-
-        if not created_by or not company_id:
-            return RedirectResponse(
-                CommonWords.LOGINER_URL,
-                status_code=status.HTTP_307_TEMPORARY_REDIRECT
-            )
-
-        # Date handling
-        if from_date and to_date:
-            try:
-                from_date = dt.datetime.strptime(from_date, "%Y-%m-%d").date()
-                to_date = dt.datetime.strptime(to_date, "%Y-%m-%d").date()
-            except ValueError:
-                return JSONResponse(
-                    content={"status": "error", "message": "Invalid date format. Use YYYY-MM-DD"},
-                    status_code=status.HTTP_400_BAD_REQUEST
-                )
-        else:
-            today = date.today()
-            from_date = today - timedelta(days=1)
-            to_date = today
-
-        # Fetch settlement data
-        room_data = db.query(models.Room_Reservation).filter(
-            models.Room_Reservation.company_id == company_id,
-            models.Room_Reservation.Arrival_Date.between(from_date, to_date),
-            models.Room_Reservation.status == CommonWords.STATUS
-        ).order_by(models.Room_Reservation.Arrival_Date.asc()).all()
-
-        # Calculate totals
-        total_paid = db.query(
-            func.coalesce(func.sum(models.Room_Reservation.Paid_Amount), 0)
-        ).filter(
-            models.Room_Reservation.company_id == company_id,
-            models.Room_Reservation.Arrival_Date.between(from_date, to_date),
-            models.Room_Reservation.status == CommonWords.STATUS
-        ).scalar()
-
-        total_due = db.query(
-            func.coalesce(func.sum(models.Room_Reservation.Balance_Amount), 0)
-        ).filter(
-            models.Room_Reservation.company_id == company_id,
-            models.Room_Reservation.Arrival_Date.between(from_date, to_date),
-            models.Room_Reservation.status == CommonWords.STATUS
-        ).scalar()
-
-        total_overall = db.query(
-            func.coalesce(func.sum(models.Room_Reservation.Overall_Amount), 0)
-        ).filter(
-            models.Room_Reservation.company_id == company_id,
-            models.Room_Reservation.Arrival_Date.between(from_date, to_date),
-            models.Room_Reservation.status == CommonWords.STATUS
-        ).scalar()
-
-        # Format response data
-        data = []
-        for r in room_data:
-            data.append({
-                "reservation_id": r.Room_Reservation_ID,
-                "guest_name": f"{r.First_Name} {r.Last_Name}",
-                "room_no": r.Room_No,
-                "arrival_date": r.Arrival_Date,
-                "departure_date": r.Departure_Date,
-                "overall_amount": r.Overall_Amount,
-                "paid_amount": r.Paid_Amount,
-                "balance_amount": r.Balance_Amount,
-                "booking_status": r.Booking_Status
-            })
-
-        return JSONResponse(
-            content={
-                "status": "success",
-                "filters": {
-                    "from_date": from_date,
-                    "to_date": to_date
-                },
-                "summary": {
-                    "total_overall": total_overall,
-                    "total_paid": total_paid,
-                    "total_due": total_due
-                },
-                "data": data
-            },
-            status_code=status.HTTP_200_OK
-        )
-
-    except JWTError:
-        return RedirectResponse(
-            CommonWords.LOGINER_URL,
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT
-        )
-    except Exception as e:
-        return JSONResponse(
-            content={"status": "error", "message": str(e)},
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-

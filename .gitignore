@@ -4,3 +4,41 @@ Thumbs.db
 
 # Crash/debug dumps
 *.stackdump
+
+# Service run logs (bar_services.log, restaurant_services.log, etc.)
+*.log
+.run-logs/
+
+# Secrets — never commit a populated env file. See .env.example for the contract.
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend build output
+node_modules/
+Frontend/dist/
+Frontend/build/
+Frontend/storybook-static/
+Frontend/coverage/
+.vite/
+
+# Editor
+.idea/
+*.swp
+
+# Uploaded media served from the services at runtime
+Backend/Services/*/templates/static/uploads/
+
+# Standalone nested repo, not part of this project
+/hotelerp.in/
