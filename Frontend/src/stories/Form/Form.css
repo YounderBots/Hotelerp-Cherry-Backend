@@ -33,10 +33,20 @@
   gap: var(--spacing-lg);
 }
 
+/* Large screens: up to 3 fields per row. Medium: 2. Mobile: 1
+   (see the media queries below). */
 .form-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--spacing-md);
+}
+
+.form-row--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-row--1 {
+  grid-template-columns: 1fr;
 }
 
 .form-actions {
@@ -81,21 +91,37 @@
 }
 
 /* Responsive */
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
+  .form-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
   .form {
     padding: var(--spacing-lg);
   }
-  
+
   .form-row {
     grid-template-columns: 1fr;
     gap: var(--spacing-sm);
   }
-  
+
   .form-actions {
     flex-direction: column;
   }
-  
+
   .form-actions .btn {
     width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .form {
+    padding: var(--spacing-md);
+  }
+
+  .form-title {
+    font-size: 1.25rem;
   }
 }

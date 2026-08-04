@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import Modal from "../stories/Modal";
+import Modal, { ConfirmModal } from "../stories/Modal";
+import Input from "../stories/Form/Input";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const ReservationStatus = () => {
@@ -12,6 +14,7 @@ const ReservationStatus = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
 
   const initialForm = {
     statusName: "",
@@ -143,9 +146,12 @@ const ReservationStatus = () => {
   };
 
   const handleDelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this Reservation Status?")) {
-      deleteReserveStatus(id);
-    }
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    deleteReserveStatus(deleteId);
+    setDeleteId(null);
   };
 
   useEffect(() => {
@@ -205,24 +211,9 @@ const ReservationStatus = () => {
                   justifyContent: "center",
                 }}
               >
-                <button
-                  className="table-action-btn view"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handleDelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -235,28 +226,24 @@ const ReservationStatus = () => {
         <Modal
           isOpen={showViewModal}
           title="View Reservation Status"
-          onClose={() => setShowViewModal(false)}
-          size="medium"
+          onClose={closeViewModal}
+          size="small"
+          bodyLayout="grid"
         >
-          <div className="modal-body single view">
-            <div className="form-group">
-              <label>Reservation Status</label>
-              <input value={viewData.reservation_status} disabled />
-            </div>
+          <Input label="Reservation Status" disabled value={viewData.reservation_status} />
 
-            <div className="form-group">
-              <label>Color</label>
-              <div style={{ display: "flex", justifyContent: "left" }}>
-                <span
-                  style={{
-                    width: "28px",
-                    height: "28px",
-                    borderRadius: "50%",
-                    backgroundColor: viewData.color,
-                    border: "1px solid #e5e7eb",
-                  }}
-                />
-              </div>
+          <div className="form-group">
+            <label>Color</label>
+            <div style={{ display: "flex", justifyContent: "left" }}>
+              <span
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "50%",
+                  backgroundColor: viewData.color,
+                  border: "1px solid #e5e7eb",
+                }}
+              />
             </div>
           </div>
         </Modal>
@@ -269,8 +256,8 @@ const ReservationStatus = () => {
           title={editId ? "Edit Reservation Status" : "Add Reservation Status"}
           onClose={() => setShowModal(false)}
           showFooter
-          size="large"
-          bodyLayout="single"
+          size="small"
+          bodyLayout="grid"
           actions={[
             {
               label: "Close",
@@ -285,44 +272,35 @@ const ReservationStatus = () => {
             },
           ]}
         >
-
-          <div className="modal-body single">
-            <div className="form-group">
-              <label>Reservation Status</label>
-              <input
-                name="statusName"
-                value={formData.statusName}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Color</label>
-              <input
-                type="color"
-                name="color"
-                value={formData.color}
-                onChange={handleChange}
-                style={{ height: "42px", padding: "4px" }}
-              />
-            </div>
-          </div>
+          <Input
+            label="Reservation Status"
+            name="statusName"
+            value={formData.statusName}
+            onChange={handleChange}
+          />
+          <Input
+            label="Color"
+            type="color"
+            name="color"
+            value={formData.color}
+            onChange={handleChange}
+            style={{ height: "42px", padding: "4px" }}
+          />
         </Modal>
       )}
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Reservation Status"
+        confirmText="Delete"
+        destructive
+      >
+        Are you sure you want to delete this reservation status? This action cannot be undone.
+      </ConfirmModal>
+
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
 
     </>
   );

@@ -468,10 +468,8 @@ main {
 /* RIGHT SIDE */
 .content-area {
     display: flex;
-    flex: 1;    
-}
-.main-content::-webkit-scrollbar{
-    display: none;
+    flex: 1;
+    min-width: 0;
 }
 /* SUB MENU */
 .sub-menu {
@@ -519,7 +517,27 @@ main {
 /* MAIN CONTENT */
 .main-content {
     flex: 1;
+    min-width: 0;
     padding: 24px;
+}
+
+/* Visually hidden until focused, so keyboard users get a way past the nav
+   without adding anything to the visual design. */
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 1000;
+    padding: 0.75rem 1rem;
+    color: var(--text-white);
+    background: var(--primary-color);
+    border-radius: 0 0 var(--border-radius) 0;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.skip-link:focus {
+    left: 0;
 }
 
 .content-box {
@@ -842,6 +860,36 @@ main {
 
   .mobile-only {
     display: flex;
+  }
+}
+
+/* Very small phones — the navbar only has room for the logo, avatar and
+   menu button once the name/role text is dropped. */
+@media (max-width: 480px) {
+  .navbar {
+    height: 60px;
+    padding: 0 12px;
+  }
+
+  .logo-container img {
+    height: 44px;
+  }
+
+  .navbar-right {
+    gap: 8px;
+  }
+
+  .profile-info {
+    display: none;
+  }
+
+  .profile-box {
+    padding: 4px;
+  }
+
+  .icon-button.mobile-only {
+    width: 44px;
+    height: 44px;
   }
 }
 

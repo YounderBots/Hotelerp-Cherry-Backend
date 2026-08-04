@@ -1,12 +1,25 @@
 import React, { useState, useEffect } from "react";
 import Button from "../../stories/Button";
 
+// Maps each selectable rate type (Card.jsx / AddNewReservation.jsx) to the
+// matching per-night (or per-week) rate column on the room_types master record.
+const RATE_FIELD = {
+  daily: "daily_rate",
+  weekly: "weekly_rate",
+  bed_only: "bed_only_rate",
+  bed_breakfast: "bed_and_breakfast_rate",
+  half_board: "half_board_rate",
+  full_board: "full_board_rate",
+};
+
 const Payment = ({
   taxTypes,
   discountTypes,
   paymentMethods,
   selectedRooms,
   roomTypes,
+  perRoom = {},
+  totalNights = 1,
   setpaymentData
 }) => {
   const [paymentData, setPaymentData] = useState({
@@ -29,47 +42,33 @@ const Payment = ({
     total_amount: 0
   });
 
+  // Recompute the room amount whenever the selected rooms, their chosen rate
+  // type, or the stay length changes — weekly rates bill per week block,
+  // every other rate type bills per night. Also suggests the extra-bed cost
+  // (per bed, for the whole stay) from the first selected room's type — staff
+  // can still override it by hand for negotiated rates.
   useEffect(() => {
-    const calculateRoomAmount = () => {
-      let total = 0;
-      selectedRooms.forEach(room => {
-        const roomType = roomTypes.find(t => Number(t.id) === Number(room.room_type_id));
-        if (roomType && roomType.room_rate) {
-          total += parseFloat(roomType.room_rate) || 0;
-        }
-      });
-      return total;
-    };
-
-    const initialRoomAmount = calculateRoomAmount();
-
-    setPaymentData(prev => {
-      const roomAmount = prev.room_amount || initialRoomAmount;
-      const extraCharges = prev.extra_charges || 0;
-      const extraBedTotal = (prev.extra_bed_count || 0) * (prev.extra_bed_cost || 0);
-      const taxableAmount = roomAmount + extraCharges + extraBedTotal;
-
-      const taxAmount = taxableAmount * (prev.tax_percentage || 0) / 100;
-      const discountAmount = taxableAmount * (prev.discount_percentage || 0) / 100;
-
-      const overallAmount = roomAmount + extraCharges + extraBedTotal + taxAmount - discountAmount;
-
-      const balanceAmount = overallAmount - (prev.paying_amount || 0);
-      const extraAmount = balanceAmount < 0 ? Math.abs(balanceAmount) : 0;
-      const finalBalance = balanceAmount < 0 ? 0 : balanceAmount;
-
-      return {
-        ...prev,
-        room_amount: roomAmount,
-        tax_amount: taxAmount,
-        discount_amount: discountAmount,
-        overall_amount: overallAmount,
-        total_amount: overallAmount,
-        balance_amount: finalBalance,
-        extra_amount: extraAmount
-      };
+    let total = 0;
+    selectedRooms.forEach(room => {
+      const roomType = roomTypes.find(t => Number(t.id) === Number(room.room_type_id));
+      if (!roomType) return;
+      const rateType = perRoom?.[room.id]?.rateType || "daily";
+      const rateField = RATE_FIELD[rateType] || RATE_FIELD.daily;
+      const rate = parseFloat(roomType[rateField]) || 0;
+      const nights = Math.max(1, totalNights || 1);
+      const units = rateType === "weekly" ? Math.ceil(nights / 7) : nights;
+      total += rate * units;
     });
-  }, []);
+
+    const firstRoomType = selectedRooms[0]
+      ? roomTypes.find(t => Number(t.id) === Number(selectedRooms[0].room_type_id))
+      : null;
+    const bedCostPerNight = parseFloat(firstRoomType?.bed_cost) || 0;
+    const extraBedCost = bedCostPerNight * Math.max(1, totalNights || 1);
+
+    setPaymentData(prev => ({ ...prev, room_amount: total, extra_bed_cost: extraBedCost }));
+     
+  }, [selectedRooms, roomTypes, perRoom, totalNights]);
 
   useEffect(() => {
     const roomAmount = paymentData.room_amount || 0;

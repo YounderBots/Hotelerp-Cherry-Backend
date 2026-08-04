@@ -1,17 +1,31 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, Trash2, X } from "lucide-react";
-import "../../MasterData/MasterData.css";
-import APICall from "../../APICalls/APICalls";
+import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import IconButton from "../../stories/IconButton";
+import { Eye, Pencil, Trash2 } from "lucide-react";
+import APICall, { ApiError } from "../../APICalls/APICalls";
+
+// Bookkeeping columns the API returns on every row. They are meaningless to a
+// user and were previously dumped into the View dialog alongside the real data.
+const INTERNAL_FIELDS = new Set([
+  "company_id", "created_by", "created_at", "updated_at", "updated_by", "status",
+]);
 
 const RoomIncidentLog = () => {
   const [data, setData] = useState([]);
   const [rooms, setRooms] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const initialForm = {
     roomNo: "",
@@ -31,52 +45,74 @@ const RoomIncidentLog = () => {
 
   /* ================= API CALLS ================= */
 
-  const getRoomIncidentLog = async () => {
+  // Errors were swallowed into console.error, so a failed load left an empty
+  // table that looked like "no incidents" rather than "this did not load".
+  const errMsg = (err, fallback) =>
+    (err instanceof ApiError && err.message) ? err.message : fallback;
+
+  const getRoomIncidentLog = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await APICall.getT("/hotel/roomincident_log");
-      setData(res.data.data);
+      setData(Array.isArray(res?.data?.data) ? res.data.data : []);
+      setError("");
     } catch (err) {
-      console.error(err);
+      setData([]);
+      setError(errMsg(err, "Failed to load incident logs."));
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
-  const getAllRooms = async () => {
+  const getAllRooms = useCallback(async () => {
     try {
       const res = await APICall.getT("/masterdata/room");
-      setRooms(res.data);
+      setRooms(Array.isArray(res?.data) ? res.data : []);
     } catch (err) {
-      console.error(err);
+      // Non-fatal: the table still renders, the room picker is just empty.
+      setError((prev) => prev || errMsg(err, "Could not load the room list."));
     }
-  };
+  }, []);
 
   const createRoomIncidentLog = async () => {
-    try {
-      const form = new FormData();
+    const form = new FormData();
 
-      form.append("room_id", formData.roomNo);
-      form.append("incident_date", formData.incidentDate);
-      form.append("incident_time", formData.incidentTime);
-      form.append("incident_description", formData.incidentDescription);
+    form.append("room_id", formData.roomNo);
+    form.append("incident_date", formData.incidentDate);
+    form.append("incident_time", formData.incidentTime);
+    form.append("incident_description", formData.incidentDescription);
 
-      form.append("involved_staff", formData.housekeepingStaff || "");
-      form.append("severity", formData.severity || "");
-      form.append("witnesses", formData.witnesses || "");
-      form.append("actions_taken", formData.actionsTaken || "");
-      form.append("reported_by", formData.reportedBy || "");
-      form.append("report_date", formData.reportDate || "");
+    form.append("involved_staff", formData.housekeepingStaff || "");
+    form.append("severity", formData.severity || "");
+    form.append("witnesses", formData.witnesses || "");
+    form.append("actions_taken", formData.actionsTaken || "");
+    form.append("reported_by", formData.reportedBy || "");
+    form.append("report_date", formData.reportDate || "");
 
-      if (formData.attachments) {
-        form.append("attachment_file", formData.attachments);
-      }
-
-      await APICall.postT("/hotel/roomincident_log", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      getRoomIncidentLog();
-    } catch (err) {
-      console.error(err);
+    if (formData.attachments) {
+      form.append("attachment_file", formData.attachments);
     }
+
+    await APICall.postT("/hotel/roomincident_log", form);
+  };
+
+  // The update path never existed on this page: handleSave always POSTed, so
+  // editing an incident silently created a duplicate. PUT /roomincident_log
+  // takes JSON and requires numeric ids.
+  const updateRoomIncidentLog = async () => {
+    await APICall.putT("/hotel/roomincident_log", {
+      id: Number(editId),
+      room_id: Number(formData.roomNo),
+      incident_date: formData.incidentDate,
+      incident_time: formData.incidentTime,
+      incident_description: formData.incidentDescription,
+      involved_staff: formData.housekeepingStaff || "",
+      severity: formData.severity || "",
+      witnesses: formData.witnesses || "",
+      actions_taken: formData.actionsTaken || "",
+      reported_by: formData.reportedBy || "",
+      report_date: formData.reportDate || "",
+    });
   };
 
   /* ================= HANDLERS ================= */
@@ -90,25 +126,58 @@ const RoomIncidentLog = () => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Surfaced in the dialog rather than through alert(), which blocks the
+    // page and does not match how the rest of the app reports problems.
     const allowed = ["image/jpeg", "image/png", "application/pdf"];
     if (!allowed.includes(file.type)) {
-      alert("Only JPG, PNG, or PDF allowed");
+      setFormError("Attachments must be a JPG, PNG or PDF.");
+      e.target.value = "";
+      return;
+    }
+    const MAX_BYTES = 5 * 1024 * 1024; // matches UPLOAD_MAX_BYTES on the server
+    if (file.size > MAX_BYTES) {
+      setFormError("Attachments must be 5 MB or smaller.");
       e.target.value = "";
       return;
     }
 
+    setFormError("");
     setFormData((prev) => ({ ...prev, attachments: file }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.roomNo || !formData.incidentDate) {
-      alert("Room No & Incident Date required");
+      setFormError("Room number and incident date are required.");
       return;
     }
+    if (!formData.incidentDescription?.trim()) {
+      setFormError("Please describe the incident.");
+      return;
+    }
+    setFormError("");
+    setSaving(true);
+    try {
+      // Branch on editId. This used to call create unconditionally, so every
+      // save from the Edit dialog appended a second copy of the record.
+      if (editId) {
+        await updateRoomIncidentLog();
+      } else {
+        await createRoomIncidentLog();
+      }
+      closeModal();
+      await getRoomIncidentLog();
+    } catch (err) {
+      setFormError(errMsg(err, editId ? "Could not update the incident." : "Could not save the incident."));
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    createRoomIncidentLog();
+  const closeModal = () => {
     setShowModal(false);
     setFormData(initialForm);
+    setEditId(null);
+    setFormError("");
   };
 
   const handleEdit = (row) => {
@@ -129,8 +198,21 @@ const RoomIncidentLog = () => {
     setShowModal(true);
   };
 
-  const handleDelete = (id) => {
-    setData((prev) => prev.filter((item) => item.id !== id));
+  // This used to filter the row out of local state and never call the API, so
+  // a "deleted" incident came straight back on the next refresh.
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setSaving(true);
+    try {
+      await APICall.deleteT(`/hotel/roomincident_log/${pendingDelete.id}`);
+      setPendingDelete(null);
+      await getRoomIncidentLog();
+    } catch (err) {
+      setError(errMsg(err, "Could not delete the incident."));
+      setPendingDelete(null);
+    } finally {
+      setSaving(false);
+    }
   };
 
   /* ================= EFFECT ================= */
@@ -138,18 +220,31 @@ const RoomIncidentLog = () => {
   useEffect(() => {
     getRoomIncidentLog();
     getAllRooms();
-  }, []);
+  }, [getRoomIncidentLog, getAllRooms]);
 
   /* ================= UI ================= */
 
   return (
     <>
+      {/* A failed load previously left an empty table, which reads as "there are
+          no incidents" rather than "this did not load". */}
+      {error && (
+        <div role="alert" style={{ marginBottom: 12, color: "var(--error-color)" }}>
+          {error}{" "}
+          <button type="button" onClick={getRoomIncidentLog} style={{ textDecoration: "underline" }}>
+            Retry
+          </button>
+        </div>
+      )}
+
       <TableTemplate
         title="Room Incident Log"
         hasActionButton
         searchable
         pagination
         exportable
+        loading={loading}
+        emptyMessage="No incidents have been logged yet."
         actionButton={{
           label: "Add Incident",
           onClick: () => setShowModal(true),
@@ -190,15 +285,9 @@ const RoomIncidentLog = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setViewData(row)}>
-                  <Eye size={16} />
-                </button>
-                <button onClick={() => handleEdit(row)}>
-                  <Pencil size={16} />
-                </button>
-                <button onClick={() => handleDelete(row.id)}>
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => setViewData(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => setPendingDelete(row)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -209,99 +298,116 @@ const RoomIncidentLog = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Incident</h3>
-              <button onClick={() => setViewData(null)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body single view">
-              {Object.entries(viewData).map(([k, v]) => (
-                <div className="form-group" key={k}>
-                  <label>{k.replace(/_/g, " ")}</label>
-                  <input value={v || ""} disabled />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen={!!viewData}
+          title="View Incident"
+          onClose={() => setViewData(null)}
+          size="large"
+          bodyLayout="grid"
+          viewMode
+        >
+          {Object.entries(viewData)
+            .filter(([k]) => !INTERNAL_FIELDS.has(k))
+            .map(([k, v]) => (
+              <Input key={k} label={k.replace(/_/g, " ")} value={v ?? ""} disabled />
+            ))}
+        </Modal>
       )}
 
-      {/* ================= ADD MODAL ================= */}
+      {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Add Incident</h3>
-              <button onClick={() => setShowModal(false)}>
-                <X size={18} />
-              </button>
+        <Modal
+          isOpen={showModal}
+          // The title said "Add Incident" even when editing an existing one.
+          title={editId ? "Edit Incident" : "Add Incident"}
+          onClose={closeModal}
+          showFooter
+          size="xlarge"
+          bodyLayout="grid"
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
+            {
+              label: saving ? "Saving…" : (editId ? "Update" : "Submit"),
+              variant: "primary",
+              onClick: handleSave,
+              disabled: saving,
+            },
+          ]}
+        >
+          {formError && (
+            <div role="alert" style={{ gridColumn: "1 / -1", color: "var(--error-color)" }}>
+              {formError}
             </div>
+          )}
+          <Select
+            label="Room Number"
+            name="roomNo"
+            value={formData.roomNo}
+            onChange={handleChange}
+            placeholder="Select Room"
+            options={rooms.map((r) => ({ value: r.id, label: r.room_no }))}
+          />
 
-            <div className="modal-body grid">
-              <div className="form-group">
-                <label>Room Number</label>
-                <select name="roomNo" value={formData.roomNo} onChange={handleChange}>
-                  <option value="">Select Room</option>
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.room_no}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {[
+            ["Incident Date", "incidentDate", "date"],
+            ["Incident Time", "incidentTime", "time"],
+            ["Description", "incidentDescription"],
+            ["Housekeeping Staff", "housekeepingStaff"],
+            ["Witnesses", "witnesses"],
+            ["Actions Taken", "actionsTaken"],
+            ["Reported By", "reportedBy"],
+            ["Report Date", "reportDate", "date"],
+          ].map(([label, name, type]) => (
+            <Input
+              key={name}
+              label={label}
+              type={type || "text"}
+              name={name}
+              value={formData[name]}
+              onChange={handleChange}
+            />
+          ))}
 
-              {[
-                ["Incident Date", "incidentDate", "date"],
-                ["Incident Time", "incidentTime", "time"],
-                ["Description", "incidentDescription"],
-                ["Housekeeping Staff", "housekeepingStaff"],
-                ["Witnesses", "witnesses"],
-                ["Actions Taken", "actionsTaken"],
-                ["Reported By", "reportedBy"],
-                ["Report Date", "reportDate", "date"],
-              ].map(([label, name, type]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input
-                    type={type || "text"}
-                    name={name}
-                    value={formData[name]}
-                    onChange={handleChange}
-                  />
-                </div>
-              ))}
+          <Select
+            label="Severity"
+            name="severity"
+            value={formData.severity}
+            onChange={handleChange}
+            placeholder="Select"
+            options={[
+              { value: "Low", label: "Low" },
+              { value: "Medium", label: "Medium" },
+              { value: "High", label: "High" },
+              { value: "Critical", label: "Critical" },
+            ]}
+          />
 
-              <div className="form-group">
-                <label>Severity</label>
-                <select name="severity" value={formData.severity} onChange={handleChange}>
-                  <option value="">Select</option>
-                  <option>Low</option>
-                  <option>Medium</option>
-                  <option>High</option>
-                  <option>Critical</option>
-                </select>
-              </div>
-
-              <div className="form-group" style={{ gridColumn: "1/-1" }}>
-                <label>Attachment</label>
-                <input type="file" onChange={handleFileChange} />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={() => setShowModal(false)}>
-                Close
-              </button>
-              <button className="btn primary" onClick={handleSave}>
-                Submit
-              </button>
-            </div>
+          <div style={{ gridColumn: "1/-1" }}>
+            <Input label="Attachment" type="file" onChange={handleFileChange} />
           </div>
-        </div>
+        </Modal>
+      )}
+
+      {/* ================= DELETE CONFIRMATION ================= */}
+      {/* Deleting used to happen immediately and only in local state. It now
+          asks first, because it is irreversible, and then calls the API. */}
+      {pendingDelete && (
+        <Modal
+          isOpen={Boolean(pendingDelete)}
+          title="Delete incident"
+          onClose={() => setPendingDelete(null)}
+          showFooter
+          size="small"
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: () => setPendingDelete(null), disabled: saving },
+            { label: saving ? "Deleting…" : "Delete", variant: "danger", onClick: confirmDelete, disabled: saving },
+          ]}
+        >
+          <p>
+            Delete the incident logged for room{" "}
+            <strong>{pendingDelete.room_id}</strong>? This cannot be undone.
+          </p>
+        </Modal>
       )}
     </>
   );

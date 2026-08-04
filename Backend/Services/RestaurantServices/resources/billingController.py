@@ -142,6 +142,7 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
             table_id=order.table_id,
             table_code=order.table_code,
             room_no=order.room_no,
+            guest_id=order.guest_id,
             guest_name=order.guest_name,
             guest_mobile=order.guest_mobile,
             sub_total=sub_total,
@@ -177,6 +178,8 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
                     rate=i.price,
                     amount=amount,
                     tax_amount=_round(amount * ((payload.cgst_percentage or 0) + (payload.sgst_percentage or 0)) / 100),
+                    created_by=user_id,
+                    company_id=company_id,
                 )
             )
 
@@ -274,7 +277,7 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
             bill.payment_status = "Partial"
 
         order = db.query(models.RestaurantOrder).filter(models.RestaurantOrder.id == bill.order_id).first()
-        if order and bill.payment_status == "Paid":
+        if order and bill.payment_status == "Paid" and order.order_status != "Completed":
             order.payment_status = "Paid"
             order.order_status = "Completed"
             if order.table_code:
@@ -287,6 +290,28 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
                     table.table_status = "Cleaning"
                     table.current_order_id = None
                     table.updated_by = user_id
+
+            guest = None
+            if order.guest_id:
+                guest = db.query(models.Guest).filter(models.Guest.id == order.guest_id, models.Guest.company_id == company_id).first()
+            elif order.guest_mobile:
+                guest = (
+                    db.query(models.Guest)
+                    .filter(models.Guest.mobile == order.guest_mobile, models.Guest.company_id == company_id, models.Guest.status == STATUS)
+                    .first()
+                )
+            if guest:
+                db.add(models.GuestVisitHistory(
+                    guest_id=guest.id,
+                    visit_date=now.date(),
+                    order_id=order.id,
+                    bill_id=bill.id,
+                    visit_type=order.order_type,
+                    total_amount=bill.grand_total,
+                    company_id=company_id,
+                ))
+                guest.loyalty_points = (guest.loyalty_points or 0) + int((bill.grand_total or 0) // 100)
+                guest.updated_by = user_id
 
         db.commit()
         return {
@@ -378,7 +403,8 @@ def split_bill_by_person(bill_id: int, payload: SplitByPersonIn, request: Reques
 
             db.add(
                 models.RestaurantBillSplitDetail(
-                    split_id=split.id, child_bill_id=child.id, split_number=n, split_amount=amount
+                    split_id=split.id, child_bill_id=child.id, split_number=n, split_amount=amount,
+                    created_by=user_id, company_id=company_id,
                 )
             )
             child_bills.append({"id": child.id, "bill_number": child.bill_number, "amount": amount})

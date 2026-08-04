@@ -1,11 +1,19 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { UserPlus, Eye, Pencil, Trash2, X } from "lucide-react";
-import "../../MasterData/MasterData.css";
+import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import IconButton from "../../stories/IconButton";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import APICall from "../../APICalls/APICalls";
 
 const TaskAssign = () => {
   const [data, setData] = useState([]);
+  // This page had no way to report a failure at all: both save paths logged
+  // to the console and the modal closed regardless, so a rejected save looked
+  // exactly like a successful one.
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -54,6 +62,7 @@ const TaskAssign = () => {
   const closeModal = () => {
     setEditId(null);
     setShowModal(false);
+    setFormError("");
   };
 
   const handleChange = (e) => {
@@ -80,83 +89,89 @@ const TaskAssign = () => {
   }
 
   const createHousekeeperTtasks = async () => {
-    try {
-      await APICall.postT("/hotel/housekeeper_tasks", {
-        employee_id: formData.employeeId,
-        first_name: formData.firstName,
-        last_name: formData.lastName,
-        room_no: Number(formData.roomNo),
-        assign_staff: Number(formData.assignedStaff),
-        schedule_date: formData.scheduleDate,
-        schedule_time: formData.scheduleTime,
-        task_status: formData.taskStatus,
-        task_type: formData.taskType,
-        lost_found: formData.lostAndFound,
-        room_status: formData.roomStatus,
-        special_instructions: formData.specialInstruction,
+    await APICall.postT("/hotel/housekeeper_tasks", {
+      employee_id: formData.employeeId,
+      first_name: formData.firstName,
+      last_name: formData.lastName,
+      room_no: Number(formData.roomNo),
+      assign_staff: Number(formData.assignedStaff),
+      schedule_date: formData.scheduleDate,
+      schedule_time: formData.scheduleTime,
+      task_status: formData.taskStatus,
+      task_type: formData.taskType,
+      lost_found: formData.lostAndFound,
+      room_status: formData.roomStatus,
+      special_instructions: formData.specialInstruction,
 
-      });
+    });
 
-      getTaskAssign();
-    } catch (error) {
-      console.error("Create error:", error.response?.data || error);
-    }
+    getTaskAssign();
   };
   const updateHousekeeperTtasks = async () => {
-    try {
-      await APICall.putT("/hotel/housekeeper_tasks", {
-        id: editId,
-        employee_id: formData.employeeId,
-        first_name: formData.firstName,
-        last_name: formData.lastName,
-        room_no: formData.roomNo,
-        assign_staff: formData.assignedStaff,
-        schedule_date: formData.scheduleDate,
-        schedule_time: formData.scheduleTime,
-        task_status: formData.taskStatus,
-        task_type: formData.taskType,
-        lost_found: formData.lostAndFound,
-        room_status: formData.roomStatus,
-        special_instructions: formData.specialInstruction,
+    await APICall.putT("/hotel/housekeeper_tasks", {
+      id: editId,
+      employee_id: formData.employeeId,
+      first_name: formData.firstName,
+      last_name: formData.lastName,
+      room_no: formData.roomNo,
+      assign_staff: formData.assignedStaff,
+      schedule_date: formData.scheduleDate,
+      schedule_time: formData.scheduleTime,
+      task_status: formData.taskStatus,
+      task_type: formData.taskType,
+      lost_found: formData.lostAndFound,
+      room_status: formData.roomStatus,
+      special_instructions: formData.specialInstruction,
 
-      });
+    });
 
-      getTaskAssign();
-    } catch (error) {
-      console.error("Create error:", error.response?.data || error);
-    }
+    getTaskAssign();
   };
 
   const deleteHousekeeperTtasks = async (id) => {
+    // The original returned the error object from its catch, which the caller
+    // ignored, so a failed delete looked identical to a successful one.
     try {
-      await APICall.deleteT(`/hotel/housekeeper_tasks/${id}`)
+      await APICall.deleteT(`/hotel/housekeeper_tasks/${id}`);
+      await getTaskAssign();
+    } catch (error) {
+      setFormError(error?.message || "Could not delete the task assignment.");
     }
-    catch (error) {
-      return error
-    }
-  }
+  };
 
   useEffect(() => {
     getTaskAssign();
     getEmployee();
     getAllRooms();
   }, [])
-  const employee_name = (row) =>
-    `${row?.first_name || ""} ${row?.last_name || ""}`.trim();
 
 
 
 
-  const handleSave = () => {
-    if (!formData.firstName || !formData.roomNo) return;
-
-    if (editId) {
-      updateHousekeeperTtasks();
-    } else {
-      createHousekeeperTtasks();
+  const handleSave = async () => {
+    // A bare `return` gave no feedback — the button simply did nothing.
+    if (!formData.firstName || !formData.roomNo) {
+      setFormError("Staff first name and room number are required.");
+      return;
     }
 
-    closeModal();
+    setFormError("");
+    setSaving(true);
+    try {
+      // Awaited now. These were fired and forgotten, and closeModal() ran
+      // immediately, so the dialog closed before the request had resolved —
+      // a rejected save looked exactly like a successful one.
+      if (editId) {
+        await updateHousekeeperTtasks();
+      } else {
+        await createHousekeeperTtasks();
+      }
+      closeModal();
+    } catch (error) {
+      setFormError(error?.message || "Could not save the task assignment.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleEdit = (row) => {
@@ -191,6 +206,14 @@ const TaskAssign = () => {
 
   return (
     <>
+      {/* Delete runs from the table, not the dialog, so its failures need a
+          home outside the modal — otherwise they are set and never seen. */}
+      {formError && !showModal && (
+        <div role="alert" style={{ marginBottom: 12, color: "var(--error-color)" }}>
+          {formError}
+        </div>
+      )}
+
       <TableTemplate
         title="Task Assign"
         hasActionButton
@@ -221,15 +244,9 @@ const TaskAssign = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
-                  <Eye size={16} />
-                </button>
-                <button className="table-action-btn edit" onClick={() => handleEdit(row)}>
-                  <Pencil size={16} />
-                </button>
-                <button className="table-action-btn delete" onClick={() => handleDelete(row.id)}>
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -239,148 +256,126 @@ const TaskAssign = () => {
 
       {/* ================= VIEW MODAL ================= */}
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Task</h3>
-              <button onClick={closeViewModal}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen={showViewModal}
+          title="View Task"
+          onClose={closeViewModal}
+          showFooter
+          size="large"
+          bodyLayout="grid"
+          viewMode
+          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
+        >
+          {Object.entries(viewData).map(([k, v]) => {
+            if (k === "employee_id") {
+              return <Input key={k} label="Employee ID" value={userCode} readOnly disabled />;
+            }
 
-
-
-            <div className="modal-body single view">
-
-              {Object.entries(viewData).map(([k, v]) => {
-                if (k === "employee_id") {
-                  return (
-                    <div className="form-group">
-                      <label>Employee ID</label>
-                      <input
-                        type="text"
-                        value={userCode}
-                        readOnly
-                        className="form-control"
-                      />
-                    </div>
-                  )
-
-                }
-
-                return (
-                  <div className="form-group" key={k}>
-                    <label>{k.replace(/([A-Z])/g, " $1")}</label>
-                    <input value={v} disabled />
-                  </div>
-                );
-              })}
-            </div>
-
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>Close</button>
-            </div>
-          </div>
-        </div>
+            return (
+              <Input key={k} label={k.replace(/([A-Z])/g, " $1")} value={v} disabled />
+            );
+          })}
+        </Modal>
       )}
 
       {/* ================= ADD / EDIT MODAL ================= */}
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Task" : "Assign Task"}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit Task" : "Assign Task"}
+          onClose={closeModal}
+          showFooter
+          size="xlarge"
+          bodyLayout="grid"
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
+            {
+              label: saving ? "Saving…" : (editId ? "Update" : "Submit"),
+              variant: "primary",
+              onClick: handleSave,
+              disabled: saving,
+            },
+          ]}
+        >
+          {formError && (
+            <div role="alert" style={{ gridColumn: "1 / -1", color: "var(--error-color)" }}>
+              {formError}
             </div>
+          )}
+          <Select
+            label="Employee ID"
+            placeholder="Select ID"
+            options={Employee.map((emp) => ({ value: emp.id, label: emp.user_code }))}
+          />
 
-            <div className="modal-body grid">
-              <div className="form-group">
-                <label>Employee ID</label>
-                <select>
-                  <option value="" disabled>Select ID</option>
-                  {Employee.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.user_code}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          {[
+            ["First Name", "firstName"],
+            ["Last Name", "lastName"],
+            ["Schedule Date", "scheduleDate", "date"],
+            ["Schedule Time", "scheduleTime", "time"],
+            ["Task Type", "taskType"],
+            ["Lost & Found", "lostAndFound"],
+          ].map(([label, name, type]) => (
+            <Input
+              key={name}
+              label={label}
+              type={type || "text"}
+              name={name}
+              value={formData[name]}
+              onChange={handleChange}
+            />
+          ))}
 
-              {[
-                ["First Name", "firstName"],
-                ["Last Name", "lastName"],
-                ["Schedule Date", "scheduleDate", "date"],
-                ["Schedule Time", "scheduleTime", "time"],
-                ["Task Type", "taskType"],
-                ["Lost & Found", "lostAndFound"],
-              ].map(([label, name, type]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input
-                    type={type || "text"}
-                    name={name}
-                    value={formData[name]}
-                    onChange={handleChange}
-                  />
-                </div>
-              ))}
+          <Select
+            label="Room Number"
+            name="roomNo"
+            value={formData.roomNo}
+            onChange={handleChange}
+            placeholder="Select the Room"
+            options={roomNo.map((room) => ({ value: room.id, label: room.room_no }))}
+          />
 
+          <Select
+            label="Assigned Staff"
+            name="assignedStaff"
+            value={formData.assignedStaff}
+            onChange={handleChange}
+            placeholder="Select the Staff"
+            options={Employee.map((emp) => ({ value: emp.id, label: emp.username }))}
+          />
 
+          <Select
+            label="Task Status"
+            name="taskStatus"
+            value={formData.taskStatus}
+            onChange={handleChange}
+            options={[
+              { value: "Assigned", label: "Assigned" },
+              { value: "In Progress", label: "In Progress" },
+              { value: "Completed", label: "Completed" },
+            ]}
+          />
 
-              <div className="form-group">
-                <label>Room Number</label>
-                <select name="roomNo" value={formData.roomNo} onChange={handleChange}>
-                  <option disabled value="">Select the Room</option>
-                  {roomNo.map((room) => (
-                    <option key={room.id} value={room.id}>
-                      {room.room_no}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Assigned Staff</label>
-                <select name="assignedStaff" value={formData.assignedStaff} onChange={handleChange}>
-                  <option disabled value="">Select the Staff</option>
-                  {Employee.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.username}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Task Status</label>
-                <select name="taskStatus" value={formData.taskStatus} onChange={handleChange}>
-                  <option>Assigned</option>
-                  <option>In Progress</option>
-                  <option>Completed</option>
-                </select>
-              </div>
+          <Select
+            label="Room Status"
+            name="roomStatus"
+            value={formData.roomStatus}
+            onChange={handleChange}
+            options={[
+              { value: "Blocking", label: "Blocking" },
+              { value: "Unblocking", label: "Unblocking" },
+            ]}
+          />
 
-              <div className="form-group">
-                <label>Room Status</label>
-                <select name="roomStatus" value={formData.roomStatus} onChange={handleChange}>
-                  <option>Blocking</option>
-                  <option>Unblocking</option>
-                </select>
-              </div>
-
-              <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                <label>Special Instruction</label>
-                <input
-                  name="specialInstruction"
-                  value={formData.specialInstruction}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>Close</button>
-              <button className="btn primary" onClick={handleSave}>Submit</button>
-            </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Input
+              label="Special Instruction"
+              name="specialInstruction"
+              value={formData.specialInstruction}
+              onChange={handleChange}
+            />
           </div>
-        </div>
+        </Modal>
       )}
     </>
   );

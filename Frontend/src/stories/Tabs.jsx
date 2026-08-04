@@ -2,15 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import './Tabs.css';
 
 // Tab Component
-const Tab = ({ 
-  label, 
-  icon, 
-  badge, 
-  disabled = false, 
-  children, 
+//
+// `label`, `icon`, `badge` and `disabled` are read by the parent <Tabs> off
+// `child.props` to build the tab header — this component only renders the
+// panel body. They are destructured here purely so `...props` does not spread
+// them onto the <div>, which React would warn about as unknown DOM attributes.
+// The leading underscore marks them as deliberately unused.
+const Tab = ({
+  label: _label,
+  icon: _icon,
+  badge: _badge,
+  disabled: _disabled = false,
+  children,
   className = '',
   loading = false,
-  ...props 
+  ...props
 }) => {
   return (
     <div 

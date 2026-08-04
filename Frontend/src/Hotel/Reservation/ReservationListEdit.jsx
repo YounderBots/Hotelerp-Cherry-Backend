@@ -8,7 +8,7 @@ import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
 // Locked once a reservation reaches one of these (master-data-driven) statuses.
-const LOCKED_STATUSES = new Set(["Arrived", "Departures", "Cancelled"]);
+const LOCKED_STATUSES = new Set(["Checked-Out", "Cancelled", "No Show"]);
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
 const num = (v) => {

@@ -122,7 +122,9 @@ export default function Card({
                 {icon ? <div className="card__icon" style={{ ...(iconBg ? { '--card-iconBg': iconBg } : {})}} aria-hidden>{renderIcon(icon)}</div> : null}
                 <div className="card__content">
                     <div className="card__value">{displayValue}</div>
-                    {label ? <div className="card__label">{label}</div> : null}
+                    {/* labelColor was accepted (defaulting to textColor) but never
+                        applied, so the prop silently did nothing. */}
+                    {label ? <div className="card__label" style={{ color: labelColor }}>{label}</div> : null}
                 </div>
                 <div className="shine"></div>
             </div>

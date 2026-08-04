@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import ReactSelect from 'react-select';
 import './Select.css';
 
@@ -20,7 +20,8 @@ const Select = ({
     className = '',
     ...props
 }) => {
-    const selectId = id || `select-${Math.random().toString(36).slice(2, 9)}`;
+    const generatedId = useId();
+    const selectId = id || `select-${generatedId}`;
 
     /** Normalize options */
     const normalizedOptions = useMemo(() => {
@@ -31,20 +32,12 @@ const Select = ({
         );
     }, [options]);
 
-    /** MULTI SELECT DERIVED STATE */
-    const { reactSelectValue, selectedLabels } = useMemo(() => {
-        if (!multiple || !Array.isArray(value)) {
-            return { reactSelectValue: [], selectedLabels: [] };
-        }
-
-        const selected = normalizedOptions.filter(opt =>
-            value.includes(opt.value)
-        );
-
-        return {
-            reactSelectValue: selected,
-            selectedLabels: selected.map(opt => opt.label),
-        };
+    /** MULTI SELECT DERIVED STATE
+     *  `selectedLabels` used to be derived alongside this and never read —
+     *  react-select renders its own chips from `value`. */
+    const reactSelectValue = useMemo(() => {
+        if (!multiple || !Array.isArray(value)) return [];
+        return normalizedOptions.filter(opt => value.includes(opt.value));
     }, [multiple, value, normalizedOptions]);
 
     /** Unified change handler */
@@ -72,16 +65,6 @@ const Select = ({
     ]
         .filter(Boolean)
         .join(' ');
-
-    const handleRemoveValue = removedValue => {
-        if (!Array.isArray(value)) return;
-
-        onChange?.({
-            target: {
-                value: value.filter(v => v !== removedValue),
-            },
-        });
-    };
 
     /** MULTI SELECT */
     if (multiple) {

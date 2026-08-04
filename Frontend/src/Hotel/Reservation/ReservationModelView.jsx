@@ -4,7 +4,7 @@ import { ArrowLeft, Printer, Pencil, AlertCircle, RefreshCw } from "lucide-react
 import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
-const LOCKED_STATUSES = new Set(["Arrived", "Departures", "Cancelled"]);
+const LOCKED_STATUSES = new Set(["Checked-Out", "Cancelled", "No Show"]);
 
 const escapeHtml = (v) =>
   String(v ?? "")
@@ -51,11 +51,11 @@ const formatAmount = (v) => numberFmt.format(num(v));
 
 const getStatusBadgeClass = (status) => {
   const s = String(status || "").toLowerCase();
-  if (s === "pending") return "status-pending";
+  if (s === "booked" || s === "pending") return "status-pending";
   if (s === "confirmed") return "status-confirmed";
-  if (s === "arrived" || s === "checked-in") return "status-checked-in";
-  if (s === "departures" || s === "checked-out") return "status-checked-out";
-  if (s === "cancelled" || s === "canceled") return "status-cancelled";
+  if (s === "checked-in" || s === "arrived") return "status-checked-in";
+  if (s === "checked-out" || s === "departures") return "status-checked-out";
+  if (s === "cancelled" || s === "canceled" || s === "no show" || s === "no-show") return "status-cancelled";
   return "status-pending";
 };
 
@@ -76,6 +76,7 @@ const ReservationModelView = () => {
   const [taxTypes, setTaxTypes] = useState([]);
   const [discountTypes, setDiscountTypes] = useState([]);
   const [identityTypes, setIdentityTypes] = useState([]);
+  const [paymentHistory, setPaymentHistory] = useState([]);
 
   useEffect(() => {
     mounted.current = true;
@@ -121,6 +122,14 @@ const ReservationModelView = () => {
 
     return () => { mounted.current = false; };
   }, [reservationId, refreshTick]);
+
+  useEffect(() => {
+    if (!reservation?.token) { setPaymentHistory([]); return undefined; }
+    APICall.getT(`/hotel/room_reservation_payments/${encodeURIComponent(reservation.token)}`)
+      .then((res) => { if (mounted.current) setPaymentHistory(readList(res)); })
+      .catch(() => { /* history is best-effort; page still works without it */ });
+    return undefined;
+  }, [reservation?.token]);
 
   // Derived: rooms in this reservation with human labels.
   const roomRows = useMemo(() => {
@@ -258,14 +267,14 @@ const ReservationModelView = () => {
         <div class="summary">
           <div><span>Total</span><span>${escapeHtml(formatAmount(reservation.total_amount))}</span></div>
           <div><span>Tax</span><span>${escapeHtml(formatAmount(reservation.tax_amount))}</span></div>
-          <div><span>Discount</span><span>-${escapeHtml(formatAmount(reservation.discount_amount))}</span></div>
+          <div><span>Discount</span><span>${num(reservation.discount_amount) ? `-${escapeHtml(formatAmount(reservation.discount_amount))}` : escapeHtml(formatAmount(0))}</span></div>
           <div><span>Extra charges</span><span>${escapeHtml(formatAmount(reservation.extra_charges))}</span></div>
           <div class="total"><span>Overall</span><span>${escapeHtml(formatAmount(reservation.overall_amount))}</span></div>
           <div><span>Paid</span><span>${escapeHtml(formatAmount(reservation.paid_amount))}</span></div>
           <div><span>Balance</span><span>${escapeHtml(formatAmount(reservation.balance_amount))}</span></div>
         </div>
 
-        <script>window.addEventListener("load", function(){ window.print(); });<\/script>
+        <script>window.addEventListener("load", function(){ window.print(); });</script>
       </body></html>`;
     printWindow.document.write(content);
     printWindow.document.close();
@@ -468,7 +477,7 @@ const ReservationModelView = () => {
                   </div>
                   <div>
                     <span>Discount ({num(reservation.discount_percentage)}% · {discountTypeLabel})</span>
-                    <span>-{formatAmount(reservation.discount_amount)}</span>
+                    <span>{num(reservation.discount_amount) ? `-${formatAmount(reservation.discount_amount)}` : formatAmount(0)}</span>
                   </div>
                   <div>
                     <span>Extra Charges</span>
@@ -509,6 +518,31 @@ const ReservationModelView = () => {
                   </tr>
                 </tbody>
               </table>
+
+              <h3 className="paid-title">Payment History</h3>
+              {paymentHistory.length === 0 ? (
+                <div className="rmv-empty inline">No payments recorded yet.</div>
+              ) : (
+                <table className="paid-table">
+                  <caption className="rmv-sr-only">Individual payments recorded against this reservation</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Date</th>
+                      <th scope="col">Method</th>
+                      <th scope="col">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentHistory.map((p) => (
+                      <tr key={p.id}>
+                        <td>{p.paid_date}</td>
+                        <td>{p.payment_method}</td>
+                        <td>{formatAmount(p.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </section>
           </div>
         </>

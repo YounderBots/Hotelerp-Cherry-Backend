@@ -1,19 +1,58 @@
+import os
 import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from models import get_db, models
 from resources.utils import verify_authentication
-from configs.base_config import CommonWords
+from configs.base_config import BaseConfig, CommonWords, ServiceURL
 
 router = APIRouter()
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
+
+UPLOAD_PATH = "./templates/static/upload_image"
+os.makedirs(UPLOAD_PATH, exist_ok=True)
+ALLOWED_UPLOAD_EXTS = BaseConfig.UPLOAD_ALLOWED_EXTENSIONS
+UPLOAD_MAX_BYTES = BaseConfig.UPLOAD_MAX_BYTES
+
+
+def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
+    """Validate and read an incoming UploadFile.
+
+    Returns ``(safe_extension, raw_bytes)``. Raises HTTPException on any
+    violation (bad extension, oversized payload, unreadable filename).
+    """
+    if not upload or not upload.filename:
+        raise HTTPException(status_code=400, detail="File is required")
+    ext = os.path.splitext(upload.filename)[1].lstrip(".").lower()
+    if not ext or ext not in ALLOWED_UPLOAD_EXTS:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    data = upload.file.read(UPLOAD_MAX_BYTES + 1)
+    if len(data) > UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds size limit")
+    return ext, data
+
+
+def _write_upload(data: bytes, ext: str) -> str:
+    """Persist bytes under UPLOAD_PATH using a random filename; return an absolute URL.
+
+    Returned as a full URL (not a path relative to this API) because the
+    gateway (LoginServices) only proxies the `/restaurant/{path}` JSON API —
+    it has no route for `/templates/static/...` and its proxy requires auth
+    that a plain <img> tag can't supply. This service's static mount itself
+    has no auth check, so pointing directly at it is what actually renders.
+    """
+    safe_name = f"{uuid.uuid4().hex}.{ext}"
+    dest = os.path.join(UPLOAD_PATH, safe_name)
+    with open(dest, "wb") as fh:
+        fh.write(data)
+    return f"{ServiceURL.RESTAURANT_SERVICE_URL}/templates/static/upload_image/{safe_name}"
 
 
 def gen_code(prefix: str) -> str:
@@ -27,13 +66,21 @@ def _auth(request: Request):
     return user_id, role_id, company_id
 
 
+@router.post("/upload_image", status_code=status.HTTP_201_CREATED)
+def upload_menu_image(request: Request, image: UploadFile = File(...)):
+    _auth(request)
+    ext, data = _sanitize_upload(image)
+    url = _write_upload(data, ext)
+    return {"status": "success", "data": {"url": url}}
+
+
 # =====================================================
 # SCHEMAS
 # =====================================================
 class CategoryIn(BaseModel):
     category_name: str
     description: Optional[str] = None
-    kitchen_section: str
+    kitchen_id: int
     display_order: Optional[int] = None
 
 
@@ -55,6 +102,17 @@ class ModifierIn(BaseModel):
     modifier_type: Optional[str] = None
 
 
+class VariantUpdate(BaseModel):
+    variant_name: Optional[str] = None
+    price: Optional[float] = None
+
+
+class ModifierUpdate(BaseModel):
+    modifier_name: Optional[str] = None
+    price: Optional[float] = None
+    modifier_type: Optional[str] = None
+
+
 class MenuItemIn(BaseModel):
     item_name: str
     description: Optional[str] = None
@@ -63,14 +121,14 @@ class MenuItemIn(BaseModel):
     price: float
     cost_price: Optional[float] = None
     tax_percentage: Optional[float] = None
-    service_charge_applicable: str = "No"
+    service_charge_applicable: bool = False
     preparation_time: Optional[int] = None
-    kitchen_section: str
+    kitchen_id: int
     availability_status: str = "Available"
-    is_veg: str = "Yes"
+    is_veg: bool = True
     dietary_tags: Optional[List[str]] = None
     item_image: Optional[str] = None
-    happy_hour_eligible: str = "No"
+    happy_hour_eligible: bool = False
     variants: Optional[List[VariantIn]] = None
     modifiers: Optional[List[ModifierIn]] = None
 
@@ -83,14 +141,14 @@ class MenuItemUpdate(BaseModel):
     price: Optional[float] = None
     cost_price: Optional[float] = None
     tax_percentage: Optional[float] = None
-    service_charge_applicable: Optional[str] = None
+    service_charge_applicable: Optional[bool] = None
     preparation_time: Optional[int] = None
-    kitchen_section: Optional[str] = None
+    kitchen_id: Optional[int] = None
     availability_status: Optional[str] = None
-    is_veg: Optional[str] = None
+    is_veg: Optional[bool] = None
     dietary_tags: Optional[List[str]] = None
     item_image: Optional[str] = None
-    happy_hour_eligible: Optional[str] = None
+    happy_hour_eligible: Optional[bool] = None
 
 
 class ComboItemIn(BaseModel):
@@ -105,6 +163,15 @@ class ComboIn(BaseModel):
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
     items: List[ComboItemIn]
+
+
+class ComboUpdate(BaseModel):
+    combo_name: Optional[str] = None
+    description: Optional[str] = None
+    combo_price: Optional[float] = None
+    valid_from: Optional[datetime] = None
+    valid_to: Optional[datetime] = None
+    items: Optional[List[ComboItemIn]] = None
 
 
 # =====================================================
@@ -179,7 +246,7 @@ def create_menu_item(payload: MenuItemIn, request: Request, db: Session = Depend
         data = payload.dict(exclude={"variants", "modifiers"})
         item = models.RestaurantMenu(
             item_code=gen_code("ITM"),
-            has_variants="Yes" if payload.variants else "No",
+            has_variants=bool(payload.variants),
             created_by=user_id,
             company_id=company_id,
             **data,
@@ -206,7 +273,7 @@ def create_menu_item(payload: MenuItemIn, request: Request, db: Session = Depend
 def list_menu_items(
     request: Request,
     category_id: Optional[int] = Query(None),
-    kitchen_section: Optional[str] = Query(None),
+    kitchen_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     user_id, role_id, company_id = _auth(request)
@@ -215,8 +282,8 @@ def list_menu_items(
     )
     if category_id is not None:
         q = q.filter(models.RestaurantMenu.category_id == category_id)
-    if kitchen_section:
-        q = q.filter(models.RestaurantMenu.kitchen_section == kitchen_section)
+    if kitchen_id is not None:
+        q = q.filter(models.RestaurantMenu.kitchen_id == kitchen_id)
     items = q.order_by(models.RestaurantMenu.item_name.asc()).all()
 
     item_ids = [i.id for i in items]
@@ -285,6 +352,122 @@ def deactivate_menu_item(menu_id: int, request: Request, db: Session = Depends(g
 
 
 # =====================================================
+# VARIANTS
+# =====================================================
+@router.post("/menu/{menu_id}/variant", status_code=status.HTTP_201_CREATED)
+def create_menu_variant(menu_id: int, payload: VariantIn, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    menu = (
+        db.query(models.RestaurantMenu)
+        .filter(models.RestaurantMenu.id == menu_id, models.RestaurantMenu.company_id == company_id)
+        .first()
+    )
+    if not menu:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
+    variant = models.MenuVariant(menu_id=menu_id, created_by=user_id, company_id=company_id, **payload.dict())
+    db.add(variant)
+    menu.has_variants = True
+    db.commit()
+    db.refresh(variant)
+    return {"status": "success", "data": {"id": variant.id}}
+
+
+@router.put("/variant/{variant_id}", status_code=status.HTTP_200_OK)
+def update_menu_variant(variant_id: int, payload: VariantUpdate, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    variant = (
+        db.query(models.MenuVariant)
+        .filter(models.MenuVariant.id == variant_id, models.MenuVariant.company_id == company_id)
+        .first()
+    )
+    if not variant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    for field, value in payload.dict(exclude_unset=True).items():
+        setattr(variant, field, value)
+    variant.updated_by = user_id
+    db.commit()
+    return {"status": "success", "message": "Variant updated"}
+
+
+@router.delete("/variant/{variant_id}", status_code=status.HTTP_200_OK)
+def deactivate_menu_variant(variant_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    variant = (
+        db.query(models.MenuVariant)
+        .filter(models.MenuVariant.id == variant_id, models.MenuVariant.company_id == company_id)
+        .first()
+    )
+    if not variant:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    variant.status = UNSTATUS
+    variant.updated_by = user_id
+    remaining = (
+        db.query(models.MenuVariant)
+        .filter(models.MenuVariant.menu_id == variant.menu_id, models.MenuVariant.status == STATUS, models.MenuVariant.id != variant_id)
+        .count()
+    )
+    if remaining == 0:
+        menu = db.query(models.RestaurantMenu).filter(models.RestaurantMenu.id == variant.menu_id).first()
+        if menu:
+            menu.has_variants = False
+    db.commit()
+    return {"status": "success", "message": "Variant deactivated"}
+
+
+# =====================================================
+# MODIFIERS
+# =====================================================
+@router.post("/menu/{menu_id}/modifier", status_code=status.HTTP_201_CREATED)
+def create_menu_modifier(menu_id: int, payload: ModifierIn, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    menu = (
+        db.query(models.RestaurantMenu)
+        .filter(models.RestaurantMenu.id == menu_id, models.RestaurantMenu.company_id == company_id)
+        .first()
+    )
+    if not menu:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
+    modifier = models.MenuModifier(menu_id=menu_id, created_by=user_id, company_id=company_id, **payload.dict())
+    db.add(modifier)
+    db.commit()
+    db.refresh(modifier)
+    return {"status": "success", "data": {"id": modifier.id}}
+
+
+@router.put("/modifier/{modifier_id}", status_code=status.HTTP_200_OK)
+def update_menu_modifier(modifier_id: int, payload: ModifierUpdate, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    modifier = (
+        db.query(models.MenuModifier)
+        .filter(models.MenuModifier.id == modifier_id, models.MenuModifier.company_id == company_id)
+        .first()
+    )
+    if not modifier:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modifier not found")
+    for field, value in payload.dict(exclude_unset=True).items():
+        setattr(modifier, field, value)
+    modifier.updated_by = user_id
+    db.commit()
+    return {"status": "success", "message": "Modifier updated"}
+
+
+@router.delete("/modifier/{modifier_id}", status_code=status.HTTP_200_OK)
+def deactivate_menu_modifier(modifier_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    modifier = (
+        db.query(models.MenuModifier)
+        .filter(models.MenuModifier.id == modifier_id, models.MenuModifier.company_id == company_id)
+        .first()
+    )
+    if not modifier:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modifier not found")
+    modifier.status = UNSTATUS
+    modifier.updated_by = user_id
+    db.commit()
+    return {"status": "success", "message": "Modifier deactivated"}
+
+
+# =====================================================
 # COMBO / PACKAGE DEALS
 # =====================================================
 @router.post("/combo", status_code=status.HTTP_201_CREATED)
@@ -298,14 +481,14 @@ def create_combo(payload: ComboIn, request: Request, db: Session = Depends(get_d
             combo_price=payload.combo_price,
             valid_from=payload.valid_from,
             valid_to=payload.valid_to,
-            is_active="Yes",
+            is_active=True,
             created_by=user_id,
             company_id=company_id,
         )
         db.add(combo)
         db.flush()
         for it in payload.items:
-            db.add(models.ComboItem(combo_id=combo.id, menu_id=it.menu_id, quantity=it.quantity))
+            db.add(models.ComboItem(combo_id=combo.id, menu_id=it.menu_id, quantity=it.quantity, created_by=user_id, company_id=company_id))
         db.commit()
         db.refresh(combo)
         return {"status": "success", "data": {"id": combo.id, "combo_code": combo.combo_code}}
@@ -321,7 +504,7 @@ def list_combos(request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
     combos = (
         db.query(models.ComboDeal)
-        .filter(models.ComboDeal.company_id == company_id, models.ComboDeal.status == STATUS, models.ComboDeal.is_active == "Yes")
+        .filter(models.ComboDeal.company_id == company_id, models.ComboDeal.status == STATUS, models.ComboDeal.is_active == True)
         .all()
     )
     combo_ids = [c.id for c in combos]
@@ -331,3 +514,46 @@ def list_combos(request: Request, db: Session = Depends(get_db)):
         items_by_combo.setdefault(it.combo_id, []).append(it)
     data = [{**c.__dict__, "items": items_by_combo.get(c.id, [])} for c in combos]
     return {"status": "success", "count": len(data), "data": data}
+
+
+@router.put("/combo/{combo_id}", status_code=status.HTTP_200_OK)
+def update_combo(combo_id: int, payload: ComboUpdate, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    combo = (
+        db.query(models.ComboDeal)
+        .filter(models.ComboDeal.id == combo_id, models.ComboDeal.company_id == company_id)
+        .first()
+    )
+    if not combo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Combo not found")
+    try:
+        for field, value in payload.dict(exclude_unset=True, exclude={"items"}).items():
+            setattr(combo, field, value)
+        combo.updated_by = user_id
+        if payload.items is not None:
+            db.query(models.ComboItem).filter(models.ComboItem.combo_id == combo_id).delete()
+            for it in payload.items:
+                db.add(models.ComboItem(combo_id=combo.id, menu_id=it.menu_id, quantity=it.quantity, created_by=user_id, company_id=company_id))
+        db.commit()
+        return {"status": "success", "message": "Combo updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.delete("/combo/{combo_id}", status_code=status.HTTP_200_OK)
+def deactivate_combo(combo_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    combo = (
+        db.query(models.ComboDeal)
+        .filter(models.ComboDeal.id == combo_id, models.ComboDeal.company_id == company_id)
+        .first()
+    )
+    if not combo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Combo not found")
+    combo.status = UNSTATUS
+    combo.updated_by = user_id
+    db.commit()
+    return {"status": "success", "message": "Combo deactivated"}

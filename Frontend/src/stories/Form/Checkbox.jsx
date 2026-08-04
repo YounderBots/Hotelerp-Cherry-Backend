@@ -1,5 +1,5 @@
 // Checkbox.jsx
-import React from 'react';
+import React, { useId } from 'react';
 import './Checkbox.css';
 
 const Checkbox = ({
@@ -15,7 +15,10 @@ const Checkbox = ({
   className = '',
   ...props
 }) => {
-  const checkboxId = `checkbox-${Math.random().toString(36).substr(2, 9)}`;
+  // useId() rather than Math.random(): a random id is impure during render
+  // and changes on every re-render, so the label's htmlFor stops matching the
+  // input and clicking the label no longer toggles it.
+  const checkboxId = `checkbox-${useId()}`;
 
   const checkboxClasses = [
     'checkbox-custom',
@@ -72,6 +75,8 @@ export const CheckboxGroup = ({
   helperText,
   className = '',
 }) => {
+  // `className` was accepted and then dropped, so callers could not style the
+  // group at all.
   const handleCheckboxChange = (optionValue, isChecked) => {
     let newValue;
     if (isChecked) {
@@ -83,7 +88,7 @@ export const CheckboxGroup = ({
   };
 
   return (
-    <div className="form-group">
+    <div className={`form-group ${className}`.trim()}>
       {label && (
         <label className={`checkbox-group-label ${required ? 'checkbox-group-label--required' : ''}`}>
           {label}

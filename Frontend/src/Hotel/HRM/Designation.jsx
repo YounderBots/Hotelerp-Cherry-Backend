@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TableTemplate from "../../stories/TableTemplate";
+import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import IconButton from "../../stories/IconButton";
 import {
   ArrowLeft,
   RefreshCw,
@@ -13,8 +16,8 @@ import {
   CheckCircle,
 } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../../MasterData/MasterData.css";
 import "../Reservation/Reservation.css";
+import "./HRM.css";
 
 const readList = (res) =>
   Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
@@ -310,33 +313,27 @@ const Designation = () => {
       type: "custom",
       render: (row) => (
         <div className="table-actions">
-          <button
-            type="button"
-            className="table-action-btn view"
-            title="View"
-            aria-label={`View designation ${row.designation_name || row.id}`}
+          <IconButton
+            variant="ghost"
+            size="small"
+            icon={<Eye size={16} />}
             onClick={() => openViewModal(row)}
-          >
-            <Eye size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn edit"
-            title="Edit"
-            aria-label={`Edit designation ${row.designation_name || row.id}`}
+            ariaLabel={`View designation ${row.designation_name || row.id}`}
+          />
+          <IconButton
+            variant="subtle"
+            size="small"
+            icon={<Pencil size={16} />}
             onClick={() => handleEdit(row)}
-          >
-            <Pencil size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn delete"
-            title="Delete"
-            aria-label={`Delete designation ${row.designation_name || row.id}`}
+            ariaLabel={`Edit designation ${row.designation_name || row.id}`}
+          />
+          <IconButton
+            variant="danger-ghost"
+            size="small"
+            icon={<Trash2 size={16} />}
             onClick={() => handleDeleteClick(row)}
-          >
-            <Trash2 size={16} aria-hidden="true" />
-          </button>
+            ariaLabel={`Delete designation ${row.designation_name || row.id}`}
+          />
         </div>
       ),
     },
@@ -401,7 +398,6 @@ const Designation = () => {
           exportable
           hasActionButton
           actionButton={{
-            icon: <Download size={18} />,
             label: "Add Designation",
             onClick: openAddModal,
             size: "medium",
@@ -434,111 +430,51 @@ const Designation = () => {
 
       {/* View modal */}
       {showViewModal && viewData && (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="desig-view-title"
-          onClick={(e) => { if (e.target === e.currentTarget) closeViewModal(); }}
+        <Modal
+          isOpen={showViewModal}
+          title={`View Designation — ${viewData.designation_name || `#${viewData.id}`}`}
+          onClose={closeViewModal}
+          showFooter
+          size="small"
+          bodyLayout="single"
+          viewMode
+          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
         >
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3 id="desig-view-title">View Designation — {viewData.designation_name || `#${viewData.id}`}</h3>
-              <button
-                type="button"
-                onClick={closeViewModal}
-                aria-label="Close view designation"
-              >
-                <X size={18} aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className="modal-body single view">
-              <div className="form-group">
-                <label htmlFor="desig-view-name">Designation Name</label>
-                <input
-                  id="desig-view-name"
-                  value={viewData.designation_name || "—"}
-                  readOnly
-                  aria-readonly="true"
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button type="button" className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+          <Input label="Designation Name" value={viewData.designation_name || "—"} readOnly disabled />
+        </Modal>
       )}
 
       {/* Add / Edit modal */}
       {showModal && (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="desig-modal-title"
-          onClick={(e) => { if (e.target === e.currentTarget && !saving) closeModal(); }}
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit Designation" : "Add Designation"}
+          onClose={closeModal}
+          showFooter
+          size="small"
+          bodyLayout="single"
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
+            { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving, autoFocus: true },
+          ]}
         >
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3 id="desig-modal-title">{editId ? "Edit Designation" : "Add Designation"}</h3>
-              <button
-                type="button"
-                onClick={closeModal}
-                aria-label="Close designation dialog"
-                disabled={saving}
-              >
-                <X size={18} aria-hidden="true" />
-              </button>
+          {formError && (
+            <div className="reservation-alert inline" role="alert">
+              {formError}
             </div>
+          )}
 
-            {formError && (
-              <div className="reservation-alert inline" role="alert">
-                {formError}
-              </div>
-            )}
-
-            <div className="modal-body single">
-              <div className="form-group">
-                <label htmlFor="desig-name">Designation Name <span className="required">*</span></label>
-                <input
-                  id="desig-name"
-                  type="text"
-                  name="designationName"
-                  value={formData.designationName}
-                  onChange={handleChange}
-                  disabled={saving}
-                  maxLength={100}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={closeModal}
-                disabled={saving}
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={handleSave}
-                disabled={saving}
-                aria-busy={saving}
-              >
-                {saving ? "Saving…" : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
+          <Input
+            label="Designation Name"
+            required
+            type="text"
+            name="designationName"
+            value={formData.designationName}
+            onChange={handleChange}
+            disabled={saving}
+            maxLength={100}
+          />
+        </Modal>
       )}
 
       <ConfirmDialog

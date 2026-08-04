@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, Trash2, X } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
@@ -28,7 +33,7 @@ const TableMaster = () => {
     section: "",
     server_name: "",
     table_status: "Available",
-    is_mergeable: "No",
+    is_mergeable: false,
   };
   const [formData, setFormData] = useState(initialForm);
 
@@ -76,6 +81,11 @@ const TableMaster = () => {
     setFormData((p) => ({ ...p, [name]: value }));
   };
 
+  const handleBoolChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((p) => ({ ...p, [name]: value === "true" }));
+  };
+
   const handleSave = async () => {
     if (!formData.table_name.trim() || !formData.table_number || !formData.floor_id || !formData.seating_capacity) {
       setFormError("Table name, table number, floor and seating capacity are required.");
@@ -91,7 +101,7 @@ const TableMaster = () => {
       table_type: formData.table_type,
       section: formData.section || null,
       table_status: formData.table_status,
-      is_mergeable: formData.is_mergeable,
+      is_mergeable: !!formData.is_mergeable,
     };
     try {
       if (editId) {
@@ -120,7 +130,7 @@ const TableMaster = () => {
       section: row.section || "",
       server_name: row.server_name || "",
       table_status: row.table_status || "Available",
-      is_mergeable: row.is_mergeable || "No",
+      is_mergeable: row.is_mergeable ?? false,
     });
     setShowModal(true);
   };
@@ -136,7 +146,7 @@ const TableMaster = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Table Master"
@@ -167,15 +177,9 @@ const TableMaster = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
-                  <Eye size={16} />
-                </button>
-                <button className="table-action-btn edit" onClick={() => handleEdit(row)}>
-                  <Pencil size={16} />
-                </button>
-                <button className="table-action-btn delete" onClick={() => handleDelete(row.id)}>
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openViewModal(row)} />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} ariaLabel="Edit" onClick={() => handleEdit(row)} />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} ariaLabel="Delete" onClick={() => handleDelete(row.id)} />
               </div>
             ),
           },
@@ -184,106 +188,92 @@ const TableMaster = () => {
       />
 
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Table</h3>
-              <button onClick={closeViewModal}><X size={18} /></button>
-            </div>
-            <div className="modal-body single view">
-              {Object.entries(viewData).map(([key, value]) => (
-                <div className="form-group" key={key}>
-                  <label>{key.replace(/_/g, " ")}</label>
-                  <input value={value ?? "-"} disabled />
-                </div>
-              ))}
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>Close</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen={showViewModal}
+          title="View Table"
+          onClose={closeViewModal}
+          size="medium"
+          bodyLayout="grid"
+          viewMode
+          showFooter
+          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
+        >
+          {Object.entries(viewData).map(([key, value]) => (
+            <Input key={key} label={key.replace(/_/g, " ")} value={value ?? "-"} disabled />
+          ))}
+        </Modal>
       )}
 
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>{editId ? "Edit Table" : "Add Table"}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit Table" : "Add Table"}
+          onClose={closeModal}
+          size="small"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
+            { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
+          <Input label="Table Number" required type="number" name="table_number" value={formData.table_number} onChange={handleChange} />
+          <Input label="Table Name" required name="table_name" value={formData.table_name} onChange={handleChange} />
+          <Select
+            label="Floor"
+            required
+            name="floor_id"
+            value={formData.floor_id}
+            onChange={handleChange}
+            placeholder="— select —"
+            options={floors.map((f) => ({ value: f.id, label: f.floor_name }))}
+          />
+          <Input label="Seating Capacity" required type="number" name="seating_capacity" value={formData.seating_capacity} onChange={handleChange} />
+          <Select
+            label="Section"
+            name="section"
+            value={formData.section}
+            onChange={handleChange}
+            placeholder="— none —"
+            options={[
+              { value: "Restaurant", label: "Restaurant" },
+              { value: "Outdoor", label: "Outdoor" },
+              { value: "Banquet", label: "Banquet" },
+            ]}
+          />
+          {editId && (
+            <Input label="Assigned Server" name="server_name" value={formData.server_name} onChange={handleChange} />
+          )}
 
-            <div className="modal-body single">
-              <div className="form-group">
-                <label>Table Number <span className="required">*</span></label>
-                <input type="number" name="table_number" value={formData.table_number} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Table Name <span className="required">*</span></label>
-                <input name="table_name" value={formData.table_name} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Floor <span className="required">*</span></label>
-                <select name="floor_id" value={formData.floor_id} onChange={handleChange}>
-                  <option value="">— select —</option>
-                  {floors.map((f) => (
-                    <option key={f.id} value={f.id}>{f.floor_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Seating Capacity <span className="required">*</span></label>
-                <input type="number" name="seating_capacity" value={formData.seating_capacity} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Section</label>
-                <input name="section" value={formData.section} onChange={handleChange} placeholder="Restaurant / Bar / Outdoor" />
-              </div>
-              {editId && (
-                <div className="form-group">
-                  <label>Assigned Server</label>
-                  <input name="server_name" value={formData.server_name} onChange={handleChange} />
-                </div>
-              )}
+          <Select
+            label="Table Type"
+            name="table_type"
+            value={formData.table_type}
+            onChange={handleChange}
+            options={["Standard", "VIP", "Private"]}
+          />
 
-              <div className="form-group">
-                <label>Table Type</label>
-                <select name="table_type" value={formData.table_type} onChange={handleChange}>
-                  <option>Standard</option>
-                  <option>VIP</option>
-                  <option>Private</option>
-                  <option>Bar Counter</option>
-                </select>
-              </div>
+          <Select
+            label="Status"
+            name="table_status"
+            value={formData.table_status}
+            onChange={handleChange}
+            options={["Available", "Occupied", "Reserved", "Cleaning", "Blocked"]}
+          />
 
-              <div className="form-group">
-                <label>Status</label>
-                <select name="table_status" value={formData.table_status} onChange={handleChange}>
-                  <option>Available</option>
-                  <option>Occupied</option>
-                  <option>Reserved</option>
-                  <option>Cleaning</option>
-                  <option>Blocked</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Mergeable</label>
-                <select name="is_mergeable" value={formData.is_mergeable} onChange={handleChange}>
-                  <option value="No">No</option>
-                  <option value="Yes">Yes</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal} disabled={saving}>Close</button>
-              <button className="btn primary" onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Submit"}</button>
-            </div>
-          </div>
-        </div>
+          <Select
+            label="Mergeable"
+            name="is_mergeable"
+            value={String(formData.is_mergeable)}
+            onChange={handleBoolChange}
+            options={[
+              { value: "false", label: "No" },
+              { value: "true", label: "Yes" },
+            ]}
+          />
+        </Modal>
       )}
     </>
   );

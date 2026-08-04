@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
 import { Menu, ChevronDown, ChevronRight } from 'lucide-react';
 import './App.css'
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, Outlet, Navigate } from 'react-router-dom';
@@ -7,20 +7,25 @@ import useClickOutside from './hooks/useClickOutside';
 import findMenuByPath from './functions/locationFunctions';
 import { ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
-import ViewFloor from './Restaurant/Floor & Table Setup/FloorPageView';
 import { useAuth } from './Context/AuthContext';
-import ReservationModelView from './Hotel/Reservation/ReservationModelView';
-import ReservationListEdit from './Hotel/Reservation/ReservationListEdit';
-import Roles from './Hotel/HRM/Roles';
-import Department from './Hotel/HRM/Department';
-import Designation from './Hotel/HRM/Designation';
-import Shift from './Hotel/HRM/Shift';
+import ErrorBoundary from './components/ErrorBoundary';
+import NotFound from './components/NotFound';
+import RequirePage from './components/RequirePage';
+
+// These six were static imports, which pulled them into the entry bundle and
+// defeated the code splitting every other page gets.
+const ReservationModelView = lazy(() => import('./Hotel/Reservation/ReservationModelView'));
+const ReservationListEdit = lazy(() => import('./Hotel/Reservation/ReservationListEdit'));
+const Roles = lazy(() => import('./Hotel/HRM/Roles'));
+const Department = lazy(() => import('./Hotel/HRM/Department'));
+const Designation = lazy(() => import('./Hotel/HRM/Designation'));
+const Shift = lazy(() => import('./Hotel/HRM/Shift'));
 
 // Lazy load all page components
 const ForgotPassword = lazy(() => import('./Authentication/Pages/ForgotPassword'));
 const LockScreen = lazy(() => import('./Authentication/Pages/LockScreen'));
 const Login = lazy(() => import('./Authentication/Pages/Login'));
-const OTP = lazy(() => import('./Authentication/Pages/OTP'));
+// OTP is deliberately not imported — see the note beside the auth routes below.
 const Register = lazy(() => import('./Authentication/Pages/Register'));
 
 // Hotel Components - Lazy loaded with grouping
@@ -36,26 +41,41 @@ const SettlementSummary = lazy(() => import('./Hotel/Night Audit/SettlementSumma
 const GuestEnquiry = lazy(() => import('./Hotel/Guest Enquiry/GuestEnquiry'));
 const Employee = lazy(() => import('./Hotel/HRM/Employee'));
 const User = lazy(() => import('./Hotel/HRM/User'));
+const RestaurantRoster = lazy(() => import('./Hotel/HRM/RestaurantRoster'));
+const RestaurantShiftPlanning = lazy(() => import('./Hotel/HRM/RestaurantShiftPlanning'));
+const BarRoster = lazy(() => import('./Hotel/HRM/BarRoster'));
+const BarShiftPlanning = lazy(() => import('./Hotel/HRM/BarShiftPlanning'));
 const TaskAssign = lazy(() => import('./Hotel/House Keeper/TaskAssign'));
 const RoomIncidentLog = lazy(() => import('./Hotel/House Keeper/RoomIncidentLog'));
 
 // Restaurant Components - Lazy loaded with grouping
 const FloorLayout = lazy(() => import('./Restaurant/Floor & Table Setup/FloorLayout'));
+const ViewFloor = lazy(() => import('./Restaurant/Floor & Table Setup/FloorPageView'));
 const TableMaster = lazy(() => import('./Restaurant/Floor & Table Setup/TableMaster'));
 const Orders = lazy(() => import('./Restaurant/Order Management/Orders'));
 const TableReservation = lazy(() => import('./Restaurant/Table Reservation/TableReservation'));
 const MenuManagement = lazy(() => import('./Restaurant/Menu Management/MenuManagement'));
+const ComboDeals = lazy(() => import('./Restaurant/Menu Management/ComboDeals'));
 const MainKitchen = lazy(() => import('./Restaurant/Kitchen Orders/MainKitchen'));
 const Grill = lazy(() => import('./Restaurant/Kitchen Orders/Grill'));
 const Dessert = lazy(() => import('./Restaurant/Kitchen Orders/Dessert'));
-const Bar = lazy(() => import('./Restaurant/Kitchen Orders/Bar'));
 const BillingPayments = lazy(() => import('./Restaurant/Billing & Payments/BillingPayments'));
 const Stock = lazy(() => import('./Restaurant/Inventory/Stock'));
 const ReceipeManagement = lazy(() => import('./Restaurant/Inventory/ReceipeManagement'));
-const StaffMaster = lazy(() => import('./Restaurant/Staff Management/StaffMaster'));
-const StaffPlanning = lazy(() => import('./Restaurant/Staff Management/StaffPlanning'));
 const GuestManagement = lazy(() => import('./Restaurant/Guest Management/GuestManagement'));
 const ReportAnalytics = lazy(() => import('./Restaurant/Report & Analytics/ReportAnalytics'));
+
+// Bar Components - Lazy loaded with grouping
+const BarFloorLayout = lazy(() => import('./Bar/Floor & Table Setup/FloorLayout'));
+const BarTableMaster = lazy(() => import('./Bar/Floor & Table Setup/TableMaster'));
+const BarOrders = lazy(() => import('./Bar/Order Management/Orders'));
+const BarMenuManagement = lazy(() => import('./Bar/Menu Management/MenuManagement'));
+const BarStationDisplay = lazy(() => import('./Bar/Station Display/BarStationDisplay'));
+const BarBillingPayments = lazy(() => import('./Bar/Billing & Payments/BarBillingPayments'));
+const BarStock = lazy(() => import('./Bar/Inventory/BarStock'));
+const BarReceipeManagement = lazy(() => import('./Bar/Inventory/BarReceipeManagement'));
+const BarGuestManagement = lazy(() => import('./Bar/Guest Management/BarGuestManagement'));
+const BarReportAnalytics = lazy(() => import('./Bar/Report & Analytics/BarReportAnalytics'));
 
 // Master Data Components - Lazy loaded with grouping
 const Facilities = lazy(() => import('./MasterData/Facilities'));
@@ -72,22 +92,26 @@ const HskTaskType = lazy(() => import('./MasterData/HskTaskType'));
 const Complementary = lazy(() => import('./MasterData/Complementary'));
 const ReservationStatus = lazy(() => import('./MasterData/ReservationStatus'));
 
-// Error Boundary Component (optional but recommended)
-const ErrorBoundaryFallback = () => (
-  <div className="error-boundary">
-    <h2>Something went wrong while loading this page.</h2>
-    <button onClick={() => window.location.reload()}>Reload Page</button>
-  </div>
-);
-
-// Loading wrapper for lazy components
+// Wraps every routed page: an ErrorBoundary so one page's throw cannot blank
+// the whole app, and Suspense for the lazy chunk. Keyed by pathname so the
+// boundary clears itself when the user navigates away from a broken page.
 const PageLoader = ({ children }) => {
+  const location = useLocation();
   return (
-    <Suspense fallback={<LogoLoaderComponent />}>
-      {children}
-    </Suspense>
+    <ErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<LogoLoaderComponent />}>
+        {children}
+      </Suspense>
+    </ErrorBoundary>
   );
 };
+
+// Authenticated pages additionally go through the RBAC gate.
+const Page = ({ children }) => (
+  <PageLoader>
+    <RequirePage>{children}</RequirePage>
+  </PageLoader>
+);
 
 // Guards the authenticated app shell. Unauthenticated users are bounced
 // to the Login page, preserving the intended destination in `?next=`.
@@ -377,40 +401,50 @@ const AppContext = ({
 
 const AppLayout = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [menuList, setMenuList] = useState(MENU);
   const [activeMenu, setActiveMenu] = useState(null);
   const [activePath, setActivePath] = useState([0]);
   const location = useLocation();
   const { menus } = useAuth();
 
-  // Hydrate the sidebar with the RBAC menu payload from AuthContext when it
-  // arrives. Falls back to the static MENU when the server returns nothing,
-  // so the shell always renders something usable.
-  useEffect(() => {
-    if (Array.isArray(menus) && menus.length > 0) {
-      setMenuList(menus);
-    } else {
-      setMenuList(MENU);
-    }
-  }, [menus]);
+  // The sidebar is the RBAC menu payload when there is one, the static MENU
+  // otherwise, so the shell always renders something usable. This was state
+  // written from an effect, which meant every login rendered the static menu
+  // first and then re-rendered with the real one.
+  const menuList = useMemo(
+    () => (Array.isArray(menus) && menus.length > 0 ? menus : MENU),
+    [menus],
+  );
 
   // Highlight the active top-level and submenu path for the current URL.
+  // These stay as state rather than being derived: the user can also expand a
+  // parent entry that has no route of its own, and that choice has to survive
+  // until they navigate.
   useEffect(() => {
     if (!menuList.length) return;
     const result = findMenuByPath(menuList, location.pathname);
     if (result) {
+      // Synchronising local state to the router is this effect's purpose.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveMenu(result.activeMenu);
+       
       setActivePath(result.activePath);
     }
   }, [location.pathname, menuList]);
 
-  // Close mobile drawer whenever the route changes.
+  // Close mobile drawer whenever the route changes. Nav clicks close it
+  // directly; this covers browser back/forward, which nothing else observes.
   useEffect(() => {
+    // Reacting to a navigation event, not mirroring a prop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
   return (
     <>
+      {/* Lets keyboard and screen-reader users jump past the module rail and
+          submenu, which otherwise sit ahead of the content on every page.
+          The #main-content target already existed with nothing pointing at it. */}
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <Navbar
         setIsMobileMenuOpen={setIsMobileMenuOpen}
         isMobileMenuOpen={isMobileMenuOpen}
@@ -458,260 +492,340 @@ const App = () => {
               <Register />
             </PageLoader>
           } />
-          <Route path="/authentication/otp" element={
-            <PageLoader>
-              <OTP />
-            </PageLoader>
-          } />
+          {/* /authentication/otp is intentionally not routed. The page calls
+              POST /verify_otp and POST /resend_otp, and no backend service
+              implements either — there is no OTP concept anywhere in the mesh,
+              and no login response ever asks for a second factor. Nothing links
+              to it, so the only way to reach it was to type the URL, which
+              landed on a screen where every action failed. The component is
+              kept in Authentication/Pages/OTP.jsx; restore this route once the
+              two endpoints exist. */}
 
           {/* Main App Layout Routes */}
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={
-              <PageLoader>
+              <Page>
                 <AdminDashboard />
-              </PageLoader>
+              </Page>
             } />
 
             {/* Hotel Routes */}
             <Route path="/reservation" element={
-              <PageLoader>
+              <Page>
                 <Reservation />
-              </PageLoader>
+              </Page>
             } />
-            <Route path="/ReservationView" element={<ReservationModelView />} />
-            <Route path="/ReservationEdit" element={<ReservationListEdit />} />
+            <Route path="/ReservationView" element={
+              <Page>
+                <ReservationModelView />
+              </Page>
+            } />
+            <Route path="/ReservationEdit" element={
+              <Page>
+                <ReservationListEdit />
+              </Page>
+            } />
             <Route path="/add_new_reservation" element={
-              <PageLoader>
+              <Page>
                 <AddNewReservation />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/booking" element={
-              <PageLoader>
+              <Page>
                 <Booking />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/room_view" element={
-              <PageLoader>
+              <Page>
                 <RoomView />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/reservation_view" element={
-              <PageLoader>
+              <Page>
                 <ReservationView />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/user_reserved_details" element={
-              <PageLoader>
+              <Page>
                 <UserReserved />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/room_booked_details" element={
-              <PageLoader>
+              <Page>
                 <RoomBooked />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/settlement_summary" element={
-              <PageLoader>
+              <Page>
                 <SettlementSummary />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/guest_enquiry" element={
-              <PageLoader>
+              <Page>
                 <GuestEnquiry />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/employee" element={
-              <PageLoader>
+              <Page>
                 <Employee />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/user" element={
-              <PageLoader>
+              <Page>
                 <User />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/department" element={
-              <PageLoader>
+              <Page>
                 <Department />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/designation" element={
-              <PageLoader>
+              <Page>
                 <Designation />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/roles" element={
-              <PageLoader>
+              <Page>
                 <Roles />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/shift" element={
-              <PageLoader>
+              <Page>
                 <Shift />
-              </PageLoader>
+              </Page>
+            } />
+            <Route path="/restaurant_roster" element={
+              <Page>
+                <RestaurantRoster />
+              </Page>
+            } />
+            <Route path="/restaurant_shift_planning" element={
+              <Page>
+                <RestaurantShiftPlanning />
+              </Page>
+            } />
+            <Route path="/bar_roster" element={
+              <Page>
+                <BarRoster />
+              </Page>
+            } />
+            <Route path="/bar_shift_planning" element={
+              <Page>
+                <BarShiftPlanning />
+              </Page>
             } />
             <Route path="/task_assign" element={
-              <PageLoader>
+              <Page>
                 <TaskAssign />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/room_incident_log" element={
-              <PageLoader>
+              <Page>
                 <RoomIncidentLog />
-              </PageLoader>
+              </Page>
             } />
 
             {/* Restaurant Routes */}
             <Route path="/floor_layout" element={
-              <PageLoader>
+              <Page>
                 <FloorLayout />
-              </PageLoader>
+              </Page>
             } />
-            <Route path="/view" element={<ViewFloor />} />
+            <Route path="/view" element={
+              <Page>
+                <ViewFloor />
+              </Page>
+            } />
             <Route path="/table_master" element={
-              <PageLoader>
+              <Page>
                 <TableMaster />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/orders" element={
-              <PageLoader>
+              <Page>
                 <Orders />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/table_reservation" element={
-              <PageLoader>
+              <Page>
                 <TableReservation />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/menus" element={
-              <PageLoader>
+              <Page>
                 <MenuManagement />
-              </PageLoader>
+              </Page>
+            } />
+            <Route path="/combo_deals" element={
+              <Page>
+                <ComboDeals />
+              </Page>
             } />
             <Route path="/kot/main_kitchen" element={
-              <PageLoader>
+              <Page>
                 <MainKitchen />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/kot/grill" element={
-              <PageLoader>
+              <Page>
                 <Grill />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/kot/dessert" element={
-              <PageLoader>
+              <Page>
                 <Dessert />
-              </PageLoader>
-            } />
-            <Route path="/kot/bar" element={
-              <PageLoader>
-                <Bar />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/billing_payments" element={
-              <PageLoader>
+              <Page>
                 <BillingPayments />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/stock" element={
-              <PageLoader>
+              <Page>
                 <Stock />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/recipe_management" element={
-              <PageLoader>
+              <Page>
                 <ReceipeManagement />
-              </PageLoader>
-            } />
-            <Route path="/staff_master" element={
-              <PageLoader>
-                <StaffMaster />
-              </PageLoader>
-            } />
-            <Route path="/staff_planning" element={
-              <PageLoader>
-                <StaffPlanning />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/guest_management" element={
-              <PageLoader>
+              <Page>
                 <GuestManagement />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/reports_analytics" element={
-              <PageLoader>
+              <Page>
                 <ReportAnalytics />
-              </PageLoader>
+              </Page>
+            } />
+
+            {/* Bar Routes */}
+            <Route path="/bar_floor_layout" element={
+              <Page>
+                <BarFloorLayout />
+              </Page>
+            } />
+            <Route path="/bar_table_master" element={
+              <Page>
+                <BarTableMaster />
+              </Page>
+            } />
+            <Route path="/bar_orders" element={
+              <Page>
+                <BarOrders />
+              </Page>
+            } />
+            <Route path="/bar_menus" element={
+              <Page>
+                <BarMenuManagement />
+              </Page>
+            } />
+            <Route path="/bar_station" element={
+              <Page>
+                <BarStationDisplay />
+              </Page>
+            } />
+            <Route path="/bar_billing_payments" element={
+              <Page>
+                <BarBillingPayments />
+              </Page>
+            } />
+            <Route path="/bar_stock" element={
+              <Page>
+                <BarStock />
+              </Page>
+            } />
+            <Route path="/bar_recipe_management" element={
+              <Page>
+                <BarReceipeManagement />
+              </Page>
+            } />
+            <Route path="/bar_guest_management" element={
+              <Page>
+                <BarGuestManagement />
+              </Page>
+            } />
+            <Route path="/bar_reports_analytics" element={
+              <Page>
+                <BarReportAnalytics />
+              </Page>
             } />
 
             {/* Master Data Routes */}
             <Route path="/facilities" element={
-              <PageLoader>
+              <Page>
                 <Facilities />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/room_type" element={
-              <PageLoader>
+              <Page>
                 <RoomType />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/bed_type" element={
-              <PageLoader>
+              <Page>
                 <BedType />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/hall_floor" element={
-              <PageLoader>
+              <Page>
                 <HallFloor />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/rooms" element={
-              <PageLoader>
+              <Page>
                 <Rooms />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/discount_type" element={
-              <PageLoader>
+              <Page>
                 <DiscountType />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/tax_types" element={
-              <PageLoader>
+              <Page>
                 <TaxTypes />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/payment_methods" element={
-              <PageLoader>
+              <Page>
                 <PaymentMethods />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/identification_proof" element={
-              <PageLoader>
+              <Page>
                 <IdentificationProof />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/currency_country" element={
-              <PageLoader>
+              <Page>
                 <CurrencyCountry />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/hsk_task_type" element={
-              <PageLoader>
+              <Page>
                 <HskTaskType />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/complementary" element={
-              <PageLoader>
+              <Page>
                 <Complementary />
-              </PageLoader>
+              </Page>
             } />
             <Route path="/reservation_status" element={
-              <PageLoader>
+              <Page>
                 <ReservationStatus />
-              </PageLoader>
+              </Page>
             } />
 
           </Route>
+
+          {/* Unmatched URLs previously rendered an empty page. */}
+          <Route path="*" element={<NotFound />} />
 
         </Routes>
       </Router>

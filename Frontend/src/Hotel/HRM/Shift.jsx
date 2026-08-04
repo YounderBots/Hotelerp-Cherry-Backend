@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TableTemplate from "../../stories/TableTemplate";
+import Modal from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import IconButton from "../../stories/IconButton";
 import {
   ArrowLeft,
   RefreshCw,
@@ -13,8 +16,8 @@ import {
   CheckCircle,
 } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../../MasterData/MasterData.css";
 import "../Reservation/Reservation.css";
+import "./HRM.css";
 
 const readList = (res) =>
   Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
@@ -323,33 +326,27 @@ const Shift = () => {
       type: "custom",
       render: (row) => (
         <div className="table-actions">
-          <button
-            type="button"
-            className="table-action-btn view"
-            title="View"
-            aria-label={`View shift ${row.shift_name || row.id}`}
+          <IconButton
+            variant="ghost"
+            size="small"
+            icon={<Eye size={16} />}
             onClick={() => openViewModal(row)}
-          >
-            <Eye size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn edit"
-            title="Edit"
-            aria-label={`Edit shift ${row.shift_name || row.id}`}
+            ariaLabel={`View shift ${row.shift_name || row.id}`}
+          />
+          <IconButton
+            variant="subtle"
+            size="small"
+            icon={<Pencil size={16} />}
             onClick={() => handleEdit(row)}
-          >
-            <Pencil size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn delete"
-            title="Delete"
-            aria-label={`Delete shift ${row.shift_name || row.id}`}
+            ariaLabel={`Edit shift ${row.shift_name || row.id}`}
+          />
+          <IconButton
+            variant="danger-ghost"
+            size="small"
+            icon={<Trash2 size={16} />}
             onClick={() => handleDeleteClick(row)}
-          >
-            <Trash2 size={16} aria-hidden="true" />
-          </button>
+            ariaLabel={`Delete shift ${row.shift_name || row.id}`}
+          />
         </div>
       ),
     },
@@ -414,7 +411,6 @@ const Shift = () => {
           exportable
           hasActionButton
           actionButton={{
-            icon: <Download size={18} />,
             label: "Add Shift",
             onClick: openAddModal,
             size: "medium",
@@ -447,155 +443,73 @@ const Shift = () => {
 
       {/* View modal */}
       {showViewModal && viewData && (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="shift-view-title"
-          onClick={(e) => { if (e.target === e.currentTarget) closeViewModal(); }}
+        <Modal
+          isOpen={showViewModal}
+          title={`View Shift — ${viewData.shift_name || `#${viewData.id}`}`}
+          onClose={closeViewModal}
+          showFooter
+          size="small"
+          bodyLayout="single"
+          viewMode
+          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
         >
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3 id="shift-view-title">View Shift — {viewData.shift_name || `#${viewData.id}`}</h3>
-              <button
-                type="button"
-                onClick={closeViewModal}
-                aria-label="Close view shift"
-              >
-                <X size={18} aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className="modal-body single view">
-              <div className="form-group">
-                <label htmlFor="shift-view-name">Shift Name</label>
-                <input
-                  id="shift-view-name"
-                  value={viewData.shift_name || "—"}
-                  readOnly
-                  aria-readonly="true"
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="shift-view-start">Start Time</label>
-                <input
-                  id="shift-view-start"
-                  value={viewData.start_time || "—"}
-                  readOnly
-                  aria-readonly="true"
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="shift-view-end">End Time</label>
-                <input
-                  id="shift-view-end"
-                  value={viewData.end_time || "—"}
-                  readOnly
-                  aria-readonly="true"
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button type="button" className="btn secondary" onClick={closeViewModal}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+          <Input label="Shift Name" value={viewData.shift_name || "—"} readOnly disabled />
+          <Input label="Start Time" value={viewData.start_time || "—"} readOnly disabled />
+          <Input label="End Time" value={viewData.end_time || "—"} readOnly disabled />
+        </Modal>
       )}
 
       {/* Add / Edit modal */}
       {showModal && (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="shift-modal-title"
-          onClick={(e) => { if (e.target === e.currentTarget && !saving) closeModal(); }}
+        <Modal
+          isOpen={showModal}
+          title={editId ? "Edit Shift" : "Add Shift"}
+          onClose={closeModal}
+          showFooter
+          size="small"
+          bodyLayout="single"
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
+            { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving, autoFocus: true },
+          ]}
         >
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3 id="shift-modal-title">{editId ? "Edit Shift" : "Add Shift"}</h3>
-              <button
-                type="button"
-                onClick={closeModal}
-                aria-label="Close shift dialog"
-                disabled={saving}
-              >
-                <X size={18} aria-hidden="true" />
-              </button>
+          {formError && (
+            <div className="reservation-alert inline" role="alert">
+              {formError}
             </div>
+          )}
 
-            {formError && (
-              <div className="reservation-alert inline" role="alert">
-                {formError}
-              </div>
-            )}
+          <Input
+            label="Shift Name"
+            required
+            type="text"
+            name="shift_name"
+            value={formData.shift_name}
+            onChange={handleChange}
+            disabled={saving}
+            maxLength={100}
+          />
 
-            <div className="modal-body single">
-              <div className="form-group">
-                <label htmlFor="shift-name">Shift Name <span className="required">*</span></label>
-                <input
-                  id="shift-name"
-                  type="text"
-                  name="shift_name"
-                  value={formData.shift_name}
-                  onChange={handleChange}
-                  disabled={saving}
-                  maxLength={100}
-                  required
-                />
-              </div>
+          <Input
+            label="Start Time"
+            required
+            type="time"
+            name="start_time"
+            value={formData.start_time}
+            onChange={handleChange}
+            disabled={saving}
+          />
 
-              <div className="form-group">
-                <label htmlFor="shift-start">Start Time <span className="required">*</span></label>
-                <input
-                  id="shift-start"
-                  type="time"
-                  name="start_time"
-                  value={formData.start_time}
-                  onChange={handleChange}
-                  disabled={saving}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="shift-end">End Time <span className="required">*</span></label>
-                <input
-                  id="shift-end"
-                  type="time"
-                  name="end_time"
-                  value={formData.end_time}
-                  onChange={handleChange}
-                  disabled={saving}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={closeModal}
-                disabled={saving}
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={handleSave}
-                disabled={saving}
-                aria-busy={saving}
-              >
-                {saving ? "Saving…" : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
+          <Input
+            label="End Time"
+            required
+            type="time"
+            name="end_time"
+            value={formData.end_time}
+            onChange={handleChange}
+            disabled={saving}
+          />
+        </Modal>
       )}
 
       <ConfirmDialog

@@ -16,7 +16,32 @@ class BaseConfig(object):
     ALGORITHM = 'HS256'
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
     REFRESH_TOKEN_EXPIRE_MINUTES = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", "1440"))
-    
+
+    IS_PRODUCTION = _IS_PROD
+    ENVIRONMENT = _ENV
+
+    # Must match the `iss` claim the login gateway mints, otherwise every
+    # token this service receives is rejected.
+    JWT_ISSUER = os.getenv("JWT_ISSUER", "hotelerp-login")
+
+    SESSION_SECRET = os.getenv(
+        "SESSION_SECRET",
+        None if _IS_PROD else "dev-only-session-secret",
+    )
+    if not SESSION_SECRET:
+        raise RuntimeError("SESSION_SECRET must be set in production")
+
+    # CORS allow-list. Comma-separated origins; wildcard is stripped because
+    # `allow_credentials=True` with `*` is both invalid and unsafe.
+    _raw_origins = os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    )
+    CORS_ALLOWED_ORIGINS = [
+        o.strip() for o in _raw_origins.split(",") if o.strip() and o.strip() != "*"
+    ]
+
+
 # ------- Common Using Names -------#  
 class CommonWords():
     STATUS = 'ACTIVE'

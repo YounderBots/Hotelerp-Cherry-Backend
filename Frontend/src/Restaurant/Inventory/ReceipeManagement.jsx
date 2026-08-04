@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, Plus, X, Trash2 } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Button from "../../stories/Button";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../../MasterData/MasterData.css";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
@@ -10,6 +13,7 @@ const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
 const ReceipeManagement = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [inventoryItems, setInventoryItems] = useState([]);
+  const [kitchens, setKitchens] = useState([]);
   const [recipeCounts, setRecipeCounts] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -23,24 +27,17 @@ const ReceipeManagement = () => {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.allSettled([APICall.getT("/restaurant/menu"), APICall.getT("/restaurant/inventory_item")]).then(async ([mRes, iRes]) => {
-      const menus = mRes.status === "fulfilled" ? readList(mRes.value) : [];
-      setMenuItems(menus);
+    Promise.allSettled([
+      APICall.getT("/restaurant/menu"),
+      APICall.getT("/restaurant/inventory_item"),
+      APICall.getT("/restaurant/menu_recipe_counts"),
+      APICall.getT("/restaurant/kitchen"),
+    ]).then(([mRes, iRes, cRes, kRes]) => {
+      setMenuItems(mRes.status === "fulfilled" ? readList(mRes.value) : []);
       setInventoryItems(iRes.status === "fulfilled" ? readList(iRes.value) : []);
+      setRecipeCounts(cRes.status === "fulfilled" ? cRes.value?.data || {} : {});
+      setKitchens(kRes.status === "fulfilled" ? readList(kRes.value) : []);
       if (mRes.status === "rejected") setError(errMsg(mRes.reason, "Failed to load menu items."));
-
-      const counts = {};
-      await Promise.all(
-        menus.map(async (m) => {
-          try {
-            const res = await APICall.getT(`/restaurant/menu/${m.id}/recipe`);
-            counts[m.id] = readList(res).length;
-          } catch {
-            counts[m.id] = 0;
-          }
-        })
-      );
-      setRecipeCounts(counts);
       setLoading(false);
     });
   }, []);
@@ -48,6 +45,8 @@ const ReceipeManagement = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  const kitchenName = (id) => kitchens.find((k) => k.id === id)?.kitchen_name || (id ? `#${id}` : "—");
 
   const openView = async (menu) => {
     try {
@@ -121,7 +120,7 @@ const ReceipeManagement = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Recipes"
@@ -131,7 +130,7 @@ const ReceipeManagement = () => {
         columns={[
           { key: "item_code", title: "Item Code" },
           { key: "item_name", title: "Menu Item" },
-          { key: "kitchen_section", title: "Kitchen" },
+          { key: "kitchen_id", title: "Kitchen", type: "custom", render: (row) => kitchenName(row.kitchen_id) },
           { key: "id", title: "Ingredients", align: "center", type: "custom", render: (row) => `${recipeCounts[row.id] ?? 0} ingredient(s)` },
           { key: "availability_status", title: "Status", type: "badge", align: "center" },
           {
@@ -141,12 +140,8 @@ const ReceipeManagement = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "nowrap" }}>
-                <button className="table-action-btn view" title="View" onClick={() => openView(row)}>
-                  <Eye size={16} />
-                </button>
-                <button className="table-action-btn edit" title="Edit" onClick={() => openEdit(row)}>
-                  <Pencil size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openView(row)} />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} ariaLabel="Edit" onClick={() => openEdit(row)} />
               </div>
             ),
           },
@@ -155,100 +150,92 @@ const ReceipeManagement = () => {
       />
 
       {activeModal === "addEdit" && selectedMenu && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: 1000 }}>
-            <div className="modal-header">
-              <h3>Recipe — {selectedMenu.item_name}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen
+          title={`Recipe — ${selectedMenu.item_name}`}
+          onClose={closeModal}
+          size="large"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeModal, disabled: saving },
+            { label: saving ? "Saving…" : "Save Recipe", variant: "primary", onClick: saveRecipe, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
+          <h6 className="fw-semibold mb-2">Ingredients Mapping</h6>
+          <table className="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Ingredient</th>
+                <th>Qty Required</th>
+                <th>Unit</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, idx) => (
+                <tr key={idx}>
+                  <td>
+                    <select value={r.inventory_item_id} onChange={(e) => updateRow(idx, "inventory_item_id", e.target.value)}>
+                      <option value="">— select —</option>
+                      {inventoryItems.map((i) => (
+                        <option key={i.id} value={i.id}>{i.item_name}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <input type="number" value={r.quantity_required} onChange={(e) => updateRow(idx, "quantity_required", e.target.value)} />
+                  </td>
+                  <td>{r.unit || "-"}</td>
+                  <td style={{ textAlign: "center" }}>
+                    <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={14} />} ariaLabel="Remove ingredient" onClick={() => removeRow(idx)} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-            <div className="modal-body">
-              <h6 className="fw-semibold mb-2">Ingredients Mapping</h6>
-              <table className="table table-sm table-bordered">
-                <thead>
-                  <tr>
-                    <th>Ingredient</th>
-                    <th>Qty Required</th>
-                    <th>Unit</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, idx) => (
-                    <tr key={idx}>
-                      <td>
-                        <select value={r.inventory_item_id} onChange={(e) => updateRow(idx, "inventory_item_id", e.target.value)}>
-                          <option value="">— select —</option>
-                          {inventoryItems.map((i) => (
-                            <option key={i.id} value={i.id}>{i.item_name}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <input type="number" value={r.quantity_required} onChange={(e) => updateRow(idx, "quantity_required", e.target.value)} />
-                      </td>
-                      <td>{r.unit || "-"}</td>
-                      <td style={{ textAlign: "center" }}>
-                        <button className="btn icon" onClick={() => removeRow(idx)}>
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <button className="btn secondary mb-3" onClick={addRow}>
-                <Plus size={14} /> Add Ingredient
-              </button>
-              <p style={{ fontSize: 13, color: "#64748b" }}>
-                Stock for these ingredients is deducted automatically whenever a KOT for this item is marked ready.
-              </p>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={saveRecipe} disabled={saving}>{saving ? "Saving…" : "Save Recipe"}</button>
-            </div>
-          </div>
-        </div>
+          <Button variant="secondary" onClick={addRow} style={{ marginBottom: "12px" }}>
+            <Plus size={14} /> Add Ingredient
+          </Button>
+          <p style={{ fontSize: 13, color: "#64748b" }}>
+            Stock for these ingredients is deducted automatically whenever a KOT for this item is marked ready.
+          </p>
+        </Modal>
       )}
 
       {activeModal === "view" && selectedMenu && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: 600 }}>
-            <div className="modal-header">
-              <h3>Recipe Details – {selectedMenu.item_name}</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
-            <div className="modal-body single">
-              <p><strong>Kitchen:</strong> {selectedMenu.kitchen_section}</p>
-              <table className="table table-sm mt-3">
-                <thead>
-                  <tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr>
-                </thead>
-                <tbody>
-                  {selectedMenu.ingredients.length === 0 ? (
-                    <tr><td colSpan={3} style={{ textAlign: "center", color: "#9ca3af" }}>No recipe set</td></tr>
-                  ) : (
-                    selectedMenu.ingredients.map((i) => (
-                      <tr key={i.id}>
-                        <td>{i.item_name || `#${i.inventory_item_id}`}</td>
-                        <td>{i.quantity_required}</td>
-                        <td>{i.unit}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal}>Close</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen
+          title={`Recipe Details – ${selectedMenu.item_name}`}
+          onClose={closeModal}
+          size="medium"
+          bodyLayout="single"
+          showFooter
+          actions={[{ label: "Close", variant: "secondary", onClick: closeModal }]}
+        >
+          <p><strong>Kitchen:</strong> {kitchenName(selectedMenu.kitchen_id)}</p>
+          <table className="table table-sm mt-3">
+            <thead>
+              <tr><th>Ingredient</th><th>Qty</th><th>Unit</th></tr>
+            </thead>
+            <tbody>
+              {selectedMenu.ingredients.length === 0 ? (
+                <tr><td colSpan={3} style={{ textAlign: "center", color: "#9ca3af" }}>No recipe set</td></tr>
+              ) : (
+                selectedMenu.ingredients.map((i) => (
+                  <tr key={i.id}>
+                    <td>{i.item_name || `#${i.inventory_item_id}`}</td>
+                    <td>{i.quantity_required}</td>
+                    <td>{i.unit}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </Modal>
       )}
     </>
   );

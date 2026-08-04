@@ -186,7 +186,7 @@ CREATE TABLE `housekeeper_task` (
   KEY `ix_housekeeper_task_id` (`id`),
   KEY `ix_housekeeper_task_schedule_date` (`schedule_date`),
   KEY `ix_housekeeper_task_task_type` (`task_type`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -195,7 +195,7 @@ CREATE TABLE `housekeeper_task` (
 
 LOCK TABLES `housekeeper_task` WRITE;
 /*!40000 ALTER TABLE `housekeeper_task` DISABLE KEYS */;
-INSERT INTO `housekeeper_task` VALUES (1,'EMP-001','Ravi','Mohan','2026-02-01','10:30:00',205,'Cleaning','Ravi Kumar','Pending','Dirty','Wallet found','Handle with care','ACTIVE',1,'2026-02-03 16:38:50',NULL,NULL,1);
+INSERT INTO `housekeeper_task` VALUES (1,'2','Anand','K','2026-07-31','10:00:00',10,'Room Cleaning','2','Completed','Unblocking',NULL,NULL,'ACTIVE',1,'2026-07-31 12:30:55',NULL,NULL,1),(2,'2','Anand','K','2026-07-31','10:00:00',12,'Deep Cleaning','2','In-Progress','Blocking',NULL,NULL,'ACTIVE',1,'2026-07-31 12:30:55',NULL,NULL,1),(3,'2','Anand','K','2026-07-31','10:00:00',15,'Linen Change','2','Completed','Unblocking',NULL,NULL,'ACTIVE',1,'2026-07-31 12:30:55',NULL,NULL,1),(4,'2','Anand','K','2026-07-31','10:00:00',13,'Turndown Service','2','Pending','Unblocking',NULL,NULL,'ACTIVE',1,'2026-07-31 12:30:55',NULL,NULL,1),(5,'2','Anand','K','2026-07-31','10:00:00',22,'Bed Making','2','Completed','Unblocking',NULL,NULL,'ACTIVE',1,'2026-07-31 12:30:55',NULL,NULL,1);
 /*!40000 ALTER TABLE `housekeeper_task` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -235,7 +235,7 @@ CREATE TABLE `hsk_room_incident` (
   KEY `ix_hsk_room_incident_company_id` (`company_id`),
   KEY `ix_hsk_room_incident_reported_by` (`reported_by`),
   KEY `ix_hsk_room_incident_id` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -244,7 +244,7 @@ CREATE TABLE `hsk_room_incident` (
 
 LOCK TABLES `hsk_room_incident` WRITE;
 /*!40000 ALTER TABLE `hsk_room_incident` DISABLE KEYS */;
-INSERT INTO `hsk_room_incident` VALUES (1,12,'2026-02-03','12:15:00','AC replaced','Ravi','Medium','Supervisor','New AC installed','Manager','2026-02-03','templates/static/room_incidents\\bc5c4bd8-7565-469b-bfbf-41fc4ec80da5.jpeg','INACTIVE','1','2026-02-03 17:06:11','2026-02-03 17:11:58','1','1');
+INSERT INTO `hsk_room_incident` VALUES (1,13,'2026-07-30','14:30:00','Minor water leak reported near bathroom sink','Housekeeping - Floor 2','Medium',NULL,'Maintenance notified, plumber dispatched','1','2026-07-30',NULL,'ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(2,6,'2026-07-31','09:15:00','Guest reported broken reading lamp','Maintenance','Low',NULL,'Replacement lamp installed same day','1','2026-07-31',NULL,'ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1');
 /*!40000 ALTER TABLE `hsk_room_incident` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -276,7 +276,7 @@ CREATE TABLE `inquiry` (
   KEY `ix_inquiry_inquiry_status` (`inquiry_status`),
   KEY `ix_inquiry_inquiry_mode` (`inquiry_mode`),
   KEY `ix_inquiry_company_id` (`company_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -285,7 +285,7 @@ CREATE TABLE `inquiry` (
 
 LOCK TABLES `inquiry` WRITE;
 /*!40000 ALTER TABLE `inquiry` DISABLE KEYS */;
-INSERT INTO `inquiry` VALUES (1,'Online','John Doe','Acknowledged','Call tomorrow','None','In Progress','INACTIVE','1','2026-01-30 15:05:08','2026-01-30 15:09:59','1','1'),(2,'Offline','Anand Kumar','Resolved','No further action','None','Completed','ACTIVE','1','2026-01-30 15:06:24','2026-01-30 15:09:03','1','1'),(3,'Online','John Doe','Acknowledged','Call tomorrow','None','In Progress','ACTIVE','1','2026-02-01 13:47:33',NULL,NULL,'1');
+INSERT INTO `inquiry` VALUES (1,'Online','Sameer Bhatia','Sent rate card for Deluxe rooms, awaiting confirmation','Call back within 24 hours',NULL,'In Progress','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(2,'Offline','Fatima Sheikh','Discussed banquet hall availability for a wedding','Call back within 24 hours',NULL,'In Progress','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(3,'Online','Tarun Oberoi','Confirmed availability, converted to booking BOOK-2026-0001','Call back within 24 hours',NULL,'Completed','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(4,'Online','Deepa Ramanathan','Requested airport pickup details','Call back within 24 hours',NULL,'Completed','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1');
 /*!40000 ALTER TABLE `inquiry` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -465,7 +465,7 @@ CREATE TABLE `reservation_amount_paid_history` (
   KEY `ix_reservation_amount_paid_history_status` (`status`),
   KEY `ix_reservation_amount_paid_history_paid_date` (`paid_date`),
   KEY `ix_reservation_amount_paid_history_reservation_id` (`reservation_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -474,6 +474,7 @@ CREATE TABLE `reservation_amount_paid_history` (
 
 LOCK TABLES `reservation_amount_paid_history` WRITE;
 /*!40000 ALTER TABLE `reservation_amount_paid_history` DISABLE KEYS */;
+INSERT INTO `reservation_amount_paid_history` VALUES (1,'RES-2026-0001','1',15680,'2026-07-29','Credit Card','3458a1c0-4c93-4f00-a55e-9fa353ad84f2','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(2,'RES-2026-0002','1',7840,'2026-07-30','UPI','e9918755-1ce1-477d-86ef-86045578f4f8','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(3,'RES-2026-0003','1',10700,'2026-07-31','Credit Card','a90b76e2-fb8d-457e-b0f0-727279b0f794','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(4,'RES-2026-0004','1',44800,'2026-07-28','UPI','d3e66d37-9a83-41df-8f22-584eee8ac063','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(5,'RES-2026-0005','1',23520,'2026-07-29','Credit Card','688b1a34-d2e4-48d4-8f7c-fe3613a0e730','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(6,'RES-2026-0006','1',33950,'2026-07-30','UPI','f1ecb401-8ce8-4722-af89-35fed09bf120','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(7,'RES-2026-0007','1',73920,'2026-07-31','Credit Card','d3883f57-504e-4a2c-b8d4-f7e0ac93baa8','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(8,'RES-2026-0008','1',115560,'2026-07-27','UPI','d5d34cec-640c-4023-bedd-caaaffbc661a','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(9,'RES-2026-0009','1',5040,'2026-07-31','Credit Card','b0192d1e-2ff9-4314-99d5-9d3560a748ad','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(10,'RES-2026-0010','1',2352,'2026-07-31','UPI','3b121ff4-a6c9-4788-85f1-3aff13db5f94','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(11,'RES-2026-0011','1',3528,'2026-07-31','Credit Card','813f47d4-edef-4b2c-9598-577afdcfffde','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(12,'RES-2026-0012','1',6426,'2026-07-31','UPI','b9b84059-e346-4909-ada1-bab28da46b11','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(13,'RES-2026-0013','1',7392,'2026-07-31','Credit Card','b685f5bc-84b6-4987-8c1f-6d1203521697','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(14,'RES-2026-0014','1',15680,'2026-07-27','UPI','b5ebf572-14e9-44fa-b447-11182ca8e90e','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(15,'RES-2026-0015','1',28000,'2026-07-25','Credit Card','ee83fc2f-1f61-4b6f-aef6-af9e0b482346','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(16,'RES-2026-0016','1',28000,'2026-07-20','UPI','dd0368f6-1326-49e2-a963-de38af4baa61','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1');
 /*!40000 ALTER TABLE `reservation_amount_paid_history` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -513,7 +514,7 @@ CREATE TABLE `room_booking` (
   KEY `ix_room_booking_status` (`status`),
   KEY `ix_room_booking_id` (`id`),
   KEY `ix_room_booking_departure_date` (`departure_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -522,7 +523,7 @@ CREATE TABLE `room_booking` (
 
 LOCK TABLES `room_booking` WRITE;
 /*!40000 ALTER TABLE `room_booking` DISABLE KEYS */;
-INSERT INTO `room_booking` VALUES (1,'RB-D483275F','Mr','Anand','M','9876543210','anand@gmail.com','2026-02-10','2026-02-12',2,'[1, 3]',2,3,1,'INACTIVE','1','2026-02-03 17:48:50','2026-02-03 17:55:20','1','1');
+INSERT INTO `room_booking` VALUES (1,'BOOK-2026-0001','Mr.','Rajesh','Kumar','9845019001','rajesh.kumar@example.com','2026-08-03','2026-08-05',2,'[\"Deluxe Room\"]',1,2,0,'ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(2,'BOOK-2026-0002','Ms.','Anita','Joshi','9845019002','anita.joshi@example.com','2026-08-07','2026-08-09',2,'[\"Deluxe Room\"]',1,2,0,'ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(3,'BOOK-2026-0003','Mr.','Manoj','Tiwari','9845019003','manoj.tiwari@example.com','2026-08-10','2026-08-12',2,'[\"Deluxe Room\"]',1,2,0,'ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1');
 /*!40000 ALTER TABLE `room_booking` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -690,7 +691,7 @@ CREATE TABLE `room_reservation` (
   KEY `ix_room_reservation_reservation_status` (`reservation_status`),
   KEY `ix_room_reservation_tax_type_id` (`tax_type_id`),
   KEY `ix_room_reservation_arrival_date` (`arrival_date`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=20 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -699,7 +700,7 @@ CREATE TABLE `room_reservation` (
 
 LOCK TABLES `room_reservation` WRITE;
 /*!40000 ALTER TABLE `room_reservation` DISABLE KEYS */;
-INSERT INTO `room_reservation` VALUES (1,'ROOM_RES_10001','Mr','Anandh','M','anand@gmail.com','9876543210','2026-03-01','2026-03-04',2,2,NULL,1,'59e3552d-8490-418e-a0d0-109929b1b466.pdf','[101, 102]','[1, 2]',NULL,'[\"daily\", \"daily\"]',3,1,'Breakfast','Welcome Drink',NULL,NULL,0,250,12,600,10,500,5300,1,NULL,3000,2300,0,1,500,5000,2,'RESERVATION','90C0292A','cfbec587-e5ed-4404-8fec-04bb42f37e62','ACTIVE','1','2026-02-04 13:10:15','2026-02-04 13:14:20','1','1'),(2,'ROOM_RES_1770380150861','Mr','Anand ','M','anand@gmail.com','1234567890','2026-02-06','2026-02-07',1,1,'CONFIRMED',7,'98973750-b5f2-4fb7-88b0-0aef553fa7dc.jpg','[3]','[7]',NULL,'[\"daily\"]',0,0,'','Welcome Drink',NULL,NULL,0,0,5,0,20,0,0,6,NULL,0,0,0,0,0,0,6,'RESERVATION','27C5FEF1','52275de2-e006-4e3b-9908-d04ce10f05f9','INACTIVE','1','2026-02-06 17:45:51','2026-02-10 10:25:06','1','1');
+INSERT INTO `room_reservation` VALUES (1,'RES-2026-0001','Mr.','Rohan','Mehta','rohan.mehta@example.com','9845012301','2026-07-29','2026-08-02',4,1,'Checked-In',1,'/uploads/identity/RES-2026-0001.jpg','[1]','[1]','[\"101\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,14000,0,12,1680,0,0,15680,2,15680,15680,0,0,0,0,15680,2,'Reservation','CNF2026001','b851d6e0-4f0d-49be-99a6-3fab5960d3c1','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(2,'RES-2026-0002','Ms.','Priya','Nair','priya.nair@example.com','9845012302','2026-07-30','2026-08-01',2,1,'Checked-In',1,'/uploads/identity/RES-2026-0002.jpg','[2]','[1]','[\"102\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,7000,0,12,840,0,0,7840,4,7840,7840,0,0,0,0,7840,2,'Reservation','CNF2026002','4ea081d9-f7c1-4a4e-9143-33d89507012d','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(3,'RES-2026-0003','Mr.','Arjun','Kapoor','arjun.kapoor@example.com','9845012303','2026-07-31','2026-08-02',2,1,'Checked-In',1,'/uploads/identity/RES-2026-0003.jpg','[5]','[2]','[\"105\"]','[\"Daily\"]',2,1,'No',NULL,3,3,10000,0,12,1200,5,500,10700,2,10700,10700,0,0,0,0,10700,2,'Reservation','CNF2026003','f24635e1-a0f0-4604-8740-c60837ed5430','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(4,'RES-2026-0004','Ms.','Sana','Sheikh','sana.sheikh@example.com','9845012304','2026-07-28','2026-08-05',8,1,'Checked-In',1,'/uploads/identity/RES-2026-0004.jpg','[11]','[2]','[\"203\"]','[\"Daily\"]',2,0,'Yes',NULL,3,NULL,40000,0,12,4800,0,0,44800,4,44800,44800,0,0,0,0,44800,2,'Reservation','CNF2026004','4d753db5-b8a8-44e5-bde7-8f7bb6484c73','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(5,'RES-2026-0005','Mr.','Vikram','Rao','vikram.rao@example.com','9845012305','2026-07-29','2026-08-01',3,1,'Checked-In',1,'/uploads/identity/RES-2026-0005.jpg','[13]','[3]','[\"205\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,21000,0,12,2520,0,0,23520,2,23520,23520,0,0,0,0,23520,2,'Reservation','CNF2026005','89791f8e-4ce7-47ad-844a-6cf12c1b6d5d','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(6,'RES-2026-0006','Ms.','Neha','Gupta','neha.gupta@example.com','9845012306','2026-07-30','2026-08-04',5,1,'Checked-In',1,'/uploads/identity/RES-2026-0006.jpg','[17]','[3]','[\"301\"]','[\"Daily\"]',2,1,'No',NULL,3,2,35000,0,12,4200,15,5250,33950,4,33950,33950,0,0,0,0,33950,2,'Reservation','CNF2026006','1d609d30-42f5-4593-ab55-dcdb9390269b','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(7,'RES-2026-0007','Mr.','Karan','Malhotra','karan.malhotra@example.com','9845012307','2026-07-31','2026-08-06',6,1,'Checked-In',1,'/uploads/identity/RES-2026-0007.jpg','[19]','[4]','[\"303\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,66000,0,12,7920,0,0,73920,2,73920,73920,0,0,0,0,73920,2,'Reservation','CNF2026007','c1eb5bd6-25e3-4c42-95cc-2e2dc5184e5c','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(8,'RES-2026-0008','Ms.','Ananya','Iyer','ananya.iyer@example.com','9845012308','2026-07-27','2026-08-02',6,1,'Checked-In',1,'/uploads/identity/RES-2026-0008.jpg','[22]','[5]','[\"306\"]','[\"Daily\"]',2,0,'Yes',NULL,3,3,108000,0,12,12960,5,5400,115560,4,115560,115560,0,0,0,0,115560,2,'Reservation','CNF2026008','40edc847-b0a7-48e8-9eb9-8efceb7aee20','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(9,'RES-2026-0009','Mr.','Farhan','Khan','farhan.khan@example.com','9845012309','2026-07-31','2026-08-03',3,1,'Confirmed',1,'/uploads/identity/RES-2026-0009.jpg','[6]','[2]','[\"106\"]','[\"Daily\"]',2,1,'No',NULL,3,NULL,15000,0,12,1800,0,0,16800,2,5040,5040,11760,0,0,0,16800,1,'Reservation','CNF2026009','bcbb44d6-ee36-4378-9098-7972291d9f64','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(10,'RES-2026-0010','Ms.','Divya','Menon','divya.menon@example.com','9845012310','2026-07-31','2026-08-02',2,1,'Confirmed',1,'/uploads/identity/RES-2026-0010.jpg','[8]','[1]','[\"108\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,7000,0,12,840,0,0,7840,4,2352,2352,5488,0,0,0,7840,1,'Reservation','CNF2026010','0a18cf5a-bf3b-4728-86c7-25e8004ed3b3','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(11,'RES-2026-0011','Mr.','Aditya','Verma','aditya.verma@example.com','9845012311','2026-08-01','2026-08-04',3,1,'Confirmed',1,'/uploads/identity/RES-2026-0011.jpg','[9]','[1]','[\"201\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,10500,0,12,1260,0,0,11760,2,3528,3528,8232,0,0,0,11760,1,'Reservation','CNF2026011','14d32dc8-c1fd-4c7d-838d-630f797bd01b','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(12,'RES-2026-0012','Ms.','Ritu','Chawla','ritu.chawla@example.com','9845012312','2026-08-02','2026-08-05',3,1,'Confirmed',1,'/uploads/identity/RES-2026-0012.jpg','[14]','[3]','[\"206\"]','[\"Daily\"]',2,1,'Yes',NULL,3,1,21000,0,12,2520,10,2100,21420,4,6426,6426,14994,0,0,0,21420,1,'Reservation','CNF2026012','3bb1ce63-4643-454a-a509-d0a287f0fc81','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(13,'RES-2026-0013','Mr.','Suresh','Pillai','suresh.pillai@example.com','9845012313','2026-08-01','2026-08-03',2,1,'Confirmed',1,'/uploads/identity/RES-2026-0013.jpg','[20]','[4]','[\"304\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,22000,0,12,2640,0,0,24640,2,7392,7392,17248,0,0,0,24640,1,'Reservation','CNF2026013','f0e42576-cb26-4e8d-b409-89e1cd14b06c','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(14,'RES-2026-0014','Ms.','Meera','Desai','meera.desai@example.com','9845012314','2026-07-27','2026-07-31',4,1,'Checked-Out',1,'/uploads/identity/RES-2026-0014.jpg','[10]','[1]','[\"202\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,14000,0,12,1680,0,0,15680,4,15680,15680,0,0,0,0,15680,3,'Reservation','CNF2026014','1133e0c0-633d-4993-bc90-c13e70ffa3f7','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(15,'RES-2026-0015','Mr.','Ibrahim','Ansari','ibrahim.ansari@example.com','9845012315','2026-07-25','2026-07-30',5,1,'Checked-Out',1,'/uploads/identity/RES-2026-0015.jpg','[12]','[2]','[\"204\"]','[\"Daily\"]',2,1,'No',NULL,3,NULL,25000,0,12,3000,0,0,28000,2,28000,28000,0,0,0,0,28000,3,'Reservation','CNF2026015','133ba218-62fa-4171-9e48-866b9906fe3e','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(16,'RES-2026-0016','Ms.','Lakshmi','Krishnan','lakshmi.krishnan@example.com','9845012316','2026-07-20','2026-07-25',5,1,'Checked-Out',1,'/uploads/identity/RES-2026-0016.jpg','[15]','[2]','[\"207\"]','[\"Daily\"]',2,0,'Yes',NULL,3,NULL,25000,0,12,3000,0,0,28000,4,28000,28000,0,0,0,0,28000,3,'Reservation','CNF2026016','15d354b6-3c4d-4e7a-93b4-abcbedc9c494','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(17,'RES-2026-0017','Mr.','Yusuf','Sheikh','yusuf.sheikh@example.com','9845012317','2026-08-05','2026-08-08',3,1,'Cancelled',1,'/uploads/identity/RES-2026-0017.jpg','[16]','[1]','[\"208\"]','[\"Daily\"]',2,0,'No',NULL,3,NULL,10500,0,12,1260,0,0,11760,2,0,0,11760,0,0,0,11760,4,'Reservation','CNF2026017','b3f9798a-e793-4ab7-b8ad-7ae6a04bf1d3','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(18,'RES-2026-0018','Ms.','Pooja','Bhatt','pooja.bhatt@example.com','9845012318','2026-07-29','2026-07-31',2,1,'No-Show',1,'/uploads/identity/RES-2026-0018.jpg','[18]','[3]','[\"302\"]','[\"Daily\"]',2,1,'No',NULL,3,NULL,14000,0,12,1680,0,0,15680,4,0,0,15680,0,0,0,15680,5,'Reservation','CNF2026018','c967ddae-cca7-4423-b698-7797afdc7423','ACTIVE','1','2026-07-31 12:30:55',NULL,NULL,'1'),(19,'RES-20260731173329-UDD6N6','Mr.','E2E','Tester','e2e.tester@example.com','9998887771','2026-08-15','2026-08-18',3,1,'On Hold',7,'6566154a-3f22-492d-bdf7-e39767fa34a2.png','[24]','[1]',NULL,'[\"daily\"]',1,0,'','',NULL,NULL,10500,0,0,0,0,0,10500,6,NULL,0,10500,0,0,1500,10500,7,'RESERVATION','30A473C6','81dc149b-b329-49bb-9787-65d197fe47a7','INACTIVE','1','2026-07-31 23:03:29','2026-07-31 23:05:00','1','1');
 /*!40000 ALTER TABLE `room_reservation` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -755,4 +756,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-02-12 13:29:12
+-- Dump completed on 2026-08-04 14:36:27

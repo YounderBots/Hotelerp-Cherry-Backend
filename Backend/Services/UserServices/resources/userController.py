@@ -7,6 +7,7 @@ import os
 import uuid
 import bcrypt
 from fastapi import Form, UploadFile, File
+from resources.authorization import require_permission
 from resources.utils import verify_authentication
 from models import models
 from models import get_db
@@ -124,6 +125,8 @@ async def create_user(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, auth_role, company_id, "/user", "create")
         # -------------------------------------------------
         # NORMALIZATION
         # -------------------------------------------------
@@ -549,82 +552,14 @@ def verify_credentials(payload: dict, db: Session = Depends(get_db)):
 
 
 # =====================================================
-# GET USER BY EMAIL (LOGIN USER) — LEGACY, HASH REDACTED
+# GET USER BY EMAIL — REMOVED
 # =====================================================
-# Kept for any legacy caller. Response no longer includes the password hash,
-# salary details, or emergency contact. New callers should use
-# POST /verify_credentials.
-@router.get("/login_user/{usermail}", status_code=status.HTTP_200_OK)
-def get_user_by_mail(
-    usermail: str,
-    db: Session = Depends(get_db)
-):
-    try:
-        if not usermail or "@" not in usermail:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Valid email is required"
-            )
+# `GET /login_user/{usermail}` was unauthenticated and returned full PII
+# (personal email, mobile, date of birth, gender, marital status and home
+# address) for any email an anonymous caller supplied. It had no callers in
+# this repository and was already documented as superseded by
+# POST /verify_credentials, which returns only identity fields.
 
-        user = (
-            db.query(models.Users)
-            .filter(
-                func.lower(models.Users.Company_Email) == usermail.lower(),
-                models.Users.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-
-        return {
-            "status": "success",
-            "data": {
-                "id": user.id,
-                "user_code": user.User_Code,
-                "username": user.username,
-                "first_name": user.First_Name,
-                "last_name": user.Last_Name,
-                "personal_email": user.Personal_Email,
-                "company_email": user.Company_Email,
-                "mobile": user.Mobile,
-                "alternative_mobile": user.Alternative_Mobile,
-                "dob": user.D_O_B,
-                "gender": user.Gender,
-                "marital_status": user.Marital_Status,
-                "address": user.Address,
-                "city": user.City,
-                "state": user.State,
-                "postal_code": user.Postal_Code,
-                "country": user.Country,
-                "department_id": user.Department_ID,
-                "designation_id": user.Designation_ID,
-                "role_id": user.Role_ID,
-                "shift_id": user.Shift_ID,
-                "date_of_joining": user.Date_Of_Joining,
-                "experience": user.Experience,
-                "register_code": user.Register_Code,
-                "acknowledgment_of_hotel_policies": user.Acknowledgment_of_Hotel_Policies,
-                "status": user.status,
-                "company_id": user.company_id,
-                "created_at": user.created_at,
-                "updated_at": user.updated_at
-            }
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        logger.exception("unhandled_exception")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
 
 # =====================================================
 # UPDATE USER
@@ -646,6 +581,8 @@ async def update_user(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, auth_role, company_id, "/user", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -842,6 +779,8 @@ def delete_user(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, auth_role, company_id, "/user", "delete")
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
@@ -916,6 +855,8 @@ async def create_role(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, role_id, company_id, "/roles", "create")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -1186,6 +1127,8 @@ async def update_role(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, role_id, company_id, "/roles", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -1326,6 +1269,8 @@ def delete_role(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, role, company_id, "/roles", "delete")
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
@@ -1402,6 +1347,8 @@ async def create_role_permission(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, role_id, company_id, "/roles", "create")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -1837,6 +1784,8 @@ async def update_role_permission(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/roles", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -1969,6 +1918,8 @@ def delete_role_permission(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/roles", "delete")
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
@@ -2045,6 +1996,8 @@ async def create_menu(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/roles", "create")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -2325,6 +2278,8 @@ async def update_menu(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/roles", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -2477,6 +2432,8 @@ def delete_menu(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/roles", "delete")
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
@@ -2553,6 +2510,8 @@ async def create_submenu(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/roles", "create")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -2689,7 +2648,21 @@ async def create_submenu(
         )
 
 @router.get("/submenus/by-menu/{menu_id}", status_code=status.HTTP_200_OK)
-def get_submenus_by_menu(menu_id: int, company_id: str, db: Session = Depends(get_db)):
+def get_submenus_by_menu(
+    menu_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    # `company_id` used to arrive as a caller-supplied query parameter on an
+    # unauthenticated route, so anyone could read any tenant's menu structure
+    # by guessing an id. It is now taken from the verified token only.
+    user_id, role_id, company_id, token = verify_authentication(request)
+    if not company_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+
     submenus = db.query(models.Submenus).filter(
         models.Submenus.menu_id == str(menu_id),
         models.Submenus.company_id == company_id,
@@ -2868,6 +2841,8 @@ async def update_submenu(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/roles", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -3043,6 +3018,8 @@ def delete_submenu(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/roles", "delete")
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
@@ -3183,6 +3160,8 @@ async def create_department(
         # -------------------------------------------------
         user_id, role_id, company_id, token = verify_authentication(request)
 
+
+        require_permission(db, role_id, company_id, "/department", "create")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -3367,6 +3346,8 @@ async def update_department(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, role_id, company_id, "/department", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -3496,6 +3477,8 @@ def delete_department(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, role_id, company_id, "/department", "delete")
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
@@ -3638,6 +3621,8 @@ async def create_designation(
         # -------------------------------------------------
         user_id, role_id, company_id, token = verify_authentication(request)
 
+
+        require_permission(db, role_id, company_id, "/designation", "create")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -3822,6 +3807,8 @@ async def update_designation(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, role_id, company_id, "/designation", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -3951,6 +3938,8 @@ def delete_designation(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, role_id, company_id, "/designation", "delete")
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
@@ -4027,6 +4016,8 @@ async def create_shift(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/shift", "create")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -4292,6 +4283,8 @@ async def update_shift(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/shift", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -4439,6 +4432,8 @@ def delete_shift(
                 detail="Invalid authentication token"
             )
 
+
+        require_permission(db, user_role, company_id, "/shift", "delete")
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------

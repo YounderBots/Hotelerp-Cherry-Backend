@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, X } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Button from "../../stories/Button";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
@@ -85,7 +89,7 @@ const KitchenDisplay = ({ title, kitchenType }) => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title={title}
@@ -106,69 +110,66 @@ const KitchenDisplay = ({ title, kitchenType }) => {
             title: "Action",
             align: "center",
             type: "custom",
-            render: (row) => (
-              <button className="table-action-btn view" onClick={() => openItemsModal(row)}>
-                <Eye size={16} />
-              </button>
-            ),
+            render: (row) => <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openItemsModal(row)} />,
           },
         ]}
         data={kots}
       />
 
       {showItemsModal && selectedKOT && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "900px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>KOT Items – {selectedKOT.kot_number}</h3>
-              <button onClick={closeItemsModal}><X size={18} /></button>
-            </div>
-
-            <div className="modal-body single">
-              {selectedKOT.kot_status === "New" && (
-                <button className="btn secondary" style={{ marginBottom: "12px" }} onClick={() => acknowledgeKot(selectedKOT)}>
-                  Acknowledge KOT
-                </button>
+        <Modal
+          isOpen
+          title={`KOT Items – ${selectedKOT.kot_number}`}
+          onClose={closeItemsModal}
+          size="xlarge"
+          bodyLayout="single"
+          showFooter
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeItemsModal },
+            ...(selectedKOT.kot_status !== "Completed" ? [{ label: "Mark Whole KOT Ready", variant: "primary", onClick: markAllReady }] : []),
+          ]}
+        >
+          {selectedKOT.kot_status === "New" && (
+            <Button variant="secondary" style={{ marginBottom: "12px" }} onClick={() => acknowledgeKot(selectedKOT)}>
+              Acknowledge KOT
+            </Button>
+          )}
+          <table className="table table-hover">
+            <thead>
+              <tr>
+                <th>Item Name</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th style={{ textAlign: "center" }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(selectedKOT.items || []).map((item) => (
+                <tr key={item.kot_item_id}>
+                  <td>
+                    {item.item_name}
+                    {item.variant_name ? ` — ${item.variant_name}` : ""}
+                    {item.special_instructions && (
+                      <div style={{ fontSize: "12px", color: "#64748b" }}>{item.special_instructions}</div>
+                    )}
+                  </td>
+                  <td>{item.quantity}</td>
+                  <td><span className="badge">{item.preparation_status}</span></td>
+                  <td style={{ textAlign: "center" }}>
+                    {item.preparation_status !== "Ready" && (
+                      <Button variant="primary" onClick={() => markItemReady(item.kot_item_id)}>
+                        Mark Ready
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {(!selectedKOT.items || selectedKOT.items.length === 0) && (
+                <tr><td colSpan={4} style={{ textAlign: "center", color: "#9ca3af" }}>No items</td></tr>
               )}
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Item Name</th>
-                    <th>Qty</th>
-                    <th>Status</th>
-                    <th style={{ textAlign: "center" }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(selectedKOT.items || []).map((item) => (
-                    <tr key={item.kot_item_id}>
-                      <td>{item.item_name}</td>
-                      <td>{item.quantity}</td>
-                      <td><span className="badge">{item.preparation_status}</span></td>
-                      <td style={{ textAlign: "center" }}>
-                        {item.preparation_status !== "Ready" && (
-                          <button className="btn primary" onClick={() => markItemReady(item.kot_item_id)}>
-                            Mark Ready
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {(!selectedKOT.items || selectedKOT.items.length === 0) && (
-                    <tr><td colSpan={4} style={{ textAlign: "center", color: "#9ca3af" }}>No items</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeItemsModal}>Close</button>
-              {selectedKOT.kot_status !== "Completed" && (
-                <button className="btn primary" onClick={markAllReady}>Mark Whole KOT Ready</button>
-              )}
-            </div>
-          </div>
-        </div>
+            </tbody>
+          </table>
+        </Modal>
       )}
     </>
   );

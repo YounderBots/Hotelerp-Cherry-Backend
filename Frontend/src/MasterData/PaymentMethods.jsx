@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import Modal from "../stories/Modal";
+import Modal, { ConfirmModal } from "../stories/Modal";
+import Input from "../stories/Form/Input";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const PaymentMethods = () => {
@@ -12,6 +14,7 @@ const PaymentMethods = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
 
   const initialForm = {
     name: "",
@@ -147,9 +150,12 @@ const PaymentMethods = () => {
   };
 
   const handleDelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this Payment Method?")) {
-      deletePaymentMethod(id);
-    }
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    deletePaymentMethod(deleteId);
+    setDeleteId(null);
   };
 
   /* ================= UI ================= */
@@ -187,24 +193,9 @@ const PaymentMethods = () => {
                   justifyContent: "center",
                 }}
               >
-                <button
-                  className="table-action-btn view"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handleDelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -217,15 +208,12 @@ const PaymentMethods = () => {
         <Modal
           isOpen={showViewModal}
           title="View Payment Method"
-          onClose={() => setShowViewModal(false)}
-          size="medium"
+          onClose={closeViewModal}
+          size="small"
         >
 
           <div className="modal-body single view">
-            <div className="form-group">
-              <label>Payment Method Name</label>
-              <input value={viewData.payment_method} disabled />
-            </div>
+            <Input label="Payment Method Name" disabled value={viewData.payment_method} />
           </div>
         </Modal>
       )}
@@ -237,7 +225,7 @@ const PaymentMethods = () => {
           title={editId ? "Edit  Payment Method" : "Add  Payment Method"}
           onClose={() => setShowModal(false)}
           showFooter
-          size="large"
+          size="small"
           bodyLayout="single"
           actions={[
             {
@@ -254,29 +242,26 @@ const PaymentMethods = () => {
           ]}
         >
           <div className="modal-body single">
-            <div className="form-group">
-              <label>Payment Method Name</label>
-              <input
-                name="name" value={formData.name}
-                onChange={handleChange} />
-            </div>
+            <Input
+              label="Payment Method Name"
+              name="name" value={formData.name}
+              onChange={handleChange} />
           </div>
         </Modal>
       )}
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Payment Method"
+        confirmText="Delete"
+        destructive
+      >
+        Are you sure you want to delete this payment method? This action cannot be undone.
+      </ConfirmModal>
+
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
     </>
   );
 };

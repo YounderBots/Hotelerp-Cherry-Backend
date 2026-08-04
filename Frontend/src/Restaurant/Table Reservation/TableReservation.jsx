@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, X } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, Check, XCircle, CheckCheck } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
-
-const RESERVATION_STATUSES = ["Reserved", "Checked-In", "Cancelled", "No-Show", "Completed"];
 
 const TableReservation = () => {
   const [data, setData] = useState([]);
@@ -121,7 +124,7 @@ const TableReservation = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Table Reservation"
@@ -153,15 +156,15 @@ const TableReservation = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
-                  <Eye size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openViewModal(row)} />
                 {row.reservation_status === "Reserved" && (
                   <>
-                    <button className="table-action-btn edit" title="Check in" onClick={() => updateStatus(row, "Checked-In")}>
-                      <Pencil size={16} />
-                    </button>
+                    <IconButton variant="subtle" size="small" icon={<Check size={16} />} ariaLabel="Check in" onClick={() => updateStatus(row, "Checked-In")} />
+                    <IconButton variant="danger-ghost" size="small" icon={<XCircle size={16} />} ariaLabel="Mark as no-show" onClick={() => updateStatus(row, "No-Show")} />
                   </>
+                )}
+                {row.reservation_status === "Checked-In" && (
+                  <IconButton variant="subtle" size="small" icon={<CheckCheck size={16} />} ariaLabel="Mark completed" onClick={() => updateStatus(row, "Completed")} />
                 )}
               </div>
             ),
@@ -171,103 +174,73 @@ const TableReservation = () => {
       />
 
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3>View Reservation</h3>
-              <button onClick={closeViewModal}><X size={18} /></button>
-            </div>
-            <div className="modal-body single view">
-              {Object.entries(viewData).map(([key, value]) => (
-                <div className="form-group" key={key}>
-                  <label>{key.replace(/_/g, " ")}</label>
-                  <input value={value ?? "-"} disabled />
-                </div>
-              ))}
-            </div>
-            <div className="modal-footer">
-              {viewData.reservation_status === "Reserved" && (
-                <button className="btn secondary" onClick={() => { updateStatus(viewData, "Cancelled"); closeViewModal(); }}>Cancel Reservation</button>
-              )}
-              <button className="btn primary" onClick={closeViewModal}>Close</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen
+          title="View Reservation"
+          onClose={closeViewModal}
+          size="large"
+          bodyLayout="grid"
+          viewMode
+          showFooter
+          actions={[
+            ...(viewData.reservation_status === "Reserved"
+              ? [{ label: "Cancel Reservation", variant: "secondary", onClick: () => { updateStatus(viewData, "Cancelled"); closeViewModal(); } }]
+              : []),
+            { label: "Close", variant: "primary", onClick: closeViewModal },
+          ]}
+        >
+          {Object.entries(viewData).map(([key, value]) => (
+            <Input key={key} label={key.replace(/_/g, " ")} value={value ?? "-"} disabled />
+          ))}
+        </Modal>
       )}
 
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3>Add Reservation</h3>
-              <button onClick={closeModal}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen
+          title="Add Reservation"
+          onClose={closeModal}
+          size="large"
+          bodyLayout="grid"
+          showFooter
+          actions={[
+            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
+            { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-
-            <div className="modal-body grid">
-              <div className="form-group">
-                <label>Table <span className="required">*</span></label>
-                <select name="table_id" value={formData.table_id} onChange={handleChange}>
-                  <option value="">— select —</option>
-                  {tables.map((t) => (
-                    <option key={t.id} value={t.id}>{t.table_name} ({t.table_code})</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Guest Name <span className="required">*</span></label>
-                <input name="guest_name" value={formData.guest_name} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Contact Number <span className="required">*</span></label>
-                <input name="guest_mobile" value={formData.guest_mobile} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Email</label>
-                <input type="email" name="guest_email" value={formData.guest_email} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Reservation Date <span className="required">*</span></label>
-                <input type="date" name="reservation_date" value={formData.reservation_date} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Start Time <span className="required">*</span></label>
-                <input type="time" name="start_time" value={formData.start_time} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>End Time</label>
-                <input type="time" name="end_time" value={formData.end_time} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>No. of Guests <span className="required">*</span></label>
-                <input type="number" name="no_of_guests" value={formData.no_of_guests} onChange={handleChange} />
-              </div>
-              <div className="form-group">
-                <label>Occasion</label>
-                <input name="occasion" value={formData.occasion} onChange={handleChange} placeholder="Birthday, Anniversary…" />
-              </div>
-              <div className="form-group">
-                <label>Source</label>
-                <select name="reservation_type" value={formData.reservation_type} onChange={handleChange}>
-                  <option value="Walk-In">Walk-In</option>
-                  <option value="Phone">Phone</option>
-                  <option value="Online">Online</option>
-                  <option value="Hotel Guest">Hotel Guest</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Special Requests</label>
-                <input name="special_requests" value={formData.special_requests} onChange={handleChange} />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeModal} disabled={saving}>Close</button>
-              <button className="btn primary" onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Submit"}</button>
-            </div>
-          </div>
-        </div>
+          <Select
+            label="Table"
+            required
+            name="table_id"
+            value={formData.table_id}
+            onChange={handleChange}
+            placeholder="— select —"
+            options={tables.map((t) => ({ value: t.id, label: `${t.table_name} (${t.table_code})` }))}
+          />
+          <Input label="Guest Name" required name="guest_name" value={formData.guest_name} onChange={handleChange} />
+          <Input label="Contact Number" required name="guest_mobile" value={formData.guest_mobile} onChange={handleChange} />
+          <Input label="Email" type="email" name="guest_email" value={formData.guest_email} onChange={handleChange} />
+          <Input label="Reservation Date" required type="date" name="reservation_date" value={formData.reservation_date} onChange={handleChange} />
+          <Input label="Start Time" required type="time" name="start_time" value={formData.start_time} onChange={handleChange} />
+          <Input label="End Time" type="time" name="end_time" value={formData.end_time} onChange={handleChange} />
+          <Input label="No. of Guests" required type="number" name="no_of_guests" value={formData.no_of_guests} onChange={handleChange} />
+          <Input label="Occasion" name="occasion" value={formData.occasion} onChange={handleChange} placeholder="Birthday, Anniversary…" />
+          <Select
+            label="Source"
+            name="reservation_type"
+            value={formData.reservation_type}
+            onChange={handleChange}
+            options={[
+              { value: "Walk-In", label: "Walk-In" },
+              { value: "Phone", label: "Phone" },
+              { value: "Online", label: "Online" },
+              { value: "Hotel Guest", label: "Hotel Guest" },
+            ]}
+          />
+          <Input label="Special Requests" name="special_requests" value={formData.special_requests} onChange={handleChange} />
+        </Modal>
       )}
     </>
   );

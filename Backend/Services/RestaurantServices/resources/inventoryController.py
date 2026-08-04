@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models import get_db, models
@@ -88,7 +89,7 @@ class InventoryItemIn(BaseModel):
     category: Optional[str] = None
     unit: str
     min_stock_level: float = 0
-    is_perishable: str = "No"
+    is_perishable: bool = False
 
 
 class InventoryItemUpdate(BaseModel):
@@ -96,7 +97,7 @@ class InventoryItemUpdate(BaseModel):
     category: Optional[str] = None
     unit: Optional[str] = None
     min_stock_level: Optional[float] = None
-    is_perishable: Optional[str] = None
+    is_perishable: Optional[bool] = None
 
 
 class StockAdjustIn(BaseModel):
@@ -343,3 +344,15 @@ def get_recipe(menu_id: int, request: Request, db: Session = Depends(get_db)):
     item_by_id = {i.id: i for i in items}
     data = [{**r.__dict__, "item_name": item_by_id.get(r.inventory_item_id).item_name if item_by_id.get(r.inventory_item_id) else None} for r in rows]
     return {"status": "success", "count": len(data), "data": data}
+
+
+@router.get("/menu_recipe_counts", status_code=status.HTTP_200_OK)
+def get_menu_recipe_counts(request: Request, db: Session = Depends(get_db)):
+    user_id, role_id, company_id = _auth(request)
+    rows = (
+        db.query(models.MenuRecipe.menu_id, func.count(models.MenuRecipe.id))
+        .filter(models.MenuRecipe.company_id == company_id, models.MenuRecipe.status == STATUS)
+        .group_by(models.MenuRecipe.menu_id)
+        .all()
+    )
+    return {"status": "success", "data": {str(menu_id): count for menu_id, count in rows}}

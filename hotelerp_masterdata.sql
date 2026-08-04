@@ -40,7 +40,7 @@ CREATE TABLE `bed_type` (
   KEY `ix_bed_type_created_by` (`created_by`),
   KEY `ix_bed_type_Type_Name` (`Type_Name`),
   KEY `ix_bed_type_company_id` (`company_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -49,7 +49,7 @@ CREATE TABLE `bed_type` (
 
 LOCK TABLES `bed_type` WRITE;
 /*!40000 ALTER TABLE `bed_type` DISABLE KEYS */;
-INSERT INTO `bed_type` VALUES (1,'King Bed','INACTIVE','1','2026-01-26 13:44:29','2026-01-26 14:01:10','1','1'),(2,'Updated King Bed','INACTIVE','1','2026-01-26 13:52:08','2026-02-04 19:13:30','1','1'),(3,'Single Bed','ACTIVE','1','2026-02-04 19:13:56',NULL,NULL,'1'),(4,'Double Bed','ACTIVE','1','2026-02-04 19:14:01',NULL,NULL,'1'),(5,'Queen Size Bed','ACTIVE','1','2026-02-04 19:14:05',NULL,NULL,'1'),(6,'King Size Bed','ACTIVE','1','2026-02-04 19:14:10',NULL,NULL,'1'),(7,'Twin Bed','ACTIVE','1','2026-02-04 19:14:15',NULL,NULL,'1');
+INSERT INTO `bed_type` VALUES (1,'Single Bed','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Double Bed','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Queen Bed','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'King Bed','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Twin Beds','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'Bunk Bed','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(7,'Sofa Bed','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(8,'E2E Test Bed Updated','INACTIVE','1','2026-07-31 22:56:41','2026-07-31 22:57:14','1','1');
 /*!40000 ALTER TABLE `bed_type` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -89,7 +89,7 @@ CREATE TABLE `countries_currency` (
 
 LOCK TABLES `countries_currency` WRITE;
 /*!40000 ALTER TABLE `countries_currency` DISABLE KEYS */;
-INSERT INTO `countries_currency` VALUES (1,'India','INR','₹','INACTIVE','1','2026-01-27 14:17:59','2026-02-04 19:21:13','1','1'),(2,'India','₹','Indian Rupee','ACTIVE','1','2026-02-04 19:21:59',NULL,NULL,'1'),(3,'United States','$','US Dollar','ACTIVE','1','2026-02-04 19:22:11',NULL,NULL,'1'),(4,'United Arab Emirates','AED','UAE Dirham','ACTIVE','1','2026-02-04 19:22:23',NULL,NULL,'1');
+INSERT INTO `countries_currency` VALUES (1,'India','INR','Rs.','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'United States','USD','$','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'United Kingdom','GBP','GBP','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'United Arab Emirates','AED','AED','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `countries_currency` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -116,7 +116,7 @@ CREATE TABLE `department` (
   KEY `ix_department_status` (`status`),
   KEY `ix_department_created_by` (`created_by`),
   KEY `ix_department_Department_Name` (`Department_Name`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -125,7 +125,7 @@ CREATE TABLE `department` (
 
 LOCK TABLES `department` WRITE;
 /*!40000 ALTER TABLE `department` DISABLE KEYS */;
-INSERT INTO `department` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-28 15:22:14','2026-01-28 15:42:14','1','1'),(2,'Luxury Swimming Po','ACTIVE','1','2026-01-28 15:32:47',NULL,NULL,'1');
+INSERT INTO `department` VALUES (1,'Front Office','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Housekeeping','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Food & Beverage Service','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'Kitchen','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Bar','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'Maintenance & Engineering','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(7,'Security','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(8,'Administration','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(9,'Human Resources','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(10,'Sales & Marketing','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `department` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -152,7 +152,7 @@ CREATE TABLE `designation` (
   KEY `ix_designation_created_by` (`created_by`),
   KEY `ix_designation_Designation_Name` (`Designation_Name`),
   KEY `ix_designation_company_id` (`company_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -161,7 +161,7 @@ CREATE TABLE `designation` (
 
 LOCK TABLES `designation` WRITE;
 /*!40000 ALTER TABLE `designation` DISABLE KEYS */;
-INSERT INTO `designation` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-28 15:48:36','2026-01-28 15:51:01','1','1');
+INSERT INTO `designation` VALUES (1,'General Manager','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Front Office Manager','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Supervisor','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'Executive','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Chef','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'Bartender','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(7,'Waiter','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(8,'Housekeeper','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(9,'Receptionist','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(10,'Accountant','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `designation` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -201,7 +201,7 @@ CREATE TABLE `discount_data` (
 
 LOCK TABLES `discount_data` WRITE;
 /*!40000 ALTER TABLE `discount_data` DISABLE KEYS */;
-INSERT INTO `discount_data` VALUES (1,'IN','Festival Offer Updated','25.0','INACTIVE','1','2026-01-27 11:41:58','2026-01-27 12:07:54','1','1'),(2,'IN','Seasonal Discount','10.0','ACTIVE','1','2026-02-04 19:20:10',NULL,NULL,'1'),(3,'IN','Corporate Booking Discount','15.0','ACTIVE','1','2026-02-04 19:20:21',NULL,NULL,'1'),(4,'IN','Long Stay Discount','20.0','ACTIVE','1','2026-02-04 19:20:34','2026-02-07 17:57:47','1','1');
+INSERT INTO `discount_data` VALUES (1,'1','Early Bird Discount','10','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'1','Corporate Discount','15','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'1','Loyalty Member Discount','5','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'1','Festive Season Offer','20','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `discount_data` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -228,7 +228,7 @@ CREATE TABLE `facility` (
   KEY `ix_facility_created_by` (`created_by`),
   KEY `ix_facility_status` (`status`),
   KEY `ix_facility_company_id` (`company_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -237,7 +237,7 @@ CREATE TABLE `facility` (
 
 LOCK TABLES `facility` WRITE;
 /*!40000 ALTER TABLE `facility` DISABLE KEYS */;
-INSERT INTO `facility` VALUES (1,'GYM','INACTIVE','1','2026-01-26 14:19:28','2026-02-04 19:06:04','1','1'),(2,'Free High-Speed Wi-Fi','ACTIVE','1','2026-02-04 19:06:10',NULL,NULL,'1'),(3,'24×7 Room Service','ACTIVE','1','2026-02-04 19:06:16',NULL,NULL,'1'),(4,'Swimming Pool','ACTIVE','1','2026-02-04 19:06:24',NULL,NULL,'1'),(5,'Fitness Center (Gym)','ACTIVE','1','2026-02-04 19:06:31',NULL,NULL,'1'),(6,'Airport Pickup & Drop','ACTIVE','1','2026-02-04 19:06:35','2026-02-10 15:49:27','1','1'),(7,'HEllo','INACTIVE','1','2026-02-06 12:32:34','2026-02-06 12:32:38','1','1');
+INSERT INTO `facility` VALUES (1,'WiFi','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Swimming Pool','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Gymnasium','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'Spa & Wellness Centre','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Free Parking','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'24-Hour Room Service','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(7,'Conference Hall','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(8,'Airport Shuttle','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(9,'Laundry Service','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(10,'Rooftop Restaurant','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `facility` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -273,7 +273,7 @@ CREATE TABLE `identity_proof` (
 
 LOCK TABLES `identity_proof` WRITE;
 /*!40000 ALTER TABLE `identity_proof` DISABLE KEYS */;
-INSERT INTO `identity_proof` VALUES (1,'Passport','INACTIVE','1','2026-01-27 16:29:18','2026-01-27 16:36:58','1','1'),(2,'Hii','INACTIVE','1','2026-02-04 16:55:58','2026-02-04 19:24:02','1','1'),(3,'Aadhaar Card','ACTIVE','1','2026-02-04 19:24:23',NULL,NULL,'1'),(4,'Passport','ACTIVE','1','2026-02-04 19:24:27',NULL,NULL,'1'),(5,'Driving License','ACTIVE','1','2026-02-04 19:24:31',NULL,NULL,'1'),(6,'Voter ID','ACTIVE','1','2026-02-04 19:24:36',NULL,NULL,'1'),(7,'PAN Card','ACTIVE','1','2026-02-04 19:24:40','2026-02-07 17:57:58','1','1');
+INSERT INTO `identity_proof` VALUES (1,'Aadhaar Card','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Passport','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Driving License','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'Voter ID Card','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'PAN Card','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'Company ID Card','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(7,'Ration Card','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `identity_proof` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -309,7 +309,7 @@ CREATE TABLE `payment_methods` (
 
 LOCK TABLES `payment_methods` WRITE;
 /*!40000 ALTER TABLE `payment_methods` DISABLE KEYS */;
-INSERT INTO `payment_methods` VALUES (1,'UPI','INACTIVE','1','2026-01-27 14:33:03','2026-01-27 14:38:27','1','1'),(2,'Cash','ACTIVE','1','2026-02-04 19:23:39',NULL,NULL,'1'),(3,'Credit Card','ACTIVE','1','2026-02-04 19:23:43',NULL,NULL,'1'),(4,'Debit Card','ACTIVE','1','2026-02-04 19:23:48',NULL,NULL,'1'),(5,'UPI','ACTIVE','1','2026-02-04 19:23:53',NULL,NULL,'1'),(6,'Bank Transfer','ACTIVE','1','2026-02-04 19:23:58',NULL,NULL,'1');
+INSERT INTO `payment_methods` VALUES (1,'Cash','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Credit Card','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Debit Card','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'UPI','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Net Banking','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'Room Posting','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `payment_methods` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -347,7 +347,7 @@ CREATE TABLE `reservation_status` (
 
 LOCK TABLES `reservation_status` WRITE;
 /*!40000 ALTER TABLE `reservation_status` DISABLE KEYS */;
-INSERT INTO `reservation_status` VALUES (1,'Arrived','#2ECC71','INACTIVE','1','2026-01-27 11:33:18','2026-01-27 11:41:47','1','1'),(2,'Arrived','#22c55e','INACTIVE','1','2026-02-04 11:24:50','2026-02-04 13:56:08','1','1'),(3,'Booked','#214ac4','ACTIVE','1','2026-02-04 13:56:34',NULL,NULL,'1'),(4,'Checked-In','#22c55e','ACTIVE','1','2026-02-04 13:56:39',NULL,NULL,'1'),(5,'Checked-Out','#c42191','ACTIVE','1','2026-02-04 13:56:47',NULL,NULL,'1'),(6,'Cancelled','#c43a21','ACTIVE','1','2026-02-04 13:56:54',NULL,NULL,'1'),(7,'No Show','#c4a121','ACTIVE','1','2026-02-04 13:57:02',NULL,NULL,'1');
+INSERT INTO `reservation_status` VALUES (1,'Confirmed','#10B981','ACTIVE','1','2026-07-31 06:58:10',NULL,NULL,'1'),(2,'Checked-In','#3B82F6','ACTIVE','1','2026-07-31 06:58:10',NULL,NULL,'1'),(3,'Checked-Out','#6B7280','ACTIVE','1','2026-07-31 06:58:10',NULL,NULL,'1'),(4,'Cancelled','#EF4444','ACTIVE','1','2026-07-31 06:58:10',NULL,NULL,'1'),(5,'No-Show','#F59E0B','ACTIVE','1','2026-07-31 06:58:10',NULL,NULL,'1'),(6,'Pending','#FBBF24','ACTIVE','1','2026-07-31 06:58:10',NULL,NULL,'1'),(7,'On Hold','#8B5CF6','ACTIVE','1','2026-07-31 06:58:10',NULL,NULL,'1');
 /*!40000 ALTER TABLE `reservation_status` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -396,7 +396,7 @@ CREATE TABLE `room` (
   KEY `ix_room_Room_Working_status` (`Room_Working_status`),
   KEY `ix_room_Room_Name` (`Room_Name`),
   KEY `ix_room_Max_Adult_Occupy` (`Max_Adult_Occupy`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -405,7 +405,7 @@ CREATE TABLE `room` (
 
 LOCK TABLES `room` WRITE;
 /*!40000 ALTER TABLE `room` DISABLE KEYS */;
-INSERT INTO `room` VALUES (1,'101','Deluxe 101','1','3','0442345','8b2b9879-fdde-4acb-98f6-4b29b59eb8de.jpeg','ece413ac-58ae-4da4-9939-56582e18426f.jpeg','96e8f0d4-d411-4f60-bebe-94c26fc597f0.jpeg','b898b187-2b95-4402-a99c-36ec74890214.jpeg','2','1','Available','Not Assigne','ok','INACTIVE','1','2026-01-27 11:22:50','2026-01-27 11:34:00','1','1'),(2,'204','Deluxe','4','2','1234567890','c7971930-ba31-44bd-a2e7-4a4321018b90.jpeg','15dcd251-8f38-4b51-a546-e8dfc7c3cbe7.jpeg','2a2f5baa-5751-442f-b747-0c205868a5fb.png','c138c2ec-4214-480e-ad47-b2712497f1b3.png','1','2','Available','Not Assigne','UnBlocking','INACTIVE','1','2026-02-03 16:41:57','2026-02-04 19:15:42','1','1'),(3,'101','Standard Room 101','7','7','101','cd444bb5-1629-4eb0-8c4f-65236e7e99e5.png','483c0ea4-a8af-4028-a92f-8ee573bd70d4.jpeg','87f9a4dd-8266-4616-ac2f-cea1c26a74e6.jpeg','dcd8390d-895a-481d-8ae3-9941dd509052.png','2','1','Available','Not Assigne','UnBlocking','ACTIVE','1','2026-02-04 19:16:57',NULL,NULL,'1'),(4,'201','Deluxe Room 201','6','6','201','e70e6f6c-e7f0-49b4-811b-46e3e4b800a1.png','39011871-4222-4998-b34f-2d5e4bbf5f28.jpeg','db227d02-3c9e-494b-8761-80fc864f11f0.png','dc39e654-c241-4e36-9b10-41fa12561124.png','2','2','Available','Not Assigne','UnBlocking','ACTIVE','1','2026-02-04 19:19:30',NULL,NULL,'1');
+INSERT INTO `room` VALUES (1,'101','Standard Room 101','1','1','080-4100-1001','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','1','0','Occupied','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'102','Standard Room 102','1','2','080-4100-1002','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Occupied','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'103','Standard Room 103','1','2','080-4100-1003','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'104','Standard Room 104','1','5','080-4100-1004','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','0','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'105','Deluxe Room 105','2','3','080-4100-1005','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Occupied','Not Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'106','Deluxe Room 106','2','3','080-4100-1006','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Reserved','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(7,'107','Deluxe Room 107','2','2','080-4100-1007','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','0','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(8,'108','Standard Room 108','1','1','080-4100-1008','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','1','0','Reserved','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(9,'201','Standard Room 201','1','2','080-4100-1009','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Reserved','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(10,'202','Standard Room 202','1','5','080-4100-1010','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','0','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(11,'203','Deluxe Room 203','2','3','080-4100-1011','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Occupied','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(12,'204','Deluxe Room 204','2','3','080-4100-1012','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(13,'205','Super Deluxe Room 205','3','4','080-4100-1013','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','2','Occupied','Not Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(14,'206','Super Deluxe Room 206','3','4','080-4100-1014','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','2','Reserved','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(15,'207','Deluxe Room 207','2','2','080-4100-1015','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','0','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(16,'208','Standard Room 208','1','1','080-4100-1016','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','1','0','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(17,'301','Super Deluxe Room 301','3','4','080-4100-1017','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','2','Occupied','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(18,'302','Super Deluxe Room 302','3','4','080-4100-1018','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(19,'303','Executive Suite 303','4','4','080-4100-1019','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','3','2','Occupied','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(20,'304','Executive Suite 304','4','4','080-4100-1020','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','3','2','Reserved','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(21,'305','Executive Suite 305','4','7','080-4100-1021','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(22,'306','Presidential Suite 306','5','4','080-4100-1022','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','4','2','Occupied','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(23,'307','Deluxe Room 307','2','3','080-4100-1023','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','1','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(24,'308','Standard Room 308','1','5','080-4100-1024','/assets/rooms/placeholder-1.jpg','/assets/rooms/placeholder-2.jpg','/assets/rooms/placeholder-3.jpg','/assets/rooms/placeholder-4.jpg','2','0','Available','Ready','ACTIVE','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `room` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -443,7 +443,7 @@ CREATE TABLE `room_complementry` (
 
 LOCK TABLES `room_complementry` WRITE;
 /*!40000 ALTER TABLE `room_complementry` DISABLE KEYS */;
-INSERT INTO `room_complementry` VALUES (1,'Free Breakfast','Complimentary breakfast for all guests','INACTIVE','1','2026-01-27 12:14:57','2026-02-04 19:07:47','1','1'),(2,'Complimentary Breakfast','Daily breakfast provided free of charge during the stay.','ACTIVE','1','2026-02-04 19:08:07',NULL,NULL,'1'),(3,'Complimentary Bottled Water','Free bottled drinking water available in the room.','ACTIVE','1','2026-02-04 19:08:20',NULL,NULL,'1'),(4,'Complimentary Tea & Coffee Kit','Tea, coffee sachets with electric kettle provided.','ACTIVE','1','2026-02-04 19:08:30',NULL,NULL,'1'),(5,'Complimentary Toiletries','Basic toiletries including soap, shampoo, and dental kit.','ACTIVE','1','2026-02-04 19:08:38',NULL,NULL,'1'),(6,'Complimentary Wi-Fi Access','High-speed wireless internet access available in the room.','ACTIVE','1','2026-02-04 19:08:47',NULL,NULL,'1');
+INSERT INTO `room_complementry` VALUES (1,'Breakfast Included','Complimentary breakfast for all registered guests','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Airport Pickup & Drop','Complimentary airport transfer, subject to availability','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Welcome Drink','Welcome mocktail served on arrival','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'Late Checkout','Checkout extended to 2 PM at no extra cost','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Spa Voucher','One complimentary 30-minute spa session','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'Dinner Included','Complimentary set dinner at the in-house restaurant','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `room_complementry` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -488,7 +488,7 @@ CREATE TABLE `room_type` (
   KEY `ix_room_type_status` (`status`),
   KEY `ix_room_type_Daily_Rate` (`Daily_Rate`),
   KEY `ix_room_type_company_id` (`company_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -497,7 +497,7 @@ CREATE TABLE `room_type` (
 
 LOCK TABLES `room_type` WRITE;
 /*!40000 ALTER TABLE `room_type` DISABLE KEYS */;
-INSERT INTO `room_type` VALUES (1,'Premium Deluxe',3000,700,'1',3000,19000,2100,2600,3200,3600,'ACTIVE','admin','2026-01-24 15:55:53','2026-01-24 16:02:59',NULL,'COMP001'),(2,'Updated Deluxe Room',4000,900,'1',4000,26000,3200,3600,4200,4600,'INACTIVE','1','2026-01-26 12:21:39','2026-02-04 19:06:52','1','1'),(3,'Deluxe Room',2500,500,'1',2500,16000,1800,2200,2800,3200,'INACTIVE','1','2026-01-26 13:35:33','2026-02-04 19:06:50','1','1'),(4,'Deluexe Room',2500,500,'1',2500,16000,1800,2200,2800,3200,'INACTIVE','1','2026-01-30 14:29:37','2026-02-04 19:06:48','1','1'),(5,'Standard Room',2000,500,'6',2200,14000,2000,2200,2600,3000,'ACTIVE','1','2026-02-04 19:12:12',NULL,NULL,'1'),(6,'Deluxe Room',3000,700,'6',3300,21000,3000,3300,3800,4300,'ACTIVE','1','2026-02-04 19:12:48',NULL,NULL,'1'),(7,'Executive Room',4500,1000,'5',4800,32000,4500,4800,5400,6000,'ACTIVE','1','2026-02-04 19:13:22',NULL,NULL,'1');
+INSERT INTO `room_type` VALUES (1,'Standard Room',3500,500,'1',3500,22750,2975,3850,4550,5250,'ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Deluxe Room',5000,600,'2',5000,32500,4250,5500,6500,7500,'ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Super Deluxe Room',7000,700,'3',7000,45500,5950,7700,9100,10500,'ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'Executive Suite',11000,900,'5',11000,71500,9350,12100,14300,16500,'ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Presidential Suite',18000,1200,'6',18000,117000,15300,19800,23400,27000,'ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `room_type` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -524,7 +524,7 @@ CREATE TABLE `table_hall_names` (
   KEY `ix_table_hall_names_company_id` (`company_id`),
   KEY `ix_table_hall_names_id` (`id`),
   KEY `ix_table_hall_names_updated_by` (`updated_by`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -533,7 +533,7 @@ CREATE TABLE `table_hall_names` (
 
 LOCK TABLES `table_hall_names` WRITE;
 /*!40000 ALTER TABLE `table_hall_names` DISABLE KEYS */;
-INSERT INTO `table_hall_names` VALUES (1,'Updated First Floor','INACTIVE','1','2026-01-26 15:15:43','2026-01-27 10:09:56','1','1'),(2,'Ground Floor Dining Hall','ACTIVE','1','2026-02-04 19:14:49',NULL,NULL,'1'),(3,'First Floor Restaurant Hall','ACTIVE','1','2026-02-04 19:14:53',NULL,NULL,'1'),(4,'Rooftop Dining Area','ACTIVE','1','2026-02-04 19:14:57',NULL,NULL,'1'),(5,'Banquet Hall','ACTIVE','1','2026-02-04 19:15:02',NULL,NULL,'1'),(6,'Private Dining Lounge','ACTIVE','1','2026-02-04 19:15:06',NULL,NULL,'1');
+INSERT INTO `table_hall_names` VALUES (1,'Grand Ballroom','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Garden Lawn','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Conference Room A','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'Conference Room B','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Rooftop Terrace','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `table_hall_names` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -571,7 +571,7 @@ CREATE TABLE `task_type` (
 
 LOCK TABLES `task_type` WRITE;
 /*!40000 ALTER TABLE `task_type` DISABLE KEYS */;
-INSERT INTO `task_type` VALUES (1,'Deep Cleaning','#1ABC9C','INACTIVE','1','2026-01-27 16:45:49','2026-01-27 16:51:44','1','1'),(2,'Room Cleanings','#413070ff','INACTIVE','1','2026-01-30 12:01:32','2026-02-04 19:24:45','1','1'),(3,'Cleaning','#22c55e','ACTIVE','1','2026-02-04 19:25:10',NULL,NULL,'1'),(4,'Inspection','#214ac4','ACTIVE','1','2026-02-04 19:25:18',NULL,NULL,'1'),(5,'Maintenance','#c45a21','ACTIVE','1','2026-02-04 19:25:28',NULL,NULL,'1'),(6,'Turn Down Service','#c4213a','ACTIVE','1','2026-02-04 19:25:38',NULL,NULL,'1'),(7,'Deep Cleaning','#219bc4','ACTIVE','1','2026-02-04 19:25:50','2026-02-04 19:26:00','1','1');
+INSERT INTO `task_type` VALUES (1,'Bed Making','#3B82F6','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'Room Cleaning','#10B981','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'Bathroom Cleaning','#06B6D4','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'Linen Change','#8B5CF6','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'Deep Cleaning','#F59E0B','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'Turndown Service','#EC4899','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(7,'Maintenance Check','#EF4444','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1');
 /*!40000 ALTER TABLE `task_type` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -602,7 +602,7 @@ CREATE TABLE `tax_type` (
   KEY `ix_tax_type_created_by` (`created_by`),
   KEY `ix_tax_type_id` (`id`),
   KEY `ix_tax_type_company_id` (`company_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -611,7 +611,7 @@ CREATE TABLE `tax_type` (
 
 LOCK TABLES `tax_type` WRITE;
 /*!40000 ALTER TABLE `tax_type` DISABLE KEYS */;
-INSERT INTO `tax_type` VALUES (1,'1','PF','20.0','INACTIVE','1','2026-01-27 15:15:49','2026-02-04 19:20:59','1','1'),(2,'1','GS','18.0','INACTIVE','1','2026-01-27 15:22:13','2026-02-04 19:20:57','1','1'),(3,'2','GST','12.0','ACTIVE','1','2026-02-04 19:22:40',NULL,NULL,'1'),(4,'2','Service Charge','5.0','ACTIVE','1','2026-02-04 19:22:56',NULL,NULL,'1'),(5,'2','Luxury Tax','8.0','ACTIVE','1','2026-02-04 19:23:13',NULL,NULL,'1');
+INSERT INTO `tax_type` VALUES (1,'1','CGST','6','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(2,'1','SGST','6','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(3,'1','GST','12','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(4,'1','GST (Luxury)','18','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(5,'1','Luxury Tax','28','ACTIVE','1','2026-07-31 12:28:09',NULL,NULL,'1'),(6,'4','E2E Test Tax','5.0','INACTIVE','1','2026-07-31 23:15:54','2026-07-31 23:21:22','1','1');
 /*!40000 ALTER TABLE `tax_type` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -632,4 +632,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-02-12 13:29:41
+-- Dump completed on 2026-08-04 14:36:49

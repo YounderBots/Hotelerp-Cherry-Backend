@@ -289,3 +289,8 @@ router.add_api_route(
     _build_proxy("restaurant", ServiceURL.RESTAURANT_SERVICE_URL),
     methods=["GET", "POST", "PUT", "DELETE"],
 )
+router.add_api_route(
+    "/bar/{path:path}",
+    _build_proxy("bar", ServiceURL.BAR_SERVICE_URL),
+    methods=["GET", "POST", "PUT", "DELETE"],
+)

@@ -1,16 +1,32 @@
-fastapi==0.85.1
-starlette==0.20.4
-pydantic==1.10.2
-uvicorn==0.18.3
-watchfiles==0.18.0
-SQLAlchemy==1.4.43
-PyMySQL==1.0.2
+# Pinned to the stack the services are actually developed and run against.
+#
+# The previous pins (fastapi==0.85.1, pydantic==1.10.2, SQLAlchemy==1.4.43) did
+# not match the running environment: the controllers are written for Pydantic v2
+# and SQLAlchemy 2.x, so a clean `pip install -r requirements.txt` produced an
+# install that failed at import. These versions are the ones verified working.
+
+fastapi==0.115.6
+starlette==0.41.3
+pydantic==2.10.4
+uvicorn==0.34.0
+watchfiles==1.0.3
+
+SQLAlchemy==2.0.36
+PyMySQL==1.1.1
+
 httpx==0.28.1
 httpcore==1.0.9
-python-jose==3.3.0
-PyJWT==2.13.0
-bcrypt==4.0.1
-python-multipart==0.0.5
-itsdangerous==2.1.2
+
+# 3.4.0 fixes CVE-2024-33663 (algorithm confusion) and CVE-2024-33664 (JWT
+# decompression DoS). Both are reachable from token verification.
+python-jose[cryptography]==3.4.0
+PyJWT==2.10.1
+
+bcrypt==4.2.1
+
+# 0.0.20 fixes CVE-2024-24762 (ReDoS) and CVE-2024-53981 (allocation DoS) in
+# multipart parsing, which the gateway proxy exercises on file uploads.
+python-multipart==0.0.20
+
+itsdangerous==2.2.0
 pandas==2.3.3
-Jinja2==3.1.2

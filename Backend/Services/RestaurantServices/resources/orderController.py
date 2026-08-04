@@ -45,6 +45,7 @@ class OrderIn(BaseModel):
 class OrderItemIn(BaseModel):
     menu_id: int
     variant_id: Optional[int] = None
+    modifier_ids: Optional[List[int]] = None
     quantity: int
     special_instructions: Optional[str] = None
 
@@ -81,6 +82,7 @@ def _resolve_price_and_kitchen(db: Session, company_id: str, created_by: str, it
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{menu.item_name} is not available")
 
     price = menu.price
+    variant = None
     if item.variant_id:
         variant = (
             db.query(models.MenuVariant)
@@ -91,26 +93,10 @@ def _resolve_price_and_kitchen(db: Session, company_id: str, created_by: str, it
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="variant_id does not match menu_id")
         price = variant.price
 
-    kitchen = (
-        db.query(models.Kitchen)
-        .filter(models.Kitchen.kitchen_type == menu.kitchen_section, models.Kitchen.company_id == company_id, models.Kitchen.is_active == "Yes")
-        .first()
-    )
+    kitchen = db.query(models.Kitchen).filter(models.Kitchen.id == menu.kitchen_id, models.Kitchen.company_id == company_id).first()
     if not kitchen:
-        # This app only ever routes KOTs to one of the four fixed kitchen displays
-        # (Main/Grill/Dessert/Bar), so there's nothing for an admin to meaningfully
-        # configure here - provision it on first use instead of blocking the order.
-        kitchen = models.Kitchen(
-            kitchen_code=gen_code("KTC"),
-            kitchen_name=f"{menu.kitchen_section} Kitchen",
-            kitchen_type=menu.kitchen_section,
-            is_active="Yes",
-            created_by=created_by,
-            company_id=company_id,
-        )
-        db.add(kitchen)
-        db.flush()
-    return menu, price, kitchen
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{menu.item_name} has no valid kitchen station configured")
+    return menu, price, kitchen, variant
 
 
 def _recalculate_totals(db: Session, order: models.RestaurantOrder):
@@ -148,6 +134,14 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
         if table.table_status == "Occupied" and table.current_order_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Table already has an active order")
 
+    guest = None
+    if payload.guest_mobile:
+        guest = (
+            db.query(models.Guest)
+            .filter(models.Guest.mobile == payload.guest_mobile, models.Guest.company_id == company_id, models.Guest.status == STATUS)
+            .first()
+        )
+
     try:
         now = datetime.now()
         order = models.RestaurantOrder(
@@ -159,6 +153,7 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
             table_code=table.table_code if table else None,
             floor_id=table.floor_id if table else None,
             floor_code=table.floor_code if table else None,
+            guest_id=guest.id if guest else None,
             created_by=user_id,
             company_id=company_id,
             **payload.dict(),
@@ -168,7 +163,7 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
 
         if table:
             table.table_status = "Occupied"
-            table.current_order_id = order.order_number
+            table.current_order_id = order.id
             table.updated_by = user_id
 
         db.commit()
@@ -242,7 +237,7 @@ def add_order_items(order_id: int, payload: OrderItemsIn, request: Request, db: 
         for item in payload.items:
             if item.quantity < 1:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="quantity must be at least 1")
-            menu, price, kitchen = _resolve_price_and_kitchen(db, company_id, user_id, item)
+            menu, price, kitchen, variant = _resolve_price_and_kitchen(db, company_id, user_id, item)
             row = models.RestaurantOrderItem(
                 order_id=order.id,
                 menu_id=menu.id,
@@ -250,11 +245,31 @@ def add_order_items(order_id: int, payload: OrderItemsIn, request: Request, db: 
                 quantity=item.quantity,
                 price=price,
                 item_status="Pending",
+                special_instructions=item.special_instructions,
+                variant_id=item.variant_id,
+                variant_name=variant.variant_name if variant else None,
                 created_by=user_id,
                 company_id=company_id,
             )
             db.add(row)
+            db.flush()
             created.append(row)
+
+            for modifier_id in (item.modifier_ids or []):
+                modifier = (
+                    db.query(models.MenuModifier)
+                    .filter(models.MenuModifier.id == modifier_id, models.MenuModifier.menu_id == menu.id)
+                    .first()
+                )
+                if not modifier:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"modifier_id {modifier_id} does not match menu_id")
+                db.add(models.RestaurantOrderItemModifier(
+                    order_item_id=row.id,
+                    modifier_id=modifier.id,
+                    modifier_name=modifier.modifier_name,
+                    price=modifier.price,
+                    company_id=company_id,
+                ))
 
         db.flush()
         _recalculate_totals(db, order)
@@ -370,7 +385,9 @@ def confirm_order(order_id: int, payload: OrderConfirmIn, request: Request, db: 
             db.flush()
 
             for it in kitchen_items:
-                db.add(models.KitchenOrderItem(kot_id=kot.id, order_item_id=it.id, preparation_status="Pending"))
+                db.add(models.KitchenOrderItem(
+                    kot_id=kot.id, order_item_id=it.id, preparation_status="Pending", created_by=user_id, company_id=company_id
+                ))
                 it.item_status = "Preparing"
 
             created_kots.append({"id": kot.id, "kot_number": kot.kot_number, "kitchen_id": kitchen_id})

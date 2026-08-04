@@ -30,13 +30,19 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 
 def decode_token(token: str) -> Dict[str, Any]:
-    return jwt.decode(
+    payload = jwt.decode(
         token,
         BaseConfig.SECRET_KEY,
         algorithms=[BaseConfig.ALGORITHM],
         issuer=BaseConfig.JWT_ISSUER,
-        options={"require": ["exp", "iat"]},
     )
+    # Presence of exp/iat is asserted here rather than through decode options:
+    # python-jose ignores PyJWT's `options={"require": [...]}` spelling, so
+    # relying on it would silently accept a token that never expires.
+    for claim in ("exp", "iat"):
+        if claim not in payload:
+            raise JWTError(f"missing required claim: {claim}")
+    return payload
 
 
 def verify_authentication(request: Request) -> Tuple[Any, Any, Any, str]:

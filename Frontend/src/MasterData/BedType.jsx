@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import Modal from "../stories/Modal"
 import TableTemplate from "../stories/TableTemplate";
+import Input from "../stories/Form/Input";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import {
   UserPlus, X, Pencil, Trash2, Eye, CheckCircle,
   AlertTriangle,
 } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 
 const BedType = () => {
@@ -175,24 +177,9 @@ const BedType = () => {
                   justifyContent: "center",
                 }}
               >
-                <button
-                  className="table-action-btn view"
-                  onClick={() => openViewModal(row)}
-                >
-                  <Eye size={16} />
-                </button>
-                <button
-                  className="table-action-btn edit"
-                  onClick={() => handleEdit(row)}
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  className="table-action-btn delete"
-                  onClick={() => handleDelete(row.id)}
-                >
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -205,14 +192,11 @@ const BedType = () => {
         <Modal
           isOpen={showViewModal}
           title="View Bed Type"
-          onClose={() => setShowViewModal(false)}
-          size="medium"
+          onClose={closeViewModal}
+          size="small"
         >
           <div className="modal-body single view">
-            <div className="form-group">
-              <label>Bed Type</label>
-              <input value={viewData.bed_type_name} disabled />
-            </div>
+            <Input label="Bed Type" disabled value={viewData.bed_type_name} />
           </div>
         </Modal>
 
@@ -225,7 +209,7 @@ const BedType = () => {
           title={editId ? "Edit Bed Type" : "Add Bed Type"}
           onClose={() => setShowModal(false)}
           showFooter
-          size="medium"
+          size="small"
           bodyLayout="single"
           actions={[
             {
@@ -242,33 +226,18 @@ const BedType = () => {
           ]}
         >
           <div className="modal-body single">
-            <div className="form-group">
-              <label>Bed Type</label>
-              <input
-                type="text"
-                name="bedType"
-                value={bedName}
-                onChange={(e) => setbedNmae(e.target.value)}
-              />
-            </div>
+            <Input
+              label="Bed Type"
+              type="text"
+              name="bedType"
+              value={bedName}
+              onChange={(e) => setbedNmae(e.target.value)}
+            />
           </div>
         </Modal>
       )}
 
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
     </>
   );
 };

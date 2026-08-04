@@ -1,8 +1,11 @@
 import React, { useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
-import Modal from "../stories/Modal"
+import Modal, { ConfirmModal } from "../stories/Modal"
+import Input from "../stories/Form/Input";
+import Select from "../stories/Form/Select";
+import IconButton from "../stories/IconButton";
+import Toast from "../stories/Toast";
 import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
-import "../MasterData/MasterData.css";
 import APICall from "../APICalls/APICalls";
 import { useEffect } from "react";
 
@@ -12,6 +15,7 @@ const Rooms = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
   const [roomTypes, setRoomTypes] = useState([]);
   const [bedTypes, setBedTypes] = useState([]);
 
@@ -126,33 +130,37 @@ const Rooms = () => {
 
 
   const getAllRooms = async () => {
-    const response = await APICall.getT("/masterdata/room");
-
-    console.log("Rooms Response:", response.data);
-
-    const formatted = response.data.map((room) => ({
-      ...room,
-      images: room.images,
-    }));
-
-    setData(formatted);
+    try {
+      const response = await APICall.getT("/masterdata/room");
+      const rows = Array.isArray(response?.data) ? response.data : [];
+      setData(rows.map((room) => ({ ...room, images: room.images })));
+    } catch (err) {
+      // Previously uncaught: the request rejected, nothing handled it, and the
+      // table just stayed empty as though there were no rooms.
+      setData([]);
+      showAlert(err?.message || "Failed to load rooms.", "error");
+    }
   };
 
 
   const getAllroom_type_ids = async () => {
-    const res = await APICall.getT("/masterdata/room_types");
-
-    console.log("Room Types Response:", res.data);
-
-    setRoomTypes(res.data || []);
+    try {
+      const res = await APICall.getT("/masterdata/room_types");
+      setRoomTypes(Array.isArray(res?.data) ? res.data : []);
+    } catch (err) {
+      setRoomTypes([]);
+      showAlert(err?.message || "Failed to load room types.", "error");
+    }
   };
 
   const getAllbed_type_ids = async () => {
-    const res = await APICall.getT("/masterdata/bed_types");
-
-    console.log("Bed Types Response:", res.data);
-
-    setBedTypes(res.data || []);
+    try {
+      const res = await APICall.getT("/masterdata/bed_types");
+      setBedTypes(Array.isArray(res?.data) ? res.data : []);
+    } catch (err) {
+      setBedTypes([]);
+      showAlert(err?.message || "Failed to load bed types.", "error");
+    }
   };
 
 
@@ -177,7 +185,7 @@ const Rooms = () => {
       form.append("working_status", formData.working_status);
       form.append("room_status", formData.room_status);
       if (!formData.images[0]) {
-        alert("Please upload Image 1");
+        showAlert("Please upload Image 1", "error");
         return;
       }
 
@@ -261,29 +269,29 @@ const Rooms = () => {
 
   const handleSave = () => {
     if (!formData.room_no || !formData.room_name) {
-      alert("Room No and Room Name are required");
+      showAlert("Room No and Room Name are required", "error");
       return;
     }
 
     if (!formData.room_telephone) {
-      alert("Room Telephone is required");
+      showAlert("Room Telephone is required", "error");
       return;
     }
 
     if (!formData.images[0]) {
-      alert("Please upload Image 1");
+      showAlert("Please upload Image 1", "error");
       return;
     }
     if (!formData.images[1]) {
-      alert("Please upload Image 2");
+      showAlert("Please upload Image 2", "error");
       return;
     }
     if (!formData.images[2]) {
-      alert("Please upload Image 3");
+      showAlert("Please upload Image 3", "error");
       return;
     }
     if (!formData.images[3]) {
-      alert("Please upload Image 4");
+      showAlert("Please upload Image 4", "error");
       return;
     }
 
@@ -298,9 +306,12 @@ const Rooms = () => {
 
 
   const handleDelete = (id) => {
-    if (window.confirm("Are you sure you want to delete this room?")) {
-      deleteRoom(id);
-    }
+    setDeleteId(id);
+  };
+
+  const confirmDelete = () => {
+    deleteRoom(deleteId);
+    setDeleteId(null);
   };
 
   /* ================= COMMON STYLES ================= */
@@ -342,15 +353,9 @@ const Rooms = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
-                  <Eye size={16} />
-                </button>
-                <button className="table-action-btn edit" onClick={() => handleEdit(row)}>
-                  <Pencil size={16} />
-                </button>
-                <button className="table-action-btn delete" onClick={() => handleDelete(row.id)}>
-                  <Trash2 size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
+                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
               </div>
             ),
           },
@@ -366,40 +371,33 @@ const Rooms = () => {
           onClose={() => setShowViewModal(false)}
           size="large"
         >
-          <div className="modal-body grid view" style={gridStyle}>
+          <div style={{ display: "grid", gap: "18px 20px", ...gridStyle }}>
             {[
               ["Room No", "room_no"],
               ["Room Name", "room_name"],
             ].map(([label, name]) => (
-              <div className="form-group" key={name}>
-                <label>{label}</label>
-                <input name={name} value={viewData[name]} disabled />
-              </div>
+              <Input key={name} label={label} name={name} value={viewData[name]} disabled />
             ))}
 
-            <div className="form-group">
-              <label>Room Type</label>
-              <input
-                disabled
-                value={
-                  roomTypes.find(
-                    (r) => String(r.id) === String(viewData?.room_type_id)
-                  )?.room_type_name || "-"
-                }
-              />
-            </div>
+            <Input
+              label="Room Type"
+              disabled
+              value={
+                roomTypes.find(
+                  (r) => String(r.id) === String(viewData?.room_type_id)
+                )?.room_type_name || "-"
+              }
+            />
 
-            <div className="form-group">
-              <label>Bed Type</label>
-              <input
-                disabled
-                value={
-                  bedTypes.find(
-                    (b) => String(b.id) === String(viewData?.bed_type_id)
-                  )?.bed_type_name || "-"
-                }
-              />
-            </div>
+            <Input
+              label="Bed Type"
+              disabled
+              value={
+                bedTypes.find(
+                  (b) => String(b.id) === String(viewData?.bed_type_id)
+                )?.bed_type_name || "-"
+              }
+            />
 
 
             {[
@@ -407,19 +405,10 @@ const Rooms = () => {
               ["Max Adult", "max_adult", "number"],
               ["Max Child", "max_child", "number"],
             ].map(([label, name, type]) => (
-              <div className="form-group" key={name}>
-                <label>{label}</label>
-                <input name={name} value={viewData[name]} disabled />
-              </div>
+              <Input key={name} label={label} name={name} value={viewData[name]} disabled />
             ))}
 
-            <div className="form-group">
-              <label>Booked Status</label>
-              <input
-                disabled
-                value={viewData.booking_status}>
-              </input>
-            </div>
+            <Input label="Booked Status" disabled value={viewData.booking_status} />
 
             <div className="form-group" style={{ gridColumn: "1 / -1" }}>
               <label>Room Images</label>
@@ -473,48 +462,31 @@ const Rooms = () => {
               },
             ]}
           >
-            <div className="modal-body grid" style={gridStyle}>
+            <div style={{ display: "grid", gap: "18px 20px", ...gridStyle }}>
               {[
                 ["Room No", "room_no"],
                 ["Room Name", "room_name"],
               ].map(([label, name]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input name={name} value={formData[name]} onChange={handleChange} />
-                </div>
+                <Input key={name} label={label} name={name} value={formData[name]} onChange={handleChange} />
               ))}
               {/* room type and bed type using id and name */}
 
-              <div className="form-group">
-                <label>Room Type</label>
-                <select
-                  name="room_type_id"
-                  value={formData.room_type_id || ""}
-                  onChange={handleChange}
-                >
-                  <option value="">Select Room Type</option>
-                  {roomTypes.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.room_type_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Bed Type</label>
-                <select
-                  name="bed_type_id"
-                  value={formData.bed_type_id || ""}
-                  onChange={handleChange}
-                >
-                  <option value="">Select Bed Type</option>
-                  {bedTypes.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.bed_type_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <Select
+                label="Room Type"
+                name="room_type_id"
+                value={formData.room_type_id || ""}
+                onChange={handleChange}
+                placeholder="Select Room Type"
+                options={roomTypes.map((r) => ({ value: r.id, label: r.room_type_name }))}
+              />
+              <Select
+                label="Bed Type"
+                name="bed_type_id"
+                value={formData.bed_type_id || ""}
+                onChange={handleChange}
+                placeholder="Select Bed Type"
+                options={bedTypes.map((b) => ({ value: b.id, label: b.bed_type_name }))}
+              />
 
 
               {[
@@ -522,49 +494,41 @@ const Rooms = () => {
                 ["Max Adult", "max_adult", "number"],
                 ["Max Child", "max_child", "number"],
               ].map(([label, name, type]) => (
-                <div className="form-group" key={name}>
-                  <label>{label}</label>
-                  <input name={name} value={formData[name]} onChange={handleChange} type={type || "text"} />
-                </div>
+                <Input key={name} label={label} name={name} value={formData[name]} onChange={handleChange} type={type || "text"} />
               ))}
 
-              <div className="form-group">
-                <label>Room Status</label>
-                <select
-                  name="room_status"
-                  value={formData.room_status}
-                  onChange={handleChange}
-                >
-                  <option value="" disabled>select Room Status</option>
-                  <option value="Available">Available</option>
-                  <option value="Occupied">Occupied</option>
-                  <option value="Maintenance">Maintenance</option>
-                </select>
-              </div>
+              <Select
+                label="Room Status"
+                name="room_status"
+                value={formData.room_status}
+                onChange={handleChange}
+                options={[
+                  { value: "", label: "select Room Status", disabled: true },
+                  { value: "Available", label: "Available" },
+                  { value: "Occupied", label: "Occupied" },
+                  { value: "Maintenance", label: "Maintenance" },
+                ]}
+              />
 
 
-              <div className="form-group">
-                <label>Working Status</label>
-                <select
-                  name="working_status"
-                  value={formData.working_status}
-                  onChange={handleChange}
-                >
-                  <option value="Working">Working</option>
-                  <option value="Not Working">Not Working</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Room Status</label>
-                <select
-                  name="room_status"
-                  value={formData.room_status}
-                  onChange={handleChange}
-                  disabled
-                >
-                  <option value="Available">Available</option>
-                </select>
-              </div>
+              <Select
+                label="Working Status"
+                name="working_status"
+                value={formData.working_status}
+                onChange={handleChange}
+                options={[
+                  { value: "Working", label: "Working" },
+                  { value: "Not Working", label: "Not Working" },
+                ]}
+              />
+              <Select
+                label="Room Status"
+                name="room_status"
+                value={formData.room_status}
+                onChange={handleChange}
+                disabled
+                options={[{ value: "Available", label: "Available" }]}
+              />
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                 <label>Room Images</label>
 
@@ -614,20 +578,19 @@ const Rooms = () => {
             </div>
           </Modal>
         )}
-      {alerts.show && (
-        <div
-          className={`toast toast-${alerts.type} ${alerts.exiting ? "toast-exit" : ""
-            }`}
-        >
-          <span className="toast-icon">
-            {alerts.type === "success" && <CheckCircle />}
-            {alerts.type === "update" && <Pencil />}
-            {alerts.type === "delete" && <Trash2 />}
-            {alerts.type === "error" && <AlertTriangle />}
-          </span>
-          <span>{alerts.message}</span>
-        </div>
-      )}
+
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Room"
+        confirmText="Delete"
+        destructive
+      >
+        Are you sure you want to delete this room? This action cannot be undone.
+      </ConfirmModal>
+
+      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
     </>
   );
 };

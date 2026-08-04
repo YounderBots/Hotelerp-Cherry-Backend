@@ -28,68 +28,11 @@
   font-weight: 600;
 }
 
-/* Action Button Variant */
+/* Action Button Variant — visual styling now comes entirely from the shared
+   Button component (.btn / .btn--primary / .btn--medium etc.); this class is
+   kept only as a responsive layout hook (see the 768px breakpoint below). */
 .table-action-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--border-radius);
-  border: none;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
   white-space: nowrap;
-  font-size: 0.875rem;
-}
-
-.table-action-button--primary {
-  background-color: var(--primary-mild);
-  color: var(--white);
-}
-
-.table-action-button--primary:hover {
-  background-color: var(--primary-dark);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
-
-.table-action-button--secondary {
-  background-color: var(--gray-100);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-}
-
-.table-action-button--secondary:hover {
-  background-color: var(--gray-200);
-  transform: translateY(-1px);
-}
-
-.table-action-button--outline {
-  background-color: transparent;
-  color: var(--primary-color);
-  border: 1px solid var(--primary-color);
-}
-
-.table-action-button--outline:hover {
-  background-color: var(--primary-lightest);
-}
-
-/* Button Sizes */
-.table-action-button--small {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 0.8125rem;
-}
-
-.table-action-button--medium {
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: 0.875rem;
-}
-
-.table-action-button--large {
-  padding: var(--spacing-md) var(--spacing-lg);
-  font-size: 1rem;
 }
 
 /* Toolbar Section */
@@ -175,6 +118,21 @@
   user-select: none;
   background-color: var(--primary-lightest);
   border-bottom: 2px solid var(--border-color);
+}
+
+/* Opt-in sticky header for TableTemplate (mirrors Table.css). */
+.table-sticky-header thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.table-cell-truncate {
+  display: block;
+  max-width: 240px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .table th.sortable {
@@ -432,9 +390,41 @@
   .table-title-section {
     padding: var(--spacing-md);
   }
-  
+
   .table-toolbar-section {
     padding: var(--spacing-md);
+  }
+
+  .table-title {
+    font-size: 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .table-title-section,
+  .table-toolbar-section {
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .table-title {
+    font-size: 1.1rem;
+  }
+
+  .toolbar-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .table-pagination {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .pagination-controls {
+    justify-content: center;
+    flex-wrap: wrap;
   }
 }
 
@@ -457,14 +447,4 @@ body.dark .filter-modal {
 
 body.dark .filter-checkbox:hover {
   background-color: var(--gray-700);
-}
-
-body.dark .table-action-button--secondary {
-  background-color: var(--gray-700);
-  border-color: var(--border-color);
-}
-
-body.dark .table-action-button--outline {
-  background-color: transparent;
-  border-color: var(--primary-color);
 }

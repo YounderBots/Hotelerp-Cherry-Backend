@@ -1,8 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, X } from "lucide-react";
+import Modal from "../../stories/Modal";
+import IconButton from "../../stories/IconButton";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import ErrorAlert from "../../stories/ErrorAlert";
+import { Eye, Pencil } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../../MasterData/MasterData.css";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
@@ -112,10 +116,11 @@ const GuestManagement = () => {
 
   return (
     <>
-      {error && <div className="rmv-alert" role="alert"><span>{error}</span></div>}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Guests"
+        hasActionButton
         searchable
         pagination
         loading={loading}
@@ -134,12 +139,8 @@ const GuestManagement = () => {
             type: "custom",
             render: (row) => (
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <button className="table-action-btn view" onClick={() => openViewModal(row)}>
-                  <Eye size={16} />
-                </button>
-                <button className="table-action-btn edit" onClick={() => openEditModal(row)}>
-                  <Pencil size={16} />
-                </button>
+                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openViewModal(row)} />
+                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} ariaLabel="Edit" onClick={() => openEditModal(row)} />
               </div>
             ),
           },
@@ -148,82 +149,61 @@ const GuestManagement = () => {
       />
 
       {showGuestModal && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "900px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>{editId ? "Edit Guest" : "Add Guest"}</h3>
-              <button onClick={closeGuestModal}><X size={18} /></button>
-            </div>
+        <Modal
+          isOpen
+          title={editId ? "Edit Guest" : "Add Guest"}
+          onClose={closeGuestModal}
+          size="large"
+          bodyLayout="grid"
+          showFooter
+          actions={[
+            { label: "Cancel", variant: "secondary", onClick: closeGuestModal, disabled: saving },
+            { label: saving ? "Saving…" : "Save Guest", variant: "primary", onClick: saveGuest, disabled: saving },
+          ]}
+        >
+          <ErrorAlert message={formError} />
 
-            {formError && <div className="rmv-alert" role="alert"><span>{formError}</span></div>}
-
-            <div className="modal-body single">
-              <div className="grid-3">
-                <div className="form-group">
-                  <label>First Name <span className="required">*</span></label>
-                  <input name="first_name" value={formData.first_name} onChange={handleChange} />
-                </div>
-                <div className="form-group">
-                  <label>Last Name</label>
-                  <input name="last_name" value={formData.last_name} onChange={handleChange} />
-                </div>
-                <div className="form-group">
-                  <label>Mobile Number <span className="required">*</span></label>
-                  <input name="mobile" value={formData.mobile} onChange={handleChange} />
-                </div>
-                <div className="form-group">
-                  <label>Email</label>
-                  <input type="email" name="email" value={formData.email} onChange={handleChange} />
-                </div>
-                <div className="form-group">
-                  <label>Guest Type</label>
-                  <select name="guest_type" value={formData.guest_type} onChange={handleChange}>
-                    <option value="Walk-In">Walk-In</option>
-                    <option value="Regular">Regular</option>
-                    <option value="VIP">VIP</option>
-                    <option value="Hotel Guest">Hotel Guest</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Food Preferences / Allergies</label>
-                  <input name="food_preferences" value={formData.food_preferences} onChange={handleChange} placeholder="Veg, No nuts, ..." />
-                </div>
-                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-                  <label>Special Notes</label>
-                  <input name="special_notes" value={formData.special_notes} onChange={handleChange} />
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeGuestModal} disabled={saving}>Cancel</button>
-              <button className="btn primary" onClick={saveGuest} disabled={saving}>{saving ? "Saving…" : "Save Guest"}</button>
-            </div>
+          <Input label="First Name" required name="first_name" value={formData.first_name} onChange={handleChange} />
+          <Input label="Last Name" name="last_name" value={formData.last_name} onChange={handleChange} />
+          <Input label="Mobile Number" required name="mobile" value={formData.mobile} onChange={handleChange} />
+          <Input label="Email" type="email" name="email" value={formData.email} onChange={handleChange} />
+          <Select
+            label="Guest Type"
+            name="guest_type"
+            value={formData.guest_type}
+            onChange={handleChange}
+            options={[
+              { value: "Walk-In", label: "Walk-In" },
+              { value: "Regular", label: "Regular" },
+              { value: "VIP", label: "VIP" },
+              { value: "Hotel Guest", label: "Hotel Guest" },
+            ]}
+          />
+          <Input label="Food Preferences / Allergies" name="food_preferences" value={formData.food_preferences} onChange={handleChange} placeholder="Veg, No nuts, ..." />
+          <div style={{ gridColumn: "1 / -1" }}>
+            <Input label="Special Notes" name="special_notes" value={formData.special_notes} onChange={handleChange} />
           </div>
-        </div>
+        </Modal>
       )}
 
       {showViewModal && viewData && (
-        <div className="modal-overlay">
-          <div className="modal-card" style={{ maxWidth: "500px", width: "95%" }}>
-            <div className="modal-header">
-              <h3>Guest Profile</h3>
-              <button onClick={closeViewModal}><X size={18} /></button>
-            </div>
-            <div className="modal-body single">
-              <p><strong>Name:</strong> {viewData.first_name} {viewData.last_name}</p>
-              <p><strong>Mobile:</strong> {viewData.mobile}</p>
-              <p><strong>Guest Type:</strong> {viewData.guest_type}</p>
-              <p><strong>Total Visits:</strong> {(viewData.visit_history || []).length}</p>
-              <p><strong>Loyalty Points:</strong> {viewData.loyalty_points}</p>
-              <p><strong>Preferences:</strong> {(viewData.food_preferences || []).join(", ") || "-"}</p>
-              <p><strong>Notes:</strong> {viewData.special_notes || "-"}</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn secondary" onClick={closeViewModal}>Close</button>
-            </div>
-          </div>
-        </div>
+        <Modal
+          isOpen
+          title="Guest Profile"
+          onClose={closeViewModal}
+          size="medium"
+          bodyLayout="single"
+          showFooter
+          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
+        >
+          <p><strong>Name:</strong> {viewData.first_name} {viewData.last_name}</p>
+          <p><strong>Mobile:</strong> {viewData.mobile}</p>
+          <p><strong>Guest Type:</strong> {viewData.guest_type}</p>
+          <p><strong>Total Visits:</strong> {(viewData.visit_history || []).length}</p>
+          <p><strong>Loyalty Points:</strong> {viewData.loyalty_points}</p>
+          <p><strong>Preferences:</strong> {(viewData.food_preferences || []).join(", ") || "-"}</p>
+          <p><strong>Notes:</strong> {viewData.special_notes || "-"}</p>
+        </Modal>
       )}
     </>
   );

@@ -1,5 +1,5 @@
 // Switch.jsx
-import React from 'react';
+import React, { useId } from 'react';
 import './Switch.css';
 
 const Switch = ({
@@ -13,7 +13,8 @@ const Switch = ({
   className = '',
   ...props
 }) => {
-  const switchId = `switch-${Math.random().toString(36).substr(2, 9)}`;
+  // See Checkbox.jsx: a render-time random id breaks the label association.
+  const switchId = `switch-${useId()}`;
 
   const sliderClasses = [
     'switch-slider',

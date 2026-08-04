@@ -56,6 +56,8 @@
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px var(--primary-lightest);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%233B82F6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 16px;
 }
 
 .select-control:disabled {
@@ -64,6 +66,8 @@
   cursor: not-allowed;
   opacity: 0.7;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239AA4B2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 16px;
   box-shadow: none;
 }
 
@@ -91,6 +95,8 @@
 .select-control--error {
   border-color: var(--error-color) !important;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23DC2626' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 16px;
   padding-right: calc(var(--spacing-md) * 3 + 32px);
 }
 
@@ -107,6 +113,8 @@
 .select-control--success {
   border-color: var(--success-color) !important;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2310B981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 16px;
   padding-right: calc(var(--spacing-md) * 3 + 32px);
 }
 
@@ -125,6 +133,7 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   padding-right: calc(var(--spacing-sm) * 2 + 12px);
   font-size: 1rem;
+  background-repeat: no-repeat;
   background-size: 12px;
   background-position: right var(--spacing-sm) center;
   line-height: 1.4;
@@ -139,6 +148,7 @@
   padding: var(--spacing-md) var(--spacing-lg);
   padding-right: calc(var(--spacing-lg) * 2 + 20px);
   font-size: 1rem;
+  background-repeat: no-repeat;
   background-size: 20px;
   background-position: right var(--spacing-lg) center;
   line-height: 1.6;
@@ -276,6 +286,8 @@
 /* Loading state */
 .select-control--loading {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 12a9 9 0 1 1-6.219-8.56'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 16px;
   animation: spin 1s linear infinite;
   cursor: wait;
 }

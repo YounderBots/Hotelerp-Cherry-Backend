@@ -1,6 +1,5 @@
 /* =====================================================
    MODAL COMPONENT - Premium Maroon Theme
-   Enhanced to match MasterData.css styling
 ===================================================== */
 *{
   font-family: inherit;
@@ -40,6 +39,10 @@
   background: var(--bg-primary);
   border-radius: 14px;
   width: 720px;
+  /* Safety net so every size variant (small/medium/large/xlarge) clamps to
+     the viewport at in-between widths (e.g. 820/992px) instead of only the
+     768px breakpoint below handling it. */
+  max-width: calc(100vw - 2rem);
   box-shadow:
     0 30px 80px rgba(0, 0, 0, 0.25),
     0 0 0 1px rgba(0, 0, 0, 0.04);
@@ -79,6 +82,13 @@
 
 .modal--xlarge {
   width: 900px;
+  max-width: calc(100vw - 2rem);
+}
+
+@media (max-width: 992px) {
+  .modal--xlarge {
+    width: 88vw;
+  }
 }
 
 .modal--fullscreen {
@@ -195,10 +205,13 @@
   padding: 18px;
 }
 
-/* Grid layout for forms */
+/* Grid layout for forms — auto-fit adapts to whichever modal size variant is
+   used (small/medium/large/xlarge) instead of a hard-coded 2 columns, so a
+   wide modal can show up to 3 fields per row while a small modal collapses
+   to 1 automatically. */
 .modal__body--grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 18px 20px;
 }
 
@@ -463,21 +476,37 @@
     margin: var(--spacing-sm);
     border-radius: 12px;
   }
-  
+
   .modal__header,
   .modal__body,
   .modal__footer {
     padding-left: var(--spacing-md);
     padding-right: var(--spacing-md);
   }
-  
+
   .modal__header {
     padding-top: var(--spacing-md);
     padding-bottom: var(--spacing-md);
   }
-  
+
   .modal__title {
     font-size: 18px;
+  }
+
+  .modal__icon {
+    width: 52px;
+    height: 52px;
+    font-size: 1.6rem;
+  }
+
+  .modal-footer,
+  .modal__footer {
+    flex-wrap: wrap;
+  }
+
+  .modal-footer .btn {
+    flex: 1;
+    min-width: 0;
   }
 }
 
@@ -520,6 +549,7 @@
   background: var(--bg-primary);
   border-radius: 14px;
   width: 720px;
+  max-width: calc(100vw - 2rem);
   max-height: 90vh;
   margin: auto;
   display: flex;
