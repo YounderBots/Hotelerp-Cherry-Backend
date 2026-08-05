@@ -9,7 +9,10 @@ body {
   margin: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  background: var(--primary-lighter);
+  /* Refined neutral canvas (was the saturated blush --primary-lighter, which
+     tinted the whole app pink at the edges). Cherry red is now a sharp accent,
+     not a wash. */
+  background: var(--app-canvas);
 }
 
 /* =====================================================
@@ -88,6 +91,10 @@ body {
   --text-secondary: #374151;
   --text-muted: #6b7280;
   --text-white: #ffffff;
+  /* Text/icon color for solid (dark-background) controls. Was referenced by
+     Button/IconButton solid variants but never defined, so their label color
+     silently fell back to inherited dark text on a cherry background. */
+  --text-bright: #ffffff;
 
   /* ================= BACKGROUNDS ================= */
   --bg-primary: #ffffff;
@@ -100,12 +107,19 @@ body {
   --border-light: #f3f4f6;
   --border-dark: #d1d5db;
 
-  /* ================= SHADOWS ================= */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 10px 18px rgba(0, 0, 0, 0.10);
-  --shadow-xl: 0 20px 30px rgba(0, 0, 0, 0.12);
+  /* ================= CANVAS ================= */
+  /* Neutral warm-gray page background — the app sits on this. */
+  --app-canvas: #f6f3f5;
+
+  /* ================= SHADOWS =================
+     Two-layer soft shadows: a tight contact shadow plus a wide, very soft
+     ambient one. Tuned to the ink color (not pure black) so they read as
+     depth rather than grime. Used app-wide by .card, buttons, modals, etc. */
+  --shadow-sm: 0 1px 2px rgba(26, 21, 35, 0.05);
+  --shadow: 0 1px 2px rgba(26, 21, 35, 0.04), 0 4px 12px -6px rgba(26, 21, 35, 0.10);
+  --shadow-md: 0 1px 2px rgba(26, 21, 35, 0.04), 0 8px 24px -12px rgba(26, 21, 35, 0.14);
+  --shadow-lg: 0 2px 4px rgba(26, 21, 35, 0.05), 0 20px 44px -18px rgba(26, 21, 35, 0.20);
+  --shadow-xl: 0 4px 8px rgba(26, 21, 35, 0.06), 0 30px 60px -24px rgba(26, 21, 35, 0.26);
 
   /* ================= SPACING ================= */
   --spacing-xs: 0.25rem;
@@ -152,15 +166,22 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--gray-100);
+  background: transparent;
 }
 
+/* Neutral, unobtrusive scrollbars (were a heavy rose that read as a UI
+   artifact across every table/scroll area). */
 ::-webkit-scrollbar-thumb {
-  background-color: var(--primary-light);
+  background-color: rgba(26, 21, 35, 0.18);
   border-radius: 6px;
   transition: background-color 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--primary-color);
+  background-color: rgba(26, 21, 35, 0.32);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(26, 21, 35, 0.22) transparent;
 }

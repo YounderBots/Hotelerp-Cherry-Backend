@@ -1,0 +1,418 @@
+/* =========================================================
+   OVERVIEW DASHBOARD — refined editorial redesign
+   Everything is scoped under `.ov` so the Hotel / Restaurant /
+   Bar dashboard tabs and every other module keep their existing
+   styling untouched. This is the reference for the rollout.
+========================================================= */
+.ov {
+  --ov-surface: var(--white);
+  --ov-canvas: #fbf7f4;
+  --ov-ink: #1a1523;
+  --ov-muted: #6b6473;
+  --ov-line: #ece7ec;
+  --ov-accent: var(--primary-color);
+  --ov-radius: 16px;
+  --ov-radius-sm: 11px;
+  --ov-shadow: 0 1px 2px rgba(26, 21, 35, 0.04), 0 8px 24px -12px rgba(26, 21, 35, 0.14);
+  --ov-shadow-lg: 0 2px 4px rgba(26, 21, 35, 0.05), 0 20px 44px -18px rgba(26, 21, 35, 0.22);
+
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 0.25rem 0.25rem 0.5rem;
+  color: var(--ov-ink);
+}
+
+/* ---- entrance stagger --------------------------------------------------- */
+@keyframes ov-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ov > * { animation: ov-rise 0.5s cubic-bezier(0.16, 0.84, 0.44, 1) both; }
+.ov > *:nth-child(2) { animation-delay: 0.05s; }
+.ov > *:nth-child(3) { animation-delay: 0.10s; }
+.ov > *:nth-child(4) { animation-delay: 0.15s; }
+.ov > *:nth-child(5) { animation-delay: 0.20s; }
+@media (prefers-reduced-motion: reduce) {
+  .ov > * { animation: none; }
+}
+
+/* =========================================================
+   KPI band — hero + secondary tiles
+========================================================= */
+.ov-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+/* ---- Hero (Combined Revenue) ---- */
+.ov-hero {
+  grid-column: span 2;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 1.5rem 1.6rem;
+  border-radius: var(--ov-radius);
+  color: #fff;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 45%),
+    linear-gradient(150deg, var(--primary-mild) 0%, var(--primary-color) 52%, var(--primary-dark) 100%);
+  box-shadow: var(--ov-shadow-lg);
+}
+.ov-hero::after {
+  content: "";
+  position: absolute;
+  right: -60px;
+  bottom: -70px;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 0 0 26px rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+}
+.ov-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.ov-hero-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+}
+.ov-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  backdrop-filter: blur(2px);
+}
+.ov-hero-value {
+  font-size: clamp(2.1rem, 2.6vw, 2.9rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.ov-hero-value .ov-cur {
+  font-size: 0.5em;
+  font-weight: 700;
+  opacity: 0.7;
+  margin-right: 0.14em;
+  vertical-align: 0.14em;
+}
+.ov-hero-breakdown {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+}
+.ov-hero-seg {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.ov-hero-seg dt {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.8);
+}
+.ov-hero-seg dt::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--seg-dot, #fff);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+.ov-hero-seg dd {
+  margin: 0.3rem 0 0;
+  font-size: 0.98rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Secondary tiles ---- */
+.ov-tile {
+  grid-column: span 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 1.15rem 1.2rem;
+  background: var(--ov-surface);
+  border: 1px solid var(--ov-line);
+  border-radius: var(--ov-radius);
+  box-shadow: var(--ov-shadow);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.ov-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--ov-shadow-lg);
+  border-color: color-mix(in srgb, var(--tile-accent, var(--ov-accent)) 40%, var(--ov-line));
+}
+.ov-tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.ov-tile-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--tile-tint, var(--primary-lightest));
+  color: var(--tile-accent, var(--ov-accent));
+}
+.ov-tile-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ov-muted);
+  line-height: 1.35;
+}
+.ov-tile-value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--ov-ink);
+  font-variant-numeric: tabular-nums;
+}
+.ov-tile-note {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--ov-muted);
+}
+
+/* ---- skeleton ---- */
+.ov-skel {
+  display: inline-block;
+  width: 68%;
+  height: 1.35rem;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--gray-100) 25%, var(--gray-200) 37%, var(--gray-100) 63%);
+  background-size: 300% 100%;
+  animation: ov-shimmer 1.3s ease-in-out infinite;
+}
+.ov-hero .ov-skel { background: linear-gradient(90deg, rgba(255,255,255,.2) 25%, rgba(255,255,255,.4) 37%, rgba(255,255,255,.2) 63%); background-size: 300% 100%; }
+@keyframes ov-shimmer { 0% { background-position: 100% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .ov-skel { animation: none; } }
+
+/* =========================================================
+   Grid rows (donut / availability / modules / table+actions)
+========================================================= */
+.ov-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+}
+.ov-span-2 { grid-column: span 2; }
+.ov-span-3 { grid-column: span 3; }
+.ov-span-4 { grid-column: span 4; }
+
+/* Card override — only inside .ov. Other tabs keep AdminDashboard.css .card */
+.ov .card {
+  border: 1px solid var(--ov-line);
+  border-radius: var(--ov-radius);
+  box-shadow: var(--ov-shadow);
+  padding: 1.35rem 1.4rem;
+}
+.ov .card:hover {
+  box-shadow: var(--ov-shadow-lg);
+  border-color: color-mix(in srgb, var(--ov-accent) 22%, var(--ov-line));
+}
+.ov .card h4 {
+  padding-left: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--ov-ink);
+}
+.ov .card h4::before { display: none; }
+.ov .card-header-inline { margin-bottom: 1.1rem; }
+.ov .card-meta { color: var(--ov-muted); font-weight: 700; font-size: 0.76rem; }
+.ov .dashboard-empty {
+  background: var(--ov-canvas);
+  border: 1px dashed var(--ov-line);
+  color: var(--ov-muted);
+}
+
+/* =========================================================
+   Module summary cards
+========================================================= */
+.ov-module h4 { display: flex; align-items: center; gap: 0.5rem; }
+.ov-module-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--mod-tint, var(--primary-lightest));
+  color: var(--mod-accent, var(--ov-accent));
+}
+.ov-module-stats {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 0.4rem;
+  flex: 1;
+}
+.ov-module-stats > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--ov-line);
+}
+.ov-module-stats > div:last-child { border-bottom: none; }
+.ov-module-stats dt { color: var(--ov-muted); font-size: 0.82rem; font-weight: 600; }
+.ov-module-stats dd {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--ov-ink);
+  font-variant-numeric: tabular-nums;
+}
+.ov-module-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  padding: 0.4rem 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--mod-accent, var(--ov-accent));
+  cursor: pointer;
+  transition: gap 0.18s ease;
+}
+.ov-module-link:hover { gap: 0.6rem; text-decoration: underline; }
+.ov-module-link:focus-visible { outline: 2px solid var(--mod-accent, var(--ov-accent)); outline-offset: 3px; border-radius: 4px; }
+
+/* =========================================================
+   Quick actions
+========================================================= */
+.ov-actions { display: flex; flex-direction: column; gap: 0.6rem; }
+.ov-action {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--ov-line);
+  border-radius: var(--ov-radius-sm);
+  background: var(--ov-surface);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--ov-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.ov-action:hover {
+  transform: translateX(2px);
+  border-color: var(--qa-accent, var(--ov-accent));
+  background: var(--qa-tint, var(--primary-lightest));
+  box-shadow: var(--ov-shadow);
+}
+.ov-action:focus-visible { outline: 2px solid var(--qa-accent, var(--ov-accent)); outline-offset: 2px; }
+.ov-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: var(--qa-tint, var(--primary-lightest));
+  color: var(--qa-accent, var(--ov-accent));
+}
+.ov-action-label { flex: 1; }
+.ov-action-arrow { color: var(--gray-400); transition: transform 0.18s ease, color 0.18s ease; }
+.ov-action:hover .ov-action-arrow { transform: translateX(3px); color: var(--qa-accent, var(--ov-accent)); }
+
+/* =========================================================
+   Alert
+========================================================= */
+.ov-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--ov-radius-sm);
+  background: var(--error-light);
+  border: 1px solid color-mix(in srgb, var(--error-color) 35%, transparent);
+  color: var(--error-color);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.ov-alert button {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: inherit;
+  padding: 4px 12px;
+  border-radius: 7px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.ov-alert button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* =========================================================
+   Responsive
+========================================================= */
+@media (max-width: 1180px) {
+  .ov-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ov-hero { grid-column: span 4; }
+  .ov-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .ov-span-3 { grid-column: span 4; }
+  .ov-span-4 { grid-column: span 4; }
+  .ov-span-2 { grid-column: span 2; }
+}
+@media (max-width: 720px) {
+  .ov-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ov-hero { grid-column: span 2; }
+  .ov-grid { grid-template-columns: minmax(0, 1fr); }
+  .ov-span-2, .ov-span-3, .ov-span-4 { grid-column: span 1; }
+  .ov-hero-breakdown { flex-wrap: wrap; }
+}
+@media (max-width: 460px) {
+  /* Stack the hero breakdown so the three values never collide on phones. */
+  .ov-hero-breakdown { flex-direction: column; gap: 0.4rem; }
+  .ov-hero-seg { display: flex; align-items: center; justify-content: space-between; }
+  .ov-hero-seg dd { margin: 0; }
+}
+@media (max-width: 420px) {
+  .ov-kpis { grid-template-columns: minmax(0, 1fr); }
+  .ov-hero { grid-column: span 1; }
+}

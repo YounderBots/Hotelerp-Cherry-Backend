@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import './Playground.css'
-import sampleImage from './assets/sample.jpg'
 
 
 const ProfileCard = ({ info, actions }) => {
@@ -81,7 +80,6 @@ const Playground = () => {
     const selectedElement = allInfo.find(item => item.id == id);
     if (!selectedElement) return alert('No Such elements');
 
-    const newName = 'Ganesh';
     setAllInfo(prev => prev.map(
       item => item.id == id ? { ...item, name: 'Ganesh' } : item
 

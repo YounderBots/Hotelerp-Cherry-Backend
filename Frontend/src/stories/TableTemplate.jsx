@@ -645,8 +645,10 @@ const TableTemplate = ({
         onClose={() => setShowFilterModal(false)}
         isOpen={showFilterModal}
       />
-      {/* Hidden full table for PDF export */}
-      <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+      {/* Off-screen full table used only as a source for CSV/PDF export. It is
+          hidden from assistive tech (aria-hidden) so screen readers don't
+          encounter a duplicate of the visible table. */}
+      <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', top: 0 }}>
         <table id="export-table-full">
           <thead>
             <tr>

@@ -103,19 +103,25 @@
   border-radius: var(--border-radius-md);
   background: linear-gradient(
     135deg,
-    var(--primary-color),
-    var(--secondary-color)
+    var(--primary-mild),
+    var(--primary-color) 55%,
+    var(--primary-dark)
   );
   color: var(--text-white);
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
-  transition: var(--transition);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .primary-btn:hover {
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
+}
+
+.primary-btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 /* =====================================================

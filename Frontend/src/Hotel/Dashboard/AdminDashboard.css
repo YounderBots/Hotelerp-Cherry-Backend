@@ -971,6 +971,50 @@
 }
 
 /* =========================================================
+   ROLLOUT — refined language across the whole Dashboard module
+   (Hotel / Restaurant / Bar tabs). Everything here is scoped to
+   `.admin-dashboard` so the 19 other modules that use `.card`
+   are never affected. Mirrors the `.ov` (Overview) treatment.
+========================================================= */
+/* De-pinked greeting header */
+.admin-dashboard .dashboard-header {
+  background: var(--white);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+}
+.admin-dashboard .dashboard-avatar {
+  background: var(--primary-lightest);
+  border-color: var(--primary-lighter);
+}
+
+/* Card headings: drop the left accent bar, tighten the type */
+.admin-dashboard .card h4 {
+  padding-left: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.admin-dashboard .card h4::before { display: none; }
+
+/* Data tables: neutral micro-tracked header (matches TableTemplate) */
+.admin-dashboard .table-card th {
+  background: var(--secondary-lightest);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--border-color);
+}
+.admin-dashboard .table-card tr.clickable:hover,
+.admin-dashboard .table-card tr.clickable:focus-visible {
+  background: var(--gray-50);
+}
+
+/* KPI cards: lighter label, calmer top accent */
+.admin-dashboard .kpi-title { font-size: 0.7rem; letter-spacing: 0.06em; }
+.admin-dashboard .kpi-card::before { height: 2px; }
+
+/* =========================================================
    Screen-reader-only utility
 ========================================================= */
 .sr-only {

@@ -218,7 +218,7 @@ export const DynamicTabs = () => {
   return (
     <div>
       <Tabs addable removable onTabAdd={handleAddTab} onTabRemove={handleRemoveTab}>
-        {tabs.map((tab, index) => (
+        {tabs.map((tab) => (
           <Tab key={tab.id} label={tab.label}>
             <div>
               <h3>{tab.label}</h3>

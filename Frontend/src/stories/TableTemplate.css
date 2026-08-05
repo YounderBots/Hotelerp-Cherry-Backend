@@ -1,11 +1,11 @@
 /* Table Template Styles */
 .table-template {
   border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
   margin-bottom: var(--spacing-xl);
   background-color: var(--bg-primary);
-  border: 1px solid var(--primary-lightest);
+  border: 1px solid var(--border-color);
 }
 
 /* Title Section */
@@ -70,6 +70,9 @@
   height: 36px;
   border: 1px solid var(--border-color);
   background: var(--white);
+  /* Utility icons default to currentColor; without this they render pure
+     black. Muted gray at rest, cherry-on-hover (below). */
+  color: var(--text-muted);
   border-radius: var(--border-radius);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -107,17 +110,17 @@
 
 /* Table Head with Sorting */
 .table th {
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: 0.85rem var(--spacing-lg);
   text-align: left;
-  font-weight: 600;
-  color: var(--text-secondary);
-  font-size: 1rem;
-  /* text-transform: lowercase; */
-  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   position: relative;
   user-select: none;
-  background-color: var(--primary-lightest);
-  border-bottom: 2px solid var(--border-color);
+  background-color: var(--secondary-lightest);
+  border-bottom: 1px solid var(--border-color);
 }
 
 /* Opt-in sticky header for TableTemplate (mirrors Table.css). */
@@ -159,7 +162,28 @@
 }
 
 .table tbody tr:hover {
-  background-color: var(--primary-lightest);
+  background-color: var(--gray-50);
+}
+
+/* Pin the last column (Actions) to the right edge so it stays reachable when
+   a wide table scrolls horizontally (Orders, Billing, etc.). The opaque
+   backgrounds and hover override keep it readable over scrolled content. */
+.table th:last-child,
+.table td:last-child {
+  position: sticky;
+  right: 0;
+  box-shadow: -8px 0 8px -8px rgba(26, 21, 35, 0.12);
+}
+.table th:last-child {
+  background-color: var(--secondary-lightest);
+  z-index: 3;
+}
+.table td:last-child {
+  background-color: var(--white);
+  z-index: 1;
+}
+.table tbody tr:hover td:last-child {
+  background-color: var(--gray-50);
 }
 
 /* Filter Modal */

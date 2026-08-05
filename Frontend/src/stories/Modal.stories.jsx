@@ -13,11 +13,10 @@
   // Mock Button component matching the theme
   const Button = ({ 
     children, 
-    onClick, 
-    variant = 'primary', 
-    size = 'medium',
+    onClick,
+    variant = 'primary',
     className = '',
-    ...props 
+    ...props
   }) => (
     <button
       className={`btn ${className}`}
@@ -304,7 +303,7 @@
           ))}
         </div>
         
-        {alerts.map(({ type, label, icon, title, message }) => (
+        {alerts.map(({ type, icon, title, message }) => (
           <AlertModal
             key={type}
             isOpen={alertType === type}

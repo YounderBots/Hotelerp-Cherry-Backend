@@ -1,12 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, CalendarPlus, Hotel, Utensils, Wine } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarPlus,
+  Hotel,
+  Utensils,
+  Wine,
+  DollarSign,
+  BedDouble,
+  ShoppingBag,
+  Receipt,
+} from "lucide-react";
 
 import APICall, { ApiError } from "../../APICalls/APICalls";
-import KPICard from "./Components/KPICard";
 import DonutChart from "./Components/DonutChart";
 import RoomAvailability from "./Components/RoomAvailability";
 import MiniTableCard from "./Components/MiniTableCard";
+import "./OverviewTab.css";
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
 const today = isoDay(new Date().toISOString());
@@ -150,12 +160,49 @@ const OverviewTab = ({ onNavigate }) => {
     return (restaurant?.bills || 0) + (bar?.bills || 0);
   }, [loading, restaurant, bar]);
 
-  const kpis = [
-    { title: "Combined Revenue Today", value: loading ? "…" : formatCurrency(combinedRevenue), type: "revenue", note: "Hotel + Restaurant + Bar" },
-    { title: "Hotel Occupancy", value: loading || !hotel ? "…" : `${Math.round(hotel.occupancyPct)}%`, type: "available", note: hotel ? `${hotel.occupiedRooms} of ${hotel.totalRooms} rooms` : undefined },
-    { title: "Restaurant Orders Today", value: loading ? "…" : formatCount(restaurant?.orders), type: "orders" },
-    { title: "Bar Orders Today", value: loading ? "…" : formatCount(bar?.orders), type: "orders" },
-    { title: "Total Bills Today", value: loading ? "…" : formatCount(combinedBills), type: "bills", note: "Restaurant + Bar" },
+  const tiles = [
+    {
+      key: "occupancy",
+      label: "Hotel Occupancy",
+      value: loading || !hotel ? null : `${Math.round(hotel.occupancyPct)}%`,
+      note: hotel ? `${hotel.occupiedRooms} of ${hotel.totalRooms} rooms` : undefined,
+      icon: BedDouble,
+      accent: DEPT_ACCENT.hotel,
+      tint: DEPT_TINT.hotel,
+    },
+    {
+      key: "restaurant-orders",
+      label: "Restaurant Orders",
+      value: loading ? null : formatCount(restaurant?.orders),
+      note: "Today",
+      icon: ShoppingBag,
+      accent: DEPT_ACCENT.restaurant,
+      tint: DEPT_TINT.restaurant,
+    },
+    {
+      key: "bar-orders",
+      label: "Bar Orders",
+      value: loading ? null : formatCount(bar?.orders),
+      note: "Today",
+      icon: Wine,
+      accent: DEPT_ACCENT.bar,
+      tint: DEPT_TINT.bar,
+    },
+    {
+      key: "bills",
+      label: "Total Bills",
+      value: loading ? null : formatCount(combinedBills),
+      note: "Restaurant + Bar",
+      icon: Receipt,
+      accent: "var(--warning-color)",
+      tint: "var(--warning-light)",
+    },
+  ];
+
+  const heroBreakdown = [
+    { key: "hotel", label: "Hotel", value: hotel?.revenue || 0, dot: DEPT_ACCENT.hotel },
+    { key: "restaurant", label: "Rest.", value: restaurant?.revenue || 0, dot: DEPT_ACCENT.restaurant },
+    { key: "bar", label: "Bar", value: bar?.revenue || 0, dot: DEPT_ACCENT.bar },
   ];
 
   const modules = [
@@ -201,59 +248,106 @@ const OverviewTab = ({ onNavigate }) => {
   ];
 
   return (
-    <div className="dashboard-wrapper">
+    <div className="ov">
       {error && (
-        <div className="dashboard-alert" role="alert">
+        <div className="ov-alert" role="alert">
           <span>{error}</span>
-          <button type="button" className="dashboard-alert-action" onClick={() => setRefreshTick((n) => n + 1)}>
+          <button type="button" onClick={() => setRefreshTick((n) => n + 1)}>
             Retry
           </button>
         </div>
       )}
 
-      <div className="kpi-grid">
-        {kpis.map((card, index) => (
-          <KPICard key={card.title} title={card.title} value={card.value} note={card.note} type={card.type} loading={loading} index={index} />
-        ))}
-      </div>
-
-      <div className="dashboard-row">
-        {modules.map((mod) => {
-          const Icon = mod.icon;
-          return (
-            <div key={mod.key} className="dashboard-col dashboard-col-4">
-              <div className="card module-summary-card" style={{ "--dept-accent": DEPT_ACCENT[mod.key] }}>
-                <div className="card-header-inline">
-                  <h4>
-                    <Icon size={16} className="module-summary-icon" aria-hidden="true" /> {mod.label}
-                  </h4>
+      {/* KPI band — revenue hero + secondary tiles */}
+      <div className="ov-kpis">
+        <section className="ov-hero" role="group" aria-label={`Combined revenue today: ${loading ? "loading" : formatCurrency(combinedRevenue)}`}>
+          <div className="ov-hero-top">
+            <span className="ov-hero-label">Combined Revenue · Today</span>
+            <span className="ov-hero-badge" aria-hidden="true"><DollarSign size={19} /></span>
+          </div>
+          <div>
+            <div className="ov-hero-value" aria-live="polite">
+              {loading ? (
+                <span className="ov-skel" aria-hidden="true" />
+              ) : (
+                <><span className="ov-cur">₹</span>{formatCurrency(combinedRevenue)}</>
+              )}
+            </div>
+            <dl className="ov-hero-breakdown">
+              {heroBreakdown.map((seg) => (
+                <div className="ov-hero-seg" key={seg.key} style={{ "--seg-dot": seg.dot }}>
+                  <dt>{seg.label}</dt>
+                  <dd>{loading ? "…" : `₹${formatCurrency(seg.value)}`}</dd>
                 </div>
+              ))}
+            </dl>
+          </div>
+        </section>
 
-                {loading ? (
-                  <div className="dashboard-empty" role="status" aria-live="polite">Loading…</div>
-                ) : (
-                  <>
-                    <dl className="module-summary-stats">
-                      {mod.stats.map((s) => (
-                        <div key={s.label}>
-                          <dt>{s.label}</dt>
-                          <dd>{s.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    <button type="button" className="btn-link module-summary-link" onClick={() => onNavigate?.(mod.tabIndex)}>
-                      View {mod.label} <ArrowRight size={14} aria-hidden="true" />
-                    </button>
-                  </>
-                )}
+        {tiles.map((tile) => {
+          const Icon = tile.icon;
+          return (
+            <div
+              className="ov-tile"
+              key={tile.key}
+              role="group"
+              aria-label={`${tile.label}: ${loading ? "loading" : tile.value}`}
+              style={{ "--tile-accent": tile.accent, "--tile-tint": tile.tint }}
+            >
+              <div className="ov-tile-top">
+                <span className="ov-tile-label">{tile.label}</span>
+                <span className="ov-tile-icon" aria-hidden="true"><Icon size={18} /></span>
               </div>
+              <div className="ov-tile-value" aria-live="polite">
+                {loading ? <span className="ov-skel" aria-hidden="true" /> : tile.value}
+              </div>
+              {tile.note && !loading && <div className="ov-tile-note">{tile.note}</div>}
             </div>
           );
         })}
       </div>
 
-      <div className="dashboard-row">
-        <div className="dashboard-col dashboard-col-6">
+      {/* Module summaries */}
+      <div className="ov-grid">
+        {modules.map((mod) => {
+          const Icon = mod.icon;
+          return (
+            <div
+              key={mod.key}
+              className="card ov-module ov-span-2"
+              style={{ "--mod-accent": DEPT_ACCENT[mod.key], "--mod-tint": DEPT_TINT[mod.key] }}
+            >
+              <div className="card-header-inline">
+                <h4>
+                  <span className="ov-module-icon" aria-hidden="true"><Icon size={16} /></span>
+                  {mod.label}
+                </h4>
+              </div>
+              {loading ? (
+                <div className="dashboard-empty" role="status" aria-live="polite">Loading…</div>
+              ) : (
+                <>
+                  <dl className="ov-module-stats">
+                    {mod.stats.map((s) => (
+                      <div key={s.label}>
+                        <dt>{s.label}</dt>
+                        <dd>{s.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <button type="button" className="ov-module-link" onClick={() => onNavigate?.(mod.tabIndex)}>
+                    View {mod.label} <ArrowRight size={14} aria-hidden="true" />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Revenue split + room availability */}
+      <div className="ov-grid">
+        <div className="ov-span-3">
           <DonutChart
             title="Revenue Split"
             loading={loading}
@@ -268,7 +362,7 @@ const OverviewTab = ({ onNavigate }) => {
             ]}
           />
         </div>
-        <div className="dashboard-col dashboard-col-6">
+        <div className="ov-span-3">
           <RoomAvailability
             counts={hotel?.statusCounts}
             total={hotel?.totalRooms || 0}
@@ -277,8 +371,9 @@ const OverviewTab = ({ onNavigate }) => {
         </div>
       </div>
 
-      <div className="dashboard-row">
-        <div className="dashboard-col dashboard-col-8">
+      {/* Arrivals/departures + quick actions */}
+      <div className="ov-grid">
+        <div className="ov-span-4">
           <MiniTableCard
             title="Today's Arrivals & Departures"
             columns={guestColumns}
@@ -288,35 +383,31 @@ const OverviewTab = ({ onNavigate }) => {
             rowKey="key"
           />
         </div>
-        <div className="dashboard-col dashboard-col-4">
-          <div className="card quick-actions-card">
-            <div className="card-header-inline">
-              <h4>Quick Actions</h4>
-            </div>
-            <div className="quick-actions-list">
-              {[
-                { key: "hotel", label: "New Reservation", icon: CalendarPlus, path: "/add_new_reservation" },
-                { key: "restaurant", label: "New Restaurant Order", icon: Utensils, path: "/orders" },
-                { key: "bar", label: "New Bar Order", icon: Wine, path: "/bar_orders" },
-              ].map((action) => {
-                const Icon = action.icon;
-                return (
-                  <button
-                    key={action.key}
-                    type="button"
-                    className="quick-action-btn"
-                    style={{ "--qa-accent": DEPT_ACCENT[action.key], "--qa-tint": DEPT_TINT[action.key] }}
-                    onClick={() => navigate(action.path)}
-                  >
-                    <span className="quick-action-icon">
-                      <Icon size={16} aria-hidden="true" />
-                    </span>
-                    <span className="quick-action-label">{action.label}</span>
-                    <ArrowRight size={14} className="quick-action-arrow" aria-hidden="true" />
-                  </button>
-                );
-              })}
-            </div>
+        <div className="card ov-span-2">
+          <div className="card-header-inline">
+            <h4>Quick Actions</h4>
+          </div>
+          <div className="ov-actions">
+            {[
+              { key: "hotel", label: "New Reservation", icon: CalendarPlus, path: "/add_new_reservation" },
+              { key: "restaurant", label: "New Restaurant Order", icon: Utensils, path: "/orders" },
+              { key: "bar", label: "New Bar Order", icon: Wine, path: "/bar_orders" },
+            ].map((action) => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.key}
+                  type="button"
+                  className="ov-action"
+                  style={{ "--qa-accent": DEPT_ACCENT[action.key], "--qa-tint": DEPT_TINT[action.key] }}
+                  onClick={() => navigate(action.path)}
+                >
+                  <span className="ov-action-icon" aria-hidden="true"><Icon size={16} /></span>
+                  <span className="ov-action-label">{action.label}</span>
+                  <ArrowRight size={14} className="ov-action-arrow" aria-hidden="true" />
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

@@ -51,8 +51,14 @@ def verify_authentication(request: Request) -> Tuple[Any, Any, Any, str]:
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.lower().startswith("bearer "):
         token = auth_header.split(" ", 1)[1].strip()
-    elif hasattr(request, "session") and "access_token" in request.session:
-        token = request.session.get("access_token")
+    if not token:
+        # Session fallback, tolerating a missing SessionMiddleware: accessing
+        # request.session asserts when the middleware isn't installed, so guard
+        # it rather than crashing with AssertionError instead of a clean 401.
+        try:
+            token = request.session.get("access_token")
+        except (AssertionError, AttributeError):
+            token = None
 
     if not token:
         raise HTTPException(

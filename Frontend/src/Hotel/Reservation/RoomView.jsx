@@ -41,10 +41,14 @@ const BUCKET_CLASS = {
   not_ready: "status-not-ready",
 };
 
-// Image path resolver — backend stores as "/templates/static/upload_image/xxx.jpg".
+// Image path resolver — backend stores real uploads under "/templates/static/…".
 // If it's already an absolute URL, use as-is; otherwise prefix with the API baseURL.
 const resolveImage = (path) => {
   if (!path || typeof path !== "string") return null;
+  // Seed rows point Room_Image_* at "/assets/rooms/placeholder-N.jpg", which do
+  // not exist on disk and 404 through the gateway. Treat them as "no image" so
+  // the neutral placeholder icon renders and no request is made.
+  if (path.startsWith("/assets/")) return null;
   if (/^https?:\/\//i.test(path)) return path;
   return `${baseURL}${path.startsWith("/") ? "" : "/"}${path}`;
 };

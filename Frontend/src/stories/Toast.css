@@ -29,9 +29,9 @@
 }
 
 .toast--success { background-color: var(--success-color); }
-.toast--update   { background-color: var(--primary-light); }
+.toast--update   { background-color: var(--primary-color); }
 .toast--delete   { background-color: var(--error-color, #dc2626); }
-.toast--error    { color: #1e0101; background-color: var(--primary-light); }
+.toast--error    { background-color: var(--error-color, #dc2626); }
 
 .toast--exit {
   animation: toast-out 0.35s ease forwards;

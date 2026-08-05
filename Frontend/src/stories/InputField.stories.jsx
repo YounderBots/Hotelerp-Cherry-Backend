@@ -16,17 +16,13 @@ export default {
 const ControlledTemplate = (args) => {
   // Parent manages the search data manually (controlled)
   const [query, setQuery] = useState('');
-  const handleChange = (e) => setQuery(e.target.value);
-  const handleClear = () => setQuery('');
 
   return (
- 
-      <InputField
-        {...args}
-        value={query} 
-      />
-      
-    
+    <InputField
+      {...args}
+      value={query}
+      onChange={(e) => setQuery(e?.target?.value ?? e ?? '')}
+    />
   );
 };
 

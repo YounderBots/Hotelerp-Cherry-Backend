@@ -127,6 +127,7 @@ main {
 
 .chevron-main {
     margin-left: auto;
+    color: var(--text-muted);
     transition: transform 0.2s;
 }
 
@@ -509,9 +510,10 @@ main {
 }
 
 .sub-item.active {
-    background: var(--primary-light);
-    color: var(--secondary-color);
-    font-weight: 600;
+    background: var(--primary-lightest);
+    color: var(--primary-color);
+    font-weight: 700;
+    box-shadow: inset 3px 0 0 var(--primary-color);
 }
 
 /* MAIN CONTENT */
@@ -679,6 +681,7 @@ main {
   width: 40px;
   height: 40px;
   background: var(--primary-lightest);
+  color: var(--primary-color);
   border-radius: 9999px;
   border: none;
   display: flex;
@@ -689,7 +692,7 @@ main {
 }
 
 .icon-button:hover {
-  background: #dbeafe;
+  background: var(--primary-lighter);
 }
 
 /* PROFILE */
@@ -710,6 +713,12 @@ main {
 
 .profile-box:hover {
   background: var(--primary-lightest);
+}
+
+/* The dropdown chevron is a bare icon inheriting currentColor (black);
+   mute it so it reads as a secondary affordance. */
+.profile-box svg {
+  color: var(--text-muted);
 }
 
 .profile-box:focus-visible {

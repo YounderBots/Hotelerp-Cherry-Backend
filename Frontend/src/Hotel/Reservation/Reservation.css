@@ -2728,8 +2728,8 @@ input[type="number"] {
 
 .rvw-thumb {
   aspect-ratio: 4 / 3;
-  background: var(--primary-lightest, #fff1f4);
-  color: var(--primary-color, #850126);
+  background: var(--gray-100, #f4f4f5);
+  color: var(--gray-400, #9ca3af);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -3,11 +3,11 @@
    - Accent color chosen to match the design (teal).
 */
 :root {
-  /* component-level override (you can change this) */
-  --search-accent: var(--primary-color); /* teal - matches design screenshot */
-  --search-bg: var(--primary-lightest);
-  --search-border: var(--primary-lightest);
-  --search-placeholder: #9aa6a6;
+  /* Clean neutral search field; cherry is the focus/icon accent, not a fill. */
+  --search-accent: var(--primary-color);
+  --search-bg: var(--white);
+  --search-border: var(--border-color);
+  --search-placeholder: var(--text-muted);
 }
 
 .InputField-wrapper {
@@ -33,7 +33,7 @@
 /* focus state */
 .InputField:focus-within {
   border-color: var(--search-accent);
-  box-shadow: 0 2px 8px rgba(22,160,133,0.08);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--search-accent) 15%, transparent);
 }
 
 /* icon */

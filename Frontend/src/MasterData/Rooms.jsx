@@ -259,7 +259,6 @@ const Rooms = () => {
 
   const handleImageChange = (index, file) => {
     if (!file) return;
-    const preview = URL.createObjectURL(file);
     setFormData((prev) => {
       const images = [...prev.images];
       images[index] = file;
@@ -404,7 +403,7 @@ const Rooms = () => {
               ["Room Telephone", "room_telephone", "tel"],
               ["Max Adult", "max_adult", "number"],
               ["Max Child", "max_child", "number"],
-            ].map(([label, name, type]) => (
+            ].map(([label, name]) => (
               <Input key={name} label={label} name={name} value={viewData[name]} disabled />
             ))}
 
@@ -520,14 +519,6 @@ const Rooms = () => {
                   { value: "Working", label: "Working" },
                   { value: "Not Working", label: "Not Working" },
                 ]}
-              />
-              <Select
-                label="Room Status"
-                name="room_status"
-                value={formData.room_status}
-                onChange={handleChange}
-                disabled
-                options={[{ value: "Available", label: "Available" }]}
               />
               <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                 <label>Room Images</label>

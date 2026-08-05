@@ -121,7 +121,10 @@ const BedType = () => {
   }, []);
 
   const handleSave = async () => {
-    if (!bedName.trim()) return;
+    if (!bedName.trim()) {
+      showAlert("Bed Type is required.", "error");
+      return;
+    }
 
     if (editId) {
       updateBedType();
