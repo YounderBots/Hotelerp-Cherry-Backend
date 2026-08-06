@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, AlertCircle, CheckCircle, X } from "lucide-react";
 import Tabs, { Tab } from "../../stories/Tabs";
-import Modal from "../../stories/Modal";
 import Button from "../../stories/Button";
 import RoomCard from "./Pages/Card";
 import Payment from "./payment";
@@ -526,6 +525,11 @@ const AddNewReservation = () => {
         </div>
       )}
 
+      {/* Room selection (steps 1–2) owns the page until the guest clicks Next;
+          the Reservation Details and Billing steps then replace it inline, in
+          place of the old modal overlays. */}
+      {!modalView && !paymentModal && (
+        <>
       {/* Step 1 — stay dates must be picked before room availability can be known */}
       <div className="anr-dates-card">
         <h3 className="anr-dates-title">1. Select your stay dates</h3>
@@ -620,66 +624,92 @@ const AddNewReservation = () => {
           </div>
         </div>
       )}
+        </>
+      )}
 
-      {/* Payment modal (final step) */}
-      <Modal
-        isOpen={paymentModal}
-        title="Billing Details"
-        onClose={() => (saving ? null : setPaymentModal(false))}
-        showFooter
-        size="large"
-        bodyLayout="single"
-        actions={[
-          {
-            label: "Back",
-            variant: "secondary",
-            onClick: () => {
-              if (saving) return;
-              setPaymentModal(false);
-              setModalView(true);
-            },
-          },
-          {
-            label: saving ? "Submitting…" : "Submit",
-            variant: "primary",
-            onClick: handleSubmitReservation,
-          },
-        ]}
-      >
-        <Payment
-          taxTypes={taxTypes}
-          discountTypes={discountTypes}
-          paymentMethods={paymentMethods}
-          selectedRooms={selectedRooms}
-          roomTypes={roomTypes}
-          perRoom={perRoom}
-          totalNights={totalNights}
-          setpaymentData={setPaymentdata}
-        />
-      </Modal>
+      {/* Billing step — final step, rendered inline as a full page (was a modal) */}
+      {paymentModal && (
+        <section className="anr-details">
+          <div className="anr-details-head">
+            <div className="anr-details-heading">
+              <span className="rmv-eyebrow">Step 4</span>
+              <h2 className="anr-details-title">Billing Details</h2>
+              <p className="anr-details-sub">
+                Review the charges and record the payment to confirm the reservation.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="rmv-back-btn"
+              onClick={() => {
+                if (saving) return;
+                setPaymentModal(false);
+                setModalView(true);
+              }}
+              disabled={saving}
+              aria-label="Back to reservation details"
+            >
+              <ArrowLeft size={16} aria-hidden="true" />
+              <span>Back to details</span>
+            </button>
+          </div>
 
-      {/* Reservation details modal (before payment) */}
-      <Modal
-        isOpen={modalView}
-        title="Reservation Details"
-        onClose={() => setModalView(false)}
-        showFooter
-        size="large"
-        bodyLayout="single"
-        actions={[
-          {
-            label: "Close",
-            variant: "secondary",
-            onClick: () => setModalView(false),
-          },
-          {
-            label: "Continue to billing",
-            variant: "primary",
-            onClick: handleValidateGuest,
-            autoFocus: true,
-          },
-        ]}
-      >
+          <Payment
+            taxTypes={taxTypes}
+            discountTypes={discountTypes}
+            paymentMethods={paymentMethods}
+            selectedRooms={selectedRooms}
+            roomTypes={roomTypes}
+            perRoom={perRoom}
+            totalNights={totalNights}
+            setpaymentData={setPaymentdata}
+          />
+
+          <div className="anr-details-actions">
+            <Button
+              variant="secondary"
+              disabled={saving}
+              onClick={() => {
+                if (saving) return;
+                setPaymentModal(false);
+                setModalView(true);
+              }}
+            >
+              Back to details
+            </Button>
+            <Button
+              variant="primary"
+              disabled={saving}
+              onClick={handleSubmitReservation}
+            >
+              {saving ? "Submitting…" : "Submit"}
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {/* Reservation details step — rendered inline as a full page (was a modal) */}
+      {modalView && (
+        <section className="anr-details">
+          <div className="anr-details-head">
+            <div className="anr-details-heading">
+              <span className="rmv-eyebrow">Step 3</span>
+              <h2 className="anr-details-title">Reservation Details</h2>
+              <p className="anr-details-sub">
+                Confirm the guest's information and room assignments, then continue to billing.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="rmv-back-btn"
+              onClick={() => setModalView(false)}
+              aria-label="Back to room selection"
+            >
+              <ArrowLeft size={16} aria-hidden="true" />
+              <span>Back to rooms</span>
+            </button>
+          </div>
+
         <div className="form-card">
           <h3 className="section-title">Guest Information</h3>
 
@@ -701,7 +731,6 @@ const AddNewReservation = () => {
                   id="anr-first-name"
                   type="text"
                   placeholder="First Name"
-                  style={{ height: "40px" }}
                   value={formData.first_name}
                   onChange={(e) => setFormData((f) => ({ ...f, first_name: e.target.value }))}
                   required
@@ -805,7 +834,6 @@ const AddNewReservation = () => {
               <label htmlFor="anr-status">Reservation Status <span className="required">*</span></label>
               <select
                 id="anr-status"
-                style={{ height: "40px" }}
                 value={formData.booking_status_id}
                 onChange={(e) => setFormData((f) => ({ ...f, booking_status_id: e.target.value }))}
                 required
@@ -823,7 +851,6 @@ const AddNewReservation = () => {
               <label htmlFor="anr-identity-type">Identity Type <span className="required">*</span></label>
               <select
                 id="anr-identity-type"
-                style={{ height: "40px" }}
                 value={formData.identity_type_id}
                 onChange={(e) => setFormData((f) => ({ ...f, identity_type_id: e.target.value }))}
                 required
@@ -928,7 +955,6 @@ const AddNewReservation = () => {
                         id={`anr-comp-${room.id}`}
                         value={p.complementary || ""}
                         onChange={(e) => updateRoomField(room.id, "complementary", e.target.value)}
-                        style={{ height: "40px", marginLeft: "10px" }}
                       >
                         {ROOM_COMPLEMENTARY_OPTIONS.map((opt) => (
                           <option key={opt} value={opt}>{opt || "No Complementary"}</option>
@@ -950,7 +976,6 @@ const AddNewReservation = () => {
               id="anr-common-comp"
               value={formData.common_complementary}
               onChange={(e) => setFormData((f) => ({ ...f, common_complementary: e.target.value }))}
-              style={{ height: "40px", width: "100%" }}
             >
               {COMMON_COMPLEMENTARY_OPTIONS.map((opt) => (
                 <option key={opt} value={opt}>{opt || "No Complementary"}</option>
@@ -958,7 +983,17 @@ const AddNewReservation = () => {
             </select>
           </div>
         </div>
-      </Modal>
+
+          <div className="anr-details-actions">
+            <Button variant="secondary" onClick={() => setModalView(false)}>
+              Back to rooms
+            </Button>
+            <Button variant="primary" onClick={handleValidateGuest}>
+              Continue to billing
+            </Button>
+          </div>
+        </section>
+      )}
 
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>

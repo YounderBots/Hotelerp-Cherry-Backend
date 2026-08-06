@@ -2539,6 +2539,180 @@ input[type="number"] {
 
 
 /* ===================================================================
+   Reservation Details — inline page step (converted from a modal)
+   The screen used to open in a cramped modal that clipped the wide
+   "Selected Rooms" grid; rendering it inline gives the full page width
+   and lets every field share one baseline.
+=================================================================== */
+.anr-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.anr-details-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.anr-details-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.anr-details-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.anr-details-sub {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted, #6b7280);
+}
+
+/* Full, standalone card — no longer clipped to a modal's bottom-only radius. */
+.anr-details .form-card {
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+}
+
+/* First "Guest Information" heading sits flush with the card's top padding. */
+.anr-details .form-card > .section-title:first-child {
+  margin-top: 0;
+}
+
+/* --- Uniform field metrics: one height so every column lines up ---------- */
+.anr-details .form-grid {
+  align-items: start;
+}
+
+.anr-details .form-card input,
+.anr-details .form-card select,
+.anr-details .title-select {
+  height: 44px;
+}
+
+/* Identity-proof cell: the file trigger matches the field height and never
+   forces the row taller than its neighbours. */
+.anr-details .file-upload {
+  height: 44px;
+}
+
+.anr-details .file-label {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+/* Selected-room read-only values render as fields aligned to the inputs. */
+.anr-details .room-block div {
+  height: 44px;
+  min-height: 44px;
+}
+
+.anr-details .room-info input,
+.anr-details .room-info select {
+  height: 44px;
+}
+
+.anr-details .complementary-toggle {
+  gap: 6px;
+}
+
+/* Billing step: the Payment card's fields share the same 44px baseline. */
+.anr-details .pay-field input,
+.anr-details .pay-field select {
+  height: 44px;
+}
+
+
+/* ===================================================================
+   Guest Enquiry — Add/Edit modal form
+   The dialog is 720px wide but the fields used to stack in one column,
+   so each control stretched full width and read as an unbalanced list.
+   A two-column grid (notes spanning both) lines everything up.
+=================================================================== */
+.ge-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+
+.ge-form-grid .ge-field-full {
+  grid-column: 1 / -1;
+}
+
+/* The modal already pads the body and each form-group spaces its own label;
+   drop the global label margin-top so rows start on a shared baseline. */
+.ge-form-grid .form-group label {
+  margin-top: 0;
+}
+
+.ge-form-grid .form-group input,
+.ge-form-grid .form-group select {
+  height: 44px;
+}
+
+/* Textarea inherited no styling, so it clashed with the inputs — match it. */
+.ge-form-grid .form-group textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 96px;
+}
+
+.ge-form-grid .form-group textarea:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+@media (max-width: 560px) {
+  .ge-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Sticky action bar replaces the modal footer; stays reachable while scrolling. */
+.anr-details-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 2px;
+  background: linear-gradient(
+    to top,
+    var(--primary-lighter, #ffffff) 65%,
+    rgba(255, 255, 255, 0)
+  );
+}
+
+@media (max-width: 768px) {
+  .anr-details-actions {
+    flex-direction: column-reverse;
+  }
+
+  .anr-details-actions .btn {
+    width: 100%;
+  }
+}
+
+
+/* ===================================================================
    Booking (Page 11 audit) — scoped .bkg-* classes
 =================================================================== */
 .bkg-chip-tray {

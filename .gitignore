@@ -1,6 +1,8 @@
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
 
 # Crash/debug dumps
 *.stackdump
@@ -25,6 +27,12 @@ env/
 .mypy_cache/
 .ruff_cache/
 
+# Python test coverage output
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Node / frontend build output
 node_modules/
 Frontend/dist/
@@ -32,10 +40,25 @@ Frontend/build/
 Frontend/storybook-static/
 Frontend/coverage/
 .vite/
+.eslintcache
+*.tsbuildinfo
 
-# Editor
+# Editor / tooling
 .idea/
+.vscode/
+!.vscode/extensions.json
 *.swp
+*.swo
+.claude/settings.local.json
+
+# Scratch, backup and duplicate files — never belong in the repo
+*.bak
+*.orig
+*.rej
+*.tmp
+*~
+* copy.*
+* copy [0-9].*
 
 # Uploaded media served from the services at runtime
 Backend/Services/*/templates/static/uploads/
