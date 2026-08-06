@@ -1,5 +1,3 @@
-CREATE DATABASE  IF NOT EXISTS `hotelerp_users` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
-USE `hotelerp_users`;
 -- MySQL dump 10.13  Distrib 8.0.41, for Win64 (x86_64)
 --
 -- Host: localhost    Database: hotelerp_users
@@ -9,13 +7,21 @@ USE `hotelerp_users`;
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
-/*!50503 SET NAMES utf8 */;
+/*!50503 SET NAMES utf8mb4 */;
 /*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
 /*!40103 SET TIME_ZONE='+00:00' */;
 /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
 /*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+--
+-- Current Database: `hotelerp_users`
+--
+
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `hotelerp_users` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
+
+USE `hotelerp_users`;
 
 --
 -- Table structure for table `department`
@@ -40,7 +46,7 @@ CREATE TABLE `department` (
   KEY `ix_department_status` (`status`),
   KEY `ix_department_Department_Name` (`Department_Name`),
   KEY `ix_department_created_by` (`created_by`)
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -49,7 +55,7 @@ CREATE TABLE `department` (
 
 LOCK TABLES `department` WRITE;
 /*!40000 ALTER TABLE `department` DISABLE KEYS */;
-INSERT INTO `department` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-29 14:04:31','2026-01-29 14:05:09','1','1'),(2,'Front Office','ACTIVE','1','2026-02-04 19:27:38',NULL,NULL,'1'),(3,'Housekeeping','ACTIVE','1','2026-02-04 19:27:44',NULL,NULL,'1'),(4,'Food & Beverage','ACTIVE','1','2026-02-04 19:27:49',NULL,NULL,'1'),(5,'Maintenance','ACTIVE','1','2026-02-04 19:27:53',NULL,NULL,'1'),(6,'Accounts & Finance','ACTIVE','1','2026-02-04 19:27:57','2026-02-07 17:59:11','1','1'),(7,'E2E Test Department','INACTIVE','1','2026-07-31 23:05:44','2026-07-31 23:06:09','1','1');
+INSERT INTO `department` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-29 14:04:31','2026-01-29 14:05:09','1','1'),(2,'Front Office','ACTIVE','1','2026-02-04 19:27:38',NULL,NULL,'1'),(3,'Housekeeping','ACTIVE','1','2026-02-04 19:27:44',NULL,NULL,'1'),(4,'Food & Beverage','ACTIVE','1','2026-02-04 19:27:49',NULL,NULL,'1'),(5,'Maintenance','ACTIVE','1','2026-02-04 19:27:53',NULL,NULL,'1'),(6,'Accounts & Finance','ACTIVE','1','2026-02-04 19:27:57','2026-02-07 17:59:11','1','1'),(7,'E2E Test Department','INACTIVE','1','2026-07-31 23:05:44','2026-07-31 23:06:09','1','1'),(8,'Camera Room','INACTIVE','1','2026-08-06 12:27:19','2026-08-06 12:27:28','1','1');
 /*!40000 ALTER TABLE `department` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -76,7 +82,7 @@ CREATE TABLE `designation` (
   KEY `ix_designation_Designation_Name` (`Designation_Name`),
   KEY `ix_designation_company_id` (`company_id`),
   KEY `ix_designation_id` (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -85,7 +91,7 @@ CREATE TABLE `designation` (
 
 LOCK TABLES `designation` WRITE;
 /*!40000 ALTER TABLE `designation` DISABLE KEYS */;
-INSERT INTO `designation` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-29 14:05:44','2026-01-29 14:06:31','1','1'),(2,'Hotel Manager','ACTIVE','1','2026-02-04 19:28:18',NULL,NULL,'1'),(3,'Front Office Executive','ACTIVE','1','2026-02-04 19:28:22',NULL,NULL,'1'),(4,'Housekeeping Supervisor','ACTIVE','1','2026-02-04 19:28:27',NULL,NULL,'1'),(5,'Chef','ACTIVE','1','2026-02-04 19:28:31',NULL,NULL,'1'),(6,'Accountant','ACTIVE','1','2026-02-04 19:28:35',NULL,NULL,'1');
+INSERT INTO `designation` VALUES (1,'Luxury Swimming Pool','INACTIVE','1','2026-01-29 14:05:44','2026-01-29 14:06:31','1','1'),(2,'Hotel Manager','ACTIVE','1','2026-02-04 19:28:18',NULL,NULL,'1'),(3,'Front Office Executive','ACTIVE','1','2026-02-04 19:28:22',NULL,NULL,'1'),(4,'Housekeeping Supervisor','ACTIVE','1','2026-02-04 19:28:27',NULL,NULL,'1'),(5,'Chef','ACTIVE','1','2026-02-04 19:28:31',NULL,NULL,'1'),(6,'Accountant','ACTIVE','1','2026-02-04 19:28:35',NULL,NULL,'1'),(7,'Camera','INACTIVE','1','2026-08-06 12:27:53','2026-08-06 12:28:02','1','1');
 /*!40000 ALTER TABLE `designation` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -159,7 +165,7 @@ CREATE TABLE `role_permissions` (
   KEY `ix_role_permissions_submenu_id` (`submenu_id`),
   KEY `ix_role_permissions_role_id` (`role_id`),
   KEY `ix_role_permissions_created_by` (`created_by`)
-) ENGINE=InnoDB AUTO_INCREMENT=68 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=74 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -168,7 +174,7 @@ CREATE TABLE `role_permissions` (
 
 LOCK TABLES `role_permissions` WRITE;
 /*!40000 ALTER TABLE `role_permissions` DISABLE KEYS */;
-INSERT INTO `role_permissions` VALUES (1,'1','1',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:11:04','2026-01-29 15:46:45','1','1'),(2,'1','2',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:13:56',NULL,NULL,'1'),(3,'1','2','1',1,1,1,1,'ACTIVE','1','2026-01-23 15:14:13',NULL,NULL,'1'),(4,'1','2','2',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:09',NULL,NULL,'1'),(5,'1','2','3',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:17',NULL,NULL,'1'),(6,'1','2','4',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:25',NULL,NULL,'1'),(7,'1','3',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:16:13',NULL,NULL,'1'),(8,'1','3','5',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:30',NULL,NULL,'1'),(9,'1','3','6',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:42',NULL,NULL,'1'),(10,'1','3','7',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:49',NULL,NULL,'1'),(11,'1','4',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:21:16',NULL,NULL,'1'),(12,'1','5',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:22:10',NULL,NULL,'1'),(13,'1','5','8',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:34',NULL,NULL,'1'),(14,'1','5','9',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(15,'1','6',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(16,'1','6','32',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(17,'1','6','33',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(18,'1','7','10',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(19,'1','7','11',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(20,'1','7','12',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(21,'1','7','13',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(22,'1','7','14',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(23,'1','7','15',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(24,'1','7','16',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(25,'1','7','17',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(26,'1','7','18',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(27,'1','8','19',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(28,'1','8','20',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(29,'1','8','21',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(30,'1','8','22',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(31,'1','8','23',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(32,'1','8','24',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(33,'1','8','25',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(34,'1','8','26',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(35,'1','8','27',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(36,'1','8','28',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(37,'1','8','29',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(38,'1','8','30',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(39,'1','8','31',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(40,'1','8','34',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(41,'1','8','35',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(42,'1','7','36',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(43,'1','7','37',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(44,'1','7','38',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(45,'1','7','39',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43','2026-07-30 16:48:35','1','1'),(46,'1','7','40',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43','2026-07-30 16:48:35','1','1'),(47,'1','6','43',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(48,'1','6','34',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(49,'1','6','35',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(50,'1','6','44',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(51,'1','7','41',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(52,'1','7','42',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(53,'1','6','53',1,1,1,1,'ACTIVE','1','2026-07-30 16:47:51',NULL,NULL,'1'),(54,'1','6','54',1,1,1,1,'ACTIVE','1','2026-07-30 16:47:51',NULL,NULL,'1'),(55,'1','7','55',1,1,1,1,'ACTIVE','1','2026-07-30 16:47:51',NULL,NULL,'1'),(56,'1','10','56',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(57,'1','10','57',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(58,'1','10','58',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(59,'1','10','59',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(60,'1','10','60',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(61,'1','10','61',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(62,'1','10','62',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(63,'1','10','63',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(64,'1','10','64',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(65,'1','10','65',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(66,'1','6','66',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(67,'1','6','67',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1');
+INSERT INTO `role_permissions` VALUES (1,'1','1',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:11:04','2026-01-29 15:46:45','1','1'),(2,'1','2',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:13:56',NULL,NULL,'1'),(3,'1','2','1',1,1,1,1,'ACTIVE','1','2026-01-23 15:14:13',NULL,NULL,'1'),(4,'1','2','2',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:09',NULL,NULL,'1'),(5,'1','2','3',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:17',NULL,NULL,'1'),(6,'1','2','4',1,1,1,1,'ACTIVE','1','2026-01-23 15:15:25',NULL,NULL,'1'),(7,'1','3',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:16:13',NULL,NULL,'1'),(8,'1','3','5',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:30',NULL,NULL,'1'),(9,'1','3','6',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:42',NULL,NULL,'1'),(10,'1','3','7',1,1,1,1,'ACTIVE','1','2026-01-23 15:16:49',NULL,NULL,'1'),(11,'1','4',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:21:16',NULL,NULL,'1'),(12,'1','5',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:22:10',NULL,NULL,'1'),(13,'1','5','8',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:34',NULL,NULL,'1'),(14,'1','5','9',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(15,'1','6',NULL,1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(16,'1','6','32',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(17,'1','6','33',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(18,'1','7','10',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(19,'1','7','11',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(20,'1','7','12',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(21,'1','7','13',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(22,'1','7','14',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(23,'1','7','15',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(24,'1','7','16',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(25,'1','7','17',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(26,'1','7','18',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(27,'1','8','19',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(28,'1','8','20',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(29,'1','8','21',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(30,'1','8','22',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(31,'1','8','23',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(32,'1','8','24',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(33,'1','8','25',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(34,'1','8','26',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(35,'1','8','27',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(36,'1','8','28',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(37,'1','8','29',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(38,'1','8','30',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(39,'1','8','31',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(40,'1','8','34',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(41,'1','8','35',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(42,'1','7','36',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(43,'1','7','37',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(44,'1','7','38',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(45,'1','7','39',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43','2026-07-30 16:48:35','1','1'),(46,'1','7','40',1,1,1,1,'INACTIVE','1','2026-01-23 15:22:43','2026-07-30 16:48:35','1','1'),(47,'1','6','43',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(48,'1','6','34',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(49,'1','6','35',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(50,'1','6','44',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(51,'1','7','41',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(52,'1','7','42',1,1,1,1,'ACTIVE','1','2026-01-23 15:22:43',NULL,NULL,'1'),(53,'1','6','53',1,1,1,1,'ACTIVE','1','2026-07-30 16:47:51',NULL,NULL,'1'),(54,'1','6','54',1,1,1,1,'ACTIVE','1','2026-07-30 16:47:51',NULL,NULL,'1'),(55,'1','7','55',1,1,1,1,'ACTIVE','1','2026-07-30 16:47:51',NULL,NULL,'1'),(56,'1','10','56',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(57,'1','10','57',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(58,'1','10','58',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(59,'1','10','59',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(60,'1','10','60',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(61,'1','10','61',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(62,'1','10','62',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(63,'1','10','63',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(64,'1','10','64',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(65,'1','10','65',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(66,'1','6','66',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(67,'1','6','67',1,1,1,1,'ACTIVE','1','2026-07-31 03:24:31',NULL,NULL,'1'),(68,'2','2',NULL,1,0,1,0,'ACTIVE','1','2026-08-06 12:25:33',NULL,NULL,'1'),(69,'2','3',NULL,1,0,1,0,'ACTIVE','1','2026-08-06 12:25:58',NULL,NULL,'1'),(70,'2','5',NULL,1,0,1,0,'ACTIVE','1','2026-08-06 12:25:58',NULL,NULL,'1'),(71,'2','4',NULL,1,0,1,0,'ACTIVE','1','2026-08-06 12:25:58',NULL,NULL,'1'),(72,'2','10',NULL,1,0,1,0,'ACTIVE','1','2026-08-06 12:25:58',NULL,NULL,'1'),(73,'2','7',NULL,1,0,1,0,'ACTIVE','1','2026-08-06 12:25:58',NULL,NULL,'1');
 /*!40000 ALTER TABLE `role_permissions` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -195,7 +201,7 @@ CREATE TABLE `roles` (
   KEY `ix_roles_company_id` (`company_id`),
   KEY `ix_roles_status` (`status`),
   KEY `ix_roles_created_by` (`created_by`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -204,7 +210,7 @@ CREATE TABLE `roles` (
 
 LOCK TABLES `roles` WRITE;
 /*!40000 ALTER TABLE `roles` DISABLE KEYS */;
-INSERT INTO `roles` VALUES (1,'Admin','Full system access','ACTIVE','1','2026-01-22 12:22:54',NULL,NULL,'1'),(2,'Front Office','Handles reservations and check-in','ACTIVE','1','2026-01-22 12:23:02',NULL,NULL,'1'),(3,'House Keeping','Room cleaning and maintenance tasks','ACTIVE','1','2026-01-22 12:23:10','2026-02-03 09:44:00','1','1'),(4,'Front Office Manager','Manages front office operations','INACTIVE','1','2026-01-29 14:27:00','2026-01-29 15:30:57','1','1');
+INSERT INTO `roles` VALUES (1,'Admin','Full system access','ACTIVE','1','2026-01-22 12:22:54',NULL,NULL,'1'),(2,'Front Office','Handles reservations and check-in','ACTIVE','1','2026-01-22 12:23:02',NULL,NULL,'1'),(3,'House Keeping','Room cleaning and maintenance tasks','ACTIVE','1','2026-01-22 12:23:10','2026-02-03 09:44:00','1','1'),(4,'Front Office Manager','Manages front office operations','INACTIVE','1','2026-01-29 14:27:00','2026-01-29 15:30:57','1','1'),(5,'Camera Man','Handle camera recordings','INACTIVE','1','2026-08-06 12:26:47','2026-08-06 12:26:59','1','1');
 /*!40000 ALTER TABLE `roles` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -233,7 +239,7 @@ CREATE TABLE `shift` (
   KEY `ix_shift_status` (`status`),
   KEY `ix_shift_created_by` (`created_by`),
   KEY `ix_shift_Shift_Name` (`Shift_Name`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -242,7 +248,7 @@ CREATE TABLE `shift` (
 
 LOCK TABLES `shift` WRITE;
 /*!40000 ALTER TABLE `shift` DISABLE KEYS */;
-INSERT INTO `shift` VALUES (1,'Evening Shift','16:00','00:00','INACTIVE','1','2026-01-29 16:27:05','2026-01-29 16:49:09','1','1'),(2,'Morning Shift','06:00','21:06','ACTIVE','1','2026-02-04 19:30:13',NULL,NULL,'1'),(3,'General Shift','09:00','06:00','ACTIVE','1','2026-02-04 19:30:46',NULL,NULL,'1'),(4,'Evening Shift','19:00','01:31','ACTIVE','1','2026-02-04 19:31:22',NULL,NULL,'1'),(5,'Night Shift','23:00','06:00','ACTIVE','1','2026-02-04 19:31:45',NULL,NULL,'1');
+INSERT INTO `shift` VALUES (1,'Evening Shift','16:00','00:00','INACTIVE','1','2026-01-29 16:27:05','2026-01-29 16:49:09','1','1'),(2,'Morning Shift','06:00','21:06','ACTIVE','1','2026-02-04 19:30:13',NULL,NULL,'1'),(3,'General Shift','09:00','06:00','ACTIVE','1','2026-02-04 19:30:46',NULL,NULL,'1'),(4,'Evening Shift','19:00','01:31','ACTIVE','1','2026-02-04 19:31:22',NULL,NULL,'1'),(5,'Night Shift','23:00','06:00','ACTIVE','1','2026-02-04 19:31:45',NULL,NULL,'1'),(6,'Part Time','07:00','13:00','INACTIVE','1','2026-08-06 12:28:35','2026-08-06 12:28:42','1','1');
 /*!40000 ALTER TABLE `shift` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -361,7 +367,7 @@ CREATE TABLE `users` (
   KEY `ix_users_Department_ID` (`Department_ID`),
   KEY `ix_users_created_by` (`created_by`),
   KEY `ix_users_Salary_Details` (`Salary_Details`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -370,17 +376,9 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (1,'EMP_2026_0001',NULL,'john.doe','John','Doe','john.personal@gmail.com','admin@hotel.com','$2b$12$7/POjFPyDUBw.MwPL3.Gw.uvUxaKfSPwSWn7oKCAER5wTeAE.WbAS','9998887776','9123456780','1995-06-15','Male','Single','123, MG Road','Bangalore','Karnataka','560001','India','1','1','1','1','2024-01-10','4 Years','40000','REG-1001','Jane Doe','9988776655','Wife',1,'ACTIVE','1','2026-01-30 13:19:46','2026-01-30 14:10:29','1','1'),(2,'EMP_2026_0002','/templates/static/users/user_863fa61fb2f34b818528131047f56a37.jpeg','anand','Anand ','M','anand@gmail.com','anand@hotel.com','$2b$12$60ifp.9/BKMzceO288mu3eQxVAKE4vckQ111jk8LAsloD62kmdlqC','7418529630','7418529630','2026-02-03','Male','Single','','','','','','','','','','','','','','','','',0,'ACTIVE','1','2026-02-03 08:25:39','2026-07-31 13:03:07','1','1');
+INSERT INTO `users` VALUES (1,'EMP_2026_0001',NULL,'john.doe','John','Doe','john.personal@gmail.com','admin@hotel.com','$2b$12$7/POjFPyDUBw.MwPL3.Gw.uvUxaKfSPwSWn7oKCAER5wTeAE.WbAS','9998887776','9123456780','1995-06-15','Male','Single','123, MG Road','Bangalore','Karnataka','560001','India','1','1','1','1','2024-01-10','4 Years','40000','REG-1001','Jane Doe','9988776655','Wife',1,'ACTIVE','1','2026-01-30 13:19:46','2026-01-30 14:10:29','1','1'),(2,'EMP_2026_0002','/templates/static/users/user_863fa61fb2f34b818528131047f56a37.jpeg','anand','Anand ','M','anand@gmail.com','anand@hotel.com','$2b$12$60ifp.9/BKMzceO288mu3eQxVAKE4vckQ111jk8LAsloD62kmdlqC','7418529630','7418529630','2026-02-03','Male','Single','','','','','','','','','','','','','','','','',0,'ACTIVE','1','2026-02-03 08:25:39','2026-07-31 13:03:07','1','1'),(3,'EMP_2026_0003','/templates/static/users/user_b2de509ff5c24daa8d37b826271f20e2.png','Ramesh','Ramesh','Ramesh','ramesh@gmail.com','ramesh@gmail.com','$2b$12$4h9wuc2dXwKgNtivCjuhLOikP4C3tn9si4tcj5ajjN57Lu/6s2uBi','938487242246747','','2002-01-01','Male','','','','','','','6','','','','','','','','','','',0,'ACTIVE','1','2026-08-06 12:16:01','2026-08-06 12:16:40','1','1');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
-
---
--- Dumping events for database 'hotelerp_users'
---
-
---
--- Dumping routines for database 'hotelerp_users'
---
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -391,4 +389,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-08-04 14:37:28
+-- Dump completed on 2026-08-06 23:27:44
