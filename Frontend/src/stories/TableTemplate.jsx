@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import './TableTemplate.css';
 import InputField from './InputField'; // Assuming you have this component
 import Button from './Button';
-import { ClipboardPaste, FileText, Printer, Settings, Table2, Plus } from 'lucide-react';
+import { ClipboardPaste, FileDown, Printer, Settings, FileSpreadsheet, Plus } from 'lucide-react';
 
 // Import existing cell components
 const AvatarCell = ({ src, name, email }) => (
@@ -90,7 +92,7 @@ const TableToolbar = ({
                 aria-label="Download table as CSV"
                 onClick={onDownloadCSV}
               >
-                <Table2 aria-hidden="true" />
+                <FileSpreadsheet aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -99,7 +101,7 @@ const TableToolbar = ({
                 aria-label="Download table as PDF"
                 onClick={onDownloadPDF}
               >
-                <FileText aria-hidden="true" />
+                <FileDown aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -213,6 +215,14 @@ const TableTemplate = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [visibleColumns, setVisibleColumns] = useState(columns.map(col => col.key));
   const [showFilterModal, setShowFilterModal] = useState(false);
+  // Transient feedback for the "Copy as JSON" action (this component has no
+  // shared Toast of its own).
+  const [copyToast, setCopyToast] = useState(null); // { type: 'success'|'error', message }
+
+  const flashCopyToast = (type, message) => {
+    setCopyToast({ type, message });
+    setTimeout(() => setCopyToast(null), 2000);
+  };
   
   const formatCellValue = (value, colKey) => {
     if (value === null || value === undefined) return "";
@@ -317,8 +327,31 @@ const TableTemplate = ({
 
   // Export functions
   const handleCopyJSON = async () => {
-    const rows = getExportRows();
-    await navigator.clipboard.writeText(JSON.stringify(rows, null, 2));
+    const json = JSON.stringify(getExportRows(), null, 2);
+
+    // The Clipboard API is only available in secure contexts (https or
+    // localhost). Over plain http on a LAN IP navigator.clipboard is
+    // undefined, so fall back to the legacy execCommand('copy') path.
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(json);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = json;
+        // Keep it out of view and non-disruptive to scroll position.
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-9999px';
+        textarea.setAttribute('readonly', '');
+        document.body.appendChild(textarea);
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!ok) throw new Error('execCommand copy failed');
+      }
+      flashCopyToast('success', 'Table copied as JSON');
+    } catch {
+      flashCopyToast('error', 'Copy failed — clipboard unavailable');
+    }
   };
 
   const handleDownloadCSV = () => {
@@ -350,88 +383,70 @@ const TableTemplate = ({
     );
   };
 
+  // Generate a real PDF (jsPDF + autotable) rather than opening the browser's
+  // print dialog. Columns follow the current visibility selection; rows use the
+  // same resolved export values as CSV, with an absolute S.No.
   const handleDownloadPDF = () => {
+    if (sortedData.length === 0) return;
+
+    const head = [['S.No', ...visibleColumnsData.map(col => col.title)]];
+    const body = sortedData.map((row, i) => [
+      i + 1,
+      ...visibleColumnsData.map(col => resolveExportValue(row, col)),
+    ]);
+
+    const doc = new jsPDF({ orientation: 'landscape' });
+
+    if (title) {
+      doc.setFontSize(14);
+      doc.text(title, 14, 16);
+    }
+
+    autoTable(doc, {
+      head,
+      body,
+      startY: title ? 22 : 14,
+      styles: { fontSize: 9, cellPadding: 3, overflow: 'linebreak' },
+      headStyles: { fillColor: [193, 18, 50], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 245, 247] },
+    });
+
+    doc.save(`${title || 'table'}-data.pdf`);
+  };
+
+  // Print ONLY the clean data table — reuse the off-screen export table so the
+  // printout never includes the toolbar (Add button / search) or a duplicated
+  // on-screen heading. The title is rendered exactly once here.
+  const handlePrint = () => {
     const table = document.getElementById('export-table-full');
     if (!table) return;
-    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+
+    const printWindow = window.open('', '_blank');
     printWindow.document.write(`
-    <html>
-      <head>
-        <title>${title || 'Table Export'}</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-          }
-
-          table {
-            width: 100%;
-            border-collapse: collapse;
-          }
-
-          th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            vertical-align: middle;
-            text-align: left;
-          }
-
-          th {
-            background: #2f80ed;
-            color: #fff;
-          }
-
-          img {
-            max-width: 32px;
-            max-height: 32px;
-            border-radius: 50%;
-            display: block;
-          }
-
-          @media print {
-            body {
-              margin: 0;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <h2>${title || ''}</h2>
-        ${table.outerHTML}
-      </body>
-    </html>
-  `);
-
+      <html>
+        <head>
+          <title>${title || 'Table Data'}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: middle; }
+            th { background-color: #c11232; color: #fff; }
+            img { max-width: 32px; max-height: 32px; border-radius: 50%; display: block; }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          ${title ? `<h2>${title}</h2>` : ''}
+          ${table.outerHTML}
+        </body>
+      </html>
+    `);
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => {
       printWindow.print();
       printWindow.close();
-    }, 500);
-  };
-
-  const handlePrint = () => {
-    const printWindow = window.open('', '_blank');
-    const tableHtml = document.querySelector('.table-template').innerHTML;
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Table</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f2f2f2; }
-          </style>
-        </head>
-        <body>
-          <h2>${title || 'Table Data'}</h2>
-          ${tableHtml}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    }, 300);
   };
 
   const handleColumnToggle = (columnKey) => {
@@ -440,6 +455,11 @@ const TableTemplate = ({
         ? prev.filter(key => key !== columnKey)
         : [...prev, columnKey]
     );
+  };
+
+  // Reset column visibility to the default: every column visible.
+  const handleResetColumns = () => {
+    setVisibleColumns(columns.map(col => col.key));
   };
 
   // Render cell content based on column type
@@ -556,7 +576,7 @@ const TableTemplate = ({
                     onClick={() => onRowClick?.(item)}
                     style={{ cursor: onRowClick ? 'pointer' : 'default' }}
                   >
-                    <td >{index + 1}</td>
+                    <td >{pagination ? (currentPage - 1) * pageSize + index + 1 : index + 1}</td>
                     {visibleColumnsData.map((column) => (
                       <td
                         key={column.key}
@@ -643,8 +663,16 @@ const TableTemplate = ({
         visibleColumns={visibleColumns}
         onColumnToggle={handleColumnToggle}
         onClose={() => setShowFilterModal(false)}
+        onReset={handleResetColumns}
         isOpen={showFilterModal}
       />
+
+      {/* Copy-to-JSON feedback */}
+      {copyToast && (
+        <div className={`table-copy-toast table-copy-toast--${copyToast.type}`} role="status">
+          {copyToast.message}
+        </div>
+      )}
       {/* Off-screen full table used only as a source for CSV/PDF export. It is
           hidden from assistive tech (aria-hidden) so screen readers don't
           encounter a duplicate of the visible table. */}

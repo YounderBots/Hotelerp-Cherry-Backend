@@ -247,10 +247,11 @@
   gap: 8px;
 }
 
-/* Items */
+/* Items — checkbox and label share one baseline, left-aligned. */
 .filter-item {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 10px;
   padding: 10px 12px;
   border-radius: 8px;
@@ -263,19 +264,27 @@
 }
 
 .filter-item input {
-  accent-color: var(--primary);
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary-color);
+  cursor: pointer;
 }
 
 .filter-label {
   font-size: 0.9rem;
+  line-height: 1.2;
+  text-align: left;
 }
 
-/* Footer */
+/* Footer — right-aligned actions, matching the app's other modals. */
 .filter-modal-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--gray-200);
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 /* Buttons */
@@ -450,6 +459,29 @@
     justify-content: center;
     flex-wrap: wrap;
   }
+}
+
+/* Copy-as-JSON feedback toast */
+.table-copy-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: var(--z-modal);
+  padding: 10px 16px;
+  border-radius: var(--border-radius);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--white);
+  box-shadow: var(--shadow-md);
+  animation: scaleIn 0.15s ease-out;
+}
+
+.table-copy-toast--success {
+  background: var(--success-color);
+}
+
+.table-copy-toast--error {
+  background: var(--error-color);
 }
 
 /* Dark Theme Support */

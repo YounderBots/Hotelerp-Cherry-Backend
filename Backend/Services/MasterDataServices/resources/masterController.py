@@ -564,7 +564,7 @@ def get_room_types(
                 "daily_rate": rt.Daily_Rate,
                 "weekly_rate": rt.Weekly_Rate,
                 "bed_only_rate": rt.Bed_Only_Rate,
-                "bed_and_breakfast_rate": rt.Bed_And_Breakfast_Rate,
+                "bed_breakfast_rate": rt.Bed_And_Breakfast_Rate,
                 "half_board_rate": rt.Half_Board_Rate,
                 "full_board_rate": rt.Full_Board_Rate,
 

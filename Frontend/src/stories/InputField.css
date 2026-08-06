@@ -14,6 +14,15 @@
   display: block;
 }
 
+/* The component renders its own .InputField__clear button. Suppress the
+   browser's native search "×" so consumers never see a duplicate clear. */
+.InputField__input[type="search"]::-webkit-search-cancel-button,
+.InputField__input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
 /* outer container */
 .InputField {
   display: inline-flex;

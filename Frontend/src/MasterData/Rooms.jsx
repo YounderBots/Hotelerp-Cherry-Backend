@@ -82,7 +82,10 @@ const Rooms = () => {
     setShowViewModal(true);
   };
   const handleEdit = (row) => {
-    setEditId(row.room_id);
+    // GET /masterdata/room returns each row keyed as `id` (not `room_id`);
+    // using row.room_id here made editId undefined, so the PUT sent an invalid
+    // room_id and the update silently failed (422). Use row.id.
+    setEditId(row.id);
 
     setFormData({
       room_no: row.room_no,
@@ -214,7 +217,9 @@ const Rooms = () => {
       form.append("room_type_id", updatedData.room_type_id);
       form.append("bed_type_id", updatedData.bed_type_id);
 
-      form.append("room_telephone", updatedData.room_telephone);
+      // Backend PUT /masterdata/room reads the telephone as `tele_no`; sending
+      // it under `room_telephone` left the number unchanged on every edit.
+      form.append("tele_no", updatedData.room_telephone);
 
       form.append("max_adult", updatedData.max_adult);
       form.append("max_child", updatedData.max_child);

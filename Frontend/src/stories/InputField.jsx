@@ -97,7 +97,7 @@ export default function InputField({
 
         <input
           className="InputField__input"
-          type="search"
+          type="text"
           value={currentValue}
           onChange={handleChange}
           placeholder={placeholder}

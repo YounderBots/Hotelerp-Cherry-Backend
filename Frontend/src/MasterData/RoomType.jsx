@@ -89,15 +89,15 @@ const RoomType = () => {
     try {
       await APICall.postT("/masterdata/room_types", {
         type_name: formData.roomType,
-        room_cost: formData.roomCost,
-        bed_cost: formData.extraBedCost,
+        room_cost: numOrNull(formData.roomCost),
+        bed_cost: numOrNull(formData.extraBedCost),
         complementry: formData.complementary,
-        daily_rate: formData.dailyRate,
-        weekly_rate: formData.weeklyRate,
-        bed_only_rate: formData.bedOnlyRate,
-        bed_breakfast_rate: formData.bedBreakfastRate,
-        half_board_rate: formData.halfBoardRate,
-        full_board_rate: formData.fullBoardRate,
+        daily_rate: numOrNull(formData.dailyRate),
+        weekly_rate: numOrNull(formData.weeklyRate),
+        bed_only_rate: numOrNull(formData.bedOnlyRate),
+        bed_breakfast_rate: numOrNull(formData.bedBreakfastRate),
+        half_board_rate: numOrNull(formData.halfBoardRate),
+        full_board_rate: numOrNull(formData.fullBoardRate),
       });
       showAlert("RoomType added successfully", "success");
       getRoomTypes();
@@ -111,15 +111,15 @@ const RoomType = () => {
       await APICall.putT("/masterdata/room_types", {
         id: editId,
         type_name: formData.roomType,
-        room_cost: formData.roomCost,
-        bed_cost: formData.extraBedCost,
+        room_cost: numOrNull(formData.roomCost),
+        bed_cost: numOrNull(formData.extraBedCost),
         complementry: formData.complementary,
-        daily_rate: formData.dailyRate,
-        weekly_rate: formData.weeklyRate,
-        bed_only_rate: formData.bedOnlyRate,
-        bed_breakfast_rate: formData.bedBreakfastRate,
-        half_board_rate: formData.halfBoardRate,
-        full_board_rate: formData.fullBoardRate
+        daily_rate: numOrNull(formData.dailyRate),
+        weekly_rate: numOrNull(formData.weeklyRate),
+        bed_only_rate: numOrNull(formData.bedOnlyRate),
+        bed_breakfast_rate: numOrNull(formData.bedBreakfastRate),
+        half_board_rate: numOrNull(formData.halfBoardRate),
+        full_board_rate: numOrNull(formData.fullBoardRate)
 
       });
       showAlert("RoomType updated successfully", "update");
@@ -158,13 +158,20 @@ const RoomType = () => {
   };
 
   const handleChange = (e) => {
-    const { name, value, type } = e.target;
+    const { name, value } = e.target;
 
+    // For number inputs keep the raw string while editing so a cleared field
+    // shows "" instead of snapping back to 0. Conversion to a number (or null)
+    // happens at submit time via numOrNull().
     setFormData((prev) => ({
       ...prev,
-      [name]: type === "number" ? Number(value) : value,
+      [name]: value,
     }));
   };
+
+  // Empty numeric field → null (not 0); otherwise a real Number.
+  const numOrNull = (v) =>
+    v === "" || v === null || v === undefined ? null : Number(v);
 
 
   const handleSave = async () => {
@@ -275,7 +282,7 @@ const RoomType = () => {
               ["Daily Rate", "daily_rate"],
               ["Weekly Rate", "weekly_rate"],
               ["Bed Only Rate", "bed_only_rate"],
-              ["Bed & Breakfast Rate", "bed_and_breakfast_rate"],
+              ["Bed & Breakfast Rate", "bed_breakfast_rate"],
               ["Half Board Rate", "half_board_rate"],
               ["Full Board Rate", "full_board_rate"],
               ["Status", "status"],
@@ -343,7 +350,7 @@ const RoomType = () => {
                   label={label}
                   type={name === "roomType" ? "text" : "number"}
                   name={name}
-                  value={formData[name]}
+                  value={formData[name] ?? ""}
                   onChange={handleChange}
                 />
               ))}
