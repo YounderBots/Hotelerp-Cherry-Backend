@@ -661,6 +661,7 @@ const GuestEnquiry = () => {
             )}
 
             <div className="modal-body single">
+              <div className="ge-form-grid">
               <div className="form-group">
                 <label htmlFor="ge-mode">Inquiry Mode <span className="required">*</span></label>
                 <select
@@ -719,19 +720,6 @@ const GuestEnquiry = () => {
               </div>
 
               <div className="form-group">
-                <label htmlFor="ge-incidents">Incident Notes</label>
-                <textarea
-                  id="ge-incidents"
-                  name="incidents"
-                  value={formData.incidents}
-                  onChange={handleChange}
-                  disabled={saving}
-                  maxLength={1000}
-                  rows={4}
-                />
-              </div>
-
-              <div className="form-group">
                 <label htmlFor="ge-status">Status <span className="required">*</span></label>
                 <select
                   id="ge-status"
@@ -745,6 +733,20 @@ const GuestEnquiry = () => {
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="form-group ge-field-full">
+                <label htmlFor="ge-incidents">Incident Notes</label>
+                <textarea
+                  id="ge-incidents"
+                  name="incidents"
+                  value={formData.incidents}
+                  onChange={handleChange}
+                  disabled={saving}
+                  maxLength={1000}
+                  rows={4}
+                />
+              </div>
               </div>
             </div>
 

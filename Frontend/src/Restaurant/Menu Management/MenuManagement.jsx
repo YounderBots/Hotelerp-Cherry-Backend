@@ -11,6 +11,7 @@ import { ChipGroup } from "../../stories/Chip";
 import RepeatableRowEditor from "../../stories/RepeatableRowEditor";
 import { Eye, Pencil, Trash2 } from "lucide-react";
 import APICall, { ApiError } from "../../APICalls/APICalls";
+import "../../stories/menuModalFields.css";
 
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
@@ -55,8 +56,6 @@ const MenuManagement = () => {
   const [viewLoading, setViewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState(null);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [newSubCategoryName, setNewSubCategoryName] = useState("");
 
   const [formData, setFormData] = useState(initialForm);
   const [variants, setVariants] = useState([]);
@@ -103,8 +102,6 @@ const MenuManagement = () => {
     setExistingDetail(null);
     setNewVariant(emptyVariant());
     setNewModifier(emptyModifier());
-    setNewCategoryName("");
-    setNewSubCategoryName("");
     setFormError(null);
     setShowModal(true);
   };
@@ -156,7 +153,6 @@ const MenuManagement = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((p) => ({ ...p, [name]: value, ...(name === "category_id" ? { sub_category_id: "" } : {}) }));
-    if (name === "category_id") setNewSubCategoryName("");
   };
 
   const handleBoolChange = (e) => {
@@ -164,25 +160,11 @@ const MenuManagement = () => {
     setFormData((p) => ({ ...p, [name]: value === "true" }));
   };
 
-  const resolveCategoryId = async () => {
-    if (formData.category_id) return Number(formData.category_id);
-    if (!newCategoryName.trim()) return null;
-    const res = await APICall.postT("/restaurant/menu_category", {
-      category_name: newCategoryName.trim(),
-      kitchen_id: formData.kitchen_id ? Number(formData.kitchen_id) : null,
-    });
-    return res?.data?.id;
-  };
+  const resolveCategoryId = () =>
+    formData.category_id ? Number(formData.category_id) : null;
 
-  const resolveSubCategoryId = async (categoryId) => {
-    if (formData.sub_category_id) return Number(formData.sub_category_id);
-    if (!newSubCategoryName.trim()) return null;
-    const res = await APICall.postT("/restaurant/menu_sub_category", {
-      category_id: categoryId,
-      sub_category_name: newSubCategoryName.trim(),
-    });
-    return res?.data?.id || null;
-  };
+  const resolveSubCategoryId = () =>
+    formData.sub_category_id ? Number(formData.sub_category_id) : null;
 
   // ---- Variants (bundled into the create payload for new items) ----
   const addVariant = () => setVariants((v) => [...v, emptyVariant()]);
@@ -277,7 +259,7 @@ const MenuManagement = () => {
   };
 
   const handleSave = async () => {
-    if (!formData.item_name.trim() || !formData.price || (!formData.category_id && !newCategoryName.trim())) {
+    if (!formData.item_name.trim() || !formData.price || !formData.category_id) {
       setFormError("Item name, price and category are required.");
       return;
     }
@@ -286,13 +268,13 @@ const MenuManagement = () => {
     setFormError(null);
     setSaving(true);
     try {
-      const categoryId = await resolveCategoryId();
+      const categoryId = resolveCategoryId();
       if (!categoryId) {
         setFormError("Could not resolve a category for this item.");
         setSaving(false);
         return;
       }
-      const subCategoryId = await resolveSubCategoryId(categoryId);
+      const subCategoryId = resolveSubCategoryId();
       const dietaryTags = formData.dietary_tags
         .split(",")
         .map((t) => t.trim())
@@ -340,8 +322,6 @@ const MenuManagement = () => {
 
   const handleEdit = async (row) => {
     setEditId(row.id);
-    setNewCategoryName("");
-    setNewSubCategoryName("");
     setFormError(null);
     setVariants([]);
     setModifiers([]);
@@ -450,6 +430,7 @@ const MenuManagement = () => {
       {showViewModal && viewData && (
         <Modal
           isOpen
+          className="menu-view-modal"
           title={viewData.item_name}
           onClose={closeViewModal}
           size="large"
@@ -523,6 +504,7 @@ const MenuManagement = () => {
       {showModal && (
         <Modal
           isOpen
+          className="menu-modal"
           title={editId ? "Edit Menu Item" : "Add Menu Item"}
           onClose={closeModal}
           size="large"
@@ -533,22 +515,25 @@ const MenuManagement = () => {
             { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving },
           ]}
         >
-          <ErrorAlert message={formError} />
+          {formError && (
+            <div style={{ gridColumn: "1 / -1" }}>
+              <ErrorAlert message={formError} />
+            </div>
+          )}
 
           <Input label="Item Name" required name="item_name" value={formData.item_name} onChange={handleChange} />
 
+          {/* Select + its "type a new one" input share one grid cell so the
+              optional input never drops into its own column and breaks the row. */}
           <Select
             label="Category"
             required
             name="category_id"
             value={formData.category_id}
             onChange={handleChange}
-            placeholder="— select or type new below —"
+            placeholder="— select —"
             options={categories.map((c) => ({ value: c.id, label: c.category_name }))}
           />
-          {!formData.category_id && (
-            <Input placeholder="New category name" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} />
-          )}
 
           <Select
             label="Sub-Category"
@@ -556,16 +541,9 @@ const MenuManagement = () => {
             value={formData.sub_category_id}
             onChange={handleChange}
             disabled={!formData.category_id}
-            placeholder={formData.category_id ? "— none / type new below —" : "Select a category first"}
+            placeholder={formData.category_id ? "— select —" : "Select a category first"}
             options={subCategoryOptions.map((s) => ({ value: s.id, label: s.sub_category_name }))}
           />
-          {formData.category_id && !formData.sub_category_id && (
-            <Input
-              placeholder="New sub-category name (optional)"
-              value={newSubCategoryName}
-              onChange={(e) => setNewSubCategoryName(e.target.value)}
-            />
-          )}
 
           <Select
             label="Kitchen Section"
@@ -652,16 +630,9 @@ const MenuManagement = () => {
               />
             )}
             <input type="file" accept="image/*" onChange={handleImageFileChange} disabled={imageUploading} />
-            <input
-              name="item_image"
-              value={formData.item_image}
-              onChange={handleChange}
-              placeholder="https://example.com/dish.jpg"
-              style={{ marginTop: "8px" }}
-            />
-            <p style={{ fontSize: "12px", color: "#94a3b8", margin: "4px 0 0" }}>
-              {imageUploading ? "Uploading…" : "Upload a photo, or paste a hosted image URL."}
-            </p>
+            {imageUploading && (
+              <p style={{ fontSize: "12px", color: "#94a3b8", margin: "4px 0 0" }}>Uploading…</p>
+            )}
           </div>
 
           {!editId && (
