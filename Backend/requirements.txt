@@ -30,3 +30,6 @@ python-multipart==0.0.20
 
 itsdangerous==2.2.0
 pandas==2.3.3
+
+# Each service loads the shared repo-root .env at startup (configs/__init__.py).
+python-dotenv==1.0.1

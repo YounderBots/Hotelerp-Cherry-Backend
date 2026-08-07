@@ -1,81 +1,76 @@
 # =============================================================================
-# start-network.ps1 — bring HotelERP up for LAN access
+# start-network.ps1 - start all backend services + the frontend
 # =============================================================================
-# Binds the gateway (8000) and the Vite frontend (5173) to 0.0.0.0 so other
-# devices on the Wi-Fi can reach them. The five downstream services stay on
-# 127.0.0.1: only the gateway talks to them, and exposing them would bypass the
-# gateway's auth/rate-limit layer.
+# Each backend service is self-configured by its OWN .env
+# (Backend/Services/<Name>/.env). This script only reads each service's
+# SERVICE_HOST / SERVICE_PORT to know where to bind, then launches it; the
+# service itself loads the rest (DB, secrets, CORS, URLs) from that same .env.
+# The frontend reads Frontend/.env (via vite.config.js).
 #
-#   Frontend : http://<LAN_HOST>:5173
-#   Gateway  : http://<LAN_HOST>:8000
-#
-# Logs stream to .run-logs\*.log. Stop everything with stop-network.ps1.
+# Logs stream to .run-logs\*.log; stop everything with stop-network.ps1.
 # =============================================================================
 
 $ErrorActionPreference = "Stop"
-$root = $PSScriptRoot
+$root   = $PSScriptRoot
 $svcDir = Join-Path $root "Backend\Services"
+$feDir  = Join-Path $root "Frontend"
 $logDir = Join-Path $root ".run-logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
-# ---- Load root .env into this process --------------------------------------
-$envFile = Join-Path $root ".env"
-if (-not (Test-Path $envFile)) { throw ".env not found at $envFile" }
-Get-Content $envFile | ForEach-Object {
-    $line = $_.Trim()
-    if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
-        $k, $v = $line -split "=", 2
-        Set-Item -Path ("Env:" + $k.Trim()) -Value $v.Trim()
+# Read KEY=VALUE pairs from a .env file into a hashtable (skip comments/blanks).
+function Read-DotEnv([string]$path) {
+    $map = @{}
+    if (Test-Path $path) {
+        Get-Content $path | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+                $k, $v = $line -split "=", 2
+                $map[$k.Trim()] = $v.Trim()
+            }
+        }
     }
+    return $map
 }
 
-$lanHost = $env:LAN_HOST
-if (-not $lanHost) { throw "LAN_HOST not set in .env" }
-$dbBase = $env:DB_URL_BASE
-if (-not $dbBase) { throw "DB_URL_BASE not set in .env" }
-
-# ---- Service table: name, port (loopback), schema --------------------------
-# The gateway is bound to 0.0.0.0; the rest to 127.0.0.1.
 $services = @(
-    @{ Name = "LoginServices";      Port = 8000; Schema = "hotelerp_users";      Bind = "0.0.0.0"   },
-    @{ Name = "UserServices";       Port = 8020; Schema = "hotelerp_users";      Bind = "127.0.0.1" },
-    @{ Name = "MasterDataServices"; Port = 8030; Schema = "hotelerp_masterdata"; Bind = "127.0.0.1" },
-    @{ Name = "HotelServices";      Port = 8040; Schema = "hotelerp_hotel";      Bind = "127.0.0.1" },
-    @{ Name = "RestaurantServices"; Port = 8050; Schema = "hotelerp_restaurant"; Bind = "127.0.0.1" },
-    @{ Name = "BarServices";        Port = 8060; Schema = "hotelerp_bar";        Bind = "127.0.0.1" }
+    "LoginServices", "UserServices", "MasterDataServices",
+    "HotelServices", "RestaurantServices", "BarServices"
 )
 
 $pidFile = Join-Path $logDir "pids.txt"
 Remove-Item $pidFile -ErrorAction SilentlyContinue
 
-foreach ($s in $services) {
-    $cwd = Join-Path $svcDir $s.Name
-    $dbUri = "$dbBase/$($s.Schema)"
-    $log = Join-Path $logDir ("{0}.log" -f $s.Name)
+foreach ($name in $services) {
+    $cwd = Join-Path $svcDir $name
+    $svcEnv = Read-DotEnv (Join-Path $cwd ".env")
+    $bind = $svcEnv["SERVICE_HOST"]; if (-not $bind) { $bind = "127.0.0.1" }
+    $port = $svcEnv["SERVICE_PORT"]
+    if (-not $port) { Write-Host "skip  $name - no SERVICE_PORT in its .env"; continue }
 
-    # Per-service env: DB_URI is the only value that differs; everything else was
-    # already exported from .env above and is inherited by the child.
-    $env:DB_URI = $dbUri
-
-    $args = @("-m", "uvicorn", "main:app", "--host", $s.Bind, "--port", "$($s.Port)")
+    $log = Join-Path $logDir ("{0}.log" -f $name)
+    $args = @("-m", "uvicorn", "main:app", "--host", $bind, "--port", $port)
     $p = Start-Process -FilePath "python" -ArgumentList $args -WorkingDirectory $cwd `
         -RedirectStandardOutput $log -RedirectStandardError ($log + ".err") `
         -WindowStyle Hidden -PassThru
-    "$($s.Name)=$($p.Id)" | Add-Content $pidFile
-    Write-Host ("started {0,-18} pid {1,-6} {2}:{3}  db={4}" -f $s.Name, $p.Id, $s.Bind, $s.Port, $s.Schema)
+    "$name=$($p.Id)" | Add-Content $pidFile
+    Write-Host ("started {0,-18} pid {1,-6} {2}:{3}" -f $name, $p.Id, $bind, $port)
 }
 
-# ---- Frontend (Vite) on the LAN --------------------------------------------
-$feDir = Join-Path $root "Frontend"
+# ---- Frontend (reads Frontend/.env via vite.config.js) ---------------------
+$feEnv  = Read-DotEnv (Join-Path $feDir ".env")
+$feHost = $feEnv["VITE_DEV_HOST"]; if (-not $feHost) { $feHost = "0.0.0.0" }
+$fePort = $feEnv["VITE_DEV_PORT"]; if (-not $fePort) { $fePort = "5173" }
+$apiBase = $feEnv["VITE_API_BASE_URL"]
+
 $feLog = Join-Path $logDir "Frontend.log"
-$feArgs = @("run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort")
-$fe = Start-Process -FilePath "npm.cmd" -ArgumentList $feArgs -WorkingDirectory $feDir `
+$fe = Start-Process -FilePath "npm.cmd" -ArgumentList @("run", "dev") -WorkingDirectory $feDir `
     -RedirectStandardOutput $feLog -RedirectStandardError ($feLog + ".err") `
     -WindowStyle Hidden -PassThru
 "Frontend=$($fe.Id)" | Add-Content $pidFile
-Write-Host ("started {0,-18} pid {1,-6} 0.0.0.0:5173" -f "Frontend", $fe.Id)
+Write-Host ("started {0,-18} pid {1,-6} {2}:{3}" -f "Frontend", $fe.Id, $feHost, $fePort)
 
+$lanHost = if ($apiBase) { ([uri]$apiBase).Host } else { "localhost" }
 Write-Host ""
-Write-Host "Frontend : http://$lanHost:5173"
-Write-Host "Gateway  : http://$lanHost:8000"
+Write-Host "Frontend : http://$($lanHost):$($fePort)"
+Write-Host "Gateway  : $apiBase"
 Write-Host "Logs     : $logDir"

@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // https://vite.dev/config/
@@ -12,8 +12,18 @@ import { playwright } from '@vitest/browser-playwright';
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // The dev server's host/port come from Frontend/.env (VITE_ vars only, so no
+  // backend secret is ever read here). start-network.ps1 generates that file
+  // from the root .env; running `npm run dev` alone falls back to the defaults.
+  const env = loadEnv(mode, dirname, 'VITE_');
+  return {
   plugins: [react()],
+  server: {
+    host: env.VITE_DEV_HOST || '0.0.0.0',
+    port: Number(env.VITE_DEV_PORT) || 5173,
+    strictPort: true,
+  },
   test: {
     projects: [{
       extends: true,
@@ -37,4 +47,5 @@ export default defineConfig({
       }
     }]
   }
+  };
 });

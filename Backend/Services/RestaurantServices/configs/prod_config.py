@@ -12,7 +12,10 @@ class Configuration(BaseConfig):
 
     DEBUG = False
 
-    DB_URI = os.getenv("DB_URI")
+    # Prefer an explicit DB_URI; otherwise derive from the shared DB_URL_BASE.
+    DB_URI = os.getenv("DB_URI") or (
+        f"{os.getenv('DB_URL_BASE')}/hotelerp_restaurant" if os.getenv("DB_URL_BASE") else None
+    )
     if not DB_URI:
         raise RuntimeError(
             "DB_URI must be set in production "

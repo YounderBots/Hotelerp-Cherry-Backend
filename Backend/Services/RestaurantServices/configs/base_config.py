@@ -54,18 +54,10 @@ class CommonWords():
 
 
 class ServiceURL:
-
-    # ================= USER / AUTH =================
-    USER_SERVICE_URL = "http://127.0.0.1:8020"
-
-    # ================= MASTER DATA =================
-    MASTER_SERVICE_URL = "http://127.0.0.1:8030"
-
-    # ================= HOTEL =================
-    HOTEL_SERVICE_URL = "http://127.0.0.1:8040"
-
-    # ================= RESTAURANT =================
-    RESTAURANT_SERVICE_URL = "http://127.0.0.1:8050"
-
-    # ================= BAR =================
-    BAR_SERVICE_URL = "http://127.0.0.1:8060"
+    # Base URLs come from .env so cross-service calls follow the same host/port
+    # configuration as everything else; loopback defaults keep local dev working.
+    USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://127.0.0.1:8020")
+    MASTER_SERVICE_URL = os.getenv("MASTER_SERVICE_URL", "http://127.0.0.1:8030")
+    HOTEL_SERVICE_URL = os.getenv("HOTEL_SERVICE_URL", "http://127.0.0.1:8040")
+    RESTAURANT_SERVICE_URL = os.getenv("RESTAURANT_SERVICE_URL", "http://127.0.0.1:8050")
+    BAR_SERVICE_URL = os.getenv("BAR_SERVICE_URL", "http://127.0.0.1:8060")
