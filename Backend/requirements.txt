@@ -29,7 +29,14 @@ bcrypt==4.2.1
 python-multipart==0.0.20
 
 itsdangerous==2.2.0
-pandas==2.3.3
 
-# Each service loads the shared repo-root .env at startup (configs/__init__.py).
+# openpyxl is the engine passed explicitly to pd.ExcelWriter(engine="openpyxl")
+# in HotelServices/resources/nightauditController.py. pandas does NOT depend on
+# it, so leaving it out makes every Night Audit Excel export fail at runtime on
+# a clean install even though it works on machines that happen to have it.
+pandas==2.3.3
+openpyxl==3.1.5
+
+# Each service loads its OWN .env at startup, from the service directory next to
+# main.py (configs/__init__.py). There is no shared runtime .env.
 python-dotenv==1.0.1

@@ -1,0 +1,36 @@
+# RestaurantServices — runtime dependencies.
+#
+# Self-contained: this service can be deployed on its own with
+#   pip install -r requirements.txt
+# Versions are pinned to the stack verified working (see Backend/requirements.txt
+# for the umbrella dev install and the CVE notes behind these pins).
+
+# Web framework / ASGI server (started as: python -m uvicorn main:app)
+fastapi==0.115.6
+starlette==0.41.3
+pydantic==2.10.4
+uvicorn==0.34.0
+
+# Database
+SQLAlchemy==2.0.36
+PyMySQL==1.1.1
+
+# JWT verification. 3.4.0 fixes CVE-2024-33663 (algorithm confusion) and
+# CVE-2024-33664 (JWT decompression DoS); both are reachable from token verify.
+python-jose[cryptography]==3.4.0
+
+# Password hashing
+bcrypt==4.2.1
+
+# Outbound calls to the other services (USER/MASTER/HOTEL/BAR service URLs)
+httpx==0.28.1
+
+# Required by FastAPI for the Form()/File() endpoints in this service.
+# 0.0.20 fixes CVE-2024-24762 (ReDoS) and CVE-2024-53981 (allocation DoS).
+python-multipart==0.0.20
+
+# SessionMiddleware backing store
+itsdangerous==2.2.0
+
+# Loads this service's own .env (configs/__init__.py)
+python-dotenv==1.0.1

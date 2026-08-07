@@ -1,0 +1,42 @@
+# HotelServices — runtime dependencies.
+#
+# Self-contained: this service can be deployed on its own with
+#   pip install -r requirements.txt
+# Versions are pinned to the stack verified working (see Backend/requirements.txt
+# for the umbrella dev install and the CVE notes behind these pins).
+
+# Web framework / ASGI server (started as: python -m uvicorn main:app)
+fastapi==0.115.6
+starlette==0.41.3
+pydantic==2.10.4
+uvicorn==0.34.0
+
+# Database
+SQLAlchemy==2.0.36
+PyMySQL==1.1.1
+
+# JWT verification. This service uses BOTH python-jose (frontOffice/
+# guestController.py) and PyJWT (resources/nightauditController.py), so both
+# are required. 3.4.0 fixes CVE-2024-33663 and CVE-2024-33664.
+python-jose[cryptography]==3.4.0
+PyJWT==2.10.1
+
+# Password hashing
+bcrypt==4.2.1
+
+# Night Audit report generation.
+# openpyxl is the engine passed explicitly to pd.ExcelWriter(engine="openpyxl")
+# in resources/nightauditController.py — pandas does NOT pull it in on its own,
+# so omitting it makes every Night Audit Excel export fail at runtime.
+pandas==2.3.3
+openpyxl==3.1.5
+
+# Required by FastAPI for the Form()/File() endpoints (guest ID proof uploads).
+# 0.0.20 fixes CVE-2024-24762 (ReDoS) and CVE-2024-53981 (allocation DoS).
+python-multipart==0.0.20
+
+# SessionMiddleware backing store
+itsdangerous==2.2.0
+
+# Loads this service's own .env (configs/__init__.py)
+python-dotenv==1.0.1
