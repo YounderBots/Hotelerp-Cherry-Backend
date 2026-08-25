@@ -13,8 +13,12 @@ from sqlalchemy.orm import Session
 from configs import BaseConfig
 from configs.base_config import ServiceURL
 from models import get_db
+from jose import JWTError
+
+from resources.rbac import build_permission_claim, check as rbac_check
 from resources.utils import (
     create_access_token,
+    decode_token,
     fetch_from_service,
     verify_authentication,
 )
@@ -118,25 +122,40 @@ async def login_post(
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # ---------------- Mint JWT ----------------
-    access_token = create_access_token(
-        data={
-            "user_id": user_data.get("id"),
-            "role_id": user_data.get("role_id"),
-            "company_id": user_data.get("company_id"),
-        }
-    )
-    request.session["access_token"] = access_token
+    # Minted twice on purpose. The permission lookup below is itself an
+    # authenticated call, so a token has to exist before it can be made; that
+    # first token is a bootstrap and never leaves this function. The token the
+    # client receives is re-minted afterwards carrying the `perm` claim, which
+    # is what the proxy authorises against.
+    claims = {
+        "user_id": user_data.get("id"),
+        "role_id": user_data.get("role_id"),
+        "company_id": user_data.get("company_id"),
+    }
+    bootstrap_token = create_access_token(data=claims)
 
     # ---------------- Fetch role permissions (best-effort) ----------------
     menus = []
     try:
         permission_response = await fetch_from_service(
             f"{ServiceURL.USER_SERVICE_URL}/role_permissions/{user_data.get('role_id')}",
-            headers={"Authorization": f"Bearer {access_token}"},
+            headers={"Authorization": f"Bearer {bootstrap_token}"},
         )
         menus = (permission_response or {}).get("data", {}).get("menus", []) or []
     except httpx.HTTPError:
         logger.warning("role_permissions_unavailable", extra={"user_id": user_data.get("id")})
+
+    # ---------------- Re-mint with the permission claim ----------------
+    # If the lookup failed, `perm` is empty rather than absent. An empty claim
+    # denies everything under enforce, which is the safe direction: a permission
+    # service that is down must not hand out a token that authorises anything.
+    permission_claim = build_permission_claim(menus)
+    if not permission_claim:
+        logger.warning(
+            "empty_permission_claim user=%s role=%s", user_data.get("id"), user_data.get("role_id")
+        )
+    access_token = create_access_token(data={**claims, "perm": permission_claim})
+    request.session["access_token"] = access_token
 
     # ---------------- Redirect target (URL-safe) ----------------
     redirect_url = "/dashboard"
@@ -187,7 +206,21 @@ def _build_proxy(prefix: str, upstream_base: str):
     async def _proxy(request: Request, path: str):
         # Enforce gateway-side JWT verification. This trims the surface area
         # so a malformed / missing token never reaches downstream at all.
-        verify_authentication(request)
+        user_id, role_id, _company_id, token = verify_authentication(request)
+
+        # Authorisation. Authentication above only proves who is calling; this
+        # decides whether that role may call THIS route. Permissions come from
+        # the signed token, so no lookup happens per request and a caller
+        # cannot widen their own access without the signing key.
+        try:
+            perm = decode_token(token).get("perm") or {}
+        except JWTError:
+            perm = {}
+        denial = rbac_check(
+            perm, prefix, path, request.method, user_id=user_id, role_id=role_id
+        )
+        if denial:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=denial)
 
         content_type = request.headers.get("content-type", "")
         auth_header = request.headers.get("Authorization")
