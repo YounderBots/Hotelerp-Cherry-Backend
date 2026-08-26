@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import IconButton from "../../stories/IconButton";
@@ -7,18 +7,19 @@ import Select from "../../stories/Form/Select";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Eye, Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResource } from "../../hooks/useApiResource";
 import "./FloorTable.css";
 
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
 
 const FloorTable = () => {
   const navigate = useNavigate();
 
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, loading, error, setError, reload } = useApiResource(
+    () => APICall.getT("/restaurant/floor"),
+    { select: readList, fallback: "Failed to load floors." },
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -36,18 +37,6 @@ const FloorTable = () => {
   };
   const [formData, setFormData] = useState(initialForm);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    APICall.getT("/restaurant/floor")
-      .then((res) => setData(readList(res)))
-      .catch((err) => setError(errMsg(err, "Failed to load floors.")))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const openAddModal = () => {
     setEditId(null);
@@ -97,7 +86,7 @@ const FloorTable = () => {
         await APICall.postT("/restaurant/floor", payload);
       }
       setShowModal(false);
-      load();
+      reload();
     } catch (err) {
       setFormError(errMsg(err, "Failed to save floor."));
     } finally {
@@ -123,7 +112,7 @@ const FloorTable = () => {
   const toggleOpen = async (row) => {
     try {
       await APICall.putT(`/restaurant/floor/${row.id}`, { is_open: !row.is_open });
-      load();
+      reload();
     } catch (err) {
       setError(errMsg(err, "Failed to update floor status."));
     }
@@ -132,7 +121,7 @@ const FloorTable = () => {
   const handleDelete = async (id) => {
     try {
       await APICall.deleteT(`/restaurant/floor/${id}`);
-      load();
+      reload();
     } catch (err) {
       setError(errMsg(err, "Failed to deactivate floor."));
     }

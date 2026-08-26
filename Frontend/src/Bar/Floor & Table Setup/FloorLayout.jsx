@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -6,16 +6,16 @@ import Select from "../../stories/Form/Select";
 import IconButton from "../../stories/IconButton";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Pencil, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResource } from "../../hooks/useApiResource";
 
 const FloorLayout = () => {
 
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, loading, error, setError, reload } = useApiResource(
+    () => APICall.getT("/bar/floor"),
+    { select: readList, fallback: "Failed to load floors." },
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -31,19 +31,6 @@ const FloorLayout = () => {
     is_open: true,
   };
   const [formData, setFormData] = useState(initialForm);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    APICall.getT("/bar/floor")
-      .then((res) => setData(readList(res)))
-      .catch((err) => setError(errMsg(err, "Failed to load floors.")))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const openAddModal = () => {
     setEditId(null);
@@ -90,7 +77,7 @@ const FloorLayout = () => {
         await APICall.postT("/bar/floor", payload);
       }
       setShowModal(false);
-      load();
+      reload();
     } catch (err) {
       setFormError(errMsg(err, "Failed to save floor."));
     } finally {
@@ -115,7 +102,7 @@ const FloorLayout = () => {
   const toggleOpen = async (row) => {
     try {
       await APICall.putT(`/bar/floor/${row.id}`, { is_open: !row.is_open });
-      load();
+      reload();
     } catch (err) {
       setError(errMsg(err, "Failed to update floor status."));
     }
@@ -124,7 +111,7 @@ const FloorLayout = () => {
   const handleDelete = async (id) => {
     try {
       await APICall.deleteT(`/bar/floor/${id}`);
-      load();
+      reload();
     } catch (err) {
       setError(errMsg(err, "Failed to deactivate floor."));
     }
