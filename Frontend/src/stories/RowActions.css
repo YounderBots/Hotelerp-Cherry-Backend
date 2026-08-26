@@ -1,0 +1,21 @@
+/* RowActions.css — layout for the shared row action cluster.
+   The buttons themselves are styled by the icon-btn--action-* variants in
+   IconButton.css; this file only owns how they sit together. */
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  /* Actions live in a centre-aligned column but must never be the reason a
+     row grows taller than its text. */
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Coarse pointers get a slightly roomier target without changing the visual
+   chip size on desktop (the tap area grows via padding on the button). */
+@media (hover: none) and (pointer: coarse) {
+  .row-actions {
+    gap: 8px;
+  }
+}

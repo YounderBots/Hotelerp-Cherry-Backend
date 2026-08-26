@@ -19,7 +19,7 @@
  * reader it already had.
  */
 
-import { ApiError } from "../APICalls/APICalls";
+import { ApiError, baseURL } from "../APICalls/APICalls";
 
 /** Message from an ApiError, else the caller's fallback. */
 export const errMsg = (err, fallback) =>
@@ -33,4 +33,25 @@ export const readNestedList = (res) => {
     if (Array.isArray(res?.data)) return res.data;
     if (Array.isArray(res?.data?.data)) return res.data.data;
     return [];
+};
+
+/**
+ * Absolute URL for a stored upload.
+ *
+ * The API returns image paths as site-absolute strings ("/templates/static/
+ * upload_image/<file>.jpg"). Rendered straight into an <img src>, the browser
+ * resolves those against the FRONTEND origin, where the Vite dev server
+ * answers any unknown path with index.html — so every room photo silently
+ * loaded an HTML document and rendered as a broken image.
+ *
+ * Resolving against the API origin is the correct target. Note that the
+ * gateway does not currently expose /templates (only MasterDataServices does,
+ * on its localhost-only port), so these still need a gateway route before they
+ * will actually load; consumers should handle the failure rather than assume
+ * an image appears.
+ */
+export const mediaUrl = (path) => {
+    if (!path || typeof path !== "string") return null;
+    if (/^(https?:|blob:|data:)/i.test(path)) return path;
+    return `${baseURL}${path.startsWith("/") ? "" : "/"}${path}`;
 };

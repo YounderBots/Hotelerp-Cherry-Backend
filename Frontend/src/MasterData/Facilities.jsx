@@ -2,111 +2,75 @@ import React, { useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
-import IconButton from "../stories/IconButton";
+import RowActions from "../stories/RowActions";
+import DetailList, { DetailItem } from "../stories/DetailList";
+import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
-import {
-  Pencil,
-  Trash2,
-  Eye,
-  CheckCircle,
-  AlertTriangle,
-} from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { readList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
+import { useToast } from "../hooks/useToast";
 
 const Facilities = () => {
-
-  const { data, reload: getFacilitiesData } = useApiResource(
+  const { data, loading, error, reload } = useApiResource(
     () => APICall.getT("/masterdata/facilities"),
-    { select: (res) => res?.data ?? [] },
+    { select: readList, fallback: "Failed to load facilities." },
   );
+
+  const { toast, showToast } = useToast();
+
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
 
-  const [alerts, setAlerts] = useState({
-    show: false,
-    message: "",
-    type: "success",
-    exiting: false,
-  });
-
   const initialForm = { facility_name: "" };
   const [formData, setFormData] = useState(initialForm);
 
-  const showAlert = (message, type = "success") => {
-    setAlerts({
-      show: true,
-      message,
-      type,
-      exiting: false,
-    });
-
-    setTimeout(() => {
-      setAlerts((prev) => ({ ...prev, exiting: true }));
-    }, 1800);
-
-    setTimeout(() => {
-      setAlerts({
-        show: false,
-        message: "",
-        type: "success",
-        exiting: false,
-      });
-    }, 2200);
-  };
-
-;
+  /* ================= API ================= */
 
   const createFacility = async () => {
-    try {
-      await APICall.postT("/masterdata/facilities", {
-        facility_name: formData.facility_name,
-      });
-      showAlert("Facility added successfully", "success");
-      getFacilitiesData();
-    } catch (error) {
-      showAlert(error.detail, "error");
-    }
+    await APICall.postT("/masterdata/facilities", {
+      facility_name: formData.facility_name.trim(),
+    });
+    showToast("Facility added successfully", "success");
+    reload();
   };
 
   const updateFacility = async () => {
-    try {
-      await APICall.putT("/masterdata/facilities", {
-        id: editId,
-        facility_name: formData.facility_name,
-      });
-      showAlert("Facility updated successfully", "update");
-      getFacilitiesData();
-    } catch (error) {
-      showAlert(error.detail || "Update failed", "error");
-    }
-  };
-
-  const deleteFacility = async (id) => {
-    try {
-      await APICall.deleteT(`/masterdata/facilities/${id}`);
-      showAlert("Facility deleted successfully", "delete");
-      getFacilitiesData();
-    } catch (error) {
-      showAlert(error.detail || "Delete failed", "error");
-    }
+    await APICall.putT("/masterdata/facilities", {
+      id: editId,
+      facility_name: formData.facility_name.trim(),
+    });
+    showToast("Facility updated successfully", "update");
+    reload();
   };
 
   /* ================= HANDLERS ================= */
+
   const openAddModal = () => {
     setFormData(initialForm);
     setEditId(null);
     setShowModal(true);
   };
 
+  const handleEdit = (row) => {
+    setFormData({ facility_name: row.facility_name ?? "" });
+    setEditId(row.id);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditId(null);
+    setFormData(initialForm);
+  };
+
   const handleSave = async () => {
     if (saving) return;
     if (!formData.facility_name.trim()) {
-      showAlert("Facility name is required", "error");
+      showToast("Facility name is required", "error");
       return;
     }
 
@@ -117,128 +81,128 @@ const Facilities = () => {
       } else {
         await createFacility();
       }
-      setShowModal(false);
+      closeModal();
+    } catch (err) {
+      // Kept open on failure so the typed value is not thrown away.
+      showToast(err?.message || "Save failed", "error");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleEdit = (row) => {
-    setFormData({ facility_name: row.facility_name });
-    setEditId(row.id);
-    setShowModal(true);
-  };
-
-  const handleView = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
-  };
-
-  const handledelete = (id) => {
-    setDeleteId(id);
-  }
-
-  const confirmDelete = () => {
-    deleteFacility(deleteId);
+  const confirmDelete = async () => {
+    const id = deleteId;
     setDeleteId(null);
+    try {
+      await APICall.deleteT(`/masterdata/facilities/${id}`);
+      showToast("Facility deleted successfully", "delete");
+      reload();
+    } catch (err) {
+      showToast(err?.message || "Delete failed", "error");
+    }
   };
-
 
   /* ================= UI ================= */
+
   return (
     <>
+      <ErrorAlert message={error} />
+
       <TableTemplate
         title="Facilities"
+        loading={loading}
+        emptyMessage="No facilities yet. Add the first one to get started."
         hasActionButton
         searchable
         pagination
         exportable
         actionButton={{
-          label: "Add Facilities",
+          label: "Add Facility",
           onClick: openAddModal,
           size: "medium",
           variant: "primary",
         }}
         columns={[
-          { key: "facility_name", title: "Facility Name", align: "center" },
+          { key: "facility_name", title: "Facility Name", align: "left" },
           {
             key: "actions",
             title: "Actions",
             align: "center",
             type: "custom",
+            excludeFromExport: true,
             render: (row) => (
-              <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => handleView(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handledelete(row.id)} ariaLabel="Delete" />
-              </div>
+              <RowActions
+                label="facility"
+                onView={() => setViewData(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteId(row.id)}
+              />
             ),
           },
         ]}
         data={data}
       />
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <Modal
-          isOpen={showViewModal}
-          title="View Facility"
-          onClose={() => setShowViewModal(false)}
-          size="small"
-        >
-          <Input label="Facility Name" value={viewData.facility_name} disabled />
-        </Modal>
-      )}
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Facility Details"
+        onClose={() => setViewData(null)}
+        size="small"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <DetailList columns={1}>
+          <DetailItem label="Facility Name" value={viewData?.facility_name} />
+        </DetailList>
+      </Modal>
 
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <Modal
-          isOpen={showModal}
-          title={editId ? "Edit Facility" : "Add Facility"}
-          onClose={() => setShowModal(false)}
-          showFooter
-          size="small"
-          bodyLayout="single"
-          actions={[
-            {
-              label: "Close",
-              variant: "secondary",
-              onClick: () => setShowModal(false),
-            },
-            {
-              label: "Submit",
-              variant: "primary",
-              onClick: handleSave,
-              disabled: saving,
-              autoFocus: true,
-            },
-          ]}
-        >
-          <Input
-            label="Facility Name"
-            type="text"
-            value={formData.facility_name}
-            onChange={(e) =>
-              setFormData({ facility_name: e.target.value })
-            }
-          />
-        </Modal>
-      )}
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Facility" : "Add Facility"}
+        onClose={closeModal}
+        showFooter
+        size="small"
+        bodyLayout="single"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <Input
+          label="Facility Name"
+          required
+          type="text"
+          name="facility_name"
+          placeholder="e.g. Swimming Pool"
+          value={formData.facility_name}
+          onChange={(e) => setFormData({ facility_name: e.target.value })}
+        />
+      </Modal>
 
-      {/* ================= DELETE CONFIRM MODAL ================= */}
+      {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={confirmDelete}
         title="Delete Facility"
         confirmText="Delete"
+        size="small"
         destructive
       >
         Are you sure you want to delete this facility? This action cannot be undone.
       </ConfirmModal>
 
-      {/* ================= TOAST ================= */}
-      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
+      <Toast {...toast} />
     </>
   );
 };

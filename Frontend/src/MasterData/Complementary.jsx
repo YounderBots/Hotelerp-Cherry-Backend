@@ -1,181 +1,131 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
 import Textarea from "../stories/Form/Textarea";
-import IconButton from "../stories/IconButton";
+import RowActions from "../stories/RowActions";
+import DetailList, { DetailItem } from "../stories/DetailList";
+import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
-import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { readList } from "../functions/apiHelpers";
+import { useApiResource } from "../hooks/useApiResource";
+import { useToast } from "../hooks/useToast";
+
+// The backend spells this resource "complementry"; the UI spells it correctly.
+// Keep the two apart rather than propagating the typo into user-facing copy.
+const ENDPOINT = "/masterdata/complementry";
 
 const Complementary = () => {
+  const { data, loading, error, reload } = useApiResource(
+    () => APICall.getT(ENDPOINT),
+    { select: readList, fallback: "Failed to load complementary items." },
+  );
+
+  const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
-  const [data, setData] = useState([]);
-
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
 
-  const initialForm = {
-    name: "",
-    description: "",
-  };
-
+  const initialForm = { name: "", description: "" };
   const [formData, setFormData] = useState(initialForm);
-
-  const [alerts, setAlerts] = useState({
-    show: false,
-    message: "",
-    type: "success",
-    exiting: false,
-  });
-
-  const showAlert = (message, type = "success") => {
-    setAlerts({
-      show: true,
-      message,
-      type,
-      exiting: false,
-    });
-
-    setTimeout(() => {
-      setAlerts((prev) => ({ ...prev, exiting: true }));
-    }, 1800);
-
-    setTimeout(() => {
-      setAlerts({
-        show: false,
-        message: "",
-        type: "success",
-        exiting: false,
-      });
-    }, 2200);
-  };
-  /* ================= HANDLERS ================= */
-
-  const openAddModal = () => {
-    setEditId(null);
-    setFormData(initialForm);
-    setShowModal(true);
-  };
-
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setEditId(null);
-  };
-
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  /* ================= API ================= */
 
-  const getAllData = async () => {
-    const AllData = await APICall.getT("/masterdata/complementry");
-    setData(AllData.data);
-  }
+  const payload = () => ({
+    complementry_name: formData.name.trim(),
+    description: formData.description.trim(),
+  });
 
   const createComplementary = async () => {
-    try {
-      await APICall.postT("/masterdata/complementry", {
-        complementry_name: formData.name,
-        description: formData.description,
-      });
-      showAlert("Complementry added successfully", "success");
-      getAllData();
-    }
-    catch (error) {
-      showAlert(error.detail || "Create failed", "error");
-    }
-  }
+    await APICall.postT(ENDPOINT, payload());
+    showToast("Complementary item added successfully", "success");
+    reload();
+  };
 
   const updateComplementary = async () => {
-    try {
-      await APICall.putT("/masterdata/complementry", {
-        id: editId,
-        complementry_name: formData.name,
-        description: formData.description,
+    await APICall.putT(ENDPOINT, { id: editId, ...payload() });
+    showToast("Complementary item updated successfully", "update");
+    reload();
+  };
 
-      })
-      showAlert("Complementry updated successfully", "update");
-      getAllData();
-    }
-    catch (error) {
-      showAlert(error.detail || "Update failed", "error");
-    }
-  }
+  /* ================= HANDLERS ================= */
 
-  const deleteComplementry = async (id) => {
-    try {
-      await APICall.deleteT(`/masterdata/complementry/${id}`)
-      showAlert("Complementry deleted successfully", "delete");
-    }
-    catch (error) {
-      showAlert(error.detail || "Delete failed", "error");
-    }
-  }
+  const openAddModal = () => {
+    setFormData(initialForm);
+    setEditId(null);
+    setShowModal(true);
+  };
 
-  useEffect(() => {
-    getAllData();
-  }, []);
+  const handleEdit = (row) => {
+    setFormData({
+      name: row.complementry_name ?? "",
+      description: row.description ?? "",
+    });
+    setEditId(row.id);
+    setShowModal(true);
+  };
 
+  const closeModal = () => {
+    setShowModal(false);
+    setEditId(null);
+    setFormData(initialForm);
+  };
 
   const handleSave = async () => {
     if (saving) return;
-    if (!formData.name.trim()) return;
+    if (!formData.name.trim()) {
+      showToast("Complementary name is required", "error");
+      return;
+    }
 
     setSaving(true);
     try {
-      // Neither branch was awaited here, so the modal closed immediately and
-      // both create and update failures were invisible to the user.
       if (editId) {
         await updateComplementary();
       } else {
         await createComplementary();
       }
       closeModal();
+    } catch (err) {
+      showToast(err?.message || "Save failed", "error");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData({
-      name: row.complementry_name,
-      description: row.description
-    });
-    setShowModal(true);
-  };
-
-  const handleDelete = (id) => {
-    setDeleteId(id);
-  };
-
-  const confirmDelete = () => {
-    deleteComplementry(deleteId);
+  const confirmDelete = async () => {
+    const id = deleteId;
     setDeleteId(null);
+    try {
+      await APICall.deleteT(`${ENDPOINT}/${id}`);
+      showToast("Complementary item deleted successfully", "delete");
+      // This reload was missing: the row stayed on screen after a successful
+      // delete until the page was reloaded by hand.
+      reload();
+    } catch (err) {
+      showToast(err?.message || "Delete failed", "error");
+    }
   };
 
   /* ================= UI ================= */
 
   return (
     <>
+      <ErrorAlert message={error} />
+
       <TableTemplate
-        title="Complementary"
+        title="Complementary Items"
+        loading={loading}
+        emptyMessage="No complementary items yet. Add the first one to get started."
         hasActionButton
         searchable
         pagination
@@ -187,26 +137,19 @@ const Complementary = () => {
           variant: "primary",
         }}
         columns={[
-          {
-            key: "complementry_name",
-            title: "Complementary Name",
-            align: "center",
-          },
+          { key: "complementry_name", title: "Complementary Name", align: "left" },
           {
             key: "description",
             title: "Description",
-            align: "center",
+            align: "left",
             type: "custom",
+            exportValue: (row) => row.description || "",
+            // Clamped to two lines so one long description cannot set the
+            // height of every row in the table.
             render: (row) => (
-              <div
-                style={{
-                  whiteSpace: "normal",
-                  wordBreak: "break-word",
-                  lineHeight: "1.4",
-                }}
-              >
-                {row.description}
-              </div>
+              <span className="table-cell-clamp" title={row.description || ""}>
+                {row.description || "—"}
+              </span>
             ),
           },
           {
@@ -214,101 +157,88 @@ const Complementary = () => {
             title: "Actions",
             align: "center",
             type: "custom",
+            excludeFromExport: true,
             render: (row) => (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  justifyContent: "center",
-                }}
-              >
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
-              </div>
+              <RowActions
+                label="complementary item"
+                onView={() => setViewData(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteId(row.id)}
+              />
             ),
           },
         ]}
         data={data}
       />
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <Modal
-          isOpen={showViewModal}
-          title="View Complementry"
-          onClose={closeViewModal}
-          size="medium"
-        >
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Complementary Details"
+        onClose={() => setViewData(null)}
+        size="medium"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <DetailList columns={1}>
+          <DetailItem label="Complementary Name" value={viewData?.complementry_name} />
+          <DetailItem label="Description" value={viewData?.description} span={1} />
+        </DetailList>
+      </Modal>
 
-          <div className="modal-body single view">
-            <Input label="Complementary Name" disabled value={viewData.complementry_name} />
-            <Textarea
-              label="Description"
-              value={viewData.description}
-              disabled
-              rows={4}
-              style={{ resize: "none" }}
-            />
-          </div>
-        </Modal>
-      )}
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Complementary" : "Add Complementary"}
+        onClose={closeModal}
+        showFooter
+        size="medium"
+        bodyLayout="single"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <Input
+          label="Complementary Name"
+          required
+          name="name"
+          placeholder="e.g. Welcome Drink"
+          value={formData.name}
+          onChange={handleChange}
+        />
+        <Textarea
+          label="Description"
+          name="description"
+          rows={4}
+          placeholder="What this complementary item includes"
+          value={formData.description}
+          onChange={handleChange}
+        />
+      </Modal>
 
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <Modal
-          isOpen={showModal}
-          title={editId ? "Edit Complementry" : "Add Complementry"}
-          onClose={() => setShowModal(false)}
-          showFooter
-          size="medium"
-          bodyLayout="single"
-          actions={[
-            {
-              label: "Close",
-              variant: "secondary",
-              onClick: () => setShowModal(false),
-            },
-            {
-              label: "Submit",
-              variant: "primary",
-              onClick: handleSave,
-              disabled: saving,
-              autoFocus: true,
-            },
-          ]}
-        >
-          <div className="modal-body single">
-            <Input
-              label="Complementary Name"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-            />
-            <Textarea
-              label="Description"
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              rows={4}
-              placeholder="Enter full description"
-            />
-          </div>
-        </Modal>
-      )}
-
+      {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={confirmDelete}
         title="Delete Complementary"
         confirmText="Delete"
+        size="small"
         destructive
       >
         Are you sure you want to delete this complementary item? This action cannot be undone.
       </ConfirmModal>
 
-      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
+      <Toast {...toast} />
     </>
   );
 };

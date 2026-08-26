@@ -73,18 +73,30 @@ body {
   --gray-800: #1f2937;
   --gray-900: #111827;
 
-  /* ================= STATUS COLORS ================= */
+  /* ================= STATUS COLORS =================
+     Each status has three steps: -light (tint background), base (icon/text)
+     and -dark (hover/pressed). The -dark and -lighter steps were missing, so
+     components hardcoded hexes for them — some of which drifted off-theme
+     (e.g. a #0da271 "success" hover against a #16a34a success). */
   --success-color: #16a34a;
   --success-light: #ecfdf3;
+  --success-lighter: #d1fae5;
+  --success-dark: #15803d;
 
   --warning-color: #f59e0b;
   --warning-light: #fffbeb;
+  --warning-lighter: #fef3c7;
+  --warning-dark: #b45309;
 
   --error-color: #dc2626;
   --error-light: #fef2f2;
+  --error-lighter: #fde2e2;
+  --error-dark: #b91c1c;
 
   --info-color: #2563eb;
   --info-light: #eff6ff;
+  --info-lighter: #dbeafe;
+  --info-dark: #1d4ed8;
 
   /* ================= TEXT COLORS ================= */
   --text-primary: #111827;

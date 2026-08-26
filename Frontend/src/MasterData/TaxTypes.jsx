@@ -1,213 +1,161 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
 import Select from "../stories/Form/Select";
-import IconButton from "../stories/IconButton";
+import RowActions from "../stories/RowActions";
+import DetailList, { DetailItem } from "../stories/DetailList";
+import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
-import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { readList, readNestedList } from "../functions/apiHelpers";
+import { useApiResources } from "../hooks/useApiResource";
+import { useToast } from "../hooks/useToast";
 
 const TaxTypes = () => {
-  const [saving, setSaving] = useState(false);
-  const [data, setData] = useState([]);
+  // Both lookups in one parallel load. The countries list only feeds the
+  // picker, so it declares no fallback: if it fails the picker is empty but
+  // the table still renders its rows.
+  const {
+    data: [rows, countries],
+    loading,
+    error,
+    reload,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/masterdata/tax"), select: readNestedList, fallback: "Failed to load tax types." },
+    { fetch: () => APICall.getT("/masterdata/country_currency"), select: readList },
+  ]);
 
+  const { toast, showToast } = useToast();
+
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
-  const [taxcountry, setTaxNewCountry] = useState([])
 
-  const initialForm = {
-    taxCountry: "",
-    taxName: "",
-    taxPercentage: "",
-  };
-
+  const initialForm = { countryId: "", name: "", percentage: "" };
   const [formData, setFormData] = useState(initialForm);
 
-
-  const [alerts, setAlerts] = useState({
-    show: false,
-    message: "",
-    type: "success",
-    exiting: false,
-  });
-
-  const showAlert = (message, type = "success") => {
-    setAlerts({
-      show: true,
-      message,
-      type,
-      exiting: false,
-    });
-
-    setTimeout(() => {
-      setAlerts((prev) => ({ ...prev, exiting: true }));
-    }, 1800);
-
-    setTimeout(() => {
-      setAlerts({
-        show: false,
-        message: "",
-        type: "success",
-        exiting: false,
-      });
-    }, 2200);
-  };
-  /* ================= HANDLERS ================= */
-
-  const openAddModal = () => {
-    setEditId(null);
-    setFormData(initialForm);
-    setShowModal(true);
-  };
-
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setEditId(null);
-  };
-
-
-  const getCountry = async () => {
-    try {
-      const res = await APICall.getT("/masterdata/country_currency")
-
-      setTaxNewCountry(res.data);
-
-    } catch (error) {
-      // Swallowed into the console before: the picker silently stayed empty.
-      setTaxNewCountry([]);
-      showAlert(error?.message || "Failed to load countries.", "error");
-    }
-  };
-
-
-  const getTax = async () => {
-    const res = await APICall.getT("/masterdata/tax");
-    setData(Array.isArray(res.data) ? res.data : res.data?.data || []);
-  };
-
-  const createTax = async () => {
-    try {
-      await APICall.postT("/masterdata/tax", {
-        country_id: Number(formData.taxCountry),
-        tax_name: formData.taxName,
-        tax_percentage: Number(formData.taxPercentage),
-      });
-      showAlert("Tax Type added successfully", "success");
-      getTax();
-    } catch (error) {
-      showAlert(error.detail, "error");
-
-    }
-
-  };
-
-  const updateTax = async () => {
-    try {
-      await APICall.putT("/masterdata/tax", {
-        id: editId,
-        country_id: Number(formData.taxCountry),
-        tax_name: formData.taxName,
-        tax_percentage: Number(formData.taxPercentage),
-      });
-      showAlert("Tax Type updated successfully", "update");
-      getTax();
-    } catch (error) {
-      showAlert(error.detail || "Update failed", "error");
-    }
-
-  };
-
-  const deleteTax = async (id) => {
-    try {
-      await APICall.deleteT(`/masterdata/tax/${id}`);
-      showAlert("Tax Type deleted successfully", "delete");
-      getTax();
-    } catch (error) {
-      showAlert(error.detail || "Delete failed", "error");
-    }
-
-  };
+  const countryName = useMemo(() => {
+    const map = new Map(countries.map((c) => [String(c.id), c.country_name]));
+    return (id) => map.get(String(id)) || "—";
+  }, [countries]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  /* ================= API ================= */
+
+  const payload = () => ({
+    country_id: Number(formData.countryId),
+    tax_name: formData.name.trim(),
+    tax_percentage: Number(formData.percentage),
+  });
+
+  const createTaxTypes = async () => {
+    await APICall.postT("/masterdata/tax", payload());
+    showToast("Tax Type added successfully", "success");
+    reload();
+  };
+
+  const updateTaxTypes = async () => {
+    await APICall.putT("/masterdata/tax", { id: editId, ...payload() });
+    showToast("Tax Type updated successfully", "update");
+    reload();
+  };
+
+  /* ================= HANDLERS ================= */
+
+  const openAddModal = () => {
+    setFormData(initialForm);
+    setEditId(null);
+    setShowModal(true);
+  };
+
+  const handleEdit = (row) => {
+    setFormData({
+      countryId: row.country_id ?? "",
+      name: row.tax_name ?? "",
+      percentage: row.tax_percentage ?? "",
+    });
+    setEditId(row.id);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditId(null);
+    setFormData(initialForm);
+  };
+
   const handleSave = async () => {
     if (saving) return;
-    if (!formData.taxCountry || !formData.taxName || !formData.taxPercentage)
+
+    // Each check names the field it failed on. This screen used to `return`
+    // silently on an incomplete form, so pressing Submit simply did nothing
+    // and gave the user no idea which field was at fault.
+    if (!formData.countryId) {
+      showToast("Country is required", "error");
       return;
+    }
+    if (!formData.name.trim()) {
+      showToast("Tax Name is required", "error");
+      return;
+    }
+    const pct = Number(formData.percentage);
+    if (formData.percentage === "" || Number.isNaN(pct) || pct <= 0 || pct > 100) {
+      // Mirrors the server rule (0 < pct <= 100) so an out-of-range value is
+      // caught here rather than coming back as a 400.
+      showToast("Tax Percentage must be a number between 1 and 100", "error");
+      return;
+    }
 
     setSaving(true);
     try {
-      // updateTax was not awaited, so getTax() below could refetch before the
-      // update had landed and show the row unchanged.
       if (editId) {
-        await updateTax();
+        await updateTaxTypes();
       } else {
-        await createTax();
+        await createTaxTypes();
       }
-      await getTax();
       closeModal();
+    } catch (err) {
+      showToast(err?.message || "Save failed", "error");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData({
-      taxCountry: row.country_id,
-      taxName: row.tax_name,
-      taxPercentage: row.tax_percentage,
-    });
-    setShowModal(true);
-  };
-
-
-  const countryMap = taxcountry.reduce((map, c) => {
-    map[c.id] = c.country_name;
-    return map;
-  }, {});
-
-
-
-  const handleDelete = (id) => {
-    setDeleteId(id);
-  };
-
   const confirmDelete = async () => {
-    await deleteTax(deleteId);
-    await getTax();
+    const id = deleteId;
     setDeleteId(null);
+    try {
+      await APICall.deleteT(`/masterdata/tax/${id}`);
+      showToast("Tax Type deleted successfully", "delete");
+      reload();
+    } catch (err) {
+      showToast(err?.message || "Delete failed", "error");
+    }
   };
-
-  useEffect(() => {
-    getTax();
-    getCountry();
-  }, []);
 
   /* ================= UI ================= */
 
   return (
     <>
+      <ErrorAlert message={error} />
+
       <TableTemplate
-        title="Tax Types List"
+        title="Tax Types"
+        loading={loading}
+        emptyMessage="No tax types yet. Add the first one to get started."
         hasActionButton
         searchable
         pagination
         exportable
         actionButton={{
-          label: "Add Tax",
+          label: "Add Tax Type",
           onClick: openAddModal,
           size: "medium",
           variant: "primary",
@@ -215,121 +163,135 @@ const TaxTypes = () => {
         columns={[
           {
             key: "country_id",
-            title: "Tax Country",
-            align: "center",
+            title: "Country",
+            align: "left",
             type: "custom",
-            render: (row) => countryMap[row.country_id] || "—",
+            // Without exportValue the CSV/PDF carried the raw foreign key.
+            exportValue: (row) => countryName(row.country_id),
+            render: (row) => countryName(row.country_id),
           },
-
-          {
-            key: "tax_name",
-            title: "Tax Name",
-            align: "center",
-          },
+          { key: "tax_name", title: "Tax Name", align: "left" },
           {
             key: "tax_percentage",
             title: "Tax Percentage (%)",
-            align: "center",
+            align: "right",
+            type: "custom",
+            exportValue: (row) => row.tax_percentage,
+            render: (row) =>
+              row.tax_percentage === null || row.tax_percentage === undefined || row.tax_percentage === ""
+                ? "—"
+                : `${row.tax_percentage}%`,
           },
           {
             key: "actions",
             title: "Actions",
             align: "center",
             type: "custom",
+            excludeFromExport: true,
             render: (row) => (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  justifyContent: "center",
-                }}
-              >
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
-              </div>
+              <RowActions
+                label="tax type"
+                onView={() => setViewData(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteId(row.id)}
+              />
             ),
           },
         ]}
-        data={data}
+        data={rows}
       />
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <Modal
-          isOpen={showViewModal}
-          title="View Tax Type"
-          onClose={() => setShowViewModal(false)}
-          size="medium"
-          bodyLayout="grid"
-        >
-          <Input label="Tax Country" disabled value={countryMap[viewData.country_id]} />
-          <Input label="Tax Name" disabled value={viewData.tax_name} />
-          <Input label="Tax Percentage" disabled value={viewData.tax_percentage} />
-        </Modal>
-
-      )}
-
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <Modal
-          isOpen={showModal}
-          title={editId ? "Edit Tax Type" : "Add Tax Type"}
-          onClose={() => setShowModal(false)}
-          showFooter
-          size="medium"
-          bodyLayout="grid"
-          actions={[
-            {
-              label: "Close",
-              variant: "secondary",
-              onClick: () => setShowModal(false),
-            },
-            {
-              label: "Submit",
-              variant: "primary",
-              onClick: handleSave,
-              disabled: saving,
-              autoFocus: true,
-            },
-          ]}
-        >
-          <Select
-            label="Country Name"
-            name="taxCountry"
-            value={formData.taxCountry}
-            onChange={handleChange}
-            placeholder="Select Country"
-            options={taxcountry.map((e) => ({ value: e.id, label: e.country_name }))}
-          />
-          <Input
-            label="Tax Name"
-            name="taxName"
-            value={formData.taxName}
-            onChange={handleChange}
-          />
-          <Input
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Tax Type Details"
+        onClose={() => setViewData(null)}
+        size="medium"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <DetailList columns={2}>
+          <DetailItem label="Country" value={viewData && countryName(viewData.country_id)} />
+          <DetailItem label="Tax Name" value={viewData?.tax_name} />
+          <DetailItem
             label="Tax Percentage"
-            type="number"
-            name="taxPercentage"
-            value={formData.taxPercentage}
-            onChange={handleChange}
+            value={
+              viewData?.tax_percentage === null || viewData?.tax_percentage === undefined || viewData?.tax_percentage === ""
+                ? null
+                : `${viewData.tax_percentage}%`
+            }
           />
-        </Modal>
-      )}
+        </DetailList>
+      </Modal>
 
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Tax Type" : "Add Tax Type"}
+        onClose={closeModal}
+        showFooter
+        size="medium"
+        bodyLayout="grid"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <Select
+          label="Country"
+          required
+          name="countryId"
+          value={formData.countryId}
+          onChange={handleChange}
+          placeholder="Select country"
+          options={countries.map((c) => ({ value: c.id, label: c.country_name }))}
+        />
+        <Input
+          label="Tax Name"
+          required
+          name="name"
+          placeholder="e.g. GST"
+          value={formData.name}
+          onChange={handleChange}
+        />
+        <Input
+          label="Tax Percentage"
+          required
+          type="number"
+          inputMode="decimal"
+          min="0.01"
+          max="100"
+          step="0.01"
+          name="percentage"
+          placeholder="0.00"
+          value={formData.percentage}
+          onChange={handleChange}
+          helperText="Between 1 and 100."
+        />
+      </Modal>
+
+      {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={confirmDelete}
         title="Delete Tax Type"
         confirmText="Delete"
+        size="small"
         destructive
       >
         Are you sure you want to delete this tax type? This action cannot be undone.
       </ConfirmModal>
 
-      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
+      <Toast {...toast} />
     </>
   );
 };

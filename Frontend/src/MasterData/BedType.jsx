@@ -1,163 +1,118 @@
 import React, { useState } from "react";
-import Modal from "../stories/Modal"
 import TableTemplate from "../stories/TableTemplate";
+import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
-import IconButton from "../stories/IconButton";
+import RowActions from "../stories/RowActions";
+import DetailList, { DetailItem } from "../stories/DetailList";
+import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
-import {
-  UserPlus, X, Pencil, Trash2, Eye, CheckCircle,
-  AlertTriangle,
-} from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { readList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
+import { useToast } from "../hooks/useToast";
 
 const BedType = () => {
-  const { data, reload: getBedData } = useApiResource(
+  const { data, loading, error, reload } = useApiResource(
     () => APICall.getT("/masterdata/bed_types"),
-    { select: (res) => res?.data ?? [] },
+    { select: readList, fallback: "Failed to load bed types." },
   );
+
+  const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
-  const [bedName, setbedNmae] = useState("")
+  const [deleteId, setDeleteId] = useState(null);
 
-  const [alerts, setAlerts] = useState({
-    show: false,
-    message: "",
-    type: "success",
-    exiting: false,
-  });
+  const initialForm = { name: "" };
+  const [formData, setFormData] = useState(initialForm);
 
+  /* ================= API ================= */
 
-  const showAlert = (message, type = "success") => {
-    setAlerts({
-      show: true,
-      message,
-      type,
-      exiting: false,
-    });
-
-    setTimeout(() => {
-      setAlerts((prev) => ({ ...prev, exiting: true }));
-    }, 1800);
-
-    setTimeout(() => {
-      setAlerts({
-        show: false,
-        message: "",
-        type: "success",
-        exiting: false,
-      });
-    }, 2200);
+  const createBedType = async () => {
+    await APICall.postT("/masterdata/bed_type", { bed_type: formData.name.trim() });
+    showToast("Bed Type added successfully", "success");
+    reload();
   };
+
+  const updateBedType = async () => {
+    await APICall.putT("/masterdata/bed_type", {
+      id: editId,
+      bed_type: formData.name.trim(),
+    });
+    showToast("Bed Type updated successfully", "update");
+    reload();
+  };
+
   /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
+    setFormData(initialForm);
     setEditId(null);
-    setbedNmae("");
     setShowModal(true);
   };
 
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
+  const handleEdit = (row) => {
+    setFormData({ name: row.bed_type_name ?? "" });
+    setEditId(row.id);
+    setShowModal(true);
   };
 
   const closeModal = () => {
-    setbedNmae("")
     setShowModal(false);
     setEditId(null);
+    setFormData(initialForm);
   };
-
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
-
-
-  const createBedType = async () => {
-    try {
-      await APICall.postT("/masterdata/bed_type", {
-        bed_type: bedName
-      });
-      showAlert("Bed Type added successfully", "success");
-      getBedData();
-    }
-    catch (error) {
-      showAlert(error.detail, "error");
-    }
-  }
-
-  const updateBedType = async () => {
-    try {
-      await APICall.putT("/masterdata/bed_type", {
-        id: editId,
-        bed_type: bedName
-      })
-      showAlert("Bed Type updated successfully", "update");
-      getBedData();
-    }
-    catch (error) {
-      showAlert(error.detail || "Update failed", "error");
-    }
-  }
-
-  const deleteBedType = async (id) => {
-    try {
-      await APICall.deleteT(`/masterdata/bed_type/${id}`)
-      showAlert("Bed Type deleted successfully", "delete");
-      getBedData();
-    }
-    catch (error) {
-      showAlert(error.detail || "Delete failed", "error");
-    }
-  }
-
 
   const handleSave = async () => {
-    // Guard + disabled on the Submit action: without both, a double click
-    // POSTed twice and created a duplicate bed type.
+    // Guard plus the disabled Submit below: without both, a double click
+    // posted twice and created a duplicate row.
     if (saving) return;
-    if (!bedName.trim()) {
-      showAlert("Bed Type is required.", "error");
+    if (!formData.name.trim()) {
+      showToast("Bed Type is required", "error");
       return;
     }
 
     setSaving(true);
     try {
-      // The update path used to be called without await, so the modal closed
-      // before the request finished and a failure discarded the user's input
-      // after the form had already been reset.
+      // Awaited, so a failed save leaves the modal open with the typed value
+      // intact rather than closing over a request that never landed.
       if (editId) {
         await updateBedType();
       } else {
         await createBedType();
       }
       closeModal();
+    } catch (err) {
+      showToast(err?.message || "Save failed", "error");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleEdit = (row) => {
-    setbedNmae(row.bed_type_name)
-    setEditId(row.id);
-    setShowModal(true);
-  };
-
-  const handleDelete = (id) => {
-    deleteBedType(id);
+  const confirmDelete = async () => {
+    const id = deleteId;
+    setDeleteId(null);
+    try {
+      await APICall.deleteT(`/masterdata/bed_type/${id}`);
+      showToast("Bed Type deleted successfully", "delete");
+      reload();
+    } catch (err) {
+      showToast(err?.message || "Delete failed", "error");
+    }
   };
 
   /* ================= UI ================= */
 
   return (
     <>
+      <ErrorAlert message={error} />
+
       <TableTemplate
-        title="Bed Type List"
+        title="Bed Types"
+        loading={loading}
+        emptyMessage="No bed types yet. Add the first one to get started."
         hasActionButton
         searchable
         pagination
@@ -169,86 +124,86 @@ const BedType = () => {
           variant: "primary",
         }}
         columns={[
-          {
-            key: "bed_type_name",
-            title: "Bed Type",
-            align: "center",
-          },
+          { key: "bed_type_name", title: "Bed Type", align: "left" },
           {
             key: "actions",
-            title: "Action",
+            title: "Actions",
             align: "center",
             type: "custom",
+            excludeFromExport: true,
             render: (row) => (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  justifyContent: "center",
-                }}
-              >
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
-              </div>
+              <RowActions
+                label="bed type"
+                onView={() => setViewData(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteId(row.id)}
+              />
             ),
           },
         ]}
         data={data}
       />
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <Modal
-          isOpen={showViewModal}
-          title="View Bed Type"
-          onClose={closeViewModal}
-          size="small"
-        >
-          <div className="modal-body single view">
-            <Input label="Bed Type" disabled value={viewData.bed_type_name} />
-          </div>
-        </Modal>
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Bed Type Details"
+        onClose={() => setViewData(null)}
+        size="small"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <DetailList columns={1}>
+          <DetailItem label="Bed Type" value={viewData?.bed_type_name} />
+        </DetailList>
+      </Modal>
 
-      )}
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Bed Type" : "Add Bed Type"}
+        onClose={closeModal}
+        showFooter
+        size="small"
+        bodyLayout="single"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <Input
+          label="Bed Type"
+          required
+          type="text"
+          name="name"
+          placeholder="e.g. King"
+          value={formData.name}
+          onChange={(e) => setFormData({ name: e.target.value })}
+        />
+      </Modal>
 
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <Modal
-          isOpen={showModal}
-          title={editId ? "Edit Bed Type" : "Add Bed Type"}
-          onClose={() => setShowModal(false)}
-          showFooter
-          size="small"
-          bodyLayout="single"
-          actions={[
-            {
-              label: "Close",
-              variant: "secondary",
-              onClick: () => setShowModal(false),
-            },
-            {
-              label: "Submit",
-              variant: "primary",
-              onClick: handleSave,
-              disabled: saving,
-              autoFocus: true,
-            },
-          ]}
-        >
-          <div className="modal-body single">
-            <Input
-              label="Bed Type"
-              type="text"
-              name="bedType"
-              value={bedName}
-              onChange={(e) => setbedNmae(e.target.value)}
-            />
-          </div>
-        </Modal>
-      )}
+      {/* ================= DELETE ================= */}
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Bed Type"
+        confirmText="Delete"
+        size="small"
+        destructive
+      >
+        Are you sure you want to delete this bed type? This action cannot be undone.
+      </ConfirmModal>
 
-      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
+      <Toast {...toast} />
     </>
   );
 };

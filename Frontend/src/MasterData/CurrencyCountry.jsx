@@ -1,296 +1,252 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
-import IconButton from "../stories/IconButton";
+import RowActions from "../stories/RowActions";
+import DetailList, { DetailItem } from "../stories/DetailList";
+import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
-import { X, Pencil, Trash2, Eye,CheckCircle,AlertTriangle } from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { readList } from "../functions/apiHelpers";
+import { useApiResource } from "../hooks/useApiResource";
+import { useToast } from "../hooks/useToast";
+
+const ENDPOINT = "/masterdata/country_currency";
 
 const CurrencyCountry = () => {
-  const [data, setData] = useState([]);
+  const { data, loading, error, reload } = useApiResource(
+    () => APICall.getT(ENDPOINT),
+    { select: readList, fallback: "Failed to load countries and currencies." },
+  );
 
+  const { toast, showToast } = useToast();
+
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
 
-  const initialForm = {
-    countryName: "",
-    currencySymbol: "",
-    currencyName: "",
-  };
-
+  const initialForm = { countryName: "", currencySymbol: "", currencyName: "" };
   const [formData, setFormData] = useState(initialForm);
-
-  const [alerts, setAlerts] = useState({
-    show: false,
-    message: "",
-    type: "success",
-    exiting: false,
-  });
-
-  const showAlert = (message, type = "success") => {
-    setAlerts({
-      show: true,
-      message,
-      type,
-      exiting: false,
-    });
-
-    setTimeout(() => {
-      setAlerts((prev) => ({ ...prev, exiting: true }));
-    }, 1800);
-
-    setTimeout(() => {
-      setAlerts({
-        show: false,
-        message: "",
-        type: "success",
-        exiting: false,
-      });
-    }, 2200);
-  };
-  /* ================= HANDLERS ================= */
-
-  const openAddModal = () => {
-    setEditId(null);
-    setFormData(initialForm);
-    setShowModal(true);
-  };
-
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setEditId(null);
-  };
-
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
-
-  const getCurrency = async () => {
-    const AllCurrency = await APICall.getT("/masterdata/country_currency")
-    setData(AllCurrency.data)
-  }
-
-  const createCurrency = async () => {
-    try {
-      await APICall.postT("/masterdata/country_currency", {
-        country_name: formData.countryName,
-        symbol: formData.currencySymbol,
-        currency_name: formData.currencyName,
-      });
-      showAlert("Country/Currency added successfully", "success");
-      getCurrency();
-    } catch (error) {
-      showAlert(error.detail, "error");
-    }
-  };
-
-  const updatedCurrency = async () => {
-    try {
-      await APICall.putT("/masterdata/country_currency", {
-        id: editId,
-        country_name: formData.countryName,
-        symbol: formData.currencySymbol,
-        currency_name: formData.countryName
-      });
-      showAlert("Country/Currency updated successfully", "update");
-      getCurrency();
-    } catch (error) {
-      showAlert(error.detail || "Update failed", "error");
-    }
-  };
-
-  const deleteCurrency = async (id) => {
-    try {
-      await APICall.deleteT(`/masterdata/country_currency/${id}`)
-      showAlert("Country/Currency deleted successfully", "delete");
-      getCurrency();
-    } catch (error) {
-      showAlert(error.detail || "Delete failed", "error");
-    }
-  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = () => {
-    if (
-      !formData.countryName.trim() ||
-      !formData.currencySymbol.trim() ||
-      !formData.currencyName.trim()
-    )
-      return;
+  /* ================= API ================= */
 
-    if (editId) {
-      updatedCurrency();
-    } else {
-      createCurrency();
-    }
+  // One payload builder for both create and update. They used to be written
+  // out separately, and the update copy sent `currency_name: countryName` —
+  // so editing any row silently overwrote the currency name with the country
+  // name ("India" instead of "Rupee").
+  const payload = () => ({
+    country_name: formData.countryName.trim(),
+    symbol: formData.currencySymbol.trim(),
+    currency_name: formData.currencyName.trim(),
+  });
 
-    closeModal();
+  const createCurrency = async () => {
+    await APICall.postT(ENDPOINT, payload());
+    showToast("Country / currency added successfully", "success");
+    reload();
   };
 
-  useEffect(() => {
-    getCurrency();
-  }, []);
+  const updateCurrency = async () => {
+    await APICall.putT(ENDPOINT, { id: editId, ...payload() });
+    showToast("Country / currency updated successfully", "update");
+    reload();
+  };
 
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData({
-      countryName: row.country_name,
-      currencySymbol: row.symbol,
-      currencyName: row.currency_name
-    });
+  /* ================= HANDLERS ================= */
+
+  const openAddModal = () => {
+    setFormData(initialForm);
+    setEditId(null);
     setShowModal(true);
   };
 
-  const handleDelete = (id) => {
-    setDeleteId(id);
+  const handleEdit = (row) => {
+    setFormData({
+      countryName: row.country_name ?? "",
+      currencySymbol: row.symbol ?? "",
+      currencyName: row.currency_name ?? "",
+    });
+    setEditId(row.id);
+    setShowModal(true);
   };
 
-  const confirmDelete = () => {
-    deleteCurrency(deleteId);
+  const closeModal = () => {
+    setShowModal(false);
+    setEditId(null);
+    setFormData(initialForm);
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
+    if (!formData.countryName.trim()) {
+      showToast("Country name is required", "error");
+      return;
+    }
+    if (!formData.currencySymbol.trim()) {
+      showToast("Currency symbol is required", "error");
+      return;
+    }
+    if (!formData.currencyName.trim()) {
+      showToast("Currency name is required", "error");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (editId) {
+        await updateCurrency();
+      } else {
+        await createCurrency();
+      }
+      closeModal();
+    } catch (err) {
+      showToast(err?.message || "Save failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    const id = deleteId;
     setDeleteId(null);
+    try {
+      await APICall.deleteT(`${ENDPOINT}/${id}`);
+      showToast("Country / currency deleted successfully", "delete");
+      reload();
+    } catch (err) {
+      showToast(err?.message || "Delete failed", "error");
+    }
   };
 
   /* ================= UI ================= */
 
   return (
     <>
+      <ErrorAlert message={error} />
+
       <TableTemplate
-        title="Currency Country"
+        title="Countries & Currencies"
+        loading={loading}
+        emptyMessage="No countries yet. Add the first one to get started."
         hasActionButton
         searchable
         pagination
         exportable
         actionButton={{
-          label: "Add Currency",
+          label: "Add Country",
           onClick: openAddModal,
           size: "medium",
           variant: "primary",
         }}
         columns={[
-          {
-            key: "country_name",
-            title: "Country Name",
-            align: "center",
-          },
-          {
-            key: "symbol",
-            title: "Currency Symbol",
-            align: "center",
-          },
-          {
-            key: "currency_name",
-            title: "Currency Name",
-            align: "center",
-          },
+          { key: "country_name", title: "Country", align: "left" },
+          { key: "currency_name", title: "Currency", align: "left" },
+          { key: "symbol", title: "Symbol", align: "center" },
           {
             key: "actions",
             title: "Actions",
             align: "center",
             type: "custom",
+            excludeFromExport: true,
             render: (row) => (
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  justifyContent: "center",
-                }}
-              >
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
-              </div>
+              <RowActions
+                label="country"
+                onView={() => setViewData(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteId(row.id)}
+              />
             ),
           },
         ]}
         data={data}
       />
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <Modal
-          isOpen={showViewModal}
-          title="View Currency/Country"
-          onClose={closeViewModal}
-          size="medium"
-          bodyLayout="grid"
-        >
-          <Input label="Country Name" disabled value={viewData.country_name} />
-          <Input label="Currency Symbol" disabled value={viewData.symbol} />
-          <Input label="Currency Name" disabled value={viewData.currency_name} />
-        </Modal>
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Country & Currency Details"
+        onClose={() => setViewData(null)}
+        size="medium"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <DetailList columns={2}>
+          <DetailItem label="Country" value={viewData?.country_name} />
+          <DetailItem label="Currency" value={viewData?.currency_name} />
+          <DetailItem label="Symbol" value={viewData?.symbol} />
+        </DetailList>
+      </Modal>
 
-      )}
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Country & Currency" : "Add Country & Currency"}
+        onClose={closeModal}
+        showFooter
+        size="medium"
+        bodyLayout="grid"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <Input
+          label="Country Name"
+          required
+          name="countryName"
+          placeholder="e.g. India"
+          value={formData.countryName}
+          onChange={handleChange}
+        />
+        <Input
+          label="Currency Name"
+          required
+          name="currencyName"
+          placeholder="e.g. Rupee"
+          value={formData.currencyName}
+          onChange={handleChange}
+        />
+        <Input
+          label="Currency Symbol"
+          required
+          name="currencySymbol"
+          placeholder="e.g. ₹"
+          maxLength={8}
+          value={formData.currencySymbol}
+          onChange={handleChange}
+        />
+      </Modal>
 
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <Modal
-          isOpen={showModal}
-          title={editId ? "Edit Currency/Country" : "Add Currency/Country"}
-          onClose={() => setShowModal(false)}
-          showFooter
-          size="medium"
-          bodyLayout="grid"
-          actions={[
-            {
-              label: "Close",
-              variant: "secondary",
-              onClick: () => setShowModal(false),
-            },
-            {
-              label: "Submit",
-              variant: "primary",
-              onClick: handleSave,
-              autoFocus: true,
-            },
-          ]}
-        >
-          <Input
-            label="Country Name"
-            name="countryName"
-            value={formData.countryName}
-            onChange={handleChange}
-          />
-          <Input
-            label="Currency Symbol"
-            name="currencySymbol"
-            value={formData.currencySymbol}
-            onChange={handleChange}
-          />
-          <Input
-            label="Currency Name"
-            name="currencyName"
-            value={formData.currencyName}
-            onChange={handleChange}
-          />
-        </Modal>
-      )}
-
+      {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={confirmDelete}
-        title="Delete Currency/Country"
+        title="Delete Country & Currency"
         confirmText="Delete"
+        size="small"
         destructive
       >
-        Are you sure you want to delete this currency/country entry? This action cannot be undone.
+        Are you sure you want to delete this country and currency? Discounts and
+        taxes that reference it may be affected. This action cannot be undone.
       </ConfirmModal>
 
-      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
+      <Toast {...toast} />
     </>
   );
 };

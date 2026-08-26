@@ -1,5 +1,12 @@
 /* Table Template Styles */
 .table-template {
+  /* The card layout below keys off the TABLE's own width, not the viewport.
+     At 820px the sidebar and submenu take ~270px, leaving the table about
+     480px — narrower than .table's 600px min-width — so a three-column table
+     scrolled sideways and clipped its header ("PAYMENT METHOD N") on a
+     tablet. A container query reacts to the space the table actually has. */
+  container-type: inline-size;
+  container-name: tabletpl;
   border-radius: var(--border-radius-lg);
   box-shadow: var(--shadow-md);
   overflow: hidden;
@@ -48,8 +55,23 @@
 }
 
 .toolbar-left {
-  flex: 1;
-  max-width: 300px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.toolbar-left .form-control,
+.toolbar-left input {
+  width: 100%;
+}
+
+/* The toolbar asks InputField for size="small", which is `width: 25%;
+   min-width: 160px` — 160px in practice, too narrow for the
+   "Search 25 records..." placeholder, which rendered as "Search 25 record".
+   Scoped to the toolbar so InputField's own sizes are untouched elsewhere. */
+.toolbar-left .InputField {
+  width: 100%;
+  min-width: 0;
 }
 
 .toolbar-right {
@@ -79,8 +101,12 @@
   font-size: 1.1rem;
 }
 
-.toolbar-btn>svg{
-  stroke-width: 1;
+.toolbar-btn > svg {
+  width: 17px;
+  height: 17px;
+  /* Was stroke-width:1 — every other lucide glyph in the app is 2, so the
+     export cluster read as a lighter, unrelated icon set. */
+  stroke-width: 1.75;
 }
 
 .toolbar-btn:hover {
@@ -112,6 +138,10 @@
 .table th {
   padding: 0.85rem var(--spacing-lg);
   text-align: left;
+  /* Headers set the column's natural width; letting them wrap ("ROOM / NO",
+     "BED / TYPE") made the header band two lines tall and told the browser
+     the column could be narrower than its label. */
+  white-space: nowrap;
   font-weight: 700;
   color: var(--text-muted);
   font-size: 0.72rem;
@@ -186,27 +216,47 @@
   background-color: var(--gray-50);
 }
 
+/* The loading / empty row is one full-width cell, which is also :last-child —
+   without this it was pinned to the right edge with the actions-column
+   shadow, so the empty state rendered as a floating shard. */
+.table tbody tr.table-message-row td,
+.table tbody tr.table-message-row:hover td {
+  position: static;
+  right: auto;
+  box-shadow: none;
+  background-color: var(--white);
+}
+
+
 /* Filter Modal */
 /* Overlay */
 .filter-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: var(--z-modal);
+  padding: var(--spacing-md);
+  /* Above .modal-backdrop's 1000 — this dialog can be opened from a table
+     that is itself inside a modal. */
+  z-index: 1050;
 }
 
 /* Modal */
 .filter-modal {
   background: var(--white);
   width: 420px;
-  max-height: 80vh;
+  /* Was a hard 420px with no bound, so it ran off the screen on any phone
+     narrower than ~452px. */
+  max-width: 100%;
+  max-height: min(80dvh, 640px);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  box-shadow: var(--shadow-xl);
   animation: scaleIn 0.15s ease-out;
 }
 
@@ -287,30 +337,45 @@
   gap: 10px;
 }
 
-/* Buttons */
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 8px;
+/* Buttons — held to the same metrics as .btn / .btn--primary elsewhere.
+   `background: var(--primary)` here referenced a token this theme does not
+   define (it is --primary-color), so Apply rendered as white text on no
+   background at all. */
+.btn-primary,
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: var(--border-radius);
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
-.btn-secondary {
-  background: transparent;
-  border: 1px solid var(--gray-300);
-  padding: 8px 16px;
-  border-radius: 8px;
-  cursor: pointer;
+.btn-primary {
+  background: var(--primary-color);
+  border: 1px solid var(--primary-color);
+  color: var(--text-white);
 }
 
 .btn-primary:hover {
-  opacity: 0.9;
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
+.btn-secondary {
+  background: var(--gray-100);
+  border: 1px solid var(--gray-300);
+  color: var(--secondary-dark);
 }
 
 .btn-secondary:hover {
-  background: var(--gray-50);
+  background: var(--gray-200);
+  border-color: var(--gray-400);
 }
 
 /* Animation */
@@ -347,10 +412,20 @@
 }
 
 .pagination-btn {
-  padding: var(--spacing-sm) var(--spacing-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Matched to .pagination-page below. These were padding-sized while the
+     number buttons were a fixed 40px, so the two never shared a baseline. */
+  height: 36px;
+  padding: 0 var(--spacing-md);
   border: 1px solid var(--border-color);
   background: var(--white);
   border-radius: var(--border-radius);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -372,13 +447,20 @@
 }
 
 .pagination-page {
-  min-width: 40px;
-  height: 40px;
-  display: flex;
+  min-width: 36px;
+  height: 36px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0 var(--spacing-xs);
   border: 1px solid var(--border-color);
+  background: var(--white);
   border-radius: var(--border-radius);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -503,4 +585,293 @@ body.dark .filter-modal {
 
 body.dark .filter-checkbox:hover {
   background-color: var(--gray-700);
+}
+/* =====================================================
+   SHARED CELL PRIMITIVES
+   -----------------------------------------------------
+   .table-empty, .table-loading-spinner, .table-cell-badge, .badge-* and
+   .table-cell-avatar are all rendered by TableTemplate.jsx but were only ever
+   defined in Table.css — which is imported solely by Table.jsx, a component
+   nothing in the app renders. That stylesheet therefore never reached the
+   bundle, so on every one of the 50+ TableTemplate screens the empty state
+   was unstyled text, the loading spinner was a 0x0 div that displayed
+   nothing at all, and every `type: "badge"` column rendered as bare text.
+===================================================== */
+
+/* ---------- Empty / loading state ---------- */
+.table-empty {
+  text-align: center;
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  color: var(--text-muted);
+  border-bottom: none;
+}
+
+.table-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--spacing-sm);
+  color: var(--gray-300);
+}
+
+.table-empty-icon svg {
+  width: 44px;
+  height: 44px;
+}
+
+.table-empty-text {
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+
+.table-empty-action {
+  margin-top: var(--spacing-md);
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--white);
+  color: var(--primary-color);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.table-empty-action:hover {
+  background: var(--primary-lightest);
+  border-color: var(--primary-light);
+}
+
+.table-loading-spinner {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto var(--spacing-sm);
+  border: 3px solid var(--primary-lighter);
+  border-top-color: var(--primary-color);
+  border-radius: var(--border-radius-full);
+  animation: table-spin 0.9s linear infinite;
+}
+
+@keyframes table-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-loading-spinner { animation: none; }
+}
+
+/* ---------- Badge cell ---------- */
+.table-cell-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--border-radius-full);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.badge-success { background: var(--success-light); color: var(--success-dark); }
+.badge-warning { background: var(--warning-light); color: var(--warning-dark); }
+.badge-error   { background: var(--error-light);   color: var(--error-dark); }
+.badge-info    { background: var(--info-light);    color: var(--info-dark); }
+.badge-neutral { background: var(--gray-100);      color: var(--text-secondary); }
+
+/* ---------- Colour swatch cell ----------
+   Reservation Status and HSK Task Type each rendered this inline with their
+   own hard-coded dimensions and border. */
+.table-cell-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.table-cell-swatch__dot {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--border-radius-full);
+  border: 1px solid var(--border-dark);
+  flex: 0 0 auto;
+}
+
+/* ---------- Avatar cell ---------- */
+.table-cell-avatar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  text-align: left;
+}
+
+.table-cell-avatar .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--border-radius-full);
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+/* Long free-text cell (a description, a note). Clamped to two lines so one
+   long value cannot set the row height for the whole table; the full text is
+   on the title attribute and in the View modal. */
+.table-cell-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 42ch;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* =====================================================
+   NARROW SCREENS — STACKED CARDS
+   -----------------------------------------------------
+   Below 640px a 6-to-8 column table degenerates: with .table's 600px
+   min-width and the Actions column pinned right, a 375px viewport showed
+   S.No, the first data column and the actions — every other field was behind
+   a horizontal scroll, so a row could not be identified without scrubbing.
+
+   Each row becomes a card and each cell carries its own label (the data-label
+   attribute TableTemplate.jsx writes from the column title). No JS, no second
+   markup path — the same <table> reflows.
+===================================================== */
+@container tabletpl (max-width: 640px) {
+  .table-template .table th {
+    white-space: normal;
+  }
+
+  .table-template .table {
+    min-width: 0;
+    font-size: 0.875rem;
+  }
+
+  .table-template .table-container,
+  .table-template .table-wrapper {
+    overflow-x: visible;
+  }
+
+  /* The header row has nowhere to go once cells stack; each cell labels
+     itself instead. */
+  .table-template .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .table-template .table,
+  .table-template .table tbody,
+  .table-template .table tr,
+  .table-template .table td {
+    display: block;
+  }
+
+  .table-template .table td {
+    width: auto;
+  }
+
+  .table-template .table tr {
+    /* width:auto, not 100%: a block element with side margins and an explicit
+       100% width overflows its parent by exactly the margins — which pushed
+       every card 32px past the right edge and clipped the values. */
+    width: auto;
+    margin: 0 var(--spacing-md) var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--white);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .table-template .table tbody tr:hover {
+    background: var(--white);
+  }
+
+  .table-template .table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    /* Overrides the align="center"/"right" inline style the columns set for
+       the desktop grid, which reads as misalignment once stacked. */
+    text-align: right !important;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  .table-template .table td:last-child {
+    border-bottom: none;
+  }
+
+  .table-template .table td::before {
+    content: attr(data-label);
+    flex: 0 1 auto;
+    max-width: 45%;
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  /* Sticky positioning is meaningless once cells are block-level, and the
+     shadow it carried would draw a stray line across every card. */
+  .table-template .table th:last-child,
+  .table-template .table td:last-child,
+  .table-template .table tbody tr:hover td:last-child {
+    position: static;
+    right: auto;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  /* S.No is index noise once the row is a labelled card — the identifying
+     column sits right below it. */
+  .table-template .table td[data-label='S.No'] {
+    display: none;
+  }
+
+  /* Actions get the full width of their own line, right-aligned. */
+  .table-template .table td.table-cell-actions {
+    justify-content: flex-end;
+    padding-top: var(--spacing-sm);
+  }
+
+  .table-template .table td.table-cell-actions::before {
+    display: none;
+  }
+
+  /* A clamped description should use the whole card width. */
+  .table-template .table .table-cell-clamp {
+    max-width: none;
+    text-align: right;
+  }
+
+  /* The loading / empty message is not a card. */
+  .table-template .table tr.table-message-row {
+    border: none;
+    box-shadow: none;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  .table-template .table tr.table-message-row td {
+    display: block;
+    text-align: center !important;
+    border-bottom: none;
+  }
+
+  .table-template .table tr.table-message-row td::before {
+    display: none;
+  }
 }

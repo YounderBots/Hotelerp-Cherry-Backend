@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import './TableTemplate.css';
 import InputField from './InputField'; // Assuming you have this component
 import Button from './Button';
-import { ClipboardPaste, FileDown, Printer, Settings, FileSpreadsheet, Plus } from 'lucide-react';
+import { ClipboardPaste, FileDown, Printer, Settings, FileSpreadsheet, Plus, Inbox } from 'lucide-react';
 
 // Import existing cell components
 const AvatarCell = ({ src, name, email }) => (
@@ -15,30 +15,64 @@ const AvatarCell = ({ src, name, email }) => (
   </div>
 );
 
+// Status vocabulary is matched case-insensitively. The lookup used to be an
+// exact match on lower-case keys only, so the values the app actually stores
+// ("Yes", "No", "Working", "Not Working", "Available") all missed and fell
+// through to badge-info — every badge in the app was the same blue whatever
+// it meant.
+const BADGE_CONFIGS = {
+  status: {
+    active: { label: 'Active', class: 'badge-success' },
+    inactive: { label: 'Inactive', class: 'badge-error' },
+    pending: { label: 'Pending', class: 'badge-warning' },
+    completed: { label: 'Completed', class: 'badge-success' },
+    cancelled: { label: 'Cancelled', class: 'badge-error' },
+    yes: { label: 'Yes', class: 'badge-success' },
+    no: { label: 'No', class: 'badge-neutral' },
+    working: { label: 'Working', class: 'badge-success' },
+    'not working': { label: 'Not Working', class: 'badge-error' },
+    // Housekeeping vocabulary as the rooms table actually stores it
+    // (CommonWords.WORK_STATUS is the misspelled 'Not Assigne').
+    ready: { label: 'Ready', class: 'badge-success' },
+    'not ready': { label: 'Not Ready', class: 'badge-warning' },
+    'not assigne': { label: 'Unassigned', class: 'badge-neutral' },
+    'not assigned': { label: 'Unassigned', class: 'badge-neutral' },
+    reserved: { label: 'Reserved', class: 'badge-info' },
+    unblocking: { label: 'Unblocked', class: 'badge-neutral' },
+    blocking: { label: 'Blocked', class: 'badge-error' },
+    available: { label: 'Available', class: 'badge-success' },
+    occupied: { label: 'Occupied', class: 'badge-warning' },
+    maintenance: { label: 'Maintenance', class: 'badge-error' },
+  },
+  priority: {
+    high: { label: 'High', class: 'badge-error' },
+    medium: { label: 'Medium', class: 'badge-warning' },
+    low: { label: 'Low', class: 'badge-info' },
+  },
+};
+
 const BadgeCell = ({ status, type = 'status' }) => {
-  const getBadgeConfig = () => {
-    const configs = {
-      status: {
-        active: { label: 'Active', class: 'badge-success' },
-        pending: { label: 'Pending', class: 'badge-warning' },
-        inactive: { label: 'Inactive', class: 'badge-error' },
-        completed: { label: 'Completed', class: 'badge-success' },
-        cancelled: { label: 'Cancelled', class: 'badge-error' }
-      },
-      priority: {
-        high: { label: 'High', class: 'badge-error' },
-        medium: { label: 'Medium', class: 'badge-warning' },
-        low: { label: 'Low', class: 'badge-info' }
-      }
-    };
+  if (status === null || status === undefined || status === '') return '—';
 
-    return configs[type]?.[status] || { label: status, class: 'badge-info' };
-  };
-
-  const { label, class: badgeClass } = getBadgeConfig();
+  const key = String(status).trim().toLowerCase();
+  const { label, class: badgeClass } =
+    BADGE_CONFIGS[type]?.[key] || { label: String(status), class: 'badge-neutral' };
 
   return <span className={`table-cell-badge ${badgeClass}`}>{label}</span>;
 };
+
+/** Colour swatch cell — one definition instead of an inline-styled span
+ *  re-implemented on each screen that stores a colour. */
+export const ColorSwatchCell = ({ color, label }) => (
+  <span className="table-cell-swatch">
+    <span
+      className="table-cell-swatch__dot"
+      style={{ backgroundColor: color || 'transparent' }}
+      aria-hidden="true"
+    />
+    {label ?? color ?? '—'}
+  </span>
+);
 
 // Toolbar Icons Component
 const TableToolbar = ({
@@ -65,7 +99,6 @@ const TableToolbar = ({
             size="small"
             value={searchValue}
             onChange={(e) => onSearch(e.target.value)}
-            style={{ width: '250px' }}
             aria-label={searchPlaceholder}
           />
         )}
@@ -208,9 +241,20 @@ const TableTemplate = ({
   hasActionButton = false,
   ...props
 }) => {
-  const [currentPage, setCurrentPage] = useState(1);
+  // The page the user asked for. The page actually rendered is this clamped
+  // to the current page count (see `currentPage` below) — deleting the only
+  // row on the last page, or any reload that shrinks the set, used to leave
+  // this pointing past the end and render an empty table.
+  const [requestedPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Sorting already reset to page 1; searching did not. Filtering down to a
+  // single page while on page 3 showed an empty table with no explanation.
+  const handleSearch = (term) => {
+    setSearchTerm(term);
+    setCurrentPage(1);
+  };
   const [visibleColumns, setVisibleColumns] = useState(columns.map(col => col.key));
   const [showFilterModal, setShowFilterModal] = useState(false);
   // Transient feedback for the "Copy as JSON" action (this component has no
@@ -297,6 +341,12 @@ const TableTemplate = ({
     });
   }, [filteredData, sortConfig]);
 
+  const totalPages = Math.ceil(filteredData.length / pageSize);
+
+  // Clamped at render time rather than corrected in an effect, so there is
+  // never a pass that paints an out-of-range page.
+  const currentPage = Math.min(requestedPage, Math.max(totalPages, 1));
+
   // Paginate data
   const paginatedData = useMemo(() => {
     if (!pagination) return sortedData;
@@ -304,8 +354,6 @@ const TableTemplate = ({
     const startIndex = (currentPage - 1) * pageSize;
     return sortedData.slice(startIndex, startIndex + pageSize);
   }, [sortedData, currentPage, pageSize, pagination]);
-
-  const totalPages = Math.ceil(filteredData.length / pageSize);
 
   // Handle sort with cycle: none -> asc -> desc -> asc...
   const handleSort = (key) => {
@@ -355,13 +403,24 @@ const TableTemplate = ({
   const handleDownloadCSV = () => {
     if (sortedData.length === 0) return;
 
-    const headers = columns.map(col => `"${col.title}"`).join(',');
-    const csvData = sortedData.map(row =>
-      columns.map(col => `"${row[col.key] || ''}"`).join(',')
-    ).join('\n');
+    // Mirrors the PDF export: current column visibility, resolved values and
+    // an absolute S.No. This used to read `row[col.key]` off every column,
+    // including the visibility-hidden ones and the render-only Actions
+    // column, so the file carried an always-empty Actions field and rendered
+    // every custom cell as a blank.
+    const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const headers = ['"S.No"', ...exportColumnsData.map(col => escape(col.title))].join(',');
+    const csvData = sortedData
+      .map((row, i) =>
+        [i + 1, ...exportColumnsData.map(col => resolveExportValue(row, col))]
+          .map(escape)
+          .join(','),
+      )
+      .join('\n');
 
     const csv = `${headers}\n${csvData}`;
-    const blob = new Blob([csv], { type: 'text/csv' });
+    // BOM so Excel opens a UTF-8 CSV without mangling non-ASCII names.
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -370,16 +429,13 @@ const TableTemplate = ({
     window.URL.revokeObjectURL(url);
   };
 
-  const getExportRows = () => {
-    return sortedData.map(row =>
-      visibleColumns
-        .map(key => columns.find(c => c.key === key))
-        .reduce((acc, col) => {
-          acc[col.key] = resolveExportValue(row, col);
-          return acc;
-        }, {})
+  const getExportRows = () =>
+    sortedData.map(row =>
+      exportColumnsData.reduce((acc, col) => {
+        acc[col.key] = resolveExportValue(row, col);
+        return acc;
+      }, {}),
     );
-  };
 
   // Generate a real PDF (jsPDF + autotable) rather than opening the browser's
   // print dialog. Columns follow the current visibility selection; rows use the
@@ -407,10 +463,10 @@ const TableTemplate = ({
       return;
     }
 
-    const head = [['S.No', ...visibleColumnsData.map(col => col.title)]];
+    const head = [['S.No', ...exportColumnsData.map(col => col.title)]];
     const body = sortedData.map((row, i) => [
       i + 1,
-      ...visibleColumnsData.map(col => resolveExportValue(row, col)),
+      ...exportColumnsData.map(col => resolveExportValue(row, col)),
     ]);
 
     const doc = new jsPDF({ orientation: 'landscape' });
@@ -498,6 +554,11 @@ const TableTemplate = ({
 
   // Filter visible columns
   const visibleColumnsData = columns.filter(col => visibleColumns.includes(col.key));
+
+  // Columns that carry no data worth exporting — the render-only Actions
+  // column above all — opt out with `excludeFromExport`. Without it every
+  // CSV/PDF/JSON/print carried a blank "Actions" column.
+  const exportColumnsData = visibleColumnsData.filter(col => !col.excludeFromExport);
   
   const tableClass = `
     table-template
@@ -530,7 +591,7 @@ const TableTemplate = ({
       {/* Toolbar Section */}
       <div className="table-toolbar-section">
         <TableToolbar
-          onSearch={setSearchTerm}
+          onSearch={handleSearch}
           onCopyJSON={handleCopyJSON}
           onDownloadCSV={handleDownloadCSV}
           onDownloadPDF={handleDownloadPDF}
@@ -575,16 +636,35 @@ const TableTemplate = ({
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={visibleColumnsData.length} className="table-empty">
-                    <div className="table-loading-spinner"></div>
+                /* colSpan must cover the S.No column too. It counted only the
+                   data columns, so the loading and empty rows stopped one
+                   column short and left a stray cell on the right. The
+                   full-width class opts this cell out of the sticky
+                   last-column treatment further down. */
+                <tr className="table-message-row">
+                  <td colSpan={visibleColumnsData.length + 1} className="table-empty">
+                    <div className="table-loading-spinner" role="status" aria-label="Loading" />
+                    <div className="table-empty-text">Loading…</div>
                   </td>
                 </tr>
               ) : paginatedData.length === 0 ? (
-                <tr>
-                  <td colSpan={visibleColumnsData.length} className="table-empty">
-                    <div className="table-empty-icon">📊</div>
-                    {searchTerm ? 'No results found for your search.' : emptyMessage}
+                <tr className="table-message-row">
+                  <td colSpan={visibleColumnsData.length + 1} className="table-empty">
+                    <div className="table-empty-icon" aria-hidden="true">
+                      <Inbox strokeWidth={1.25} />
+                    </div>
+                    <div className="table-empty-text">
+                      {searchTerm ? 'No results match your search.' : emptyMessage}
+                    </div>
+                    {searchTerm && (
+                      <button
+                        type="button"
+                        className="table-empty-action"
+                        onClick={() => handleSearch('')}
+                      >
+                        Clear search
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -594,12 +674,20 @@ const TableTemplate = ({
                     onClick={() => onRowClick?.(item)}
                     style={{ cursor: onRowClick ? 'pointer' : 'default' }}
                   >
-                    <td >{pagination ? (currentPage - 1) * pageSize + index + 1 : index + 1}</td>
+                    <td data-label="S.No">
+                      {pagination ? (currentPage - 1) * pageSize + index + 1 : index + 1}
+                    </td>
                     {visibleColumnsData.map((column) => (
                       <td
                         key={column.key}
+                        // Read by the stacked card layout on narrow screens,
+                        // where the header row is hidden and each cell has to
+                        // carry its own label.
+                        data-label={column.title}
                         style={{ textAlign: column.align || 'left' }}
-                        className={column.cellClass?.(item) || ''}
+                        className={[column.cellClass?.(item), column.key === 'actions' && 'table-cell-actions']
+                          .filter(Boolean)
+                          .join(' ')}
                       >
                         {renderCell(item, column)}
                       </td>
@@ -699,7 +787,7 @@ const TableTemplate = ({
           <thead>
             <tr>
               <th>S.No</th>
-              {visibleColumnsData.map(column => (
+              {exportColumnsData.map(column => (
                 <th key={column.key}>{column.title}</th>
               ))}
             </tr>
@@ -708,7 +796,7 @@ const TableTemplate = ({
             {sortedData.map((item, index) => (
               <tr key={item.id || index}>
                 <td style={{ width: '200px' }}>{index + 1}</td>
-                {visibleColumnsData.map(column => (
+                {exportColumnsData.map(column => (
                   <td key={column.key}>
                     {renderCell(item, column)}
                   </td>

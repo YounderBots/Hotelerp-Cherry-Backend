@@ -161,14 +161,22 @@ label {
   cursor: pointer;
 }
 
+/* These are UNSCOPED .btn rules in a route-level stylesheet, so once the
+   Reservation route has been visited they restyle every `class="btn primary"`
+   button in the app — including the footer of every Master Data modal. Held
+   to the same values as Modal.css / Button.css so the leak is at least
+   inert; the gradient primary and the #136ae3 blue secondary label were
+   visibly different from the buttons on every other screen. */
 .btn.primary {
-  background: linear-gradient(135deg, var(--primary-color), var(--primary-mild));
-  color: #fff;
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--text-white);
 }
 
 .btn.secondary {
-  background: #f1f5f9;
-  color: #136ae3;
+  background: var(--gray-100);
+  border-color: var(--gray-300);
+  color: var(--secondary-dark);
 }
 
 @keyframes modalScale {

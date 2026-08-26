@@ -1,9 +1,6 @@
 /* =====================================================
    MODAL COMPONENT - Premium Maroon Theme
 ===================================================== */
-*{
-  font-family: inherit;
-}
 /* Backdrop Styles */
 .modal-backdrop {
   position: fixed;
@@ -17,13 +14,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: var(--z-modal-backdrop, 1000);
+  /* Padding rather than a margin on .modal: a centred flex item with a margin
+     can still be pushed past the viewport edge, padding on the scroll parent
+     cannot. */
+  padding: var(--spacing-md);
+  z-index: 1000;
   opacity: 0;
   transition: opacity 0.25s ease;
   animation: backdropFadeIn 0.25s ease;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
 }
 
 .modal-backdrop--active {
@@ -51,6 +49,7 @@
   transform: scale(0.96) translateY(10px);
   transition: all 0.25s ease;
   max-height: 90vh;
+  max-height: min(90dvh, 900px);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -93,8 +92,8 @@
 
 .modal--fullscreen {
   width: 96vw;
-  height: 96vh;
-  max-height: 96vh;
+  height: 96dvh;
+  max-height: 96dvh;
   border-radius: 14px;
 }
 
@@ -118,8 +117,10 @@
 
 .modal--drawer {
   border-radius: 14px 0 0 14px;
-  height: 100vh;
-  max-height: 100vh;
+  /* 100vh excludes mobile browser chrome from the calculation and pushes the
+     drawer's footer below the fold. */
+  height: 100dvh;
+  max-height: 100dvh;
   margin: 0;
   align-self: stretch;
   margin-left: auto;
@@ -218,12 +219,56 @@
   gap: 22px;
 }
 
-/* View mode inputs */
-.modal__body--view input {
-  background: var(--gray-50);
-  border: 1px dashed var(--gray-300);
-  color: var(--text-secondary);
-  cursor: not-allowed;
+/* A field grid inside a modal that also holds non-field sections (an image
+   picker, a sub-table). Same tracks as .modal__body--grid, but scoped to the
+   fields so the sections below it stay full width. Screens used to inline
+   `style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))'}}`
+   for this, which meant their column behaviour drifted from every modal that
+   used bodyLayout="grid". */
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 18px 20px;
+}
+
+/* A titled block inside a modal body — a group of fields that is not part of
+   the main grid. */
+.modal-section {
+  /* The grid above already ends on its own row gap; a full --spacing-lg on
+     both sides of the rule stacked to ~66px of empty band. */
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border-light);
+}
+
+.modal-section__title {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.modal-section__hint {
+  margin: 0 0 var(--spacing-md);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* View mode. Details are rendered by <DetailList>, not by disabled inputs;
+   the dashed-border treatment that used to live here is what made every View
+   modal look like a form somebody had greyed out. */
+.modal__body--view {
+  display: flex;
+  flex-direction: column;
+  /* ViewSection adds its own rule and padding-top between blocks, so this gap
+     is the whole of the base spacing. */
+  gap: var(--spacing-md);
 }
 
 /* Modal Footer */
@@ -263,44 +308,9 @@
   align-items: center;
 }
 
-/* Form Group Styles */
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-group label {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: none;
-  letter-spacing: 0.01em;
-}
-
-.form-group input,
-.form-group select {
-  padding: 13px 16px;
-  min-height: 46px;
-  border-radius: 10px;
-  border: 1px solid var(--border-dark);
-  font-size: 14px;
-  background: var(--bg-primary);
-  transition: all 0.2s ease;
-}
-
-.form-group input:focus,
-.form-group select:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
-}
-
-.modal__body--view .form-group {
-  background: #f9fafb;
-  padding: 14px 16px;
-  border-radius: 12px;
-}
+/* Field styling lives in Form/FormField.css. Nothing here may restyle
+   .form-group / .form-control / .select-control: modal fields must be the
+   same fields as everywhere else. */
 
 /* Modal Icon */
 .modal__icon {
@@ -340,18 +350,18 @@
 }
 
 .modal__body::-webkit-scrollbar-track {
-  background: var(--gray-100);
-  border-radius: 4px;
+  background: transparent;
 }
 
+/* Neutral, to match the app-wide scrollbar in index.css. A cherry thumb here
+   read as a UI artifact rather than as a scrollbar. */
 .modal__body::-webkit-scrollbar-thumb {
-  background-color: var(--primary-light);
+  background-color: rgba(26, 21, 35, 0.18);
   border-radius: 4px;
-  border: 2px solid var(--gray-100);
 }
 
 .modal__body::-webkit-scrollbar-thumb:hover {
-  background-color: var(--primary-color);
+  background-color: rgba(26, 21, 35, 0.32);
 }
 
 /* Modal Variants */
@@ -432,44 +442,51 @@
   }
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
+/* =====================================================
+   RESPONSIVE
+   -----------------------------------------------------
+   The header and footer are fixed; only .modal__body scrolls. Keeping the
+   footer a single compact row (rather than stacking full-width buttons, as
+   this used to) matters on short viewports: a 3-line footer eats the height
+   the body needs and is what pushed content off the bottom of the modal in
+   landscape.
+===================================================== */
+@media (max-width: 900px) {
+  /* Every size variant collapses to the available width. The backdrop's own
+     padding supplies the gutter, so the modal needs no margin of its own. */
   .modal {
-    width: 90vw !important;
-    max-width: 90vw !important;
-    margin: var(--spacing-md);
+    width: 100% !important;
+    max-width: 100% !important;
   }
-  
+}
+
+@media (max-width: 768px) {
   .modal__header,
   .modal__body,
   .modal__footer {
     padding-left: var(--spacing-lg);
     padding-right: var(--spacing-lg);
   }
-  
+
+  .modal__header {
+    min-height: 56px;
+    padding-top: var(--spacing-md);
+    padding-bottom: var(--spacing-md);
+  }
+
+  .modal__footer {
+    min-height: 0;
+    padding-top: var(--spacing-md);
+    padding-bottom: var(--spacing-md);
+  }
+
   .modal__body--grid {
     grid-template-columns: 1fr;
-  }
-  
-  .modal__footer {
-    flex-direction: column;
-  }
-  
-  .modal-actions {
-    width: 100%;
-    flex-direction: column;
-  }
-  
-  .modal-actions .btn {
-    width: 100%;
   }
 }
 
 @media (max-width: 480px) {
   .modal {
-    width: 95vw !important;
-    max-width: 95vw !important;
-    margin: var(--spacing-sm);
     border-radius: 12px;
   }
 
@@ -480,13 +497,8 @@
     padding-right: var(--spacing-md);
   }
 
-  .modal__header {
-    padding-top: var(--spacing-md);
-    padding-bottom: var(--spacing-md);
-  }
-
   .modal__title {
-    font-size: 18px;
+    font-size: 17px;
   }
 
   .modal__icon {
@@ -495,14 +507,43 @@
     font-size: 1.6rem;
   }
 
-  .modal-footer,
-  .modal__footer {
-    flex-wrap: wrap;
+  /* Two short actions still fit side by side at 375px; splitting the row
+     evenly reads better than two stacked full-width bars. */
+  .modal-actions {
+    width: 100%;
   }
 
+  .modal-actions .btn,
   .modal-footer .btn {
-    flex: 1;
+    flex: 1 1 0;
     min-width: 0;
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
+  }
+}
+
+/* Short viewports — phones in landscape, 1024x600 panels. Trim the fixed
+   chrome so the scrolling body keeps a usable height. */
+@media (max-height: 560px) {
+  .modal {
+    max-height: calc(100dvh - var(--spacing-md) * 2);
+  }
+
+  .modal__header {
+    min-height: 0;
+    padding-top: var(--spacing-sm);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .modal__footer {
+    min-height: 0;
+    padding-top: var(--spacing-sm);
+    padding-bottom: var(--spacing-sm);
+  }
+
+  .modal__body {
+    padding-top: var(--spacing-md);
+    padding-bottom: var(--spacing-md);
   }
 }
 
@@ -605,6 +646,15 @@
   overflow-y: auto;
 }
 
+/* Several screens wrap a Modal's children in <div class="modal-body single">,
+   which lands *inside* .modal__body and paid the padding twice — 24px from
+   the outer body plus 24px again from this one. The outer body owns the
+   inset; a nested one is layout only. */
+.modal__body > .modal-body {
+  padding: 0;
+  overflow: visible;
+}
+
 .modal-body.single {
   display: flex;
   flex-direction: column;
@@ -649,26 +699,77 @@
   }
 }
 
+/* Legacy `class="btn primary"` buttons (Modal's footer, and the hand-rolled
+   modals in HRM / Night Audit / Reservation) resolve here. Kept in step with
+   Button.css so both spellings of a primary button look identical. */
 .btn {
-  padding: 10px 18px;
-  border-radius: 10px;
-  font-weight: 600;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  min-height: 40px;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border: 1px solid transparent;
+  border-radius: var(--border-radius);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.2;
   cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--primary-light);
+  outline-offset: 2px;
 }
 
 .btn.primary {
-  background: linear-gradient(135deg, var(--primary-color), var(--primary-mild));
-  color: #fff;
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--text-white);
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
 }
 
 .btn.secondary {
-  background: #f1f5f9;
-  color: #334155;
+  background: var(--gray-100);
+  border-color: var(--gray-300);
+  color: var(--secondary-dark);
 }
 
-/* View modal should never feel small */
-.modal__body--view {
-  max-width: 680px;
-  margin: 0 auto;
+.btn.secondary:hover:not(:disabled) {
+  background: var(--gray-200);
+  border-color: var(--gray-400);
 }
+
+/* ConfirmModal passes variant "error" for destructive actions; Button.css
+   spells the same thing "danger". Both map to the one destructive treatment,
+   so a Delete button is red whichever component rendered it. */
+.btn.error,
+.btn.danger {
+  background: var(--error-color);
+  border-color: var(--error-color);
+  color: var(--text-white);
+}
+
+.btn.error:hover:not(:disabled),
+.btn.danger:hover:not(:disabled) {
+  background: var(--error-dark);
+  border-color: var(--error-dark);
+}
+
+/* This used to clamp every View body to 680px and centre it, so a `large`
+   View modal rendered a narrow column of content inside a wide shell with
+   dead space either side. The body now fills its modal; pick the modal size
+   for the amount of content instead. */

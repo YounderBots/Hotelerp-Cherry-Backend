@@ -1,8 +1,13 @@
 // Input.jsx
 import React, { useState } from 'react';
+// Shared field metrics first, input-specific chrome second, so Input.css can
+// build on the tokens FormField.css defines.
+import './FormField.css';
 import './Input.css';
-import { Eye, EyeClosed, EyeClosedIcon, EyeOff } from 'lucide-react';
-import { RxEyeOpen } from 'react-icons/rx';
+// EyeClosed / EyeClosedIcon and react-icons' RxEyeOpen were imported and never
+// used — the react-icons one pulled a second icon library into the bundle for
+// a button that renders lucide's Eye/EyeOff.
+import { Eye, EyeOff } from 'lucide-react';
 
 const Input = ({
   label,

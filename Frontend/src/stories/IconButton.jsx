@@ -13,6 +13,10 @@ const IconButton = ({
   badge,
   badgeColor,
   ariaLabel,
+  // Native hover tooltip. Defaults to ariaLabel so an icon-only button never
+  // ends up labelled for screen readers but silent on hover — every caller
+  // used to pass ariaLabel alone, which left the whole app tooltip-less.
+  title,
   className = '',
   children,
   ...props
@@ -43,6 +47,7 @@ const IconButton = ({
       onClick={onClick}
       disabled={disabled || loading}
       aria-label={ariaLabel}
+      title={title ?? ariaLabel}
       {...props}
     >
       {renderIcon()}

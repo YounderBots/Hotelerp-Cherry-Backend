@@ -1,0 +1,135 @@
+/* ImagePicker.css — one image slot, sized and spaced like the other fields. */
+.image-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-label-gap);
+  min-width: 0;
+}
+
+.image-picker__slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  width: 100%;
+  overflow: hidden;
+  border: 1px dashed var(--border-dark);
+  border-radius: var(--field-radius);
+  background: var(--bg-secondary);
+}
+
+.image-picker__slot--filled {
+  border-style: solid;
+  border-color: var(--border-color);
+  background: var(--gray-900);
+}
+
+.image-picker__preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-picker__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: var(--spacing-sm);
+}
+
+/* Actions sit over the image once one is chosen, and inline in the empty
+   state, so the slot keeps a constant height either way. */
+.image-picker__actions {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px;
+}
+
+.image-picker__slot--filled .image-picker__actions {
+  background: linear-gradient(to top, rgba(17, 24, 39, 0.75), transparent);
+}
+
+.image-picker__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--white);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.image-picker__btn:hover:not(:disabled) {
+  border-color: var(--primary-light);
+  color: var(--primary-color);
+}
+
+.image-picker__btn--danger {
+  padding: 0 7px;
+  color: var(--error-color);
+}
+
+.image-picker__btn--danger:hover:not(:disabled) {
+  border-color: var(--error-color);
+  background: var(--error-light);
+  color: var(--error-dark);
+}
+
+.image-picker__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.image-picker__slot--static {
+  border-style: solid;
+}
+
+/* The real input stays in the DOM for the label association but never shows
+   the browser's default file chrome. */
+.image-picker__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.image-picker__slot:focus-within {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+/* Grid of slots. Two up on phones, four across from tablet width. */
+.image-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+
+@media (min-width: 640px) {
+  .image-picker-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

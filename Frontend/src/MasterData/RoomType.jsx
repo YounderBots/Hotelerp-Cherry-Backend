@@ -1,183 +1,140 @@
-﻿import React, { useState, useEffect } from "react";
-import Modal, { ConfirmModal } from "../stories/Modal";
+import React, { useMemo, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
+import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
 import Select from "../stories/Form/Select";
-import IconButton from "../stories/IconButton";
+import RowActions from "../stories/RowActions";
+import DetailList, { DetailItem } from "../stories/DetailList";
+import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
-import {
-  UserPlus, X, Pencil, Trash2, Eye, CheckCircle,
-  AlertTriangle,
-} from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { readList, readNestedList } from "../functions/apiHelpers";
+import { useApiResources } from "../hooks/useApiResource";
+import { useToast } from "../hooks/useToast";
+
+const ENDPOINT = "/masterdata/room_types";
+
+// Declared once and used for the form, the payload and the View modal, so a
+// rate can never appear in one of the three and be missing from another.
+const RATE_FIELDS = [
+  { name: "roomCost", api: "room_cost", label: "Room Cost" },
+  { name: "extraBedCost", api: "bed_cost", label: "Extra Bed Cost" },
+  { name: "dailyRate", api: "daily_rate", label: "Daily Rate" },
+  { name: "weeklyRate", api: "weekly_rate", label: "Weekly Rate" },
+  { name: "bedOnlyRate", api: "bed_only_rate", label: "Bed Only Rate" },
+  { name: "bedBreakfastRate", api: "bed_breakfast_rate", label: "Bed & Breakfast Rate" },
+  { name: "halfBoardRate", api: "half_board_rate", label: "Half Board Rate" },
+  { name: "fullBoardRate", api: "full_board_rate", label: "Full Board Rate" },
+];
+
+// An empty numeric field means "not set" (null), not zero.
+const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+
+const showNum = (v) => (v === null || v === undefined || v === "" ? "—" : v);
 
 const RoomType = () => {
-  const [saving, setSaving] = useState(false);
-  const [data, setData] = useState([]);
+  const {
+    data: [rows, complementary],
+    loading,
+    error,
+    reload,
+  } = useApiResources([
+    { fetch: () => APICall.getT(ENDPOINT), select: readNestedList, fallback: "Failed to load room types." },
+    { fetch: () => APICall.getT("/masterdata/complementry"), select: readList },
+  ]);
 
+  const { toast, showToast } = useToast();
+
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
-  const [complementary, setComplementary] = useState([])
 
-  const [alerts, setAlerts] = useState({
-    show: false,
-    message: "",
-    type: "success",
-    exiting: false,
-  });
-
-  const initialForm = {
-    roomType: "",
-    complementary: "",
-    roomCost: "",
-    extraBedCost: "",
-    dailyRate: "",
-    weeklyRate: "",
-    bedOnlyRate: "",
-    bedBreakfastRate: "",
-    halfBoardRate: "",
-    fullBoardRate: "",
-  };
+  const initialForm = useMemo(
+    () => ({
+      roomType: "",
+      complementary: "",
+      ...Object.fromEntries(RATE_FIELDS.map((f) => [f.name, ""])),
+    }),
+    [],
+  );
 
   const [formData, setFormData] = useState(initialForm);
 
-  const showAlert = (message, type = "success") => {
-    setAlerts({
-      show: true,
-      message,
-      type,
-      exiting: false,
-    });
+  // `complementry` on a row is a foreign key. The table used to render it with
+  // type:"badge", which printed the raw id in a blue pill.
+  const complementaryName = useMemo(() => {
+    const map = new Map(complementary.map((c) => [String(c.id), c.complementry_name]));
+    return (id) => map.get(String(id)) || "—";
+  }, [complementary]);
 
-    setTimeout(() => {
-      setAlerts((prev) => ({ ...prev, exiting: true }));
-    }, 1800);
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    // Numeric fields keep their raw string while editing, so clearing one
+    // shows "" rather than snapping back to 0. numOrNull() converts at submit.
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-    setTimeout(() => {
-      setAlerts({
-        show: false,
-        message: "",
-        type: "success",
-        exiting: false,
-      });
-    }, 2200);
+  /* ================= API ================= */
+
+  const payload = () => ({
+    type_name: formData.roomType.trim(),
+    complementry: formData.complementary,
+    ...Object.fromEntries(RATE_FIELDS.map((f) => [f.api, numOrNull(formData[f.name])])),
+  });
+
+  const createRoomType = async () => {
+    await APICall.postT(ENDPOINT, payload());
+    showToast("Room type added successfully", "success");
+    reload();
+  };
+
+  const updateRoomType = async () => {
+    await APICall.putT(ENDPOINT, { id: editId, ...payload() });
+    showToast("Room type updated successfully", "update");
+    reload();
   };
 
   /* ================= HANDLERS ================= */
 
-  const getComplementary = async () => {
-    const optionVal = await APICall.getT("/masterdata/complementry")
-    setComplementary(optionVal.data)
-  }
-
-  const getRoomTypes = async () => {
-    try {
-      const res = await APICall.getT("/masterdata/room_types");
-      setData(res.data.data || res.data || []);
-    } catch (error) {
-      // Swallowed into the console before, so a failed load looked like an
-      // empty list rather than an error.
-      setData([]);
-      showAlert(error?.message || "Failed to load room types.", "error");
-    }
-  };
-
-
-  const createRoomType = async () => {
-    try {
-      await APICall.postT("/masterdata/room_types", {
-        type_name: formData.roomType,
-        room_cost: numOrNull(formData.roomCost),
-        bed_cost: numOrNull(formData.extraBedCost),
-        complementry: formData.complementary,
-        daily_rate: numOrNull(formData.dailyRate),
-        weekly_rate: numOrNull(formData.weeklyRate),
-        bed_only_rate: numOrNull(formData.bedOnlyRate),
-        bed_breakfast_rate: numOrNull(formData.bedBreakfastRate),
-        half_board_rate: numOrNull(formData.halfBoardRate),
-        full_board_rate: numOrNull(formData.fullBoardRate),
-      });
-      showAlert("RoomType added successfully", "success");
-      getRoomTypes();
-    } catch (error) {
-      showAlert(error.detail, "error");
-    }
-  };
-
-  const updateRoomType = async () => {
-    try {
-      await APICall.putT("/masterdata/room_types", {
-        id: editId,
-        type_name: formData.roomType,
-        room_cost: numOrNull(formData.roomCost),
-        bed_cost: numOrNull(formData.extraBedCost),
-        complementry: formData.complementary,
-        daily_rate: numOrNull(formData.dailyRate),
-        weekly_rate: numOrNull(formData.weeklyRate),
-        bed_only_rate: numOrNull(formData.bedOnlyRate),
-        bed_breakfast_rate: numOrNull(formData.bedBreakfastRate),
-        half_board_rate: numOrNull(formData.halfBoardRate),
-        full_board_rate: numOrNull(formData.fullBoardRate)
-
-      });
-      showAlert("RoomType updated successfully", "update");
-      getRoomTypes();
-    } catch (error) {
-      showAlert(error.detail || "Update failed", "error");
-    }
-  };
-
-  const deleteRoomType = async (id) => {
-    try {
-      await APICall.deleteT(`/masterdata/room_types/${id}`);
-      showAlert("Room Type deleted successfully", "delete");
-      getRoomTypes();
-    } catch (error) {
-      showAlert(error.detail || "Delete failed", "error");
-    }
-  };
-
-
-
   const openAddModal = () => {
-    setEditId(null);
     setFormData(initialForm);
+    setEditId(null);
     setShowModal(true);
   };
 
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
+  const handleEdit = (row) => {
+    setFormData({
+      roomType: row.room_type_name ?? "",
+      complementary: row.complementry ?? "",
+      ...Object.fromEntries(RATE_FIELDS.map((f) => [f.name, row[f.api] ?? ""])),
+    });
+    setEditId(row.id);
+    setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setEditId(null);
+    setFormData(initialForm);
   };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-
-    // For number inputs keep the raw string while editing so a cleared field
-    // shows "" instead of snapping back to 0. Conversion to a number (or null)
-    // happens at submit time via numOrNull().
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // Empty numeric field → null (not 0); otherwise a real Number.
-  const numOrNull = (v) =>
-    v === "" || v === null || v === undefined ? null : Number(v);
-
 
   const handleSave = async () => {
     if (saving) return;
-    if (!formData.roomType.trim()) return;
+    if (!formData.roomType.trim()) {
+      showToast("Room type is required", "error");
+      return;
+    }
+
+    const negative = RATE_FIELDS.find((f) => {
+      const n = numOrNull(formData[f.name]);
+      return n !== null && (Number.isNaN(n) || n < 0);
+    });
+    if (negative) {
+      showToast(`${negative.label} must be zero or more`, "error");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -187,55 +144,38 @@ const RoomType = () => {
         await createRoomType();
       }
       closeModal();
+    } catch (err) {
+      showToast(err?.message || "Save failed", "error");
     } finally {
       setSaving(false);
     }
   };
 
-
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData({
-      roomType: row.room_type_name,
-      roomCost: row.room_cost,
-      extraBedCost: row.bed_cost,
-      complementary: row.complementry,
-      dailyRate: row.daily_rate,
-      weeklyRate: row.weekly_rate,
-      bedOnlyRate: row.bed_only_rate,
-      bedBreakfastRate: row.bed_breakfast_rate,
-      halfBoardRate: row.half_board_rate,
-      fullBoardRate: row.full_board_rate,
-    });
-    setShowModal(true);
-  };
-
-  const handleDelete = (id) => {
-    setDeleteId(id);
-  };
-
-  const confirmDelete = () => {
-    deleteRoomType(deleteId);
+  const confirmDelete = async () => {
+    const id = deleteId;
     setDeleteId(null);
+    try {
+      await APICall.deleteT(`${ENDPOINT}/${id}`);
+      showToast("Room type deleted successfully", "delete");
+      reload();
+    } catch (err) {
+      showToast(err?.message || "Delete failed", "error");
+    }
   };
-
-
-  useEffect(() => {
-    getComplementary();
-    getRoomTypes();
-  }, []);
-
 
   /* ================= UI ================= */
 
   return (
     <>
+      <ErrorAlert message={error} />
+
       <TableTemplate
-        title="Room Type List"
+        title="Room Types"
+        loading={loading}
+        emptyMessage="No room types yet. Add the first one to get started."
         hasActionButton
         searchable
         pagination
-        pageSize={4}
         exportable
         actionButton={{
           label: "Add Room Type",
@@ -244,153 +184,160 @@ const RoomType = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "room_type_name", title: "Room Type", align: "center" },
-          { key: "room_cost", title: "Room Cost", align: "center" },
-          { key: "bed_cost", title: "Extra Bed Cost", align: "center" },
+          { key: "room_type_name", title: "Room Type", align: "left" },
           {
             key: "complementry",
             title: "Complementary",
-            align: "center",
-            type: "badge",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => complementaryName(row.complementry),
+            render: (row) => complementaryName(row.complementry),
           },
-          { key: "daily_rate", title: "Daily Rate", align: "center" },
-          { key: "weekly_rate", title: "Weekly Rate", align: "center" },
+          {
+            key: "room_cost",
+            title: "Room Cost",
+            align: "right",
+            type: "custom",
+            exportValue: (row) => row.room_cost,
+            render: (row) => showNum(row.room_cost),
+          },
+          {
+            key: "bed_cost",
+            title: "Extra Bed Cost",
+            align: "right",
+            type: "custom",
+            exportValue: (row) => row.bed_cost,
+            render: (row) => showNum(row.bed_cost),
+          },
+          {
+            key: "daily_rate",
+            title: "Daily Rate",
+            align: "right",
+            type: "custom",
+            exportValue: (row) => row.daily_rate,
+            render: (row) => showNum(row.daily_rate),
+          },
+          {
+            key: "weekly_rate",
+            title: "Weekly Rate",
+            align: "right",
+            type: "custom",
+            exportValue: (row) => row.weekly_rate,
+            render: (row) => showNum(row.weekly_rate),
+          },
+          { key: "status", title: "Status", align: "center", type: "badge" },
           {
             key: "actions",
-            title: "Action",
+            title: "Actions",
             align: "center",
             type: "custom",
+            excludeFromExport: true,
             render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
-              </div>
+              <RowActions
+                label="room type"
+                onView={() => setViewData(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteId(row.id)}
+              />
             ),
           },
         ]}
-        data={data}
+        data={rows}
       />
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <Modal
-          isOpen={showViewModal}
-          title="View Room Type"
-          onClose={() => setShowViewModal(false)}
-          size="large"
-        >
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "18px 20px" }}>
-            {[
-              ["Room Type", "room_type_name"],
-              ["Room Cost", "room_cost"],
-              ["Bed Cost", "bed_cost"],
-              ["Daily Rate", "daily_rate"],
-              ["Weekly Rate", "weekly_rate"],
-              ["Bed Only Rate", "bed_only_rate"],
-              ["Bed & Breakfast Rate", "bed_breakfast_rate"],
-              ["Half Board Rate", "half_board_rate"],
-              ["Full Board Rate", "full_board_rate"],
-              ["Status", "status"],
-            ].map(([label, key]) => (
-              <Input
-                key={key}
-                label={label}
-                disabled
-                value={viewData?.[key] ?? "-"}
-              />
-            ))}
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Room Type Details"
+        onClose={() => setViewData(null)}
+        size="large"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <DetailList columns={3}>
+          <DetailItem label="Room Type" value={viewData?.room_type_name} />
+          <DetailItem
+            label="Complementary"
+            value={viewData && complementaryName(viewData.complementry)}
+          />
+          <DetailItem label="Status" value={viewData?.status} />
+          {RATE_FIELDS.map((f) => (
+            <DetailItem key={f.api} label={f.label} value={viewData?.[f.api]} />
+          ))}
+        </DetailList>
+      </Modal>
 
-            <Input
-              label="Complementary"
-              disabled
-              value={
-                complementary.find(
-                  (c) => String(c.id) === String(viewData?.complementry)
-                )?.complementry_name || "-"
-              }
-            />
-          </div>
-        </Modal >
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Room Type" : "Add Room Type"}
+        onClose={closeModal}
+        showFooter
+        size="large"
+        // The grid comes from the modal body rather than an inline style, so
+        // it collapses to one column at the same breakpoint as every other
+        // form in the app.
+        bodyLayout="grid"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <Input
+          label="Room Type"
+          required
+          name="roomType"
+          placeholder="e.g. Deluxe Double"
+          value={formData.roomType}
+          onChange={handleChange}
+        />
+        <Select
+          label="Complementary"
+          name="complementary"
+          value={formData.complementary}
+          onChange={handleChange}
+          placeholder="Select complementary"
+          options={complementary.map((c) => ({ value: c.id, label: c.complementry_name }))}
+        />
+        {RATE_FIELDS.map((f) => (
+          <Input
+            key={f.name}
+            label={f.label}
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            name={f.name}
+            placeholder="0.00"
+            value={formData[f.name] ?? ""}
+            onChange={handleChange}
+          />
+        ))}
+      </Modal>
 
-      )}
-
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {
-        showModal && (
-          <Modal
-            isOpen={showModal}
-            title={editId ? "Edit Room Type" : "Add Room Type"}
-            onClose={() => setShowModal(false)}
-            showFooter
-            size="large"
-            actions={[
-              {
-                label: "Close",
-                variant: "secondary",
-                onClick: () => setShowModal(false),
-              },
-              {
-                label: "Submit",
-                variant: "primary",
-                onClick: handleSave,
-              disabled: saving,
-                autoFocus: true,
-              },
-            ]}
-          >
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "18px 20px" }}>
-              {[
-                ["Room Type", "roomType"],
-                ["Room Cost", "roomCost"],
-                ["Extra Bed Cost", "extraBedCost"],
-                ["Daily Rate", "dailyRate"],
-                ["Weekly Rate", "weeklyRate"],
-                ["Bed Only Rate", "bedOnlyRate"],
-                ["Bed & Breakfast Rate", "bedBreakfastRate"],
-                ["Half Board Rate", "halfBoardRate"],
-                ["Full Board Rate", "fullBoardRate"],
-              ].map(([label, name]) => (
-                <Input
-                  key={name}
-                  label={label}
-                  type={name === "roomType" ? "text" : "number"}
-                  name={name}
-                  value={formData[name] ?? ""}
-                  onChange={handleChange}
-                />
-              ))}
-
-              <Select
-                label="Complementary"
-                name="complementary"
-                value={formData.complementary}
-                onChange={handleChange}
-                options={[
-                  { value: "", label: "Select Complementary", disabled: true },
-                  ...complementary.map((e) => ({ value: e.id, label: e.complementry_name })),
-                ]}
-              />
-            </div>
-
-
-          </Modal>
-        )
-      }
-
+      {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={confirmDelete}
         title="Delete Room Type"
         confirmText="Delete"
+        size="small"
         destructive
       >
-        Are you sure you want to delete this room type? This action cannot be undone.
+        Are you sure you want to delete this room type? Rooms assigned to it may
+        be affected. This action cannot be undone.
       </ConfirmModal>
 
-      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
+      <Toast {...toast} />
     </>
   );
 };

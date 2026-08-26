@@ -108,8 +108,8 @@
 }
 
 .icon-btn--danger:hover:not(:disabled) {
-  background-color: #dc2626;
-  border-color: #dc2626;
+  background-color: var(--error-dark);
+  border-color: var(--error-dark);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
@@ -122,7 +122,7 @@
 
 .icon-btn--danger-ghost:hover:not(:disabled) {
   background-color: var(--error-light);
-  color: #dc2626;
+  color: var(--error-dark);
 }
 
 .icon-btn--success {
@@ -132,8 +132,8 @@
 }
 
 .icon-btn--success:hover:not(:disabled) {
-  background-color: #0da271;
-  border-color: #0da271;
+  background-color: var(--success-dark);
+  border-color: var(--success-dark);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
@@ -247,4 +247,90 @@
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+/* =====================================================
+   ROW ACTION SYSTEM
+   -----------------------------------------------------
+   The three table-row verbs (View / Edit / Delete) share one geometry and
+   differ only by hue, so a row reads as a matched set of chips instead of
+   three unrelated controls. Consumed through <RowActions>; do not hand-roll
+   these with the generic ghost/subtle/danger-ghost variants, which is what
+   made View flat, Edit grey-boxed and Delete flat on the same row.
+===================================================== */
+.icon-btn--action {
+  width: 34px;
+  height: 34px;
+}
+
+.icon-btn--action .icon-btn__icon,
+.icon-btn--action svg {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-btn--action-view,
+.icon-btn--action-edit,
+.icon-btn--action-delete {
+  border-radius: var(--border-radius-md);
+  border: 1px solid transparent;
+  /* Every action carries a resting tint — the set only reads as a set when
+     none of them is a bare glyph. */
+  transition: background-color var(--transition-fast),
+              border-color var(--transition-fast),
+              color var(--transition-fast);
+}
+
+/* View — brand cherry */
+.icon-btn--action-view {
+  background-color: var(--primary-lightest);
+  color: var(--primary-color);
+}
+
+.icon-btn--action-view:hover:not(:disabled) {
+  background-color: var(--primary-lighter);
+  border-color: var(--primary-light);
+  color: var(--primary-dark);
+}
+
+/* Edit — neutral slate, so it never competes with View or Delete for
+   attention while still sitting on the same chip. */
+.icon-btn--action-edit {
+  background-color: var(--gray-100);
+  color: var(--text-secondary);
+}
+
+.icon-btn--action-edit:hover:not(:disabled) {
+  background-color: var(--gray-200);
+  border-color: var(--gray-300);
+  color: var(--text-primary);
+}
+
+/* Delete — the only destructive hue in the row */
+.icon-btn--action-delete {
+  background-color: var(--error-light);
+  color: var(--error-color);
+}
+
+.icon-btn--action-delete:hover:not(:disabled) {
+  background-color: var(--error-lighter);
+  border-color: var(--error-lighter);
+  color: var(--error-dark);
+}
+
+/* The generic 1.1x icon scale-up reads as a wobble on a 34px chip; the
+   background/colour shift is the hover affordance here. */
+.icon-btn--action-view:hover:not(:disabled) svg,
+.icon-btn--action-edit:hover:not(:disabled) svg,
+.icon-btn--action-delete:hover:not(:disabled) svg {
+  transform: none;
+}
+
+/* Coarse pointers get a real 40px target. An invisible ::after outset would
+   not work here — .icon-btn sets overflow:hidden, which clips hit-testing as
+   well as paint — and ::after is already taken by the loading spinner. */
+@media (hover: none) and (pointer: coarse) {
+  .icon-btn--action {
+    width: 40px;
+    height: 40px;
+  }
 }

@@ -1,0 +1,66 @@
+/* DetailList.css — read-only record layout for View modals. */
+.detail-list {
+  display: grid;
+  gap: var(--spacing-md) var(--spacing-lg);
+  margin: 0;
+  /* auto-fit against a minimum, so the column count follows the modal width
+     rather than a hard-coded value per screen. */
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+/* `columns` caps the auto-fit so a two-field record in a wide modal does not
+   spread into four thin columns. */
+.detail-list--1 { grid-template-columns: minmax(0, 1fr); }
+.detail-list--2 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.detail-list--3 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* A grid item defaults to min-content width; without this a long unbroken
+     value stretches the track and pushes the modal past the viewport. */
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+}
+
+.detail-item__label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.detail-item__value {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--text-primary);
+  /* Long values wrap rather than overflow; an unbroken token (a URL, a long
+     code) breaks instead of widening the grid. */
+  overflow-wrap: anywhere;
+}
+
+.detail-item__value--empty {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* An item holding a block of text or a media grid rather than a short value. */
+.detail-item--wide .detail-item__value {
+  white-space: pre-wrap;
+}
+
+@media (max-width: 480px) {
+  .detail-list,
+  .detail-list--2,
+  .detail-list--3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

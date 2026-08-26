@@ -1,168 +1,132 @@
 import React, { useState } from "react";
-import TableTemplate from "../stories/TableTemplate";
+import TableTemplate, { ColorSwatchCell } from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
-import IconButton from "../stories/IconButton";
+import RowActions from "../stories/RowActions";
+import DetailList, { DetailItem } from "../stories/DetailList";
+import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
-import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { readList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
+import { useToast } from "../hooks/useToast";
+
+const DEFAULT_COLOR = "#22c55e";
 
 const HskTaskType = () => {
-  const { data, reload: getTask } = useApiResource(
+  const { data, loading, error, reload } = useApiResource(
     () => APICall.getT("/masterdata/task_type"),
-    { select: (res) => res?.data ?? [] },
+    { select: readList, fallback: "Failed to load task types." },
   );
 
+  const { toast, showToast } = useToast();
+
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
 
-  const initialForm = {
-    taskType: "",
-    color: "#22c55e",
-  };
-
+  const initialForm = { name: "", color: DEFAULT_COLOR };
   const [formData, setFormData] = useState(initialForm);
-
-
-  const [alerts, setAlerts] = useState({
-    show: false,
-    message: "",
-    type: "success",
-    exiting: false,
-  });
-
-  const showAlert = (message, type = "success") => {
-    setAlerts({
-      show: true,
-      message,
-      type,
-      exiting: false,
-    });
-
-    setTimeout(() => {
-      setAlerts((prev) => ({ ...prev, exiting: true }));
-    }, 1800);
-
-    setTimeout(() => {
-      setAlerts({
-        show: false,
-        message: "",
-        type: "success",
-        exiting: false,
-      });
-    }, 2200);
-  };
-  /* ================= HANDLERS ================= */
-
-  const openAddModal = () => {
-    setEditId(null);
-    setFormData(initialForm);
-    setShowModal(true);
-  };
-
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setEditId(null);
-  };
-
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
-
-  const createTask = async () => {
-    try {
-      await APICall.postT("/masterdata/task_type", {
-        task_name: formData.taskType,
-        color: formData.color
-      });
-      showAlert("Task Type added successfully", "success");
-      getTask();
-    } catch (error) {
-      showAlert(error.detail, "error");
-    }
-  }
-
-  const updateTask = async () => {
-    try {
-      await APICall.putT("/masterdata/task_type", {
-        id: editId,
-        task_name: formData.taskType,
-        color: formData.color
-
-      });
-      showAlert("Task Type updated successfully", "update");
-      getTask();
-    }
-    catch (error) {
-      showAlert(error.detail || "Update failed", "error");
-    }
-  }
-
-  const deleteTask = async (id) => {
-    try {
-      await APICall.deleteT(`/masterdata/task_type/${id}`)
-      showAlert("Task Type deleted successfully", "delete");
-      getTask();
-    }
-    catch (error) {
-      showAlert(error.detail || "Delete failed", "error");
-    }
-  }
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = () => {
-    if (!formData.taskType.trim()) return;
+  /* ================= API ================= */
 
-    if (editId) {
-      updateTask();
-    } else {
-      createTask();
-    }
-    getTask();
-
-    closeModal();
+  const createHskTaskType = async () => {
+    await APICall.postT("/masterdata/task_type", {
+      task_name: formData.name.trim(),
+      color: formData.color,
+    });
+    showToast("Task Type added successfully", "success");
+    reload();
   };
 
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData({
-      taskType: row.task_name,
-      color: row.color,
+  const updateHskTaskType = async () => {
+    await APICall.putT("/masterdata/task_type", {
+      id: editId,
+      task_name: formData.name.trim(),
+      color: formData.color,
     });
+    showToast("Task Type updated successfully", "update");
+    reload();
+  };
+
+  /* ================= HANDLERS ================= */
+
+  const openAddModal = () => {
+    setFormData(initialForm);
+    setEditId(null);
     setShowModal(true);
   };
 
-
-  const handleDelete = (id) => {
-    setDeleteId(id);
+  const handleEdit = (row) => {
+    setFormData({
+      name: row.task_name ?? "",
+      color: row.color || DEFAULT_COLOR,
+    });
+    setEditId(row.id);
+    setShowModal(true);
   };
 
-  const confirmDelete = () => {
-    deleteTask(deleteId);
+  const closeModal = () => {
+    setShowModal(false);
+    setEditId(null);
+    setFormData(initialForm);
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
+    if (!formData.name.trim()) {
+      showToast("Task Type is required", "error");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Both branches are awaited and the list is reloaded once, inside the
+      // create/update helpers. This screen used to fire an extra unawaited
+      // reload straight after dispatching the save, which raced the write and
+      // could repaint the row with its pre-save values.
+      if (editId) {
+        await updateHskTaskType();
+      } else {
+        await createHskTaskType();
+      }
+      closeModal();
+    } catch (err) {
+      showToast(err?.message || "Save failed", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    const id = deleteId;
     setDeleteId(null);
+    try {
+      await APICall.deleteT(`/masterdata/task_type/${id}`);
+      showToast("Task Type deleted successfully", "delete");
+      reload();
+    } catch (err) {
+      showToast(err?.message || "Delete failed", "error");
+    }
   };
-
 
   /* ================= UI ================= */
 
   return (
     <>
+      <ErrorAlert message={error} />
+
       <TableTemplate
-        title="Housekeeping Task Type"
+        title="Housekeeping Task Types"
+        loading={loading}
+        emptyMessage="No task types yet. Add the first one to get started."
         hasActionButton
         searchable
         pagination
@@ -174,128 +138,108 @@ const HskTaskType = () => {
           variant: "primary",
         }}
         columns={[
-          {
-            key: "task_name",
-            title: "Task Type",
-            align: "center",
-          },
+          { key: "task_name", title: "Task Type", align: "left" },
           {
             key: "color",
-            title: "Color",
-            align: "center",
+            title: "Colour",
+            align: "left",
             type: "custom",
-            render: (row) => (
-              <div style={{ display: "flex", justifyContent: "center" }}>
-                <span
-                  style={{
-                    width: "20px",
-                    height: "20px",
-                    borderRadius: "50%",
-                    backgroundColor: row.color,
-                    border: "1px solid #e5e7eb",
-                  }}
-                />
-              </div>
-            ),
+            exportValue: (row) => row.color || "",
+            render: (row) => <ColorSwatchCell color={row.color} />,
           },
           {
             key: "actions",
             title: "Actions",
             align: "center",
             type: "custom",
+            excludeFromExport: true,
             render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => handleDelete(row.id)} ariaLabel="Delete" />
-              </div>
+              <RowActions
+                label="task type"
+                onView={() => setViewData(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteId(row.id)}
+              />
             ),
           },
         ]}
         data={data}
       />
 
-      {/* ================= VIEW MODAL ================= */}
-      {showViewModal && viewData && (
-        <Modal
-          isOpen={showViewModal}
-          title="View HSK Task Type"
-          onClose={closeViewModal}
-          size="small"
-          bodyLayout="grid"
-        >
-          <Input label="Task Type" disabled value={viewData.task_name} />
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Task Type Details"
+        onClose={() => setViewData(null)}
+        size="small"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <DetailList columns={1}>
+          <DetailItem label="Task Type" value={viewData?.task_name} />
+          <DetailItem label="Colour">
+            <ColorSwatchCell color={viewData?.color} />
+          </DetailItem>
+        </DetailList>
+      </Modal>
 
-          <div className="form-group">
-            <label>Color</label>
-            <div style={{ display: "flex", justifyContent: "left" }}>
-              <span
-                style={{
-                  width: "28px",
-                  height: "28px",
-                  borderRadius: "50%",
-                  backgroundColor: viewData.color,
-                  border: "1px solid #e5e7eb",
-                }}
-              />
-            </div>
-          </div>
-        </Modal>
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Task Type" : "Add Task Type"}
+        onClose={closeModal}
+        showFooter
+        size="medium"
+        bodyLayout="grid"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <Input
+          label="Task Type"
+          required
+          name="name"
+          placeholder="e.g. Deep Clean"
+          value={formData.name}
+          onChange={handleChange}
+        />
+        {/* The colour swatch sizing lives in FormField.css
+            (.form-control[type='color']), so this field shares the exact
+            height of the text input beside it instead of carrying its own
+            inline height. */}
+        <Input
+          label="Colour"
+          type="color"
+          name="color"
+          value={formData.color}
+          onChange={handleChange}
+          helperText="Used to tag this task type across the app."
+        />
+      </Modal>
 
-      )}
-
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <Modal
-          isOpen={showModal}
-          title={editId ? "Edit HSK Task Type" : "Add HSK Task Type"}
-          onClose={() => setShowModal(false)}
-          showFooter
-          size="small"
-          bodyLayout="grid"
-          actions={[
-            {
-              label: "Close",
-              variant: "secondary",
-              onClick: () => setShowModal(false),
-            },
-            {
-              label: "Submit",
-              variant: "primary",
-              onClick: handleSave,
-              autoFocus: true,
-            },
-          ]}
-        >
-          <Input
-            label="Task Type"
-            name="taskType"
-            value={formData.taskType}
-            onChange={handleChange}
-          />
-          <Input
-            label="Color"
-            type="color"
-            name="color"
-            value={formData.color}
-            onChange={handleChange}
-            style={{ height: "42px", padding: "4px" }}
-          />
-        </Modal>
-      )}
-
+      {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={confirmDelete}
         title="Delete Task Type"
         confirmText="Delete"
+        size="small"
         destructive
       >
-        Are you sure you want to delete this housekeeping task type? This action cannot be undone.
+        Are you sure you want to delete this task type? This action cannot be undone.
       </ConfirmModal>
 
-      <Toast show={alerts.show} message={alerts.message} type={alerts.type} exiting={alerts.exiting} />
+      <Toast {...toast} />
     </>
   );
 };
