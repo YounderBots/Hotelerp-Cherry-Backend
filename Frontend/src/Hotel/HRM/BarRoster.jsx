@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -6,10 +6,9 @@ import Select from "../../stories/Form/Select";
 import IconButton from "../../stories/IconButton";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Eye } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 // Today's bar floor roster — cross-references the shared HRM employee
@@ -17,11 +16,17 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // HRM (not Bar) since staffing is an HR concern; the bar module only
 // contributes the day-to-day shift/floor data.
 const BarRoster = () => {
-  const [employees, setEmployees] = useState([]);
-  const [shifts, setShifts] = useState([]);
-  const [floors, setFloors] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    data: [employees, shifts, floors],
+    loading,
+    error,
+    reload: load,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/user/users"), select: readList,
+      fallback: "Failed to load staff directory." },
+    { fetch: () => APICall.getT("/bar/staff_assignment", { shift_date: todayIso() }), select: readList },
+    { fetch: () => APICall.getT("/bar/floor"), select: readList },
+  ]);
 
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -31,26 +36,6 @@ const BarRoster = () => {
 
   const initialForm = { employee_id: "", role: "Bartender", shift_date: todayIso(), shift_start: "09:00", floor_id: "" };
   const [formData, setFormData] = useState(initialForm);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.allSettled([
-      APICall.getT("/user/users"),
-      APICall.getT("/bar/staff_assignment", { shift_date: todayIso() }),
-      APICall.getT("/bar/floor"),
-    ]).then(([eRes, sRes, fRes]) => {
-      setEmployees(eRes.status === "fulfilled" ? readList(eRes.value) : []);
-      setShifts(sRes.status === "fulfilled" ? readList(sRes.value) : []);
-      setFloors(fRes.status === "fulfilled" ? readList(fRes.value) : []);
-      if (eRes.status === "rejected") setError(errMsg(eRes.reason, "Failed to load staff directory."));
-      setLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const floorName = (id) => floors.find((f) => f.id === id)?.floor_name || "—";
   const shiftFor = (employeeId) => shifts.find((s) => s.employee_id === employeeId);
