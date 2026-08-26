@@ -246,6 +246,31 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
     if payload.paid_amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="paid_amount must be greater than zero")
 
+    # Overpayment guard. Without it this endpoint accepted any amount: paying
+    # 50,000 against a 500 bill was recorded in full, and a bill already marked
+    # Paid could be paid again, leaving total_paid above grand_total with no
+    # record of the excess. The hotel side already refuses this
+    # (HotelServices reservation_pay_due_amount); billing was newer code that
+    # never got the same check, and the `max(..., 0)` clamp on the balance in
+    # the response below was hiding the result rather than preventing it.
+    already_paid = sum(
+        p.paid_amount or 0
+        for p in db.query(models.RestaurantBillPayment)
+        .filter(models.RestaurantBillPayment.bill_id == bill.id, models.RestaurantBillPayment.payment_status == "Success")
+        .all()
+    )
+    outstanding = (bill.grand_total or 0) - already_paid
+    if outstanding <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This bill is already fully paid",
+        )
+    if payload.paid_amount > outstanding:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"paid_amount exceeds the outstanding balance of {outstanding}",
+        )
+
     try:
         now = datetime.now()
         payment = models.RestaurantBillPayment(

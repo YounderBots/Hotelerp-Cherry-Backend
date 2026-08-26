@@ -12,6 +12,7 @@ import {
 import APICall from "../APICalls/APICalls";
 
 const RoomType = () => {
+  const [saving, setSaving] = useState(false);
   const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
@@ -175,15 +176,20 @@ const RoomType = () => {
 
 
   const handleSave = async () => {
+    if (saving) return;
     if (!formData.roomType.trim()) return;
 
-    if (editId) {
-      await updateRoomType();
-    } else {
-      await createRoomType();
+    setSaving(true);
+    try {
+      if (editId) {
+        await updateRoomType();
+      } else {
+        await createRoomType();
+      }
+      closeModal();
+    } finally {
+      setSaving(false);
     }
-
-    closeModal();
   };
 
 
@@ -328,6 +334,7 @@ const RoomType = () => {
                 label: "Submit",
                 variant: "primary",
                 onClick: handleSave,
+              disabled: saving,
                 autoFocus: true,
               },
             ]}

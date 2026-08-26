@@ -10,6 +10,7 @@ import APICall from "../APICalls/APICalls";
 
 const Complementary = () => {
 
+  const [saving, setSaving] = useState(false);
   const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
@@ -133,15 +134,22 @@ const Complementary = () => {
 
 
   const handleSave = async () => {
+    if (saving) return;
     if (!formData.name.trim()) return;
 
-    if (editId) {
-      updateComplementary();
-    } else {
-      createComplementary();
+    setSaving(true);
+    try {
+      // Neither branch was awaited here, so the modal closed immediately and
+      // both create and update failures were invisible to the user.
+      if (editId) {
+        await updateComplementary();
+      } else {
+        await createComplementary();
+      }
+      closeModal();
+    } finally {
+      setSaving(false);
     }
-
-    closeModal();
   };
 
   const handleEdit = (row) => {
@@ -265,6 +273,7 @@ const Complementary = () => {
               label: "Submit",
               variant: "primary",
               onClick: handleSave,
+              disabled: saving,
               autoFocus: true,
             },
           ]}

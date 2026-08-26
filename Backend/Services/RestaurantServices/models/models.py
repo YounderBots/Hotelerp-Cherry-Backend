@@ -17,6 +17,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     func,
+    Index,
 )
 from models import engine
 
@@ -828,6 +829,13 @@ class PaymentMethod(Base):
 
 class RestaurantBillPayment(Base):
     __tablename__ = "restaurant_bill_payment"
+    # `status` here and `payment_status` on the bill table both default to
+    # SQLAlchemy's ix_<table>_<column> naming and collide on the single name
+    # ix_restaurant_bill_status. MySQL scopes index names per table so production
+    # never noticed, but SQLite and Postgres scope them per database, so
+    # create_all() failed -- which is why these two services had no
+    # schema-level tests. Naming this one explicitly resolves the clash.
+    __table_args__ = (Index("ix_restaurant_bill_payment_lifecycle_status", "status"),)
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -843,7 +851,7 @@ class RestaurantBillPayment(Base):
 
     remarks = Column(String(255), nullable=True)
 
-    status = Column(SAEnum(*STATUS_VALUES, name="bill_payment_status_lifecycle_enum"), nullable=False, index=True, default="ACTIVE")
+    status = Column(SAEnum(*STATUS_VALUES, name="bill_payment_status_lifecycle_enum"), nullable=False, default="ACTIVE")
     created_by = Column(String(100), nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())

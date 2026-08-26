@@ -33,6 +33,9 @@ RBAC_SERVICE = "UserServices"
 # service root to import them.
 GATEWAY_SERVICE = "LoginServices"
 
+# Bill payment guards apply to the two services that take money at a till.
+BILLING_SERVICES = ["BarServices", "RestaurantServices"]
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SERVICES_DIR = ROOT / "Backend" / "Services"
 TESTS_DIR = ROOT / "Backend" / "tests"
@@ -58,6 +61,9 @@ def main() -> int:
         (RBAC_SERVICE, "test_rbac.py"),
         (GATEWAY_SERVICE, "test_rbac_gateway.py"),
     ]
+    # Billing exists only in these two, and both expose the same endpoint, so
+    # the money guards run against each.
+    jobs += [(svc, "test_bill_payment.py") for svc in BILLING_SERVICES]
     jobs += [(svc, "test_jwt_auth.py") for svc in SERVICES]
 
     failed = []

@@ -17,6 +17,7 @@ const BedType = () => {
     { select: (res) => res?.data ?? [] },
   );
 
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -117,18 +118,28 @@ const BedType = () => {
 
 
   const handleSave = async () => {
+    // Guard + disabled on the Submit action: without both, a double click
+    // POSTed twice and created a duplicate bed type.
+    if (saving) return;
     if (!bedName.trim()) {
       showAlert("Bed Type is required.", "error");
       return;
     }
 
-    if (editId) {
-      updateBedType();
-    } else {
-      await createBedType();
+    setSaving(true);
+    try {
+      // The update path used to be called without await, so the modal closed
+      // before the request finished and a failure discarded the user's input
+      // after the form had already been reset.
+      if (editId) {
+        await updateBedType();
+      } else {
+        await createBedType();
+      }
+      closeModal();
+    } finally {
+      setSaving(false);
     }
-
-    closeModal();
   };
 
   const handleEdit = (row) => {
@@ -220,6 +231,7 @@ const BedType = () => {
               label: "Submit",
               variant: "primary",
               onClick: handleSave,
+              disabled: saving,
               autoFocus: true,
             },
           ]}

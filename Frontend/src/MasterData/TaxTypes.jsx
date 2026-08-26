@@ -9,6 +9,7 @@ import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react
 import APICall from "../APICalls/APICalls";
 
 const TaxTypes = () => {
+  const [saving, setSaving] = useState(false);
   const [data, setData] = useState([]);
 
   const [showModal, setShowModal] = useState(false);
@@ -142,17 +143,24 @@ const TaxTypes = () => {
   };
 
   const handleSave = async () => {
+    if (saving) return;
     if (!formData.taxCountry || !formData.taxName || !formData.taxPercentage)
       return;
 
-    if (editId) {
-      updateTax();
-    } else {
-      await createTax();
+    setSaving(true);
+    try {
+      // updateTax was not awaited, so getTax() below could refetch before the
+      // update had landed and show the row unchanged.
+      if (editId) {
+        await updateTax();
+      } else {
+        await createTax();
+      }
+      await getTax();
+      closeModal();
+    } finally {
+      setSaving(false);
     }
-    await getTax();
-
-    closeModal();
   };
 
   const handleEdit = (row) => {
@@ -281,6 +289,7 @@ const TaxTypes = () => {
               label: "Submit",
               variant: "primary",
               onClick: handleSave,
+              disabled: saving,
               autoFocus: true,
             },
           ]}

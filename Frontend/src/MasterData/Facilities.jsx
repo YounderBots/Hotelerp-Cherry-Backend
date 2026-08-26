@@ -20,6 +20,7 @@ const Facilities = () => {
     () => APICall.getT("/masterdata/facilities"),
     { select: (res) => res?.data ?? [] },
   );
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -103,18 +104,23 @@ const Facilities = () => {
   };
 
   const handleSave = async () => {
+    if (saving) return;
     if (!formData.facility_name.trim()) {
       showAlert("Facility name is required", "error");
       return;
     }
 
-    if (editId) {
-      await updateFacility();
-    } else {
-      await createFacility();
+    setSaving(true);
+    try {
+      if (editId) {
+        await updateFacility();
+      } else {
+        await createFacility();
+      }
+      setShowModal(false);
+    } finally {
+      setSaving(false);
     }
-
-    setShowModal(false);
   };
 
   const handleEdit = (row) => {
@@ -203,6 +209,7 @@ const Facilities = () => {
               label: "Submit",
               variant: "primary",
               onClick: handleSave,
+              disabled: saving,
               autoFocus: true,
             },
           ]}
