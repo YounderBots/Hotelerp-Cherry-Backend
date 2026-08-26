@@ -1,45 +1,72 @@
 #!/usr/bin/env bash
-# Launch all six HotelERP services on 0.0.0.0 (LAN-accessible).
-# Usage: ./run.sh            (reads .env; DB import step must be done separately)
+# Launch all six HotelERP services (POSIX parity with start-network.ps1).
+#
+# Each service is self-configured by its OWN .env (Backend/Services/<Name>/.env),
+# loaded by that service's configs/__init__.py. This script only reads
+# SERVICE_HOST / SERVICE_PORT from each of those files to know where to bind.
+#
+# It deliberately does NOT hardcode a bind address. The previous version passed
+# `--host 0.0.0.0` for all six services, which published the five internal
+# services to the LAN and silently defeated the localhost-only topology the
+# per-service .env files describe. Only LoginServices (the gateway) is meant to
+# have SERVICE_HOST=0.0.0.0.
+#
+# Usage: ./run.sh
+# Stop:  ./stop.sh   (or kill the PIDs in .run-logs/pids.txt)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-# Load .env
-set -a; . ./.env; set +a
-
-PY="$ROOT/.venv/bin/uvicorn"
+SVC_DIR="$ROOT/Backend/Services"
 LOGDIR="$ROOT/.run-logs"
 mkdir -p "$LOGDIR"
+PIDFILE="$LOGDIR/pids.txt"
+: > "$PIDFILE"
 
-# Build a DB_URI for a given schema from the .env MySQL_* values.
-db_uri() {
-  local schema="$1"
-  local auth="${MYSQL_USER}"
-  if [ -n "${MYSQL_PW:-}" ]; then auth="${MYSQL_USER}:${MYSQL_PW}"; fi
-  echo "mysql+pymysql://${auth}@${MYSQL_HOST}:${MYSQL_PORT}/${schema}"
+# Prefer a project virtualenv if one exists, else whatever python is on PATH.
+if [ -x "$ROOT/.venv/bin/python" ]; then
+  PY="$ROOT/.venv/bin/python"
+else
+  PY="$(command -v python3 || command -v python)"
+fi
+echo "python: $PY"
+
+# Read one KEY from a .env file without sourcing it (a .env holds secrets and
+# must never be executed as shell).
+read_env() {
+  local file="$1" key="$2"
+  [ -f "$file" ] || return 0
+  sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "$file" | head -n1 | tr -d '\r'
 }
 
-# service_name  schema  port
-run_service() {
-  local name="$1" schema="$2" port="$3"
-  local uri; uri="$(db_uri "$schema")"
-  echo "  starting $name on :$port  (schema=$schema)"
-  ( cd "$ROOT/Backend/Services/$name" && \
-    DB_URI="$uri" \
-    DB_AUTO_CREATE="${DB_AUTO_CREATE:-true}" \
-    "$PY" main:app --host 0.0.0.0 --port "$port" \
-      > "$LOGDIR/${name}.log" 2>&1 & echo $! > "$LOGDIR/${name}.pid" )
-}
+SERVICES="LoginServices UserServices MasterDataServices HotelServices RestaurantServices BarServices"
 
-echo "Launching HotelERP backend (bind 0.0.0.0)…"
-# 8020/8030/8000 are held by another long-running project → relocated to 812x/813x/8100.
-run_service UserServices       hotelerp_users       8120
-run_service MasterDataServices hotelerp_masterdata  8130
-run_service HotelServices      hotelerp_hotel       8040
-run_service RestaurantServices hotelerp_restaurant  8050
-run_service BarServices        hotelerp_bar         8060
-run_service LoginServices      hotelerp_users       8100   # gateway (last)
+for name in $SERVICES; do
+  cwd="$SVC_DIR/$name"
+  envfile="$cwd/.env"
 
-echo "PIDs written to $LOGDIR/*.pid ; logs in $LOGDIR/*.log"
+  if [ ! -f "$envfile" ]; then
+    echo "skip  $name - no .env (copy from Backend/Services/.env.example)" >&2
+    continue
+  fi
+
+  port="$(read_env "$envfile" SERVICE_PORT)"
+  if [ -z "$port" ]; then
+    echo "skip  $name - no SERVICE_PORT in its .env" >&2
+    continue
+  fi
+
+  # Default to loopback, never to 0.0.0.0: a service that forgets to declare a
+  # bind address must stay private rather than becoming reachable.
+  bind="$(read_env "$envfile" SERVICE_HOST)"
+  [ -n "$bind" ] || bind="127.0.0.1"
+
+  ( cd "$cwd" && exec "$PY" -m uvicorn main:app --host "$bind" --port "$port" \
+      > "$LOGDIR/$name.log" 2>&1 ) &
+  echo "$name=$!" >> "$PIDFILE"
+  printf 'started %-20s pid %-8s %s:%s\n' "$name" "$!" "$bind" "$port"
+done
+
+echo
+echo "PIDs: $PIDFILE   logs: $LOGDIR/*.log"

@@ -30,6 +30,12 @@ python-multipart==0.0.20
 
 itsdangerous==2.2.0
 
+# Schema changes are applied with Alembic (Backend/migrations). The models also
+# expose create_all via DB_AUTO_CREATE, but that only ever ADDS tables and
+# columns -- it never alters or drops one -- so it is a dev convenience only and
+# defaults to off in production.
+alembic==1.14.0
+
 # openpyxl is the engine passed explicitly to pd.ExcelWriter(engine="openpyxl")
 # in HotelServices/resources/nightauditController.py. pandas does NOT depend on
 # it, so leaving it out makes every Night Audit Excel export fail at runtime on

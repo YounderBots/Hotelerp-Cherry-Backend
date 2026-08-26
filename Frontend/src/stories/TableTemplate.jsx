@@ -1,6 +1,4 @@
 import React, { useState, useMemo } from 'react';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import './TableTemplate.css';
 import InputField from './InputField'; // Assuming you have this component
 import Button from './Button';
@@ -386,8 +384,28 @@ const TableTemplate = ({
   // Generate a real PDF (jsPDF + autotable) rather than opening the browser's
   // print dialog. Columns follow the current visibility selection; rows use the
   // same resolved export values as CSV, with an absolute S.No.
-  const handleDownloadPDF = () => {
+  //
+  // jspdf + jspdf-autotable are ~444 kB and this component is shared by 54
+  // pages, so they are imported dynamically here rather than at module scope.
+  // Statically imported they were the largest chunk in the app -- larger than
+  // the entry bundle -- and every table page paid for them even when nobody
+  // exported anything.
+  const handleDownloadPDF = async () => {
     if (sortedData.length === 0) return;
+
+    let jsPDF;
+    let autoTable;
+    try {
+      [{ jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ]);
+    } catch {
+      // A chunk that fails to load (offline, cache miss after a deploy) must
+      // not take the page down with it.
+      flashCopyToast('error', 'Could not load the PDF exporter. Please try again.');
+      return;
+    }
 
     const head = [['S.No', ...visibleColumnsData.map(col => col.title)]];
     const body = sortedData.map((row, i) => [
