@@ -25,4 +25,7 @@ dist-ssr
 
 *storybook.log
 storybook-static
-package-lock.json
+# package-lock.json is deliberately NOT ignored. CI runs `npm ci`, which
+# requires the lockfile to be committed, and without it every install
+# resolves dependencies afresh -- so the versions CI tests are not the
+# versions anyone else gets.

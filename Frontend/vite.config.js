@@ -26,6 +26,15 @@ export default defineConfig(({ mode }) => {
   },
   test: {
     projects: [{
+      // Plain unit tests -- no browser, no Storybook, so `npm test` stays fast
+      // and runs in CI without a Playwright browser download.
+      extends: true,
+      test: {
+        name: 'unit',
+        environment: 'node',
+        include: ['src/**/*.{test,spec}.{js,jsx}'],
+      }
+    }, {
       extends: true,
       plugins: [
       // The plugin will run tests for the stories defined in your Storybook config

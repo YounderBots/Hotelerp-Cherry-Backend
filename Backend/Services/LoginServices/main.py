@@ -15,7 +15,20 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
-app = FastAPI(title="HotelERP - Login Gateway", version="1.1.0")
+# Interactive API docs publish the complete endpoint surface. They are
+# useful in development and must not be reachable in production, least of
+# all on the internet-facing gateway.
+_DOCS = None if BaseConfig.IS_PRODUCTION else "/docs"
+_REDOC = None if BaseConfig.IS_PRODUCTION else "/redoc"
+_OPENAPI = None if BaseConfig.IS_PRODUCTION else "/openapi.json"
+
+app = FastAPI(
+    title="HotelERP - Login Gateway",
+    version="1.1.0",
+    docs_url=_DOCS,
+    redoc_url=_REDOC,
+    openapi_url=_OPENAPI,
+)
 
 # --- CORS (allow-list from env; wildcard is refused) -------------------------
 app.add_middleware(

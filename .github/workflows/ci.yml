@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A superseded run on the same branch has nothing left to tell us.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: Backend/requirements.txt
+
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r Backend/requirements.txt
+          python -m pip install pytest
+
+      # Guards the drift the go-live review found: the running environment was
+      # older than the pins, so the two python-jose CVEs the pin closes were
+      # still live. If an install ever resolves something other than the pin,
+      # fail here rather than in production.
+      - name: Verify installed versions match the pins
+        run: python Backend/tests/check_pins.py
+
+      # No MySQL needed: the RBAC suite builds its schema in in-memory SQLite.
+      - name: Run test suites
+        run: python Backend/tests/run_all.py
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # --max-warnings holds the baseline the audit established. Lower it as
+      # warnings get fixed; never raise it.
+      - name: Lint
+        run: npm run lint -- --max-warnings=90
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
