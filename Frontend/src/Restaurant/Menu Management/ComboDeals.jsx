@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import IconButton from "../../stories/IconButton";
@@ -7,10 +7,9 @@ import ErrorAlert from "../../stories/ErrorAlert";
 import { ChipGroup } from "../../stories/Chip";
 import RepeatableRowEditor from "../../stories/RepeatableRowEditor";
 import { Eye, Pencil, Trash2 } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
 
 const emptyItem = () => ({ menu_id: "", quantity: 1 });
 
@@ -23,10 +22,17 @@ const initialForm = {
 };
 
 const ComboDeals = () => {
-  const [combos, setCombos] = useState([]);
-  const [menuItems, setMenuItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    data: [combos, menuItems],
+    loading,
+    error,
+    setError,
+    reload: load,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/restaurant/combo"), select: readList,
+      fallback: "Failed to load combo deals." },
+    { fetch: () => APICall.getT("/restaurant/menu"), select: readList },
+  ]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -37,21 +43,6 @@ const ComboDeals = () => {
 
   const [formData, setFormData] = useState(initialForm);
   const [items, setItems] = useState([emptyItem()]);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.allSettled([APICall.getT("/restaurant/combo"), APICall.getT("/restaurant/menu")]).then(([cRes, mRes]) => {
-      setCombos(cRes.status === "fulfilled" ? readList(cRes.value) : []);
-      setMenuItems(mRes.status === "fulfilled" ? readList(mRes.value) : []);
-      if (cRes.status === "rejected") setError(errMsg(cRes.reason, "Failed to load combo deals."));
-      setLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const menuItemName = (id) => menuItems.find((m) => m.id === id)?.item_name || `#${id}`;
 

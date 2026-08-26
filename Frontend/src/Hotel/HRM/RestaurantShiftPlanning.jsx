@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -6,10 +6,9 @@ import Select from "../../stories/Form/Select";
 import IconButton from "../../stories/IconButton";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Eye, Pencil, LogIn, LogOut } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 // Restaurant shift scheduling + clock in/out — lives under HRM (not
@@ -17,10 +16,16 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // contributes the day-to-day shift/section/cash-float data via
 // /restaurant/staff_assignment.
 const RestaurantShiftPlanning = () => {
-  const [shifts, setShifts] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    data: [shifts, employees],
+    loading,
+    error,
+    reload: load,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/restaurant/staff_assignment"), select: readList,
+      fallback: "Failed to load shifts." },
+    { fetch: () => APICall.getT("/user/users"), select: readList },
+  ]);
 
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -33,21 +38,6 @@ const RestaurantShiftPlanning = () => {
 
   const initialForm = { employee_id: "", role: "Waiter", shift_date: todayIso(), shift_start: "09:00", shift_end: "17:00", section: "" };
   const [formData, setFormData] = useState(initialForm);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.allSettled([APICall.getT("/restaurant/staff_assignment"), APICall.getT("/user/users")]).then(([sRes, eRes]) => {
-      setShifts(sRes.status === "fulfilled" ? readList(sRes.value) : []);
-      setEmployees(eRes.status === "fulfilled" ? readList(eRes.value) : []);
-      if (sRes.status === "rejected") setError(errMsg(sRes.reason, "Failed to load shifts."));
-      setLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const openAddModal = () => {
     setEditId(null);

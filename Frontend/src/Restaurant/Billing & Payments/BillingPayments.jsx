@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import IconButton from "../../stories/IconButton";
@@ -6,18 +6,24 @@ import Input from "../../stories/Form/Input";
 import Select from "../../stories/Form/Select";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Eye, CreditCard, Printer, Ban } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
 
 const BillingPayments = () => {
-  const [bills, setBills] = useState([]);
-  const [orders, setOrders] = useState([]);
-  const [paymentMethods, setPaymentMethods] = useState([]);
-  const [menuItems, setMenuItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    data: [bills, orders, paymentMethods, menuItems],
+    loading,
+    error,
+    setError,
+    reload: load,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/restaurant/bill"), select: readList,
+      fallback: "Failed to load bills." },
+    { fetch: () => APICall.getT("/restaurant/order"), select: readList },
+    { fetch: () => APICall.getT("/restaurant/payment_method"), select: readList },
+    { fetch: () => APICall.getT("/restaurant/menu"), select: readList },
+  ]);
 
   const [showViewBillModal, setShowViewBillModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -35,28 +41,6 @@ const BillingPayments = () => {
   const [genItemsError, setGenItemsError] = useState(null);
 
   const [payForm, setPayForm] = useState({ payment_method_id: "", paid_amount: "", payment_reference: "", remarks: "" });
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.allSettled([
-      APICall.getT("/restaurant/bill"),
-      APICall.getT("/restaurant/order"),
-      APICall.getT("/restaurant/payment_method"),
-      APICall.getT("/restaurant/menu"),
-    ]).then(([bRes, oRes, pRes, mRes]) => {
-      setBills(bRes.status === "fulfilled" ? readList(bRes.value) : []);
-      setOrders(oRes.status === "fulfilled" ? readList(oRes.value) : []);
-      setPaymentMethods(pRes.status === "fulfilled" ? readList(pRes.value) : []);
-      setMenuItems(mRes.status === "fulfilled" ? readList(mRes.value) : []);
-      if (bRes.status === "rejected") setError(errMsg(bRes.reason, "Failed to load bills."));
-      setLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const billableOrders = orders.filter((o) => ["Served", "Ready", "In Progress"].includes(o.order_status) && o.payment_status !== "Paid");
 

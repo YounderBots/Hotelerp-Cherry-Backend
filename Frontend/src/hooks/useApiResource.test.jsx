@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../APICalls/APICalls.js";
-import { useApiResource } from "./useApiResource.js";
+import { useApiResource, useApiResources } from "./useApiResource.js";
 
 // 35 screens are being migrated onto this hook, so what it guarantees needs to
 // be pinned down here rather than discovered one broken page at a time. The two
@@ -169,5 +169,111 @@ describe("setData", () => {
         await waitFor(() => expect(result.current.loading).toBe(false));
         act(() => { result.current.setData([{ id: 1 }, { id: 2 }]); });
         expect(result.current.data).toHaveLength(2);
+    });
+});
+
+// --------------------------------------------------------------------------
+// useApiResources -- the parallel loader behind 20 multi-endpoint screens
+// --------------------------------------------------------------------------
+
+describe("useApiResources", () => {
+    it("resolves every entry in parallel and keeps their order", async () => {
+        const { result } = renderHook(() => useApiResources([
+            { fetch: () => Promise.resolve({ data: ["t1"] }), select: (r) => r.data },
+            { fetch: () => Promise.resolve({ data: ["f1"] }), select: (r) => r.data },
+        ]));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.data).toEqual([["t1"], ["f1"]]);
+        expect(result.current.error).toBeNull();
+    });
+
+    it("a failed secondary lookup does not blank the primary data", async () => {
+        // The reason these screens use allSettled rather than all: a table
+        // screen whose floor lookup fails must still show its tables.
+        const { result } = renderHook(() => useApiResources([
+            { fetch: () => Promise.resolve({ data: ["t1", "t2"] }), select: (r) => r.data,
+              fallback: "Failed to load tables." },
+            { fetch: () => Promise.reject(new ApiError("floors exploded")), select: (r) => r.data },
+        ]));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.data[0]).toEqual(["t1", "t2"]);
+        expect(result.current.data[1]).toEqual([]);
+        // No fallback declared on the floor entry, so it degrades quietly.
+        expect(result.current.error).toBeNull();
+    });
+
+    it("only an entry declaring a fallback can put a message on screen", async () => {
+        const { result } = renderHook(() => useApiResources([
+            { fetch: () => Promise.reject(new ApiError("tables exploded")),
+              fallback: "Failed to load tables." },
+            { fetch: () => Promise.resolve({ data: [] }) },
+        ]));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.error).toBe("tables exploded");
+    });
+
+    it("never leaks a raw network error from a parallel entry", async () => {
+        const { result } = renderHook(() => useApiResources([
+            { fetch: () => Promise.reject(new Error("ECONNREFUSED 127.0.0.1:8050")),
+              fallback: "Failed to load tables." },
+        ]));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.error).toBe("Failed to load tables.");
+    });
+
+    it("uses each entry's own initial value when it fails", async () => {
+        const { result } = renderHook(() => useApiResources([
+            { fetch: () => Promise.reject(new ApiError("x")), initial: { total: 0 } },
+        ]));
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.data[0]).toEqual({ total: 0 });
+    });
+
+    it("an inline entries array does not cause a refetch loop", async () => {
+        const calls = { n: 0 };
+        const { rerender, result } = renderHook(() => useApiResources([
+            { fetch: () => { calls.n += 1; return Promise.resolve({ data: [] }); },
+              select: (r) => r.data },
+        ]));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        rerender();
+        rerender();
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(calls.n).toBe(1);
+    });
+
+    it("does not update state after unmount", async () => {
+        const d = deferred();
+        const { result, unmount } = renderHook(() => useApiResources([
+            { fetch: () => d.promise, select: (r) => r.data },
+        ]));
+        unmount();
+        await act(async () => { d.resolve({ data: ["late"] }); await d.promise; });
+        expect(result.current.data).toEqual([[]]);
+    });
+
+    it("reload refetches every entry and clears a previous error", async () => {
+        const first = vi.fn()
+            .mockRejectedValueOnce(new ApiError("down"))
+            .mockResolvedValueOnce({ data: ["ok"] });
+        const second = vi.fn().mockResolvedValue({ data: [] });
+
+        const { result } = renderHook(() => useApiResources([
+            { fetch: first, select: (r) => r.data, fallback: "Failed to load tables." },
+            { fetch: second, select: (r) => r.data },
+        ]));
+
+        await waitFor(() => expect(result.current.error).toBe("down"));
+        await act(async () => { await result.current.reload(); });
+
+        expect(first).toHaveBeenCalledTimes(2);
+        expect(second).toHaveBeenCalledTimes(2);
+        expect(result.current.error).toBeNull();
+        expect(result.current.data[0]).toEqual(["ok"]);
     });
 });

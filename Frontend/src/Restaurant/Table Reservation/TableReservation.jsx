@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import IconButton from "../../stories/IconButton";
@@ -6,16 +6,22 @@ import Input from "../../stories/Form/Input";
 import Select from "../../stories/Form/Select";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Eye, Check, XCircle, CheckCheck } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
 
 const TableReservation = () => {
-  const [data, setData] = useState([]);
-  const [tables, setTables] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    data: [data, tables],
+    loading,
+    error,
+    setError,
+    reload: load,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/restaurant/table_reservation"), select: readList,
+      fallback: "Failed to load reservations." },
+    { fetch: () => APICall.getT("/restaurant/table"), select: readList },
+  ]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -37,21 +43,6 @@ const TableReservation = () => {
     special_requests: "",
   };
   const [formData, setFormData] = useState(initialForm);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.allSettled([APICall.getT("/restaurant/table_reservation"), APICall.getT("/restaurant/table")]).then(([rRes, tRes]) => {
-      setData(rRes.status === "fulfilled" ? readList(rRes.value) : []);
-      setTables(tRes.status === "fulfilled" ? readList(tRes.value) : []);
-      if (rRes.status === "rejected") setError(errMsg(rRes.reason, "Failed to load reservations."));
-      setLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const tableLabel = (tableId) => {
     const t = tables.find((x) => x.id === tableId);

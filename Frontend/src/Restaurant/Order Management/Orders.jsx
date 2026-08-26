@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import IconButton from "../../stories/IconButton";
@@ -7,19 +7,25 @@ import Input from "../../stories/Form/Input";
 import Select from "../../stories/Form/Select";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Eye, Trash2, Plus, Send } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
 
 const ORDER_TYPES = ["Dine-In", "Takeaway", "Delivery", "Room Service"];
 
 const Orders = () => {
-  const [data, setData] = useState([]);
-  const [tables, setTables] = useState([]);
-  const [menuItems, setMenuItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    data: [data, tables, menuItems],
+    loading,
+    error,
+    setError,
+    reload: load,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/restaurant/order"), select: readList,
+      fallback: "Failed to load orders." },
+    { fetch: () => APICall.getT("/restaurant/table"), select: readList },
+    { fetch: () => APICall.getT("/restaurant/menu"), select: readList },
+  ]);
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -41,26 +47,6 @@ const Orders = () => {
   const [pickVariantId, setPickVariantId] = useState("");
   const [pickQty, setPickQty] = useState(1);
   const [pickNote, setPickNote] = useState("");
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.allSettled([
-      APICall.getT("/restaurant/order"),
-      APICall.getT("/restaurant/table"),
-      APICall.getT("/restaurant/menu"),
-    ]).then(([oRes, tRes, mRes]) => {
-      setData(oRes.status === "fulfilled" ? readList(oRes.value) : []);
-      setTables(tRes.status === "fulfilled" ? readList(tRes.value) : []);
-      setMenuItems(mRes.status === "fulfilled" ? readList(mRes.value) : []);
-      if (oRes.status === "rejected") setError(errMsg(oRes.reason, "Failed to load orders."));
-      setLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const tableLabel = (id) => {
     const t = tables.find((x) => x.id === id);
