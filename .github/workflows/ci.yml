@@ -62,7 +62,7 @@ jobs:
       # --max-warnings holds the baseline the audit established. Lower it as
       # warnings get fixed; never raise it.
       - name: Lint
-        run: npm run lint -- --max-warnings=88
+        run: npm run lint -- --max-warnings=80
 
       - name: Test
         run: npm test

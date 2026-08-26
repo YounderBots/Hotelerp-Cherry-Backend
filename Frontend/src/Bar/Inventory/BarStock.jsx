@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -6,18 +6,24 @@ import Select from "../../stories/Form/Select";
 import IconButton from "../../stories/IconButton";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Eye, Pencil, Activity } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResource } from "../../hooks/useApiResource";
 
 const UNIT_OPTIONS = ["Litre", "ml", "Kg", "Gram", "Nos"];
 const YES_NO_OPTIONS = [{ value: "false", label: "No" }, { value: "true", label: "Yes" }];
 
 const BarStock = () => {
-  const [stockData, setStockData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    data: stockData,
+    loading,
+    error,
+    setError,
+    reload: load,
+  } = useApiResource(() => APICall.getT("/bar/inventory_stock"), {
+    select: readList,
+    fallback: "Failed to load stock.",
+  });
 
   const [activeModal, setActiveModal] = useState(null); // view | adjust | movement | add-item
   const [selectedItem, setSelectedItem] = useState(null);
@@ -27,19 +33,6 @@ const BarStock = () => {
 
   const [adjustForm, setAdjustForm] = useState({ direction: "Add", quantity: "", transaction_type: "ADJUSTMENT", remarks: "" });
   const [newItemForm, setNewItemForm] = useState({ item_name: "", unit: "Litre", min_stock_level: "", is_perishable: false });
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    APICall.getT("/bar/inventory_stock")
-      .then((res) => setStockData(readList(res)))
-      .catch((err) => setError(errMsg(err, "Failed to load stock.")))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const openModal = async (type, row) => {
     setSelectedItem(row);

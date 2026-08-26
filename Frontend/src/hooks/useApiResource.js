@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { errMsg } from "../functions/apiHelpers.js";
+
 /**
  * Load a resource on mount, expose a reload for user actions.
  *
@@ -89,9 +91,12 @@ export function useApiResource(fetcher, options = {}) {
             })
             .catch((err) => {
                 if (aliveRef.current) {
-                    // Imported lazily to keep this hook free of a circular
-                    // dependency on the API module.
-                    setError(toMessage(err, fallbackRef.current));
+                    // errMsg, not err.message: only an ApiError carries a
+                    // message meant for a user. A raw network failure
+                    // ("ECONNREFUSED 127.0.0.1:8040") must never reach the
+                    // screen, which is exactly what the hand-written copies
+                    // this hook replaces were careful about.
+                    setError(errMsg(err, fallbackRef.current));
                 }
             })
             .finally(() => {
@@ -112,13 +117,6 @@ export function useApiResource(fetcher, options = {}) {
     const reload = useCallback(() => run(true), [run]);
 
     return { data, setData, loading, error, setError, reload };
-}
-
-// Kept local rather than imported from apiHelpers so this module has no
-// dependency on the API layer; callers that need ApiError-aware messages pass
-// their own `fallback` and get the error's message when there is one.
-function toMessage(err, fallback) {
-    return err && typeof err.message === "string" && err.message ? err.message : fallback;
 }
 
 export default useApiResource;

@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "../APICalls/APICalls.js";
 import { useApiResource } from "./useApiResource.js";
 
 // 35 screens are being migrated onto this hook, so what it guarantees needs to
@@ -38,17 +39,28 @@ describe("initial load", () => {
         expect(result.current.error).toBeNull();
     });
 
-    it("surfaces the error message and stops loading on failure", async () => {
-        const fetcher = vi.fn().mockRejectedValue(new Error("Room service is down"));
+    it("surfaces an ApiError message, which is the one written for a user", async () => {
+        const fetcher = vi.fn().mockRejectedValue(new ApiError("Guest already checked out"));
         const { result } = renderHook(() =>
             useApiResource(fetcher, { fallback: "Failed to load floors." }));
 
         await waitFor(() => expect(result.current.loading).toBe(false));
-        expect(result.current.error).toBe("Room service is down");
+        expect(result.current.error).toBe("Guest already checked out");
     });
 
-    it("uses the fallback when the error carries no message", async () => {
-        const fetcher = vi.fn().mockRejectedValue(new Error(""));
+    it("never leaks a raw network error to the screen", async () => {
+        // The behaviour the 35 hand-written copies had via errMsg. Losing it
+        // would put "ECONNREFUSED 127.0.0.1:8040" in front of hotel staff.
+        const fetcher = vi.fn().mockRejectedValue(new Error("ECONNREFUSED 127.0.0.1:8040"));
+        const { result } = renderHook(() =>
+            useApiResource(fetcher, { fallback: "Failed to load floors." }));
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.error).toBe("Failed to load floors.");
+    });
+
+    it("uses the fallback when an ApiError carries no message", async () => {
+        const fetcher = vi.fn().mockRejectedValue(new ApiError(""));
         const { result } = renderHook(() =>
             useApiResource(fetcher, { fallback: "Failed to load floors." }));
 
@@ -103,7 +115,7 @@ describe("unmount safety", () => {
 describe("reload", () => {
     it("refetches on demand and clears a previous error", async () => {
         const fetcher = vi.fn()
-            .mockRejectedValueOnce(new Error("Network down"))
+            .mockRejectedValueOnce(new ApiError("Network down"))
             .mockResolvedValueOnce({ data: [{ id: 7 }] });
 
         const { result } = renderHook(() =>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -12,10 +12,14 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { useApiResource } from "../hooks/useApiResource";
 
 const Facilities = () => {
 
-  const [data, setData] = useState([]);
+  const { data, reload: getFacilitiesData } = useApiResource(
+    () => APICall.getT("/masterdata/facilities"),
+    { select: (res) => res?.data ?? [] },
+  );
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -54,10 +58,7 @@ const Facilities = () => {
     }, 2200);
   };
 
-  const getFacilitiesData = async () => {
-    const res = await APICall.getT("/masterdata/facilities");
-    setData(res.data);
-  };
+;
 
   const createFacility = async () => {
     try {
@@ -136,9 +137,6 @@ const Facilities = () => {
     setDeleteId(null);
   };
 
-  useEffect(() => {
-    getFacilitiesData();
-  }, []);
 
   /* ================= UI ================= */
   return (

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -6,9 +6,13 @@ import IconButton from "../stories/IconButton";
 import Toast from "../stories/Toast";
 import { X, Pencil, Trash2, Eye, CheckCircle, AlertTriangle } from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { useApiResource } from "../hooks/useApiResource";
 
 const HskTaskType = () => {
-  const [data, setData] = useState([]);
+  const { data, reload: getTask } = useApiResource(
+    () => APICall.getT("/masterdata/task_type"),
+    { select: (res) => res?.data ?? [] },
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -74,11 +78,6 @@ const HskTaskType = () => {
     setShowViewModal(false);
     setViewData(null);
   };
-
-  const getTask = async () => {
-    const AllTask = await APICall.getT("/masterdata/task_type");
-    setData(AllTask.data);
-  }
 
   const createTask = async () => {
     try {
@@ -157,9 +156,6 @@ const HskTaskType = () => {
     setDeleteId(null);
   };
 
-  useEffect(() => {
-    getTask();
-  }, []);
 
   /* ================= UI ================= */
 

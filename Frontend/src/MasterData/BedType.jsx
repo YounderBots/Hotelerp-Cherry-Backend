@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import Modal from "../stories/Modal"
 import TableTemplate from "../stories/TableTemplate";
 import Input from "../stories/Form/Input";
@@ -9,9 +9,13 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { useApiResource } from "../hooks/useApiResource";
 
 const BedType = () => {
-  const [data, setData] = useState([]);
+  const { data, reload: getBedData } = useApiResource(
+    () => APICall.getT("/masterdata/bed_types"),
+    { select: (res) => res?.data ?? [] },
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -73,11 +77,6 @@ const BedType = () => {
   };
 
 
-  const getBedData = async () => {
-    const AllBedData = await APICall.getT("/masterdata/bed_types");
-    setData(AllBedData.data);
-  }
-
   const createBedType = async () => {
     try {
       await APICall.postT("/masterdata/bed_type", {
@@ -116,9 +115,6 @@ const BedType = () => {
     }
   }
 
-  useEffect(() => {
-    getBedData();
-  }, []);
 
   const handleSave = async () => {
     if (!bedName.trim()) {

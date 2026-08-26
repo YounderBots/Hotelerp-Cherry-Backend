@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal"
 import Input from "../stories/Form/Input";
@@ -9,9 +9,13 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import APICall from "../APICalls/APICalls";
+import { useApiResource } from "../hooks/useApiResource";
 
 const HallFloor = () => {
-  const [data, setData] = useState([]);
+  const { data, reload: getHallFloor } = useApiResource(
+    () => APICall.getT("/masterdata/hall_floor"),
+    { select: (res) => res?.data ?? [] },
+  );
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -71,10 +75,7 @@ const HallFloor = () => {
     setEditId(null);
   };
 
-  const getHallFloor = async () => {
-    const AllFloor = await APICall.getT("/masterdata/hall_floor");
-    setData(AllFloor.data);
-  };
+;
 
   const createNewHall = async () => {
     try {
@@ -111,9 +112,6 @@ const HallFloor = () => {
     }
   };
 
-  useEffect(() => {
-    getHallFloor();
-  }, []);
 
 
   const handleChange = (e) => {

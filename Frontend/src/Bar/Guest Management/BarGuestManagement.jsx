@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -6,10 +6,9 @@ import Select from "../../stories/Form/Select";
 import IconButton from "../../stories/IconButton";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { Eye, Pencil } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResource } from "../../hooks/useApiResource";
 
 const GUEST_TYPES = [
   { value: "Walk-In", label: "Walk-In" },
@@ -19,9 +18,16 @@ const GUEST_TYPES = [
 ];
 
 const BarGuestManagement = () => {
-  const [guests, setGuests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    data: guests,
+    loading,
+    error,
+    setError,
+    reload: load,
+  } = useApiResource(() => APICall.getT("/bar/guest"), {
+    select: readList,
+    fallback: "Failed to load guests.",
+  });
 
   const [showGuestModal, setShowGuestModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -32,19 +38,6 @@ const BarGuestManagement = () => {
 
   const initialForm = { first_name: "", last_name: "", mobile: "", email: "", guest_type: "Walk-In", special_notes: "" };
   const [formData, setFormData] = useState(initialForm);
-
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    APICall.getT("/bar/guest")
-      .then((res) => setGuests(readList(res)))
-      .catch((err) => setError(errMsg(err, "Failed to load guests.")))
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const openAddModal = () => {
     setEditId(null);
