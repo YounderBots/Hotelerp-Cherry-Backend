@@ -1,14 +1,15 @@
-"""Route -> page permission map for the gateway (GENERATED, then reviewed).
+"""Route -> page permission map for the gateway (GENERATED -- do not hand-edit).
 
 Every external request reaches the operational services through the gateway
 proxy (`/{prefix}/{path}`), so this one table is the whole authorisation
 surface for the five operational services.
 
 HOW THIS WAS BUILT
-    Derived mechanically from the SPA: for each route in App.jsx, the endpoints
-    its page component actually calls. The mapping therefore reflects how the
-    app really uses the API rather than a guess. Regenerate with
-    Backend/tools/build_rbac_map.py after adding pages or endpoints.
+    Derived mechanically from the SPA by Backend/tools/build_rbac_map.py: for
+    each route in App.jsx, the endpoints its page -- and every component that
+    page imports -- actually calls. The mapping therefore reflects how the app
+    really uses the API rather than a guess. Regenerate after adding pages or
+    endpoints; the tool also reports what it could not attribute.
 
 SEMANTICS
     A row maps (service prefix, path pattern, HTTP method) to the pages that
@@ -20,8 +21,7 @@ SEMANTICS
     Most rows list exactly one page. Multi-page rows are overwhelmingly shared
     reference-data reads (room types, tax types, payment methods) that many
     screens need; requiring permission on all of them would deny legitimate
-    users, so ANY is the correct rule. Only three WRITE rows are shared, and
-    each pair is two views of one feature.
+    users, so ANY is the correct rule.
 
     `{id}` matches exactly one path segment.
 """
@@ -54,6 +54,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("bar", "inventory_item/{id}/transactions", "GET"): ("/bar_stock",),
     ("bar", "inventory_stock", "GET"): ("/bar_stock",),
     ("bar", "inventory_stock/adjust", "POST"): ("/bar_stock",),
+    ("bar", "inventory_stock/low_stock", "GET"): ("/bar_reports_analytics",),
     ("bar", "menu", "GET"): ("/bar_billing_payments", "/bar_menus", "/bar_orders", "/bar_recipe_management",),
     ("bar", "menu", "POST"): ("/bar_menus",),
     ("bar", "menu/{id}", "DELETE"): ("/bar_menus",),
@@ -76,7 +77,13 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("bar", "order/{id}/items", "POST"): ("/bar_orders",),
     ("bar", "order/{id}/status", "PUT"): ("/bar_orders",),
     ("bar", "payment_method", "GET"): ("/bar_billing_payments",),
-    ("bar", "reports/daily_sales", "GET"): ("/bar_reports_analytics",),
+    ("bar", "reports/cancelled_orders", "GET"): ("/bar_reports_analytics", "/dashboard",),
+    ("bar", "reports/daily_sales", "GET"): ("/bar_reports_analytics", "/dashboard",),
+    ("bar", "reports/item_sales", "GET"): ("/bar_reports_analytics", "/dashboard",),
+    ("bar", "reports/payment_mode", "GET"): ("/bar_reports_analytics", "/dashboard",),
+    ("bar", "reports/staff_performance", "GET"): ("/bar_reports_analytics",),
+    ("bar", "reports/station_performance", "GET"): ("/dashboard",),
+    ("bar", "reports/table_turnover", "GET"): ("/dashboard",),
     ("bar", "staff_assignment", "GET"): ("/bar_roster", "/bar_shift_planning",),
     ("bar", "staff_assignment", "POST"): ("/bar_roster", "/bar_shift_planning",),
     ("bar", "staff_assignment/{id}", "PUT"): ("/bar_shift_planning",),
@@ -103,7 +110,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("hotel", "room_booking", "POST"): ("/booking",),
     ("hotel", "room_booking", "PUT"): ("/booking",),
     ("hotel", "room_booking/{id}", "DELETE"): ("/booking",),
-    ("hotel", "room_reservation", "GET"): ("/reservation", "/reservation_view", "/room_booked_details", "/settlement_summary", "/user_reserved_details",),
+    ("hotel", "room_reservation", "GET"): ("/dashboard", "/reservation", "/reservation_view", "/room_booked_details", "/settlement_summary", "/user_reserved_details",),
     ("hotel", "room_reservation", "POST"): ("/add_new_reservation",),
     ("hotel", "room_reservation", "PUT"): ("/ReservationEdit", "/reservation",),
     ("hotel", "room_reservation/{id}", "DELETE"): ("/reservation",),
@@ -117,6 +124,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("hotel", "roomincident_log", "POST"): ("/room_incident_log",),
     ("hotel", "roomincident_log", "PUT"): ("/room_incident_log",),
     ("hotel", "roomincident_log/{id}", "DELETE"): ("/room_incident_log",),
+    ("hotel", "user_activity_log", "GET"): ("/dashboard",),
     # ---- masterdata ----
     ("masterdata", "bed_type", "POST"): ("/bed_type",),
     ("masterdata", "bed_type", "PUT"): ("/bed_type",),
@@ -154,7 +162,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("masterdata", "reservation_status", "POST"): ("/reservation_status",),
     ("masterdata", "reservation_status", "PUT"): ("/reservation_status",),
     ("masterdata", "reservation_status/{id}", "DELETE"): ("/reservation_status",),
-    ("masterdata", "room", "GET"): ("/ReservationEdit", "/ReservationView", "/add_new_reservation", "/reservation", "/room_incident_log", "/room_view", "/rooms", "/task_assign",),
+    ("masterdata", "room", "GET"): ("/ReservationEdit", "/ReservationView", "/add_new_reservation", "/dashboard", "/reservation", "/room_incident_log", "/room_view", "/rooms", "/task_assign",),
     ("masterdata", "room", "POST"): ("/rooms",),
     ("masterdata", "room", "PUT"): ("/rooms",),
     ("masterdata", "room/{id}", "DELETE"): ("/rooms",),
@@ -193,7 +201,13 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("restaurant", "inventory_item/{id}/transactions", "GET"): ("/stock",),
     ("restaurant", "inventory_stock", "GET"): ("/stock",),
     ("restaurant", "inventory_stock/adjust", "POST"): ("/stock",),
-    ("restaurant", "kitchen", "GET"): ("/menus", "/recipe_management",),
+    ("restaurant", "inventory_stock/low_stock", "GET"): ("/reports_analytics",),
+    ("restaurant", "kitchen", "GET"): ("/kot/dessert", "/kot/grill", "/kot/main_kitchen", "/menus", "/recipe_management",),
+    ("restaurant", "kot", "GET"): ("/kot/dessert", "/kot/grill", "/kot/main_kitchen",),
+    ("restaurant", "kot/item/{id}/status", "PUT"): ("/kot/dessert", "/kot/grill", "/kot/main_kitchen",),
+    ("restaurant", "kot/{id}", "GET"): ("/kot/dessert", "/kot/grill", "/kot/main_kitchen",),
+    ("restaurant", "kot/{id}/acknowledge", "PUT"): ("/kot/dessert", "/kot/grill", "/kot/main_kitchen",),
+    ("restaurant", "kot/{id}/status", "PUT"): ("/kot/dessert", "/kot/grill", "/kot/main_kitchen",),
     ("restaurant", "menu", "GET"): ("/billing_payments", "/combo_deals", "/menus", "/orders", "/recipe_management",),
     ("restaurant", "menu", "POST"): ("/menus",),
     ("restaurant", "menu/{id}", "DELETE"): ("/menus",),
@@ -216,7 +230,15 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("restaurant", "order/{id}/items", "POST"): ("/orders",),
     ("restaurant", "order/{id}/status", "PUT"): ("/orders",),
     ("restaurant", "payment_method", "GET"): ("/billing_payments",),
-    ("restaurant", "reports/daily_sales", "GET"): ("/reports_analytics",),
+    ("restaurant", "reports/average_check_size", "GET"): ("/dashboard",),
+    ("restaurant", "reports/cancelled_orders", "GET"): ("/dashboard", "/reports_analytics",),
+    ("restaurant", "reports/category_sales", "GET"): ("/dashboard",),
+    ("restaurant", "reports/daily_sales", "GET"): ("/dashboard", "/reports_analytics",),
+    ("restaurant", "reports/item_sales", "GET"): ("/dashboard", "/reports_analytics",),
+    ("restaurant", "reports/kitchen_performance", "GET"): ("/dashboard", "/reports_analytics",),
+    ("restaurant", "reports/payment_mode", "GET"): ("/dashboard", "/reports_analytics",),
+    ("restaurant", "reports/staff_performance", "GET"): ("/reports_analytics",),
+    ("restaurant", "reports/table_turnover", "GET"): ("/dashboard", "/reports_analytics",),
     ("restaurant", "staff_assignment", "GET"): ("/restaurant_roster", "/restaurant_shift_planning", "/view",),
     ("restaurant", "staff_assignment", "POST"): ("/restaurant_roster", "/restaurant_shift_planning",),
     ("restaurant", "staff_assignment/{id}", "PUT"): ("/restaurant_shift_planning",),
@@ -261,3 +283,128 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
 
 METHOD_ACTION = {"GET": "view", "POST": "create", "PUT": "edit",
                  "PATCH": "edit", "DELETE": "delete"}
+
+# Endpoints the services expose that no page was shown to call. Under
+# RBAC_GATEWAY_MODE=enforce these are denied, which is the intended
+# fail-closed behaviour: an endpoint nobody has classified should not be
+# reachable by everyone. They are listed rather than silently absent so the
+# deny is a reviewed decision, and so that wiring one into the UI shows up as
+# a diff here on the next run of the generator.
+UNCALLED_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
+    # ---- bar ----
+    ("bar", "bill/{id}/split", "POST"),
+    ("bar", "bot/{id}/print", "POST"),
+    ("bar", "guest/{id}", "DELETE"),
+    ("bar", "guest/{id}/address", "POST"),
+    ("bar", "guest/{id}/feedback", "POST"),
+    ("bar", "guest/{id}/loyalty", "POST"),
+    ("bar", "inventory_item/{id}", "PUT"),
+    ("bar", "inventory_purchase", "POST"),
+    ("bar", "menu_category", "POST"),
+    ("bar", "menu_sub_category", "POST"),
+    ("bar", "order/item/{id}", "PUT"),
+    ("bar", "payment_method", "POST"),
+    ("bar", "settings", "GET"),
+    ("bar", "settings", "POST"),
+    ("bar", "settings/{id}", "PUT"),
+    ("bar", "staff_assignment/{id}", "DELETE"),
+    ("bar", "station", "POST"),
+    ("bar", "table/{id}", "GET"),
+    # ---- hotel ----
+    ("hotel", "export_hsk_details", "GET"),
+    ("hotel", "export_room_booked_details", "GET"),
+    ("hotel", "export_settlement_summary", "GET"),
+    ("hotel", "export_user_activity", "GET"),
+    ("hotel", "housekeeper_tasks/{id}", "GET"),
+    ("hotel", "inquiry/{id}", "GET"),
+    ("hotel", "keeper_info/{id}", "GET"),
+    ("hotel", "night_audit_process", "GET"),
+    ("hotel", "paid_amount", "GET"),
+    ("hotel", "reservation/{id}", "GET"),
+    ("hotel", "room_booking/{id}", "GET"),
+    ("hotel", "room_details", "POST"),
+    ("hotel", "room_sales", "GET"),
+    ("hotel", "roomincident_log/{id}", "GET"),
+    ("hotel", "settlement_summary", "GET"),
+    # ---- masterdata ----
+    ("masterdata", "bed_type/{id}", "GET"),
+    ("masterdata", "complementry/{id}", "GET"),
+    ("masterdata", "country_currency/{id}", "GET"),
+    ("masterdata", "discount/{id}", "GET"),
+    ("masterdata", "facilities/{id}", "GET"),
+    ("masterdata", "hall_floor/{id}", "GET"),
+    ("masterdata", "identity_proof/{id}", "GET"),
+    ("masterdata", "payment_methods/{id}", "GET"),
+    ("masterdata", "reservation_status/{id}", "GET"),
+    ("masterdata", "room/{id}", "GET"),
+    ("masterdata", "room_types/{id}", "GET"),
+    ("masterdata", "task_type/{id}", "GET"),
+    ("masterdata", "tax/{id}", "GET"),
+    # ---- restaurant ----
+    ("restaurant", "bill/{id}/split", "POST"),
+    ("restaurant", "guest/{id}", "DELETE"),
+    ("restaurant", "guest/{id}/address", "POST"),
+    ("restaurant", "guest/{id}/feedback", "POST"),
+    ("restaurant", "guest/{id}/loyalty", "POST"),
+    ("restaurant", "inventory_item/{id}", "PUT"),
+    ("restaurant", "inventory_purchase", "POST"),
+    ("restaurant", "kitchen", "POST"),
+    ("restaurant", "kot/{id}/print", "POST"),
+    ("restaurant", "menu_category", "POST"),
+    ("restaurant", "menu_sub_category", "POST"),
+    ("restaurant", "order/item/{id}", "PUT"),
+    ("restaurant", "payment_method", "POST"),
+    ("restaurant", "settings", "GET"),
+    ("restaurant", "settings", "POST"),
+    ("restaurant", "settings/{id}", "PUT"),
+    ("restaurant", "staff_assignment/{id}", "DELETE"),
+    ("restaurant", "table/merge", "POST"),
+    ("restaurant", "table/unmerge/{id}", "POST"),
+    ("restaurant", "table/{id}", "GET"),
+    ("restaurant", "table_reservation/{id}", "GET"),
+    ("restaurant", "waitlist", "GET"),
+    ("restaurant", "waitlist", "POST"),
+    ("restaurant", "waitlist/{id}", "PUT"),
+    # ---- user ----
+    ("user", "departments/{id}", "GET"),
+    ("user", "designations/{id}", "GET"),
+    ("user", "menus", "POST"),
+    ("user", "menus", "PUT"),
+    ("user", "menus/{id}", "DELETE"),
+    ("user", "menus/{id}", "GET"),
+    ("user", "role_permissions", "GET"),
+    ("user", "role_permissions/{id}", "DELETE"),
+    ("user", "roles/{id}", "GET"),
+    ("user", "shifts/{id}", "GET"),
+    ("user", "submenus", "GET"),
+    ("user", "submenus", "POST"),
+    ("user", "submenus", "PUT"),
+    ("user", "submenus/by-menu/{id}", "GET"),
+    ("user", "submenus/{id}", "DELETE"),
+    ("user", "submenus/{id}", "GET"),
+    ("user", "users/{id}", "GET"),
+    ("user", "verify_credentials", "POST"),
+)
+
+# Detail routes -> the menu pages you reach them from.
+#
+# A permission claim is keyed by the user's MENU paths, so a routed screen with
+# no menu row -- a detail view opened by clicking a row -- can never appear in
+# one. A map row naming only such pages would deny everyone, an owner holding
+# every permission included. The gateway therefore also accepts the action on a
+# page the app navigates here from, which is the rule the UI already follows:
+# you arrived from a page you were allowed to open.
+PAGE_PARENTS: dict[str, tuple[str, ...]] = {
+    "/ReservationView": ("/dashboard", "/reservation_view",),
+    "/authentication/forgotpassword": ("/authentication/lockscreen",),
+    "/view": ("/floor_layout",),
+}
+
+# Routed screens with no menu row and nothing navigating to them. Nothing can
+# open these, so their rows grant nothing; listed so a dead route stays visible
+# rather than being mistaken for a permission bug.
+UNREACHABLE_ROUTES: tuple[str, ...] = (
+    "/ReservationEdit",
+    "/authentication/lockscreen",
+    "/authentication/register",
+)

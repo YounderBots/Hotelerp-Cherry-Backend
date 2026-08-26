@@ -35,7 +35,7 @@ import logging
 import os
 from typing import Iterable, Optional
 
-from resources.rbac_map import METHOD_ACTION, ROUTE_PERMISSIONS
+from resources.rbac_map import METHOD_ACTION, PAGE_PARENTS, ROUTE_PERMISSIONS
 
 logger = logging.getLogger("loginservice.rbac")
 
@@ -150,6 +150,15 @@ def check(
     for page in pages:
         if perm.get(page, 0) & bit:
             return None
+        # A detail view has no menu row, so it can never be a key in `perm`.
+        # Accept the action on a page the app navigates there from instead --
+        # otherwise a row naming only detail views denies everyone, which is
+        # what GET /hotel/room_reservation/{id} did: its two pages were
+        # /ReservationEdit and /ReservationView, and an owner holding every
+        # permission would still have been refused.
+        for parent in PAGE_PARENTS.get(page, ()):
+            if perm.get(parent, 0) & bit:
+                return None
 
     reason = (
         f"role lacks '{action}' on "

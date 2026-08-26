@@ -25,7 +25,12 @@ from resources.rbac import (
     build_permission_claim,
     check,
 )
-from resources.rbac_map import METHOD_ACTION, ROUTE_PERMISSIONS
+from resources.rbac_map import (
+    METHOD_ACTION,
+    PAGE_PARENTS,
+    ROUTE_PERMISSIONS,
+    UNREACHABLE_ROUTES,
+)
 
 logging.disable(logging.CRITICAL)
 
@@ -235,13 +240,69 @@ def test_all_five_services_are_covered():
     assert covered == {"masterdata", "hotel", "user", "restaurant", "bar"}
 
 
+def test_a_detail_view_is_granted_by_the_page_you_reach_it_from(enforce):
+    """The bug this fallback exists for.
+
+    GET /hotel/room_reservation/{id} is attributed to /ReservationEdit and
+    /ReservationView. Neither has a menu row, so neither can ever be a key in a
+    permission claim -- under enforce the row refused every user alive,
+    including one holding every permission. /ReservationView is opened from
+    /reservation_view, so that page's `view` is what should grant it.
+    """
+    assert "/ReservationView" in PAGE_PARENTS
+    reached_from = {"/reservation_view": VIEW}
+    assert check(reached_from, "hotel", "room_reservation/1", "GET") is None
+
+
+def test_the_parent_fallback_still_respects_the_action(enforce):
+    """Inheriting the page must not mean inheriting every action on it."""
+    view_only = {"/reservation_view": VIEW}
+    assert check(view_only, "hotel", "room_reservation", "PUT") is not None
+
+
+def test_the_parent_fallback_does_not_grant_unrelated_pages(enforce):
+    """Holding a page that navigates nowhere near it grants nothing."""
+    elsewhere = {"/bar_menus": VIEW | CREATE | EDIT | DELETE}
+    assert check(elsewhere, "hotel", "room_reservation/1", "GET") is not None
+
+
+def test_no_row_is_grantable_only_through_a_dead_route():
+    """Every row must have at least one page something can actually open.
+
+    A row naming only unreachable routes denies everyone by construction, and
+    would read in the logs as a permission misconfiguration rather than a map
+    defect. Rows whose pages are detail views are fine: PAGE_PARENTS resolves
+    those to a real menu page.
+    """
+    dead = set(UNREACHABLE_ROUTES)
+    ungrantable = {
+        k: v for k, v in ROUTE_PERMISSIONS.items()
+        if v and all(p in dead and not PAGE_PARENTS.get(p) for p in v)
+    }
+    assert not ungrantable, f"rows nothing can grant: {sorted(ungrantable)}"
+
+
 def test_write_rows_are_essentially_unambiguous():
     """Writes are the operations worth guarding; they must resolve to one page.
 
-    Three known exceptions exist, each a pair of screens over one feature.
+    Six known exceptions, each several views of a single feature: a roster and
+    its shift planner, a reservation and its edit view, and the kitchen display
+    mounted once per station. Pinned as an exact set rather than a count, so a
+    genuinely new ambiguity fails here even if a known one is removed.
     """
-    shared_writes = [
-        (k, v) for k, v in ROUTE_PERMISSIONS.items()
+    expected = {
+        ("bar", "staff_assignment", "POST"),
+        ("hotel", "room_reservation", "PUT"),
+        ("restaurant", "kot/item/{id}/status", "PUT"),
+        ("restaurant", "kot/{id}/acknowledge", "PUT"),
+        ("restaurant", "kot/{id}/status", "PUT"),
+        ("restaurant", "staff_assignment", "POST"),
+    }
+    shared_writes = {
+        k for k, v in ROUTE_PERMISSIONS.items()
         if k[2] != "GET" and len(v) > 1
-    ]
-    assert len(shared_writes) <= 3, f"new ambiguous write rows: {shared_writes}"
+    }
+    assert shared_writes == expected, (
+        f"unreviewed ambiguous writes: {sorted(shared_writes - expected)}; "
+        f"gone: {sorted(expected - shared_writes)}"
+    )
