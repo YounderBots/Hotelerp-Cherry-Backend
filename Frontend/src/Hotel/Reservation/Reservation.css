@@ -3187,16 +3187,25 @@ input[type="number"] {
    Scoped to the table layout: below 900px TableTemplate switches to stacked
    cards, where fixed widths would be wrong. */
 @media (min-width: 901px) {
-  /* The reference. Long legacy ids (RES-20260806072509-QULJOV) wrap onto two
-     lines rather than dictating the width of the whole table. */
-  .reservation-table .table thead th:nth-child(2),
-  .reservation-table .table tbody td:nth-child(2) {
-    max-width: 132px;
-    overflow-wrap: anywhere;
-  }
+  /* COLUMN SIZING — floors, not ceilings.
+     Columns are 1=S.No 2=Reservation ID 3=Guest 4=Stay 5=Room 6=Amount
+     7=Status 8=Actions.
 
-  /* Actions shrink-to-fit around however many icons the row's state allows,
-     instead of claiming a quarter of the table. */
+     The first version capped each content column with `max-width`, at pixel
+     values tuned for the ~1090px content area of a 1440px display. On a wider
+     screen `table-layout: auto` had nowhere to put the extra width: every
+     content column was at its ceiling, so all the slack went to the one column
+     with no cap. On a 1920px display the row-number column took **517px of a
+     1540px table** while the reservation id wrapped onto four lines next to it.
+
+     Minimums invert that. Each content column is guaranteed a legible width
+     and is free to absorb its share of whatever is left over, so the table
+     reads well at 1280 and at 2560 without a breakpoint for either. S.No and
+     Actions hug their contents, because a row number and a fixed set of icons
+     have no use for slack. */
+
+  .reservation-table .table thead th:first-child,
+  .reservation-table .table tbody td:first-child,
   .reservation-table .table thead th:last-child,
   .reservation-table .table tbody td:last-child {
     width: 1%;
@@ -3208,18 +3217,41 @@ input[type="number"] {
     flex-wrap: nowrap;
   }
 
-  /* Columns are 1=S.No 2=Reservation ID 3=Guest 4=Stay 5=Room 6=Amount
-     7=Status 8=Actions. Stay and Status were both resolving wider than their
-     content needs and pushing Actions off the visible width. */
-  .reservation-table .table thead th:nth-child(4),
-  .reservation-table .table tbody td:nth-child(4) {
-    max-width: 112px;
+  /* A dense record table earns tighter gutters than a 4-column settings list.
+     The shared 25.5px side padding cost 51px per column — 400px across the
+     row, which is what forced the horizontal scroll this table used to need. */
+  .reservation-table .table thead th,
+  .reservation-table .table tbody td {
+    padding-left: 12px;
+    padding-right: 12px;
   }
 
+  .reservation-table .table thead th:nth-child(2),
+  .reservation-table .table tbody td:nth-child(2) { min-width: 150px; }
+  .reservation-table .table thead th:nth-child(3),
+  .reservation-table .table tbody td:nth-child(3) { min-width: 150px; }
+  .reservation-table .table thead th:nth-child(4),
+  .reservation-table .table tbody td:nth-child(4) { min-width: 104px; }
+  .reservation-table .table thead th:nth-child(5),
+  .reservation-table .table tbody td:nth-child(5) { min-width: 130px; }
+  .reservation-table .table thead th:nth-child(6),
+  .reservation-table .table tbody td:nth-child(6) { min-width: 116px; }
   .reservation-table .table thead th:nth-child(7),
-  .reservation-table .table tbody td:nth-child(7) {
-    max-width: 124px;
-  }
+  .reservation-table .table tbody td:nth-child(7) { min-width: 118px; }
+}
+
+/* The booking reference breaks at its own hyphens and nowhere else.
+   `overflow-wrap: anywhere` split RES-20260806072509-QULJOV mid-number, into
+   "RES- / 202608060 / 72509- / QULJOV" — four lines, and two of them cut a
+   single token in half. */
+.reservation-table .table tbody td:nth-child(2) {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* A status is one word to scan, never two lines to read. */
+.reservation-table .table-cell-badge {
+  white-space: nowrap;
 }
 
 .res-amount-cell {
@@ -3277,22 +3309,13 @@ input[type="number"] {
   align-items: start;
 }
 
-.res-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.res-field-label {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-secondary, #334155);
-}
-
-/* Native selects in the edit form borrow the shared control chrome from
-   FormField.css so they match the Input beside them exactly. */
-.res-field .select-control {
+/* The edit form's native <select> fields use the shared .form-group /
+   .form-label / .select-control classes from FormField.css, NOT a private
+   pair of their own. A private copy is what put their labels 12px below the
+   Input labels sitting beside them in the same row — the exact drift
+   FormField.css was written to end. Only the width reset is local, because a
+   bare <select> does not fill its grid track on its own. */
+.res-form-grid .select-control {
   width: 100%;
   min-width: 0;
 }

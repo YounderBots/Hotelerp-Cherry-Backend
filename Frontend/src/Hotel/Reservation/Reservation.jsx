@@ -1019,9 +1019,12 @@ ${line("Payment method", row.payment_method || "—")}
 
           <ViewSection title="Guest">
             <div className="res-form-grid">
-              <label className="res-field">
-                <span className="res-field-label">Salutation</span>
+              <div className="form-group">
+                <label className="form-label" htmlFor="edit-salutation">
+                  Salutation
+                </label>
                 <select
+                  id="edit-salutation"
                   className="select-control"
                   value={editForm.salutation || ""}
                   onChange={setField("salutation")}
@@ -1031,7 +1034,7 @@ ${line("Payment method", row.payment_method || "—")}
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
-              </label>
+              </div>
               <Input
                 label="First Name"
                 required
@@ -1117,11 +1120,12 @@ ${line("Payment method", row.payment_method || "—")}
 
           <ViewSection title="Reservation">
             <div className="res-form-grid">
-              <label className="res-field">
-                <span className="res-field-label">
-                  Status <span className="required">*</span>
-                </span>
+              <div className="form-group">
+                <label className="form-label form-label--required" htmlFor="edit-status">
+                  Status
+                </label>
                 <select
+                  id="edit-status"
                   className="select-control"
                   value={editForm.reservation_status || ""}
                   onChange={setField("reservation_status")}
@@ -1132,10 +1136,13 @@ ${line("Payment method", row.payment_method || "—")}
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
-              </label>
-              <label className="res-field">
-                <span className="res-field-label">Type</span>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="edit-type">
+                  Type
+                </label>
                 <select
+                  id="edit-type"
                   className="select-control"
                   value={editForm.reservation_type || ""}
                   onChange={setField("reservation_type")}
@@ -1144,12 +1151,13 @@ ${line("Payment method", row.payment_method || "—")}
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
-              </label>
-              <label className="res-field">
-                <span className="res-field-label">
-                  Payment Method <span className="required">*</span>
-                </span>
+              </div>
+              <div className="form-group">
+                <label className="form-label form-label--required" htmlFor="edit-payment-method">
+                  Payment Method
+                </label>
                 <select
+                  id="edit-payment-method"
                   className="select-control"
                   value={editForm.payment_method_id || ""}
                   onChange={setField("payment_method_id")}
@@ -1160,7 +1168,7 @@ ${line("Payment method", row.payment_method || "—")}
                     <option key={pm.id} value={pm.id}>{pm.payment_method}</option>
                   ))}
                 </select>
-              </label>
+              </div>
               <Input
                 label="Room Complementary"
                 value={editForm.room_complementary || ""}
@@ -1182,9 +1190,12 @@ ${line("Payment method", row.payment_method || "—")}
           <ViewSection title="Charges">
             <ErrorAlert message={editQuoteError} />
             <div className="res-form-grid">
-              <label className="res-field">
-                <span className="res-field-label">Tax Type</span>
+              <div className="form-group">
+                <label className="form-label" htmlFor="edit-tax-type">
+                  Tax Type
+                </label>
                 <select
+                  id="edit-tax-type"
                   className="select-control"
                   value={editForm.tax_type_id || ""}
                   onChange={setField("tax_type_id")}
@@ -1196,10 +1207,13 @@ ${line("Payment method", row.payment_method || "—")}
                     </option>
                   ))}
                 </select>
-              </label>
-              <label className="res-field">
-                <span className="res-field-label">Discount Type</span>
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="edit-discount-type">
+                  Discount Type
+                </label>
                 <select
+                  id="edit-discount-type"
                   className="select-control"
                   value={editForm.discount_type_id || ""}
                   onChange={setField("discount_type_id")}
@@ -1211,7 +1225,7 @@ ${line("Payment method", row.payment_method || "—")}
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
               <Input
                 label="Extra Charges"
                 type="number"
@@ -1336,9 +1350,12 @@ ${line("Payment method", row.payment_method || "—")}
           value={payModal?.amount ?? ""}
           onChange={(e) => setPayModal((m) => ({ ...m, amount: e.target.value }))}
         />
-        <label className="res-field">
-          <span className="res-field-label">Payment method</span>
+        <div className="form-group">
+          <label className="form-label" htmlFor="pay-method-select">
+            Payment method
+          </label>
           <select
+            id="pay-method-select"
             className="select-control"
             value={payModal?.method ?? ""}
             onChange={(e) => setPayModal((m) => ({ ...m, method: e.target.value }))}
@@ -1348,7 +1365,7 @@ ${line("Payment method", row.payment_method || "—")}
               <option key={pm.id} value={pm.payment_method}>{pm.payment_method}</option>
             ))}
           </select>
-        </label>
+        </div>
       </Modal>
 
       {/* ============================ REFUND ============================ */}
@@ -1387,9 +1404,12 @@ ${line("Payment method", row.payment_method || "—")}
           value={refundModal?.amount ?? ""}
           onChange={(e) => setRefundModal((m) => ({ ...m, amount: e.target.value }))}
         />
-        <label className="res-field">
-          <span className="res-field-label">Refund method</span>
+        <div className="form-group">
+          <label className="form-label" htmlFor="refund-method-select">
+            Refund method
+          </label>
           <select
+            id="refund-method-select"
             className="select-control"
             value={refundModal?.method ?? ""}
             onChange={(e) => setRefundModal((m) => ({ ...m, method: e.target.value }))}
@@ -1399,7 +1419,7 @@ ${line("Payment method", row.payment_method || "—")}
               <option key={pm.id} value={pm.payment_method}>{pm.payment_method}</option>
             ))}
           </select>
-        </label>
+        </div>
       </Modal>
 
       <Toast {...toast} />
