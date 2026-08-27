@@ -1,0 +1,100 @@
+/* TableFilters.css — the business-filter row inside a table toolbar.
+   Control chrome comes from FormField.css (.select-control / .form-control and
+   their --small size); this file only lays the fields out and styles the label
+   and the Clear button. */
+
+.table-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--spacing-sm) var(--spacing-md);
+  min-width: 0;
+}
+
+.table-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* A flex item defaults to min-content; without this a long option label
+     stretches the track and pushes the toolbar past the viewport. */
+  min-width: 0;
+}
+
+.table-filter__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Filters are secondary to the data, so they are sized to their content
+   instead of filling the toolbar the way a form field does. */
+.table-filter__control {
+  width: auto;
+  min-width: 132px;
+}
+
+.table-filters__clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--field-height-sm, 36px);
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-dark);
+  border-radius: var(--field-radius, var(--border-radius-md));
+  cursor: pointer;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.table-filters__clear:hover:not(:disabled) {
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+  background: var(--bg-secondary);
+}
+
+.table-filters__clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The toolbar stacks below 768px (TableTemplate.css). Filters go full width
+   there and their controls grow, so a date input is not left at its intrinsic
+   width in the middle of an otherwise stretched row. */
+@media (max-width: 768px) {
+  .table-filters {
+    width: 100%;
+  }
+
+  .table-filter {
+    flex: 1 1 150px;
+  }
+
+  .table-filter__control {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .table-filters__clear {
+    flex: 0 0 auto;
+    align-self: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .table-filter {
+    flex-basis: 100%;
+  }
+
+  .table-filters__clear {
+    width: 100%;
+    justify-content: center;
+  }
+}

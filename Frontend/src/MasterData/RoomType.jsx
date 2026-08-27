@@ -85,13 +85,13 @@ const RoomType = () => {
   });
 
   const createRoomType = async () => {
-    await APICall.postT(ENDPOINT, payload());
+    await APICall.postT("/masterdata/room_types", payload());
     showToast("Room type added successfully", "success");
     reload();
   };
 
   const updateRoomType = async () => {
-    await APICall.putT(ENDPOINT, { id: editId, ...payload() });
+    await APICall.putT("/masterdata/room_types", { id: editId, ...payload() });
     showToast("Room type updated successfully", "update");
     reload();
   };
@@ -155,7 +155,10 @@ const RoomType = () => {
     const id = deleteId;
     setDeleteId(null);
     try {
-      await APICall.deleteT(`${ENDPOINT}/${id}`);
+      // Literal, not `${ENDPOINT}`: build_rbac_map.py reads these call
+      // sites to derive the gateway permission map, and cannot resolve a
+      // variable — this row had dropped out of it.
+      await APICall.deleteT(`/masterdata/room_types/${id}`);
       showToast("Room type deleted successfully", "delete");
       reload();
     } catch (err) {

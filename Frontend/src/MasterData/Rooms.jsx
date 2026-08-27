@@ -108,13 +108,13 @@ const Rooms = () => {
   };
 
   const createRoom = async () => {
-    await APICall.postT(ENDPOINT, buildForm(false));
+    await APICall.postT("/masterdata/room", buildForm(false));
     showToast("Room added successfully", "success");
     reload();
   };
 
   const updateRoom = async () => {
-    await APICall.putT(ENDPOINT, buildForm(true));
+    await APICall.putT("/masterdata/room", buildForm(true));
     showToast("Room updated successfully", "update");
     reload();
   };
@@ -207,7 +207,10 @@ const Rooms = () => {
     const id = deleteId;
     setDeleteId(null);
     try {
-      await APICall.deleteT(`${ENDPOINT}/${id}`);
+      // Literal, not `${ENDPOINT}`: build_rbac_map.py reads these call
+      // sites to derive the gateway permission map, and cannot resolve a
+      // variable — this row had dropped out of it.
+      await APICall.deleteT(`/masterdata/room/${id}`);
       showToast("Room deleted successfully", "delete");
       reload();
     } catch (err) {

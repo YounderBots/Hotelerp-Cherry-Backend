@@ -45,6 +45,11 @@ WHAT IT STILL CANNOT SEE
     UNCALLED_ENDPOINTS in the generated file, so the deny is a reviewed
     decision rather than a 403 discovered in production.
 
+    A StaticFiles mount has no decorator, so it is not even in the upstream
+    list. CURATED_ROWS below carries the few routes in that position; it is
+    merged into the derived table so they survive a regeneration rather than
+    being patched into the output by hand.
+
 Run from the repository root.
 """
 
@@ -61,6 +66,33 @@ SRC = ROOT / "Frontend" / "src"
 OUT = ROOT / "Backend/Services/LoginServices/resources/rbac_map.py"
 
 PREFIXES = ("masterdata", "hotel", "user", "restaurant", "bar")
+
+# ---------------------------------------------------------------------------
+# CURATED ROWS
+# ---------------------------------------------------------------------------
+# Routes the two passes below CANNOT see, listed here so they survive every
+# regeneration instead of being patched into the output by hand.
+#
+# The bar for adding one is high: the endpoint has to be genuinely underivable
+# (not merely awkward to spell), and the page it is granted to has to be the
+# page that actually reaches it. Everything else belongs in the source, where
+# spelling the endpoint as a literal is the fix -- see the note in
+# TaskAssign.jsx about what an unresolvable call does to this table.
+#
+#   /hotel/templates/static/room_incidents/{file}
+#       HotelServices mounts its uploads directory with StaticFiles, so the
+#       gateway proxies it like any other path -- authenticated, which is why
+#       stories/AttachmentPreview.jsx fetches it with the session token rather
+#       than pointing an <img src> at it. There is no FastAPI decorator behind
+#       a StaticFiles mount, so `upstream_routes()` (which reads decorators
+#       from the AST) cannot list it, and the URL is assembled from a stored
+#       path, so no literal exists to match either. Without this row it is
+#       unmapped, and unmapped means denied under RBAC_GATEWAY_MODE=enforce:
+#       every incident attachment would 403 in production.
+CURATED_ROWS: dict[tuple[str, str, str], tuple[str, ...]] = {
+    ("hotel", "templates/static/room_incidents/{id}", "GET"): ("/room_incident_log",),
+}
+
 SERVICES = {
     "user": "UserServices",
     "masterdata": "MasterDataServices",
@@ -341,6 +373,10 @@ def collect():
                         table[(prefix, rest, verb)].add(route_path)
                         stats["pass_b"] += 1
 
+    for key, pages in CURATED_ROWS.items():
+        table[key].update(pages)
+        stats["curated"] += 1
+
     result = {k: tuple(sorted(v)) for k, v in table.items()}
     uncalled = sorted(r for r in set(upstream) if r not in result)
     parents, unreachable = page_parents(entries)
@@ -473,7 +509,8 @@ def main() -> int:
 
     print(f"upstream routes         : {stats['upstream']}")
     print(f"rows derived            : {stats['rows']}   "
-          f"(pass A {stats['pass_a']}, pass B {stats['pass_b']})")
+          f"(pass A {stats['pass_a']}, pass B {stats['pass_b']}, "
+          f"curated {stats['curated']})")
     print(f"uncalled by the SPA     : {len(uncalled)}")
     print(f"detail routes w/ parent : {len(parents)}   {', '.join(sorted(parents))}")
     print(f"unreachable routes      : {len(unreachable)}   {', '.join(unreachable)}")

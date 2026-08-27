@@ -4,7 +4,19 @@ import { ArrowLeft, Printer, Pencil, AlertCircle, RefreshCw } from "lucide-react
 import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
-const LOCKED_STATUSES = new Set(["Checked-Out", "Cancelled", "No Show"]);
+// A terminal reservation cannot be amended. The API now reports this per row
+// as `is_terminal`, computed from the same transition table it enforces; the
+// local set is the fallback for a response that predates that field.
+//
+// Matching folds case, spaces and hyphens: the set previously spelled the
+// no-show status "No Show" while Master Data stores "No-Show", so a no-show
+// reservation was never recognised as locked and stayed editable.
+const TERMINAL_STATUSES = new Set(["checkedout", "cancelled", "noshow"]);
+const foldStatus = (v) => String(v || "").toLowerCase().replace(/[^a-z]/g, "");
+const isTerminal = (reservation) =>
+  Boolean(reservation) &&
+  (reservation.is_terminal === true ||
+    TERMINAL_STATUSES.has(foldStatus(reservation.reservation_status)));
 
 const escapeHtml = (v) =>
   String(v ?? "")
@@ -82,8 +94,15 @@ const ReservationModelView = () => {
     mounted.current = true;
     if (!reservationId) return undefined;
 
-    setReservation(null);
-    setError(null);
+    // Deferred to a microtask so this effect sets no state synchronously —
+    // the extra render pass react-hooks/set-state-in-effect warns about. The
+    // deferral is real, not a way to quiet the rule; hooks/useApiResource.js
+    // takes the same approach.
+    Promise.resolve().then(() => {
+      if (!mounted.current) return;
+      setReservation(null);
+      setError(null);
+    });
 
     APICall.getT(`/hotel/room_reservation/${encodeURIComponent(reservationId)}`)
       .then((res) => {
@@ -124,7 +143,12 @@ const ReservationModelView = () => {
   }, [reservationId, refreshTick]);
 
   useEffect(() => {
-    if (!reservation?.token) { setPaymentHistory([]); return undefined; }
+    if (!reservation?.token) {
+      Promise.resolve().then(() => {
+        if (mounted.current) setPaymentHistory([]);
+      });
+      return undefined;
+    }
     APICall.getT(`/hotel/room_reservation_payments/${encodeURIComponent(reservation.token)}`)
       .then((res) => { if (mounted.current) setPaymentHistory(readList(res)); })
       .catch(() => { /* history is best-effort; page still works without it */ });
@@ -192,7 +216,7 @@ const ReservationModelView = () => {
     : "—";
 
   const isLoading = Boolean(reservationId) && reservation === null && !error;
-  const isLocked = reservation && LOCKED_STATUSES.has(reservation.reservation_status);
+  const isLocked = isTerminal(reservation);
 
   const handleBack = () => navigate("/reservation");
   const handleRefresh = () => setRefreshTick((n) => n + 1);

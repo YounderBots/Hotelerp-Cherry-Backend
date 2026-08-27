@@ -2642,57 +2642,6 @@ input[type="number"] {
 }
 
 
-/* ===================================================================
-   Guest Enquiry — Add/Edit modal form
-   The dialog is 720px wide but the fields used to stack in one column,
-   so each control stretched full width and read as an unbalanced list.
-   A two-column grid (notes spanning both) lines everything up.
-=================================================================== */
-.ge-form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 20px;
-}
-
-.ge-form-grid .ge-field-full {
-  grid-column: 1 / -1;
-}
-
-/* The modal already pads the body and each form-group spaces its own label;
-   drop the global label margin-top so rows start on a shared baseline. */
-.ge-form-grid .form-group label {
-  margin-top: 0;
-}
-
-.ge-form-grid .form-group input,
-.ge-form-grid .form-group select {
-  height: 44px;
-}
-
-/* Textarea inherited no styling, so it clashed with the inputs — match it. */
-.ge-form-grid .form-group textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #cbd5e0;
-  border-radius: 6px;
-  font-size: 14px;
-  font-family: inherit;
-  resize: vertical;
-  min-height: 96px;
-}
-
-.ge-form-grid .form-group textarea:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
-
-@media (max-width: 560px) {
-  .ge-form-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* Sticky action bar replaces the modal footer; stays reachable while scrolling. */
 .anr-details-actions {
   position: sticky;
@@ -3178,34 +3127,288 @@ input[type="number"] {
   color: var(--primary-color, #850126);
 }
 
+/* =====================================================================
+   Reservation list — table cells, filters and the edit form
+   =====================================================================
+   Added with the Reservation audit. Two-line table cells replace the
+   columns that used to print raw foreign keys (a payment method rendered
+   as "2", a room as its row id), and the edit form's derived money is
+   presented as text rather than as a disabled input.
 
-/* ===================================================================
-   Guest Enquiry (Page 17 audit) — scoped .ge-* classes
-=================================================================== */
-.ge-page {
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
+   Everything here is responsive by construction: the grids auto-fit
+   rather than declaring a column count, so the same markup is 3-up on a
+   desktop modal, 2-up on a tablet and 1-up on a phone without a single
+   breakpoint of its own. */
 
-.ge-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.ge-header {
+/* ---------- Two-line table cells ---------- */
+.res-guest-cell,
+.res-stay-cell,
+.res-room-cell {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  flex: 1;
+  min-width: 0;
 }
 
-.ge-export-bar {
+.res-guest-name,
+.res-room-no {
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
+  /* `anywhere` here broke names mid-word ("Rithvi / k / Prabh / u") once the
+     column got tight. The table scrolls instead — see .reservation-table
+     below — so a cell is allowed to want the width it needs. */
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.res-guest-phone,
+.res-stay-nights,
+.res-room-type {
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.res-stay-dates {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* COLUMN WIDTHS
+   `width` on a <th> is only a hint under table-layout: auto, and the browser
+   was resolving the eight columns to 1153px inside a 1060px card. The table
+   scrolls inside .table-wrapper rather than overflowing the page, so nothing
+   was broken -- but Status, which is the column a receptionist scans first,
+   started off-screen behind a scrollbar Windows does not draw until you touch
+   it. Constraining the two greedy columns brings the whole row into view at a
+   laptop width and leaves the scroll as the fallback for narrower ones.
+
+   Scoped to the table layout: below 900px TableTemplate switches to stacked
+   cards, where fixed widths would be wrong. */
+@media (min-width: 901px) {
+  /* The reference. Long legacy ids (RES-20260806072509-QULJOV) wrap onto two
+     lines rather than dictating the width of the whole table. */
+  .reservation-table .table thead th:nth-child(2),
+  .reservation-table .table tbody td:nth-child(2) {
+    max-width: 132px;
+    overflow-wrap: anywhere;
+  }
+
+  /* Actions shrink-to-fit around however many icons the row's state allows,
+     instead of claiming a quarter of the table. */
+  .reservation-table .table thead th:last-child,
+  .reservation-table .table tbody td:last-child {
+    width: 1%;
+    white-space: nowrap;
+  }
+
+  .reservation-table .table .row-actions {
+    justify-content: center;
+    flex-wrap: nowrap;
+  }
+
+  /* Columns are 1=S.No 2=Reservation ID 3=Guest 4=Stay 5=Room 6=Amount
+     7=Status 8=Actions. Stay and Status were both resolving wider than their
+     content needs and pushing Actions off the visible width. */
+  .reservation-table .table thead th:nth-child(4),
+  .reservation-table .table tbody td:nth-child(4) {
+    max-width: 112px;
+  }
+
+  .reservation-table .table thead th:nth-child(7),
+  .reservation-table .table tbody td:nth-child(7) {
+    max-width: 124px;
+  }
+}
+
+.res-amount-cell {
   display: flex;
-  justify-content: flex-end;
-  padding: 0.5rem 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
 }
 
+.res-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.res-amount-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An outstanding balance is the one number on the row a receptionist is
+   scanning for, so it is the one number that is coloured. */
+.res-amount--due {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+/* ---------- Payment history inside the View modal ---------- */
+.res-history-scroll {
+  margin-top: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.res-history-scroll .payment-history-table {
+  min-width: 380px;
+}
+
+.payment-history-table td.num,
+.payment-history-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Edit form ----------
+   auto-fit at a 190px minimum lands on 3 columns in a large modal, 2 on a
+   tablet and 1 on a phone — the per-breakpoint field counts the brief asks
+   for, without a single media query of its own. */
+.res-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px 18px;
+  align-items: start;
+}
+
+.res-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.res-field-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary, #334155);
+}
+
+/* Native selects in the edit form borrow the shared control chrome from
+   FormField.css so they match the Input beside them exactly. */
+.res-field .select-control {
+  width: 100%;
+  min-width: 0;
+}
+
+/* =====================================================================
+   Billing panel
+   ===================================================================== */
+
+/* A derived figure is not a disabled input. It renders as text, has no tab
+   stop, and cannot be mistaken for a box somebody forgot to enable —
+   which is what the twelve read-only number inputs here used to look
+   like. */
+.pay-field--derived .pay-derived-value {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed #d4d4d8;
+  background: #fafafa;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: #27272a;
+}
+
+.pay-field--total .pay-derived-value {
+  border-style: solid;
+  border-color: #b9410e;
+  background: #fff7ed;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.pay-field--paid .pay-derived-value {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.pay-field--balance .pay-derived-value {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.pay-field-hint {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #71717a;
+}
+
+.pay-title-note {
+  margin-left: 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #71717a;
+}
+
+/* ---------- Rate breakdown ---------- */
+.pay-breakdown {
+  margin-bottom: 22px;
+}
+
+/* Wide content scrolls inside its own container; the page never scrolls
+   sideways. */
+.pay-breakdown-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #e4e4e7;
+  border-radius: 12px;
+}
+
+.pay-breakdown-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.pay-breakdown-table th,
+.pay-breakdown-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #f4f4f5;
+  white-space: nowrap;
+}
+
+.pay-breakdown-table thead th {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #71717a;
+  background: #fafafa;
+}
+
+.pay-breakdown-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-breakdown-table tfoot th,
+.pay-breakdown-table tfoot td {
+  font-weight: 700;
+  border-top: 1px solid #e4e4e7;
+  border-bottom: none;
+  background: #fafafa;
+}
+
+.pay-rate-label {
+  text-transform: capitalize;
+  color: #52525b;
+}
+
+@media (max-width: 600px) {
+  .pay-wrapper {
+    padding: 16px;
+  }
+
+  .pay-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}

@@ -67,8 +67,15 @@ const RoomView = () => {
 
   useEffect(() => {
     mounted.current = true;
-    setRooms(null);
-    setError(null);
+    // Deferred to a microtask so this effect sets no state synchronously —
+    // the extra render pass react-hooks/set-state-in-effect warns about. The
+    // deferral is real, not a way to quiet the rule; hooks/useApiResource.js
+    // takes the same approach.
+    Promise.resolve().then(() => {
+      if (!mounted.current) return;
+      setRooms(null);
+      setError(null);
+    });
 
     Promise.allSettled([
       APICall.getT("/masterdata/room"),

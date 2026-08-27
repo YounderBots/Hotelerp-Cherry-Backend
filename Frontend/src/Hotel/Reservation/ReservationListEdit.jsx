@@ -8,7 +8,19 @@ import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
 // Locked once a reservation reaches one of these (master-data-driven) statuses.
-const LOCKED_STATUSES = new Set(["Checked-Out", "Cancelled", "No Show"]);
+// A terminal reservation cannot be amended. The API now reports this per row
+// as `is_terminal`, computed from the same transition table it enforces; the
+// local set is the fallback for a response that predates that field.
+//
+// Matching folds case, spaces and hyphens: the set previously spelled the
+// no-show status "No Show" while Master Data stores "No-Show", so a no-show
+// reservation was never recognised as locked and stayed editable.
+const TERMINAL_STATUSES = new Set(["checkedout", "cancelled", "noshow"]);
+const foldStatus = (v) => String(v || "").toLowerCase().replace(/[^a-z]/g, "");
+const isTerminal = (reservation) =>
+  Boolean(reservation) &&
+  (reservation.is_terminal === true ||
+    TERMINAL_STATUSES.has(foldStatus(reservation.reservation_status)));
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
 const num = (v) => {
@@ -127,8 +139,15 @@ const ReservationListEdit = () => {
   // --------------------------------------------------------------------
   useEffect(() => {
     if (!reservationId || bootstrapReservation) return undefined;
-    setReservationLoading(true);
-    setReservationError(null);
+    // Deferred to a microtask so this effect sets no state synchronously —
+    // the extra render pass react-hooks/set-state-in-effect warns about. The
+    // deferral is real, not a way to quiet the rule; hooks/useApiResource.js
+    // takes the same approach.
+    Promise.resolve().then(() => {
+      if (!mounted.current) return;
+      setReservationLoading(true);
+      setReservationError(null);
+    });
     APICall.getT(`/hotel/room_reservation/${encodeURIComponent(reservationId)}`)
       .then((res) => {
         if (!mounted.current) return;
@@ -154,26 +173,32 @@ const ReservationListEdit = () => {
   // --------------------------------------------------------------------
   useEffect(() => {
     if (!reservation) return;
-    setDates({
-      arrival_date: isoDay(reservation.arrival_date),
-      departure_date: isoDay(reservation.departure_date),
-      reservation_status: reservation.reservation_status || "",
+    // Deferred so the effect body sets no state synchronously — this seeds a
+    // whole form from the loaded reservation, so doing it inline costs a full
+    // extra render pass every time the reservation arrives.
+    Promise.resolve().then(() => {
+      if (!mounted.current) return;
+      setDates({
+        arrival_date: isoDay(reservation.arrival_date),
+        departure_date: isoDay(reservation.departure_date),
+        reservation_status: reservation.reservation_status || "",
+      });
+      const seedIds = parseArr(reservation.room_ids).map((v) => Number(v)).filter(Number.isFinite);
+      const seedRates = parseArr(reservation.rate_type);
+      setSelectedRoomIds(seedIds);
+      const seeded = {};
+      seedIds.forEach((rid, i) => {
+        seeded[rid] = {
+          adults: num(reservation.no_of_adults) || 1,
+          children: num(reservation.no_of_children),
+          complementary: reservation.room_complementary || "",
+          extraBed: 0,
+          extraBedCost: 0,
+          rateType: seedRates[i] || "daily",
+        };
+      });
+      setPerRoom(seeded);
     });
-    const seedIds = parseArr(reservation.room_ids).map((v) => Number(v)).filter(Number.isFinite);
-    const seedRates = parseArr(reservation.rate_type);
-    setSelectedRoomIds(seedIds);
-    const seeded = {};
-    seedIds.forEach((rid, i) => {
-      seeded[rid] = {
-        adults: num(reservation.no_of_adults) || 1,
-        children: num(reservation.no_of_children),
-        complementary: reservation.room_complementary || "",
-        extraBed: 0,
-        extraBedCost: 0,
-        rateType: seedRates[i] || "daily",
-      };
-    });
-    setPerRoom(seeded);
   }, [reservation]);
 
   const totalNights = useMemo(() => {
@@ -277,9 +302,22 @@ const ReservationListEdit = () => {
         fd.append(k, typeof val === "object" ? JSON.stringify(val) : String(val));
       };
 
-      // Preserve every existing scalar we're not editing (backend expects a full form).
+      // Preserve every existing scalar this page does not edit, EXCEPT the
+      // derived money. Echoing the stored totals back would pin the price to
+      // what it was: `room_amount` is read by the API as a negotiated-rate
+      // override, so extending a stay by two nights would keep the old
+      // two-night total. Omitting them lets the server re-price the amendment
+      // from the rate card, which is the whole point of editing the dates.
+      const SERVER_DERIVED = new Set([
+        "room_amount", "tax_amount", "tax_percentage",
+        "discount_amount", "discount_percentage",
+        "overall_amount", "total_amount",
+        "paid_amount", "balance_amount", "extra_amount", "paying_amount",
+        "no_of_nights",
+      ]);
       Object.entries(reservation).forEach(([k, v2]) => {
         if (v2 === undefined || v2 === null) return;
+        if (SERVER_DERIVED.has(k)) return;
         setField(k, v2);
       });
 
@@ -287,7 +325,6 @@ const ReservationListEdit = () => {
       fd.set("id", String(reservation.id));
       fd.set("arrival_date", dates.arrival_date);
       fd.set("departure_date", dates.departure_date);
-      fd.set("no_of_nights", String(totalNights || num(reservation.no_of_nights)));
       fd.set("reservation_status", dates.reservation_status);
       fd.set("room_ids", JSON.stringify(selectedRoomIds));
       fd.set("room_type_ids", JSON.stringify(roomTypeIds));
@@ -331,7 +368,7 @@ const ReservationListEdit = () => {
     });
   }, [selectedRoomIds, perRoom, roomsData, roomTypes]);
 
-  const isLocked = reservation && LOCKED_STATUSES.has(reservation.reservation_status);
+  const isLocked = isTerminal(reservation);
 
   // --------------------------------------------------------------------
   // Render

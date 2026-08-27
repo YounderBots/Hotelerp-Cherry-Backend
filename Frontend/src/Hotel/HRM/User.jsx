@@ -1,219 +1,135 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  ArrowLeft,
-  RefreshCw,
-  Save,
-  X,
-  AlertCircle,
-  CheckCircle,
-} from "lucide-react";
+import React, { useMemo, useState } from "react";
+import Select from "../../stories/Form/Select";
+import Checkbox from "../../stories/Form/Checkbox";
+import Button from "../../stories/Button";
+import ErrorAlert from "../../stories/ErrorAlert";
+import Toast from "../../stories/Toast";
 import APICall, { ApiError } from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResource, useApiResources } from "../../hooks/useApiResource";
+import { useToast } from "../../hooks/useToast";
 import "./HRM.css";
-import "../Reservation/Reservation.css";
 
-// -------------------------------------------------------------------------
-// Constants
-// -------------------------------------------------------------------------
-// Permission tuples are ordered [uiLabel, backendFlagName, matrixKey].
-// matrixKey uses the same keys the backend returns in `permissions: {view, add, edit, delete}`
-// so hydration + save both round-trip cleanly.
+// Role permissions matrix: one row per menu, four permission flags per row.
+// Reached from the sidebar item currently labelled "User" (submenus.id 33);
+// the screen has always been about role permissions, not user records —
+// employee records live on the Employee screen.
 const PERMISSIONS = [
-  { label: "View", flag: "view_permission", matrix: "view" },
-  { label: "Create", flag: "create_permission", matrix: "add" },
-  { label: "Edit", flag: "edit_permission", matrix: "edit" },
-  { label: "Delete", flag: "delete_permission", matrix: "delete" },
+  { matrix: "view", api: "view_permission", label: "View" },
+  { matrix: "add", api: "create_permission", label: "Add" },
+  { matrix: "edit", api: "edit_permission", label: "Edit" },
+  { matrix: "delete", api: "delete_permission", label: "Delete" },
 ];
 
-// -------------------------------------------------------------------------
-// Helpers
-// -------------------------------------------------------------------------
-const readList = (res) =>
-  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
+const EMPTY_ROW = { view: false, add: false, edit: false, delete: false };
 
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
-
-// Backend returns { data: { menus: [{ id, permissions: {view, add, edit, delete} }] } }
-// for GET /user/role_permissions/{role_id}. Normalise to a flat matrix keyed by menu_id.
-const parseRolePermissionsResponse = (res) => {
-  const menus = res?.data?.menus || res?.data?.data?.menus || [];
-  const matrix = {};
-  for (const menu of menus) {
-    if (!menu?.id) continue;
-    matrix[menu.id] = {
-      view: !!menu?.permissions?.view,
-      add: !!menu?.permissions?.add,
-      edit: !!menu?.permissions?.edit,
-      delete: !!menu?.permissions?.delete,
+/** The permissions endpoint returns rows keyed by menu; fold them into a map. */
+const parsePermissions = (res) => {
+  const rows = readList(res);
+  const map = {};
+  for (const row of rows) {
+    map[row.menu_id] = {
+      view: Boolean(row.view_permission),
+      add: Boolean(row.create_permission),
+      edit: Boolean(row.edit_permission),
+      delete: Boolean(row.delete_permission),
     };
   }
-  return matrix;
+  return map;
 };
 
-// -------------------------------------------------------------------------
-// Toast
-// -------------------------------------------------------------------------
-const Toast = ({ toast, onClose }) => {
-  if (!toast) return null;
-  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
-  return (
-    <div
-      className={`reservation-toast ${toast.kind}`}
-      role={toast.kind === "success" ? "status" : "alert"}
-      aria-live={toast.kind === "success" ? "polite" : "assertive"}
-    >
-      <Icon size={18} aria-hidden="true" />
-      <span>{toast.text}</span>
-      <button
-        type="button"
-        className="reservation-toast-close"
-        onClick={onClose}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Page
-// -------------------------------------------------------------------------
 const User = () => {
-  const navigate = useNavigate();
-  const mounted = useRef(true);
+  const {
+    data: [roles, menus],
+    loading,
+    error,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/user/roles"), select: readList, fallback: "Failed to load roles." },
+    { fetch: () => APICall.getT("/user/menus"), select: readList, fallback: "Failed to load menus." },
+  ]);
 
-  const [roles, setRoles] = useState([]);
-  const [menus, setMenus] = useState([]);
-  const [bootstrapError, setBootstrapError] = useState(null);
-  const [bootstrapLoading, setBootstrapLoading] = useState(true);
+  const { toast, showToast } = useToast();
 
   const [selectedRoleId, setSelectedRoleId] = useState("");
-  const [matrix, setMatrix] = useState({}); // { [menu_id]: {view, add, edit, delete} }
-  const [initialMatrix, setInitialMatrix] = useState({}); // for dirty comparison
-  const [matrixLoading, setMatrixLoading] = useState(false);
-  const [matrixError, setMatrixError] = useState(null);
-
+  // Only the operator's unsaved edits live in state. The saved permissions come
+  // from the API and the rendered matrix is the two merged, so there is nothing
+  // to keep in sync when the role changes — the old version copied the response
+  // into state from inside an effect and had to deep-clone a second baseline
+  // to diff against.
+  const [overrides, setOverrides] = useState({});
   const [saving, setSaving] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [toast, setToast] = useState(null);
 
-  const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
+  const {
+    data: saved,
+    loading: matrixLoading,
+    error: matrixError,
+    reload: reloadPermissions,
+  } = useApiResource(
+    () => APICall.getT(`/user/role_permissions/${encodeURIComponent(selectedRoleId)}`),
+    {
+      select: parsePermissions,
+      fallback: "Failed to load role permissions.",
+      initial: {},
+      deps: [selectedRoleId],
+      enabled: Boolean(selectedRoleId),
+    },
+  );
 
-  // --------------------------------------------------------------------
-  // Bootstrap roles + menus
-  // --------------------------------------------------------------------
-  useEffect(() => {
-    mounted.current = true;
-    setBootstrapLoading(true);
-    setBootstrapError(null);
-    Promise.allSettled([
-      APICall.getT("/user/roles"),
-      APICall.getT("/user/menus"),
-    ]).then(([rRoles, rMenus]) => {
-      if (!mounted.current) return;
-      const roleList = rRoles.status === "fulfilled" ? readList(rRoles.value) : [];
-      const menuList = rMenus.status === "fulfilled" ? readList(rMenus.value) : [];
-      setRoles(roleList);
-      setMenus(menuList);
+  // The backend omits menus whose flags are all false, so seed every menu.
+  const baseline = useMemo(() => {
+    const full = {};
+    for (const menu of menus) full[menu.id] = saved[menu.id] || { ...EMPTY_ROW };
+    return full;
+  }, [menus, saved]);
 
-      const errs = [];
-      if (rRoles.status === "rejected") errs.push(errMsg(rRoles.reason, "roles"));
-      if (rMenus.status === "rejected") errs.push(errMsg(rMenus.reason, "menus"));
-      setBootstrapError(errs.length ? `Failed to load: ${errs.join(", ")}` : null);
-      setBootstrapLoading(false);
-    });
-    return () => { mounted.current = false; };
-  }, [refreshTick]);
+  const matrix = useMemo(() => ({ ...baseline, ...overrides }), [baseline, overrides]);
 
-  // --------------------------------------------------------------------
-  // Whenever the selected role changes, load its permissions
-  // --------------------------------------------------------------------
-  useEffect(() => {
-    if (!selectedRoleId) {
-      setMatrix({});
-      setInitialMatrix({});
-      setMatrixError(null);
-      return undefined;
-    }
-    let alive = true;
-    setMatrixLoading(true);
-    setMatrixError(null);
-    APICall.getT(`/user/role_permissions/${encodeURIComponent(selectedRoleId)}`)
-      .then((res) => {
-        if (!alive) return;
-        const m = parseRolePermissionsResponse(res);
-        // Ensure every menu has a full row (backend omits menus with all-false permissions).
-        for (const menu of menus) {
-          if (!m[menu.id]) m[menu.id] = { view: false, add: false, edit: false, delete: false };
-        }
-        setMatrix(m);
-        setInitialMatrix(JSON.parse(JSON.stringify(m))); // deep clone for dirty compare
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setMatrixError(errMsg(err, "Failed to load role permissions."));
-      })
-      .finally(() => { if (alive) setMatrixLoading(false); });
-    return () => { alive = false; };
-  }, [selectedRoleId, menus]);
-
-  const handleTogglePermission = (menuId, matrixKey) => {
-    setMatrix((prev) => ({
-      ...prev,
-      [menuId]: {
-        ...(prev[menuId] || { view: false, add: false, edit: false, delete: false }),
-        [matrixKey]: !prev?.[menuId]?.[matrixKey],
-      },
-    }));
+  const selectRole = (id) => {
+    setSelectedRoleId(id);
+    setOverrides({});
   };
 
-  const handleToggleAll = (menuId, on) => {
-    setMatrix((prev) => ({
+  const togglePermission = (menuId, key) => {
+    setOverrides((prev) => {
+      const current = prev[menuId] || baseline[menuId] || EMPTY_ROW;
+      return { ...prev, [menuId]: { ...current, [key]: !current[key] } };
+    });
+  };
+
+  const toggleAll = (menuId, on) => {
+    setOverrides((prev) => ({
       ...prev,
       [menuId]: { view: on, add: on, edit: on, delete: on },
     }));
   };
 
-  const dirtyMenus = useMemo(() => {
-    const dirty = [];
-    for (const menu of menus) {
-      const before = initialMatrix[menu.id] || { view: false, add: false, edit: false, delete: false };
-      const after = matrix[menu.id] || { view: false, add: false, edit: false, delete: false };
-      if (
-        before.view !== after.view ||
-        before.add !== after.add ||
-        before.edit !== after.edit ||
-        before.delete !== after.delete
-      ) {
-        dirty.push({ menu, before, after });
-      }
-    }
-    return dirty;
-  }, [menus, matrix, initialMatrix]);
+  const dirty = useMemo(
+    () =>
+      menus
+        .map((menu) => ({
+          menu,
+          before: baseline[menu.id] || EMPTY_ROW,
+          after: matrix[menu.id] || EMPTY_ROW,
+        }))
+        .filter(({ before, after }) => PERMISSIONS.some((p) => before[p.matrix] !== after[p.matrix])),
+    [menus, matrix, baseline],
+  );
 
   const handleSave = async () => {
+    if (saving) return;
     if (!selectedRoleId) {
-      showToast("error", "Select a role first.");
+      showToast("Select a role first", "error");
       return;
     }
-    if (dirtyMenus.length === 0) {
-      showToast("error", "No changes to save.");
+    if (dirty.length === 0) {
+      showToast("No changes to save", "error");
       return;
     }
 
     setSaving(true);
-
-    // Batch strategy: for each dirty menu, POST (backend rejects with 409 if it exists — then PUT).
-    // A future D58 backend batch endpoint would make this one round-trip.
+    // POST creates the row; a 409 means it already exists, so fall back to PUT.
     const results = await Promise.allSettled(
-      dirtyMenus.map(async ({ menu, after }) => {
+      dirty.map(async ({ menu, after }) => {
         const body = {
           role_id: Number(selectedRoleId),
           menu_id: Number(menu.id),
@@ -227,7 +143,6 @@ const User = () => {
           await APICall.postT("/user/role_permissions", body);
         } catch (err) {
           if (err instanceof ApiError && err.status === 409) {
-            // Row exists — fall back to PUT.
             await APICall.putT("/user/role_permissions", body);
             return;
           }
@@ -235,191 +150,140 @@ const User = () => {
         }
       }),
     );
-
-    if (!mounted.current) return;
-    const failed = results.filter((r) => r.status === "rejected");
     setSaving(false);
 
+    const failed = results.filter((r) => r.status === "rejected");
     if (failed.length === 0) {
-      showToast("success", `Saved permissions for ${dirtyMenus.length} menu(s).`);
-      setInitialMatrix(JSON.parse(JSON.stringify(matrix)));
-    } else if (failed.length === dirtyMenus.length) {
-      showToast("error", errMsg(failed[0].reason, "Failed to save role permissions."));
+      showToast(`Saved permissions for ${dirty.length} menu${dirty.length === 1 ? "" : "s"}`, "success");
+      setOverrides({});
+      reloadPermissions();
+    } else if (failed.length === dirty.length) {
+      showToast(errMsg(failed[0].reason, "Failed to save role permissions"), "error");
     } else {
-      showToast("error", `${failed.length} of ${dirtyMenus.length} rows failed. First error: ${errMsg(failed[0].reason, "unknown")}`);
+      showToast(
+        `${failed.length} of ${dirty.length} rows failed: ${errMsg(failed[0].reason, "unknown error")}`,
+        "error",
+      );
     }
   };
 
-  const handleBack = () => navigate("/dashboard");
-  const handleRefresh = () => setRefreshTick((n) => n + 1);
+  const handleReset = () => setOverrides({});
 
-  const canSave = Boolean(selectedRoleId) && dirtyMenus.length > 0 && !saving && !matrixLoading;
+  const selectedRoleName = roles.find((r) => String(r.id) === String(selectedRoleId))?.role_name;
 
   return (
-    <div className="usr-page">
-      <div className="usr-toolbar">
-        <button
-          type="button"
-          className="rmv-back-btn"
-          onClick={handleBack}
-          aria-label="Back to dashboard"
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-          <span>Back</span>
-        </button>
-        <div className="usr-header">
-          <span className="rmv-eyebrow">HRM</span>
-          <h1 className="rmv-title">Role Permissions</h1>
-        </div>
-        <div className="rmv-toolbar-actions">
-          <button
-            type="button"
-            className="rmv-toolbar-btn"
-            onClick={handleRefresh}
-            aria-label="Refresh"
-            disabled={bootstrapLoading || saving}
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            <span>Refresh</span>
-          </button>
-          <button
-            type="button"
-            className="rmv-toolbar-btn primary"
-            onClick={handleSave}
-            disabled={!canSave}
-            aria-busy={saving}
-            aria-label="Save role permissions"
-          >
-            <Save size={16} aria-hidden="true" />
-            <span>{saving ? "Saving…" : `Save${dirtyMenus.length ? ` (${dirtyMenus.length})` : ""}`}</span>
-          </button>
-        </div>
-      </div>
+    <>
+      <ErrorAlert message={error} />
 
-      {bootstrapError && (
-        <div className="reservation-alert" role="alert">
-          <span>{bootstrapError}</span>
-          <button
-            type="button"
-            className="reservation-alert-action"
-            onClick={handleRefresh}
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {matrixError && (
-        <div className="reservation-alert" role="alert">
-          <span>{matrixError}</span>
-        </div>
-      )}
-
-      {bootstrapLoading && (
-        <div className="reservation-loading" role="status" aria-live="polite">
-          Loading roles and menus…
-        </div>
-      )}
-
-      {!bootstrapLoading && (
-        <>
-          <div className="usr-role-picker">
-            <label htmlFor="usr-role-select">User Role</label>
-            <select
-              id="usr-role-select"
-              value={selectedRoleId}
-              onChange={(e) => setSelectedRoleId(e.target.value)}
-              disabled={saving}
-            >
-              <option value="">— select a role —</option>
-              {roles.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.role_name}
-                </option>
-              ))}
-            </select>
+      <div className="perm-panel">
+        <div className="perm-panel__header">
+          <div>
+            <h2 className="perm-panel__title">Role Permissions</h2>
+            <p className="perm-panel__subtitle">
+              Choose a role, then grant it access to each module.
+            </p>
           </div>
+          <div className="perm-panel__actions">
+            <Button variant="secondary" onClick={handleReset} disabled={saving || dirty.length === 0}>
+              Reset
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={saving || !selectedRoleId || dirty.length === 0}
+            >
+              {saving ? "Saving…" : dirty.length ? `Save (${dirty.length})` : "Save"}
+            </Button>
+          </div>
+        </div>
 
-          {!selectedRoleId && (
-            <div className="reservation-empty">
-              Select a role above to view and edit its permissions.
-            </div>
-          )}
+        <div className="perm-panel__picker">
+          <Select
+            label="Role"
+            value={selectedRoleId}
+            onChange={(e) => selectRole(e.target.value)}
+            placeholder="Select a role"
+            disabled={saving || loading}
+            options={roles.map((r) => ({ value: r.id, label: r.role_name }))}
+          />
+        </div>
 
-          {selectedRoleId && matrixLoading && (
-            <div className="reservation-loading" role="status" aria-live="polite">
-              Loading role permissions…
-            </div>
-          )}
+        <ErrorAlert message={matrixError} />
 
-          {selectedRoleId && !matrixLoading && menus.length === 0 && (
-            <div className="reservation-empty">
-              No menus configured. Add menus under HRM → Menus first.
-            </div>
-          )}
+        {loading && <div className="perm-panel__state">Loading roles and modules…</div>}
 
-          {selectedRoleId && !matrixLoading && menus.length > 0 && (
-            <div className="usr-table-wrap">
-              <table className="permission-table" aria-label="Role permissions matrix">
-                <caption className="rmv-sr-only">
-                  Permissions for the selected role, one row per menu.
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col" style={{ width: 60 }}>S.No</th>
-                    <th scope="col">Module</th>
-                    {PERMISSIONS.map((p) => (
-                      <th key={p.matrix} scope="col" align="center">{p.label}</th>
-                    ))}
-                    <th scope="col" align="center">All</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {menus.map((menu, index) => {
-                    const row = matrix[menu.id] || { view: false, add: false, edit: false, delete: false };
-                    const allOn = row.view && row.add && row.edit && row.delete;
-                    return (
-                      <tr key={menu.id}>
-                        <td>{index + 1}</td>
-                        <td>{menu.menu_name || menu.label || `#${menu.id}`}</td>
-                        {PERMISSIONS.map((p) => (
-                          <td key={p.matrix} align="center">
-                            <input
-                              type="checkbox"
-                              checked={!!row[p.matrix]}
-                              onChange={() => handleTogglePermission(menu.id, p.matrix)}
-                              disabled={saving}
-                              aria-label={`${p.label} permission for ${menu.menu_name || `menu ${menu.id}`}`}
-                            />
-                          </td>
-                        ))}
-                        <td align="center">
-                          <input
-                            type="checkbox"
-                            checked={allOn}
-                            onChange={(e) => handleToggleAll(menu.id, e.target.checked)}
+        {!loading && !selectedRoleId && (
+          <div className="perm-panel__state">Select a role above to view and edit its permissions.</div>
+        )}
+
+        {selectedRoleId && matrixLoading && (
+          <div className="perm-panel__state">Loading permissions for {selectedRoleName}…</div>
+        )}
+
+        {selectedRoleId && !matrixLoading && menus.length === 0 && (
+          <div className="perm-panel__state">No modules are configured yet.</div>
+        )}
+
+        {selectedRoleId && !matrixLoading && menus.length > 0 && (
+          <div className="perm-panel__table-wrap">
+            <table className="permission-table" aria-label="Role permissions matrix">
+              <caption className="perm-panel__caption">
+                Permissions for {selectedRoleName}, one row per module.
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col" className="permission-table__module">Module</th>
+                  {PERMISSIONS.map((p) => (
+                    <th key={p.matrix} scope="col">{p.label}</th>
+                  ))}
+                  <th scope="col">All</th>
+                </tr>
+              </thead>
+              <tbody>
+                {menus.map((menu) => {
+                  const row = matrix[menu.id] || EMPTY_ROW;
+                  const allOn = PERMISSIONS.every((p) => row[p.matrix]);
+                  const name = menu.menu_name || `#${menu.id}`;
+                  return (
+                    <tr key={menu.id}>
+                      <td className="permission-table__module" data-label="Module">{name}</td>
+                      {PERMISSIONS.map((p) => (
+                        <td key={p.matrix} data-label={p.label}>
+                          <Checkbox
+                            checked={Boolean(row[p.matrix])}
+                            onChange={() => togglePermission(menu.id, p.matrix)}
                             disabled={saving}
-                            aria-label={`Toggle all permissions for ${menu.menu_name || `menu ${menu.id}`}`}
+                            label={`${p.label} — ${name}`}
+                            className="permission-table__box"
                           />
                         </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      ))}
+                      <td data-label="All">
+                        <Checkbox
+                          checked={allOn}
+                          onChange={(e) => toggleAll(menu.id, e.target.checked)}
+                          disabled={saving}
+                          label={`All permissions — ${name}`}
+                          className="permission-table__box"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
 
-              {dirtyMenus.length > 0 && (
-                <div className="usr-dirty-note" role="status" aria-live="polite">
-                  {dirtyMenus.length} unsaved change{dirtyMenus.length === 1 ? "" : "s"} — click Save to apply.
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
+            {dirty.length > 0 && (
+              <div className="perm-panel__dirty" role="status" aria-live="polite">
+                {dirty.length} unsaved change{dirty.length === 1 ? "" : "s"} — click Save to apply.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
-    </div>
+      <Toast {...toast} />
+    </>
   );
 };
 

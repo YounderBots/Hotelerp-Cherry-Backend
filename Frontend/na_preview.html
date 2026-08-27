@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  TEMPORARY verification harness for the Night Audit dashboard.
+
+  The dashboard has no route yet: adding one means editing App.jsx and
+  Sidemenu.js, which another session is concurrently working in. Rather than
+  risk clobbering that work just to look at a page, this mounts the component
+  on its own, against the real dev server and the real API, using an auth token
+  put into localStorage by the Playwright driver.
+
+  Delete this file and na_preview.jsx once the route exists.
+-->
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Night Audit — preview harness</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/na_preview.jsx"></script>
+</body>
+
+</html>

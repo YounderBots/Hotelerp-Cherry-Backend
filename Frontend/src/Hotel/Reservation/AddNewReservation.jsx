@@ -9,6 +9,10 @@ import APICall, { ApiError } from "../../APICalls/APICalls";
 import "./Reservation.css";
 
 const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
+// The selectable rate types. These are keys into the room_type rate columns,
+// and the mapping from key to column now lives server-side in
+// reservation_rules.RATE_COLUMN -- the copy that used to live in payment.jsx
+// spelled one of them wrongly and priced that rate at zero.
 const RATE_TYPES = [
   { value: "daily", label: "Daily Rate" },
   { value: "weekly", label: "Weekly Rate" },
@@ -17,20 +21,11 @@ const RATE_TYPES = [
   { value: "half_board", label: "Half Board" },
   { value: "full_board", label: "Full Board" },
 ];
-const ROOM_COMPLEMENTARY_OPTIONS = [
-  "",
-  "Breakfast",
-  "Welcome Drink",
-  "Lunch",
-  "Dinner",
-];
-const COMMON_COMPLEMENTARY_OPTIONS = [
-  "",
-  "Welcome Drink",
-  "Airport Pickup",
-  "Late Checkout",
-  "Spa Voucher",
-];
+// Complementary items are Master Data (`room_complementry`, edited under
+// Master Data -> Complementry). They were two hardcoded arrays here that had
+// already drifted from the six rows the property actually has, so a hotel that
+// added an item could never offer it and one that removed an item could still
+// sell it.
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[+()\-\s\d]{7,20}$/;
@@ -124,14 +119,18 @@ const AddNewReservation = () => {
   const [discountTypes, setDiscountTypes] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [reservationStatusTypes, setReservationStatusTypes] = useState([]);
+  const [complementaries, setComplementaries] = useState([]);
   const [masterError, setMasterError] = useState(null);
 
   // Room selection state
   const [selectedRoomIds, setSelectedRoomIds] = useState([]); // ordered ints
   const [perRoom, setPerRoom] = useState({}); // { [roomId]: { adults, children, rateType, complementary } }
 
-  // Date-first availability state — populated once both stay dates are chosen
+  // Date-first availability state — populated once both stay dates are chosen.
+  // `blockedRoomIds` is out-of-order rooms, which the server reports separately
+  // from date conflicts so the card can say which of the two it is.
   const [bookedRoomIds, setBookedRoomIds] = useState(new Set());
+  const [blockedRoomIds, setBlockedRoomIds] = useState(new Set());
   const [roomConflicts, setRoomConflicts] = useState({}); // { [roomId]: [{arrival_date, departure_date}] }
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [availabilityError, setAvailabilityError] = useState(null);
@@ -151,24 +150,32 @@ const AddNewReservation = () => {
     proof_document: null, // File
   });
 
-  // Payment data comes from the Payment child via setPaymentData
-  const [paymentdata, setPaymentdata] = useState({
+  // The operator's pricing choices. Note what is NOT here: no tax amount, no
+  // discount amount, no overall, no balance. Those are answers, and the server
+  // is what answers them (see `quote` below).
+  const [pricingInputs, setPricingInputs] = useState({
     payment_method_id: "",
-    extra_bed_count: 0,
-    extra_bed_cost: 0,
-    total_amount: 0,
-    tax_percentage: 0,
-    tax_amount: 0,
-    discount_percentage: 0,
-    discount_amount: 0,
-    extra_charges: 0,
-    overall_amount: 0,
-    paid_amount: 0,
-    balance_amount: 0,
-    extra_amount: 0,
+    tax_type_id: "",
+    discount_type_id: "",
+    extra_charges: "",
+    extra_bed_count: "",
+    room_amount: "",
+    paying_amount: "",
   });
 
+  // The server's price for the current selection.
+  const [quote, setQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState(null);
+
+  const handlePricingChange = useCallback((field, value) => {
+    setPricingInputs((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
   const [saving, setSaving] = useState(false);
+  // Bumped when the server rejects a booking on availability, to re-run the
+  // availability check and clear the room the guest can no longer have.
+  const [refreshAvailability, setRefreshAvailability] = useState(0);
   const [formError, setFormError] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -193,9 +200,10 @@ const AddNewReservation = () => {
       APICall.getT("/masterdata/discount"),
       APICall.getT("/masterdata/payment_methods"),
       APICall.getT("/masterdata/reservation_status"),
+      APICall.getT("/masterdata/complementry"),
     ]).then((results) => {
       if (!mounted.current) return;
-      const [rIdent, rRoom, rRT, rTax, rDisc, rPM, rRes] = results;
+      const [rIdent, rRoom, rRT, rTax, rDisc, rPM, rRes, rComp] = results;
       setIdentityTypes(rIdent.status === "fulfilled" ? readList(rIdent.value) : []);
       setRoomsData(rRoom.status === "fulfilled" ? readList(rRoom.value) : []);
       setRoomTypes(rRT.status === "fulfilled" ? readList(rRT.value) : []);
@@ -203,8 +211,9 @@ const AddNewReservation = () => {
       setDiscountTypes(rDisc.status === "fulfilled" ? readList(rDisc.value) : []);
       setPaymentMethods(rPM.status === "fulfilled" ? readList(rPM.value) : []);
       setReservationStatusTypes(rRes.status === "fulfilled" ? readList(rRes.value) : []);
+      setComplementaries(rComp.status === "fulfilled" ? readList(rComp.value) : []);
       const errs = results
-        .map((r, i) => (r.status === "rejected" ? ["identity", "rooms", "room types", "taxes", "discounts", "payment methods", "reservation statuses"][i] : null))
+        .map((r, i) => (r.status === "rejected" ? ["identity", "rooms", "room types", "taxes", "discounts", "payment methods", "reservation statuses", "complementary items"][i] : null))
         .filter(Boolean);
       setMasterError(errs.length ? `Failed to load: ${errs.join(", ")}` : null);
     });
@@ -227,8 +236,13 @@ const AddNewReservation = () => {
     // so stale booked-ids/error state from a prior selection is never shown.
     if (!datesValid) return undefined;
     let cancelled = false;
-    setAvailabilityLoading(true);
-    setAvailabilityError(null);
+    // Deferred to a microtask so the effect body sets no state synchronously
+    // (the extra render pass `react-hooks/set-state-in-effect` warns about).
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setAvailabilityLoading(true);
+      setAvailabilityError(null);
+    });
     APICall.getT("/hotel/room_availability", {
       arrival_date: formData.arrival_date,
       departure_date: formData.departure_date,
@@ -236,12 +250,14 @@ const AddNewReservation = () => {
       .then((res) => {
         if (cancelled) return;
         const ids = new Set((res?.data?.booked_room_ids || []).map(Number));
+        const blocked = new Set((res?.data?.blocked_room_ids || []).map(Number));
         setBookedRoomIds(ids);
+        setBlockedRoomIds(blocked);
         setRoomConflicts(res?.data?.conflicts || {});
         setSelectedRoomIds((prev) => {
-          const stillFree = prev.filter((id) => !ids.has(id));
+          const stillFree = prev.filter((id) => !ids.has(id) && !blocked.has(id));
           if (stillFree.length !== prev.length) {
-            showToast("error", "Some selected rooms are already booked for these dates and were removed.");
+            showToast("error", "Some selected rooms are no longer available for these dates and were removed.");
           }
           return stillFree;
         });
@@ -250,6 +266,7 @@ const AddNewReservation = () => {
         if (cancelled) return;
         setAvailabilityError(errMsg(err, "Failed to check room availability for these dates."));
         setBookedRoomIds(new Set());
+        setBlockedRoomIds(new Set());
         setRoomConflicts({});
       })
       .finally(() => {
@@ -257,19 +274,29 @@ const AddNewReservation = () => {
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.arrival_date, formData.departure_date, datesValid]);
+  }, [formData.arrival_date, formData.departure_date, datesValid, refreshAvailability]);
 
   // ----------------------------------------------------------------
   // Room selection — track per-room state by id (not by index)
   // ----------------------------------------------------------------
-  const isRoomBlockedByMaster = (room) => {
-    const bs = (room?.booking_status || "").trim().toLowerCase();
-    return Boolean(bs) && bs !== "available";
-  };
+  // WHY `booking_status` IS NOT CONSULTED HERE
+  //
+  // This used to read `room.booking_status !== "available"` and refuse the
+  // room. That column says whether the room is occupied *today*; it says
+  // nothing about the dates being booked. Treating it as a booking gate meant
+  // thirteen of this property's twenty-five rooms could not be sold for ANY
+  // future date -- a room whose guest left in July was still unbookable for
+  // Christmas -- and nothing in the app ever cleared the flag, so the set only
+  // ever grew.
+  //
+  // Whether a room is free for these dates is a question about these dates,
+  // and /hotel/room_availability answers it. Out-of-order rooms come back
+  // separately in `blocked_room_ids`, which is the only permanent block.
+  const isRoomOutOfOrder = (room) => blockedRoomIds.has(Number(room?.id));
   const isRoomBookedForDates = (room) => bookedRoomIds.has(Number(room?.id));
-  const isRoomUnavailable = (room) => isRoomBlockedByMaster(room) || isRoomBookedForDates(room);
+  const isRoomUnavailable = (room) => isRoomOutOfOrder(room) || isRoomBookedForDates(room);
   const unavailableReasonFor = (room) => {
-    if (isRoomBlockedByMaster(room)) return room.booking_status;
+    if (isRoomOutOfOrder(room)) return "Out of order";
     const windows = roomConflicts[room?.id] || [];
     if (windows.length > 0) {
       const ranges = windows
@@ -330,6 +357,94 @@ const AddNewReservation = () => {
   );
 
   // ----------------------------------------------------------------
+  // Server-priced quote
+  //
+  // Every figure the guest is shown before confirming comes from the same
+  // endpoint that will price the booking when they do, so the summary on
+  // screen and the total that gets stored cannot disagree. The debounce is
+  // for typing into Extra Charges, not for correctness -- a stale quote is
+  // never submitted, because the server re-prices on create regardless.
+  // ----------------------------------------------------------------
+  const roomOccupancyPayload = useMemo(
+    () =>
+      selectedRoomIds.map((id) => ({
+        room_id: id,
+        adults: num(perRoom[id]?.adults ?? 1),
+        children: num(perRoom[id]?.children ?? 0),
+      })),
+    [selectedRoomIds, perRoom],
+  );
+
+  const quoteRequest = useMemo(
+    () => ({
+      arrival_date: formData.arrival_date,
+      departure_date: formData.departure_date,
+      room_ids: selectedRoomIds,
+      rate_type: selectedRoomIds.map((id) => perRoom[id]?.rateType || "daily"),
+      tax_type_id: pricingInputs.tax_type_id || null,
+      discount_type_id: pricingInputs.discount_type_id || null,
+      extra_charges: num(pricingInputs.extra_charges),
+      extra_bed_count: num(pricingInputs.extra_bed_count),
+      // An empty box means "use the rate card"; only a typed value is an
+      // override, so "" must not collapse to 0 and zero the room.
+      room_amount:
+        pricingInputs.room_amount === "" ? null : num(pricingInputs.room_amount),
+      paying_amount: num(pricingInputs.paying_amount),
+    }),
+    [
+      formData.arrival_date,
+      formData.departure_date,
+      selectedRoomIds,
+      perRoom,
+      pricingInputs,
+    ],
+  );
+
+  const quoteKey = JSON.stringify(quoteRequest);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    // Every state change happens inside the timer rather than in the effect
+    // body. Setting state synchronously here costs an extra render pass on
+    // each keystroke, which is what `react-hooks/set-state-in-effect` is
+    // about, and the deferral is real -- see the same treatment in
+    // hooks/useApiResource.js.
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+
+      if (!datesValid || selectedRoomIds.length === 0) {
+        setQuote(null);
+        setQuoteError(null);
+        setQuoteLoading(false);
+        return;
+      }
+
+      setQuoteLoading(true);
+      APICall.postT("/hotel/room_reservation_quote", quoteRequest)
+        .then((res) => {
+          if (cancelled) return;
+          setQuote(res?.data || null);
+          setQuoteError(null);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setQuote(null);
+          setQuoteError(errMsg(err, "Could not price this stay."));
+        })
+        .finally(() => {
+          if (!cancelled) setQuoteLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey, datesValid, selectedRoomIds.length]);
+
+  // ----------------------------------------------------------------
   // Validation
   // ----------------------------------------------------------------
   const validateGuestForm = () => {
@@ -386,11 +501,19 @@ const AddNewReservation = () => {
 
   const buildFormData = () => {
     const fd = new FormData();
-    // Room reservation id — client-generated because backend requires it as a Form(...) param.
-    // Prefixed with a stable string so old rows are still distinguishable; UUID-ish suffix minimises collision risk.
-    const dtStamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
-    const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-    fd.append("room_reservation_id", `RES-${dtStamp}-${rand}`);
+
+    // NOTE what is absent, and deliberately so:
+    //
+    //   room_reservation_id  the server allocates the reference. It was a
+    //                        client-generated string, so two tabs could submit
+    //                        the same one and the collision surfaced as a 500.
+    //   no_of_nights         derived from the dates by the server.
+    //   room_type_ids        derived from the rooms by the server.
+    //   tax_amount, discount_amount, overall_amount, total_amount,
+    //   paid_amount, balance_amount
+    //                        all results, all computed by the server. Posting
+    //                        them was how a stay could be booked for a total
+    //                        of 1.
 
     fd.append("salutation", formData.salutation);
     fd.append("first_name", formData.first_name.trim());
@@ -400,46 +523,32 @@ const AddNewReservation = () => {
 
     fd.append("arrival_date", formData.arrival_date);
     fd.append("departure_date", formData.departure_date);
-    fd.append("no_of_nights", String(totalNights));
 
-    const roomTypeIds = selectedRoomIds
-      .map((id) => Number(roomsData.find((r) => r.id === id)?.room_type_id))
-      .filter(Number.isFinite);
-    const rateTypes = selectedRoomIds.map((id) => perRoom[id]?.rateType || "daily");
-
-    fd.append("room_type_ids", JSON.stringify(roomTypeIds));
     fd.append("room_ids", JSON.stringify(selectedRoomIds));
-    fd.append("rate_type", JSON.stringify(rateTypes));
+    fd.append(
+      "rate_type",
+      JSON.stringify(selectedRoomIds.map((id) => perRoom[id]?.rateType || "daily")),
+    );
+    // Per room, so the server can check each room against its own occupancy
+    // limits rather than against a total it has to guess how to split.
+    fd.append("room_occupancy", JSON.stringify(roomOccupancyPayload));
 
-    fd.append("no_of_rooms", String(selectedRoomIds.length));
-    fd.append("no_of_adults", String(totalAdults || 1));
-    fd.append("no_of_children", String(totalChildren));
-
-    fd.append("payment_method_id", String(num(paymentdata.payment_method_id)));
-    fd.append("extra_bed_count", String(num(paymentdata.extra_bed_count)));
-    fd.append("extra_bed_cost", String(num(paymentdata.extra_bed_cost)));
-    fd.append("room_amount", String(num(paymentdata.room_amount)));
-    if (paymentdata.tax_type_id) fd.append("tax_type_id", String(num(paymentdata.tax_type_id)));
-    fd.append("total_amount", String(num(paymentdata.total_amount)));
-    fd.append("tax_percentage", String(num(paymentdata.tax_percentage)));
-    fd.append("tax_amount", String(num(paymentdata.tax_amount)));
-    if (paymentdata.discount_type_id) fd.append("discount_type_id", String(num(paymentdata.discount_type_id)));
-    fd.append("discount_percentage", String(num(paymentdata.discount_percentage)));
-    fd.append("discount_amount", String(num(paymentdata.discount_amount)));
-    fd.append("extra_charges", String(num(paymentdata.extra_charges)));
-    fd.append("overall_amount", String(num(paymentdata.overall_amount)));
-    fd.append("paid_amount", String(num(paymentdata.paid_amount)));
-    fd.append("balance_amount", String(num(paymentdata.balance_amount)));
-    fd.append("extra_amount", String(num(paymentdata.extra_amount)));
+    // Pricing inputs only.
+    fd.append("payment_method_id", String(num(pricingInputs.payment_method_id)));
+    if (pricingInputs.tax_type_id) fd.append("tax_type_id", String(num(pricingInputs.tax_type_id)));
+    if (pricingInputs.discount_type_id) {
+      fd.append("discount_type_id", String(num(pricingInputs.discount_type_id)));
+    }
+    fd.append("extra_charges", String(num(pricingInputs.extra_charges)));
+    fd.append("extra_bed_count", String(num(pricingInputs.extra_bed_count)));
+    if (pricingInputs.room_amount !== "") {
+      fd.append("room_amount", String(num(pricingInputs.room_amount)));
+    }
+    fd.append("paying_amount", String(num(pricingInputs.paying_amount)));
 
     fd.append("booking_status_id", String(Number(formData.booking_status_id)));
+    fd.append("reservation_type", "RESERVATION");
 
-    const selectedStatus = reservationStatusTypes.find(
-      (s) => s.id === Number(formData.booking_status_id),
-    );
-    fd.append("reservation_status", selectedStatus?.reservation_status || "Booked");
-
-    // Aggregate the first-room's complementary as the "room_complementary" field to match backend shape.
     const firstComplementary = selectedRoomIds
       .map((id) => perRoom[id]?.complementary)
       .find((c) => c) || "";
@@ -453,30 +562,35 @@ const AddNewReservation = () => {
   };
 
   const handleSubmitReservation = async () => {
-    if (!paymentdata?.payment_method_id) {
+    // A second click while the first request is in flight must not become a
+    // second booking. The server also recognises an identical resubmission and
+    // returns the original rather than creating a duplicate, so a refresh
+    // mid-POST is covered too -- this guard is only the cheap first line.
+    if (saving) return;
+
+    if (!pricingInputs.payment_method_id) {
       const msg = "Please select a payment method.";
       setFormError(msg);
       showToast("error", msg);
       return;
     }
-    if (num(paymentdata.overall_amount) < 0) {
-      const msg = "Overall amount cannot be negative.";
-      setFormError(msg);
-      showToast("error", msg);
-      return;
-    }
-    if (num(paymentdata.paid_amount) < 0) {
-      const msg = "Paid amount cannot be negative.";
-      setFormError(msg);
-      showToast("error", msg);
+    if (quoteError) {
+      setFormError(quoteError);
+      showToast("error", quoteError);
       return;
     }
 
     setSaving(true);
     setFormError(null);
     try {
-      await APICall.postT("/hotel/room_reservation", buildFormData());
-      showToast("success", "Reservation created.");
+      const res = await APICall.postT("/hotel/room_reservation", buildFormData());
+      const created = res?.data || {};
+      showToast(
+        "success",
+        res?.idempotent_replay
+          ? `This reservation already exists (${created.room_reservation_id}).`
+          : `Reservation ${created.room_reservation_id} confirmed.`,
+      );
       setPaymentModal(false);
       // Small delay so the toast is visible before navigation.
       setTimeout(() => {
@@ -486,6 +600,12 @@ const AddNewReservation = () => {
       const m = errMsg(err, "Failed to create reservation.");
       setFormError(m);
       showToast("error", m);
+      // A 409 means somebody booked one of these rooms first. Re-checking
+      // availability drops the room from the selection instead of leaving the
+      // guest staring at a room the server has just refused.
+      if (err?.status === 409) {
+        setRefreshAvailability((n) => n + 1);
+      }
     } finally {
       if (mounted.current) setSaving(false);
     }
@@ -658,11 +778,11 @@ const AddNewReservation = () => {
             taxTypes={taxTypes}
             discountTypes={discountTypes}
             paymentMethods={paymentMethods}
-            selectedRooms={selectedRooms}
-            roomTypes={roomTypes}
-            perRoom={perRoom}
-            totalNights={totalNights}
-            setpaymentData={setPaymentdata}
+            inputs={pricingInputs}
+            onInputChange={handlePricingChange}
+            quote={quote}
+            quoteLoading={quoteLoading}
+            quoteError={quoteError}
           />
 
           <div className="anr-details-actions">
@@ -679,10 +799,14 @@ const AddNewReservation = () => {
             </Button>
             <Button
               variant="primary"
-              disabled={saving}
+              disabled={saving || quoteLoading || !quote}
               onClick={handleSubmitReservation}
             >
-              {saving ? "Submitting…" : "Submit"}
+              {saving
+                ? "Submitting…"
+                : quote
+                  ? `Confirm — ${Number(quote.overall_amount).toFixed(2)}`
+                  : "Pricing…"}
             </Button>
           </div>
         </section>
@@ -956,8 +1080,11 @@ const AddNewReservation = () => {
                         value={p.complementary || ""}
                         onChange={(e) => updateRoomField(room.id, "complementary", e.target.value)}
                       >
-                        {ROOM_COMPLEMENTARY_OPTIONS.map((opt) => (
-                          <option key={opt} value={opt}>{opt || "No Complementary"}</option>
+                        <option value="">No Complementary</option>
+                        {complementaries.map((c) => (
+                          <option key={c.id} value={c.complementry_name}>
+                            {c.complementry_name}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -977,8 +1104,11 @@ const AddNewReservation = () => {
               value={formData.common_complementary}
               onChange={(e) => setFormData((f) => ({ ...f, common_complementary: e.target.value }))}
             >
-              {COMMON_COMPLEMENTARY_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>{opt || "No Complementary"}</option>
+              <option value="">No Complementary</option>
+              {complementaries.map((c) => (
+                <option key={c.id} value={c.complementry_name}>
+                  {c.complementry_name}
+                </option>
               ))}
             </select>
           </div>

@@ -1,217 +1,575 @@
-/* =====================================================
-   USER RESERVED / ACTIVITY LOG
-===================================================== */
+/* =====================================================================
+   NIGHT AUDIT
+   =====================================================================
+   Every colour, radius, shadow and step of spacing here is a token from
+   index.css. Nothing in this file introduces a value of its own -- that is
+   what kept the previous version of these screens visually adrift from Master
+   Data, and it is the one rule worth enforcing strictly.
 
-.userreserved-wrapper {
-  padding: 20px;
-  background: transparent;
+   The module has four screens (the audit dashboard plus three reports) and
+   they share this stylesheet, so a change to a stat tile or a badge lands on
+   all four at once.
+   ===================================================================== */
+
+.na-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    width: 100%;
+    /* The page must never be the thing that scrolls sideways. Wide content
+       (tables, the stat strip) scrolls inside its own container instead --
+       see .na-stats and TableTemplate's own wrapper. */
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
-/* ================= FILTER ================= */
-.userreserved-filter {
-  display: flex;
-  align-items: flex-end;
-  gap: 24px;
-  margin-bottom: 20px;
+/* ---------------------------------------------------------------------
+   HERO -- business date and the run control
+   --------------------------------------------------------------------- */
+
+.na-hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-sm);
+    /* The one piece of brand colour on the page, on the element that carries
+       the page's single most important fact. */
+    border-left: 4px solid var(--primary-color);
 }
 
-.filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.na-hero__date {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    min-width: 0;
 }
 
-.filter-group label {
-  font-size: 14px;
-  color: var(--text-secondary);
+.na-hero__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
 }
 
-.filter-group input {
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-  font-size: 14px;
+.na-hero__value {
+    font-size: clamp(1.5rem, 4vw, 2rem);
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--text-primary);
 }
 
-/* Filter button */
-.btn-filter {
-  padding: 10px 24px;
-  border-radius: 12px;
-  border: none;
-  background: #86efac;
-  color: #065f46;
-  font-weight: 600;
-  cursor: pointer;
+.na-hero__meta {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
 }
 
-/* ================= CARD ================= */
-.userreserved-card {
-  background: #ffffff;
-  border-radius: 14px;
-  padding: 18px;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
+.na-hero__behind {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    align-self: flex-start;
+    margin-top: var(--spacing-xs);
+    padding: 0.15rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--warning-dark);
+    background: var(--warning-light);
+    border: 1px solid var(--warning-lighter);
+    border-radius: var(--border-radius-full);
 }
 
-/* Header */
-.userreserved-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.na-hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--spacing-sm);
 }
 
-.userreserved-card-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+.na-hero__actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
 }
 
-.btn-export {
-  background: var(--primary-color);
-  color: #ffffff;
-  border: none;
-  padding: 8px 18px;
-  border-radius: 12px;
-  cursor: pointer;
+/* ---------------------------------------------------------------------
+   READINESS
+   --------------------------------------------------------------------- */
+
+.na-readiness {
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-sm);
 }
 
-/* ================= TABLE CONTROLS ================= */
-.table-controls {
-  margin: 18px 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 14px;
-  color: var(--text-secondary);
+.na-readiness__title {
+    margin: 0 0 var(--spacing-sm);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
 }
 
-.table-controls select,
-.table-controls input {
-  margin: 0 6px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
+.na-readiness__loading {
+    margin: 0;
+    font-size: 0.875rem;
+    color: var(--text-muted);
 }
 
-/* ================= TABLE ================= */
-.userreserved-table {
-  width: 100%;
-  border-collapse: collapse;
+.na-readiness__clear {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--success-dark);
 }
 
-.userreserved-table thead th {
-  background: var(--primary-color);
-  color: #ffffff;
-  padding: 14px;
-  font-size: 14px;
-  text-align: left;
+.na-readiness__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
-.userreserved-table tbody td {
-  padding: 18px;
-  border-bottom: 1px solid var(--border-color);
-  font-size: 14px;
+.na-readiness__item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--border-radius);
+    border: 1px solid transparent;
 }
 
-.no-data {
-  text-align: center;
-  color: var(--text-muted);
+.na-readiness__item > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
 }
 
-/* ================= FOOTER ================= */
-.table-footer {
-  margin-top: 18px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 14px;
-  color: var(--text-secondary);
+.na-readiness__item b {
+    font-size: 0.875rem;
+    font-weight: 600;
 }
 
-.pagination button {
-  background: transparent;
-  border: 1px solid #ef4444;
-  color: #ef4444;
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  margin-left: 6px;
-  cursor: pointer;
+.na-readiness__item span {
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
 }
 
-/* ================= EMPTY TAB ================= */
-.empty-state {
-  background: #ffffff;
-  padding: 40px;
-  border-radius: 14px;
-  border: 1px dashed var(--border-color);
-  text-align: center;
+.na-readiness__item svg {
+    flex-shrink: 0;
+    margin-top: 0.15rem;
 }
 
-.empty-state h3 {
-  margin: 0 0 8px;
+/* A blocker stops the run; a warning does not. They are given genuinely
+   different colours rather than two shades of the same one, because the
+   difference decides whether the operator can proceed at all. */
+.na-readiness__item--blocker {
+    color: var(--error-dark);
+    background: var(--error-light);
+    border-color: var(--error-lighter);
 }
 
-/* =====================================================
-   User Reserved (Page 14 audit) — scoped .ur-* classes
-===================================================== */
-.userreserved-wrapper {
-  padding: 1.5rem;
-  background: transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.na-readiness__item--warning {
+    color: var(--warning-dark);
+    background: var(--warning-light);
+    border-color: var(--warning-lighter);
 }
 
-.ur-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
+/* ---------------------------------------------------------------------
+   STAT TILES
+   --------------------------------------------------------------------- */
+
+.na-stats {
+    display: grid;
+    /* auto-fit rather than fixed columns: the same markup is 8-up on a
+       desktop, 2-up on a tablet and 1-up on a phone with no breakpoints. */
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--spacing-md);
 }
 
-.ur-header {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
+.na-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: var(--spacing-md);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-top: 3px solid var(--border-dark);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    min-width: 0;
 }
 
-
-/* =====================================================
-   Settlement Summary (Page 16 audit) — .ss-* classes
-===================================================== */
-.ss-totals {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1rem;
-  padding: 1rem 1.1rem;
-  background: var(--white, #fff);
-  border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: var(--border-radius-md, 0.625rem);
+.na-stat__label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--text-muted);
 }
 
-.ss-totals > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.na-stat__value {
+    font-size: 1.375rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text-primary);
+    /* Long figures wrap inside the tile rather than widening the grid and
+       pushing the page into a horizontal scroll. */
+    overflow-wrap: anywhere;
 }
 
-.ss-totals span {
-  font-size: 0.72rem;
-  color: var(--text-muted, #6b7280);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+.na-stat__hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
 }
 
-.ss-totals b {
-  font-size: 1.05rem;
-  color: var(--text-primary, #111827);
-  font-variant-numeric: tabular-nums;
+.na-stat--primary {
+    border-top-color: var(--primary-color);
 }
 
-.ss-balance-outstanding { color: var(--error-color, #dc2626); font-weight: 700; }
-.ss-balance-overpaid    { color: var(--info-color, #2563eb);  font-weight: 700; }
-.ss-balance-settled     { color: var(--success-color, #16a34a); font-weight: 700; }
+.na-stat--success {
+    border-top-color: var(--success-color);
+}
 
+.na-stat--success .na-stat__value {
+    color: var(--success-dark);
+}
+
+.na-stat--warning {
+    border-top-color: var(--warning-color);
+}
+
+.na-stat--warning .na-stat__value {
+    color: var(--warning-dark);
+}
+
+/* ---------------------------------------------------------------------
+   LISTS + HISTORY
+   --------------------------------------------------------------------- */
+
+.na-list__description {
+    margin: 0 0 var(--spacing-sm);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.na-history {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.na-amount--due {
+    font-weight: 600;
+    color: var(--error-color);
+}
+
+/* DENSITY
+   TableTemplate pads cells with --spacing-lg (24px) each side. That is right
+   for a Master Data screen with four columns; on a nine-column audit table it
+   is 432px of the row spent on whitespace, which is what pushed the settlement
+   folio table 111px past its wrapper at 1440 and 271px at 1280.
+
+   Dropping to 10px each side returns ~250px across nine columns and brings
+   every table in the module inside its wrapper down to 1280. The vertical
+   padding is untouched, so row height -- and the comfortable feel of the
+   Master Data tables -- is unchanged. */
+.na-page .table-template .table th {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+}
+
+.na-page .table-template .table td {
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+}
+
+/* TableTemplate prepends its own S.No column and gives it no width, so the
+   browser handed it 82px to hold a single digit -- more than the Room column.
+   It has no `width` prop to pass, hence the rule. */
+.na-page .table-template .table thead th:first-child,
+.na-page .table-template .table tbody td:first-child {
+    width: 56px;
+}
+
+/* Night Audit rows are dense and mostly short values -- a reservation
+   reference, a room number, a date, an amount. Left to wrap, "Mr. Farhan Khan"
+   became three lines and "29 Jul 2026" two, which turned a 10-row table into a
+   30-row-tall block and made scanning down a money column impossible.
+   `width` on the column alone does not fix it: TableTemplate's table uses the
+   default `table-layout: auto`, where a width is a suggestion the browser
+   overrides to fit content.
+   Nowrap is safe here because `.table-wrapper` is `overflow-x: auto` -- a wide
+   row scrolls inside the table, never widening the page. */
+.na-page .table-template .table th,
+.na-page .table-template .table td {
+    white-space: nowrap;
+}
+
+/* Below its 640px container width TableTemplate abandons the grid entirely and
+   renders each row as a labelled card. Every cell is full width there, so
+   nowrap would push text off the side of the card with nothing to scroll.
+   This is a container query, matching the one in TableTemplate.css -- it keys
+   off the table's own width, not the viewport's. */
+@container tabletpl (max-width: 640px) {
+
+    .na-page .table-template .table th,
+    .na-page .table-template .table td {
+        white-space: normal;
+    }
+}
+
+/* ---------------------------------------------------------------------
+   BADGES
+   --------------------------------------------------------------------- */
+
+.na-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+    border-radius: var(--border-radius-full);
+    background: var(--gray-100);
+    color: var(--text-secondary);
+}
+
+.na-badge--success {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+
+.na-badge--error {
+    background: var(--error-light);
+    color: var(--error-dark);
+}
+
+.na-badge--info {
+    background: var(--info-light);
+    color: var(--info-dark);
+}
+
+/* ---------------------------------------------------------------------
+   CONFIRM DIALOG
+   --------------------------------------------------------------------- */
+
+.na-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.na-confirm p {
+    margin: 0;
+}
+
+.na-confirm__effects {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin: 0;
+    padding-left: var(--spacing-lg);
+}
+
+.na-confirm__effects li {
+    font-size: 0.8125rem;
+}
+
+/* The no-show checkbox is the only destructive choice in the module, so it
+   is given a bordered panel of its own rather than sitting inline in the
+   prose where it could be clicked past without being read. */
+.na-confirm__option {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md);
+    background: var(--warning-light);
+    border: 1px solid var(--warning-lighter);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+}
+
+.na-confirm__option input {
+    flex-shrink: 0;
+    margin-top: 0.2rem;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+}
+
+.na-confirm__option span {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.na-confirm__option em {
+    font-size: 0.75rem;
+    font-style: normal;
+    color: var(--warning-dark);
+}
+
+.na-confirm__note {
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: 0.8125rem;
+    color: var(--success-dark);
+    background: var(--success-light);
+    border-radius: var(--border-radius);
+}
+
+.na-confirm__warn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 0.8125rem;
+    color: var(--warning-dark);
+}
+
+/* ---------------------------------------------------------------------
+   DETAIL MODAL
+   --------------------------------------------------------------------- */
+
+.na-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin: var(--spacing-sm) 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.na-breakdown li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: 0.8125rem;
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius-sm);
+}
+
+.na-breakdown b {
+    font-variant-numeric: tabular-nums;
+}
+
+.na-detail__note {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    margin: var(--spacing-sm) 0 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------
+   REPORT SCREENS -- summary strip above the table
+   --------------------------------------------------------------------- */
+
+.na-report__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+}
+
+.na-report__context {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.na-report__title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.na-report__subtitle {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------
+   RESPONSIVE
+   --------------------------------------------------------------------- */
+
+@media (max-width: 768px) {
+    .na-hero {
+        flex-direction: column;
+        align-items: stretch;
+        padding: var(--spacing-md);
+    }
+
+    .na-hero__actions {
+        width: 100%;
+    }
+
+    /* Full-width targets on a phone: the run control must not end up a
+       thumb-width sliver beside the refresh button. */
+    .na-hero__actions .btn {
+        flex: 1 1 auto;
+        justify-content: center;
+    }
+
+    .na-readiness {
+        padding: var(--spacing-md);
+    }
+
+    .na-stats {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: var(--spacing-sm);
+    }
+
+    .na-stat {
+        padding: var(--spacing-sm) var(--spacing-md);
+    }
+
+    .na-stat__value {
+        font-size: 1.125rem;
+    }
+}
+
+@media (max-width: 430px) {
+    .na-page {
+        gap: var(--spacing-md);
+    }
+
+    /* Below ~430px two tiles per row leaves no room for a grouped figure
+       like "1,15,560", so the strip goes single column rather than
+       truncating or overflowing. */
+    .na-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .na-report__header {
+        align-items: stretch;
+    }
+}

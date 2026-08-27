@@ -1,0 +1,77 @@
+/* AttachmentPreview.css — a stored upload shown inside a View modal or a form.
+   Metrics follow DetailList: same border, radius, muted surface and label
+   scale, so an attachment block reads as another item in the record rather
+   than a component from somewhere else. */
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* ---------- Image ---------- */
+.attachment__image {
+  display: block;
+  /* Bounded rather than fluid: a phone photo is 4000px wide and would
+     otherwise set the modal's scroll height on its own. */
+  max-width: 100%;
+  max-height: 260px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+}
+
+a.attachment:hover .attachment__image {
+  border-color: var(--primary-light);
+}
+
+a.attachment:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: var(--border-radius);
+}
+
+/* ---------- Non-image (PDF) ---------- */
+.attachment__file {
+  gap: var(--spacing-xs);
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.attachment__file:hover {
+  border-color: var(--primary-light);
+  color: var(--primary-color);
+}
+
+.attachment__file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ---------- Loading / failure ---------- */
+.attachment__note {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.attachment__note--error {
+  color: var(--error-color);
+}
+
+/* The paperclip that marks "this row has a file" in a table cell. */
+.attachment-flag {
+  color: var(--text-muted);
+  vertical-align: middle;
+}

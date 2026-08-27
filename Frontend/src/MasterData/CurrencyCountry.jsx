@@ -48,13 +48,13 @@ const CurrencyCountry = () => {
   });
 
   const createCurrency = async () => {
-    await APICall.postT(ENDPOINT, payload());
+    await APICall.postT("/masterdata/country_currency", payload());
     showToast("Country / currency added successfully", "success");
     reload();
   };
 
   const updateCurrency = async () => {
-    await APICall.putT(ENDPOINT, { id: editId, ...payload() });
+    await APICall.putT("/masterdata/country_currency", { id: editId, ...payload() });
     showToast("Country / currency updated successfully", "update");
     reload();
   };
@@ -117,7 +117,10 @@ const CurrencyCountry = () => {
     const id = deleteId;
     setDeleteId(null);
     try {
-      await APICall.deleteT(`${ENDPOINT}/${id}`);
+      // Literal, not `${ENDPOINT}`: build_rbac_map.py reads these call
+      // sites to derive the gateway permission map, and cannot resolve a
+      // variable — this row had dropped out of it.
+      await APICall.deleteT(`/masterdata/country_currency/${id}`);
       showToast("Country / currency deleted successfully", "delete");
       reload();
     } catch (err) {

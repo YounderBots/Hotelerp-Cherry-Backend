@@ -285,14 +285,24 @@ def test_no_row_is_grantable_only_through_a_dead_route():
 def test_write_rows_are_essentially_unambiguous():
     """Writes are the operations worth guarding; they must resolve to one page.
 
-    Six known exceptions, each several views of a single feature: a roster and
-    its shift planner, a reservation and its edit view, and the kitchen display
-    mounted once per station. Pinned as an exact set rather than a count, so a
-    genuinely new ambiguity fails here even if a known one is removed.
+    Seven known exceptions, each several views of a single feature: a roster
+    and its shift planner, a reservation and its edit view, the kitchen display
+    mounted once per station, and the reservation pricing call. Pinned as an
+    exact set rather than a count, so a genuinely new ambiguity fails here even
+    if a known one is removed.
     """
     expected = {
         ("bar", "staff_assignment", "POST"),
         ("hotel", "room_reservation", "PUT"),
+        # Reviewed: /hotel/room_reservation_quote is a POST that writes
+        # nothing -- it prices a stay and returns the figures, and it is a POST
+        # only because the request carries a room list and dates that do not
+        # fit a query string. Both screens that price a reservation call it:
+        # /add_new_reservation before the booking exists, and /reservation when
+        # the edit form re-prices an amendment. Granting it on either page is
+        # therefore correct, and the create permission it resolves to is the
+        # same one those pages already need to act on the answer.
+        ("hotel", "room_reservation_quote", "POST"),
         ("restaurant", "kot/item/{id}/status", "PUT"),
         ("restaurant", "kot/{id}/acknowledge", "PUT"),
         ("restaurant", "kot/{id}/status", "PUT"),

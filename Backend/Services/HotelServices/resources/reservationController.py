@@ -1,53 +1,63 @@
-import os, json
+import json
+import logging
+import os
+import uuid
+from datetime import date, datetime, timedelta
+
 from fastapi import (
     APIRouter,
     Depends,
-    status,
+    File,
+    Form,
     HTTPException,
     Request,
-    Form,
-    File,
+    Response,
     UploadFile,
+    status,
 )
+from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from datetime import datetime, date
-import uuid
-import shutil
 
-from models import models, get_db
-from resources.utils import verify_authentication
 from configs.base_config import CommonWords
+from models import get_db, models
+from models.masterdata import (
+    MasterDiscount,
+    MasterIdentityProof,
+    MasterPaymentMethod,
+    MasterReservationStatus,
+    MasterRoom,
+    MasterRoomType,
+    MasterTaxType,
+)
+from resources import reservation_rules as rules
+from resources.utils import verify_authentication
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # =====================================================
 # COMMON CONSTANTS & CONFIG
 # =====================================================
-import os
-from datetime import datetime, date
 
 # ---------------- System Status ----------------
 STATUS = "ACTIVE"
 UNSTATUS = "INACTIVE"
 
 # ---------------- Reservation Types ----------------
-RESERVATION = "RESERVATION"
-GROUP_RESERVATION = "GROUP_RESERVATION"
-CHECKIN = "CHECKIN"
-
-# ---------------- Room Status ----------------
-AVAILABLE = "AVAILABLE"
-RESERVED = "RESERVED"
-OCCUPIED = "OCCUPIED"
-CANCELLED = "CANCELLED"
+RESERVATION = rules.RESERVATION
+GROUP_RESERVATION = rules.GROUP_RESERVATION
+CHECKIN = rules.CHECKIN
 
 # ---------------- Upload Paths ----------------
 UPLOAD_DIR = "templates/static/identity_proofs"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ---------------- Date Helpers ----------------
-TODAY = date.today()
-NOW = datetime.now()
+# NOTE: there is deliberately no module-level TODAY / NOW here any more.
+# Both used to be evaluated once, at import, so a service that stayed up for a
+# week stamped every payment it recorded with the date it was started. Anything
+# that needs the current date calls `date.today()` where it needs it.
 
 
 # =====================================================
@@ -540,15 +550,677 @@ def delete_room_booking(
         )
 
 
+
+# =====================================================
+# ROOM RESERVATION
+# =====================================================
+# Everything below treats the API as the authority. The browser chooses rooms,
+# dates, rate types and how much the guest is handing over; the server decides
+# whether that is bookable and what it costs. See resources/reservation_rules.py
+# for the rules themselves.
+
+
+# ---------------- Identity proof upload ----------------
+ALLOWED_PROOF_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "webp"}
+ALLOWED_PROOF_CONTENT_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+UPLOAD_MAX_BYTES = int(os.getenv("UPLOAD_MAX_BYTES", str(5 * 1024 * 1024)))
+
+# A reservation may not start further in the past than this. Back-dating one
+# day is routine (a late-night walk-in booked after midnight); back-dating a
+# year is a typo that would otherwise silently corrupt occupancy history.
+MAX_BACKDATE_DAYS = 1
+
+# Guards against a fat-fingered departure date creating a stay that blocks a
+# room for years.
+MAX_STAY_NIGHTS = 365
+MAX_ROOMS_PER_RESERVATION = 50
+
+# How long an identical submission is treated as a retry of the first rather
+# than a second booking. Covers a double-clicked Confirm, a refresh mid-POST
+# and a client that retried after a timeout.
+REPLAY_WINDOW_SECONDS = 900
+
+
+def _rule_http(exc: rules.RuleError) -> HTTPException:
+    """Business-rule failures reach the client as themselves, not as a 500."""
+    return HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+async def _store_identity_proof(identity_file: UploadFile) -> str:
+    """Validate and store an identity document. Returns the stored filename.
+
+    The previous version took the extension straight off the client-supplied
+    filename and wrote the bytes with no size or type check, into a directory
+    this service serves statically -- so an .html or .svg upload became a
+    same-origin script. Both the declared content type and the extension have
+    to be on the allow-list, and the size cap that already existed in the
+    service's .env is finally applied.
+    """
+    if not identity_file or not identity_file.filename:
+        raise HTTPException(status_code=400, detail="Identity document is required")
+
+    extension = identity_file.filename.rsplit(".", 1)[-1].lower() if "." in identity_file.filename else ""
+    if extension not in ALLOWED_PROOF_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Identity document must be one of: "
+                + ", ".join(sorted(ALLOWED_PROOF_EXTENSIONS))
+            ),
+        )
+
+    content_type = (identity_file.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in ALLOWED_PROOF_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Identity document type '{content_type}' is not accepted",
+        )
+
+    # Read through a bounded loop rather than `.read()`: an unbounded read of a
+    # multi-gigabyte upload is a memory exhaustion, and checking the size after
+    # buffering it defeats the point of a size cap.
+    payload = bytearray()
+    while True:
+        chunk = await identity_file.read(64 * 1024)
+        if not chunk:
+            break
+        payload.extend(chunk)
+        if len(payload) > UPLOAD_MAX_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Identity document must be {UPLOAD_MAX_BYTES // (1024 * 1024)} MB or smaller",
+            )
+
+    if not payload:
+        raise HTTPException(status_code=400, detail="Identity document is empty")
+
+    filename = f"{uuid.uuid4()}.{extension}"
+    with open(os.path.join(UPLOAD_DIR, filename), "wb") as handle:
+        handle.write(payload)
+    return filename
+
+
+def _parse_json_list(raw, field: str, *, default=None):
+    """A JSON array arriving as a form field."""
+    if raw in (None, ""):
+        return [] if default is None else default
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"{field} must be a JSON array")
+    if not isinstance(parsed, list):
+        raise HTTPException(status_code=400, detail=f"{field} must be a JSON array")
+    return parsed
+
+
+def _parse_room_ids(raw) -> list[int]:
+    ids = []
+    for value in _parse_json_list(raw, "room_ids"):
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400, detail="room_ids must contain only room ids"
+            )
+    if not ids:
+        raise HTTPException(status_code=400, detail="Select at least one room")
+    if len(ids) > MAX_ROOMS_PER_RESERVATION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A reservation can hold at most {MAX_ROOMS_PER_RESERVATION} rooms",
+        )
+    return ids
+
+
+def _parse_occupancy(raw, room_ids: list[int], total_adults, total_children):
+    """Per-room {room_id: (adults, children)}.
+
+    `room_occupancy` is the precise form and is what the UI sends. When it is
+    absent -- an older client, or the Booking screen -- the totals are spread
+    across the rooms so occupancy limits can still be checked rather than
+    skipped entirely.
+    """
+    entries = _parse_json_list(raw, "room_occupancy", default=[])
+    occupancy: dict[int, tuple[int, int]] = {}
+
+    if entries:
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise HTTPException(
+                    status_code=400,
+                    detail="room_occupancy must be a list of {room_id, adults, children}",
+                )
+            try:
+                room_id = int(entry.get("room_id"))
+            except (TypeError, ValueError):
+                raise HTTPException(
+                    status_code=400, detail="room_occupancy entries need a room_id"
+                )
+            occupancy[room_id] = (
+                rules.as_int(entry.get("adults"), 0),
+                rules.as_int(entry.get("children"), 0),
+            )
+
+        missing = [r for r in room_ids if r not in occupancy]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"room_occupancy is missing room {missing[0]}",
+            )
+        return occupancy
+
+    # Spread the totals as evenly as the rooms allow. Every room gets at least
+    # one adult (a room with none is not a booking), and the remainder is dealt
+    # round-robin rather than piled onto the first room -- piling it up made a
+    # two-room booking for four adults look like a four-adult single, which a
+    # room with a two-adult limit would then refuse.
+    room_count = len(room_ids)
+    adults = max(room_count, rules.as_int(total_adults, room_count))
+    children = max(0, rules.as_int(total_children, 0))
+
+    adult_share = [1] * room_count
+    child_share = [0] * room_count
+    for extra in range(adults - room_count):
+        adult_share[extra % room_count] += 1
+    for extra in range(children):
+        child_share[extra % room_count] += 1
+
+    for index, room_id in enumerate(room_ids):
+        occupancy[room_id] = (adult_share[index], child_share[index])
+    return occupancy
+
+
+def _generate_reservation_reference(db: Session, company_id) -> str:
+    """A unique, human-readable booking reference. Server-side, always.
+
+    It used to be a form field the browser filled in, which made the reference
+    a client's choice: two tabs could submit the same one (a 500 from the
+    unique index) and a caller could overwrite the numbering scheme entirely.
+    """
+    today = date.today().strftime("%Y%m%d")
+    for _ in range(10):
+        candidate = f"RES-{today}-{uuid.uuid4().hex[:6].upper()}"
+        exists = (
+            db.query(models.RoomReservation.id)
+            .filter(models.RoomReservation.room_reservation_id == candidate)
+            .first()
+        )
+        if not exists:
+            return candidate
+    raise HTTPException(
+        status_code=503,
+        detail="Could not allocate a reservation reference; please retry",
+    )
+
+
+def _find_replay(
+    db: Session,
+    company_id,
+    *,
+    phone_number: str,
+    arrival: date,
+    departure: date,
+    room_ids: list[int],
+):
+    """The same booking submitted twice in quick succession, if there is one.
+
+    Once availability is enforced, a double-submit fails anyway -- the second
+    attempt finds the room taken by the first. That is safe but reads as
+    "Room 304 is already booked", which is baffling when the guest looking at
+    it is the one who just booked it. Recognising the retry and handing back
+    the original booking is the honest answer.
+    """
+    cutoff = datetime.now() - timedelta(seconds=REPLAY_WINDOW_SECONDS)
+    candidates = (
+        db.query(models.RoomReservation)
+        .filter(
+            models.RoomReservation.company_id == str(company_id),
+            models.RoomReservation.status == STATUS,
+            models.RoomReservation.phone_number == phone_number,
+            models.RoomReservation.arrival_date == arrival,
+            models.RoomReservation.departure_date == departure,
+            models.RoomReservation.created_at >= cutoff,
+        )
+        .order_by(models.RoomReservation.id.desc())
+        .limit(5)
+        .all()
+    )
+    wanted = sorted(room_ids)
+    for candidate in candidates:
+        existing = sorted(int(r) for r in (candidate.room_ids or []))
+        if existing == wanted:
+            return candidate
+    return None
+
+
+# Values as the room master already spells them (see the seeded `room` rows and
+# TableTemplate's badge vocabulary) — not a new set invented here.
+AVAILABLE_FLAG = "Available"
+RESERVED_FLAG = "Reserved"
+OCCUPIED_FLAG = "Occupied"
+
+
+# HOW A PAYMENT IS TIED TO ITS RESERVATION
+#
+# `reservation_amount_paid_history.reservation_id` is a String column, and the
+# two things that write it disagreed about what goes in it. The seeded and
+# client data hold the booking REFERENCE ("RES-2026-0001"); the code wrote the
+# numeric primary key ("1") and then read back by that same numeric key. So
+# every payment recorded before this point was invisible to the endpoint that
+# lists it: a reservation showed 15,680 paid and an empty payment history
+# beside it, with no error anywhere to say why.
+#
+# Writes now use the reference, matching the data already in the table. Reads
+# accept either, so rows written by the previous code are not orphaned by the
+# correction. Neither changes the schema, so no migration is needed and no
+# existing row is rewritten.
+
+
+def _history_keys(reservation) -> list[str]:
+    """Every value this reservation's payment rows might be keyed by."""
+    keys = [str(reservation.id)]
+    if reservation.room_reservation_id:
+        keys.append(str(reservation.room_reservation_id))
+    return keys
+
+
+def _history_key(reservation) -> str:
+    """What a new payment row is keyed by: the booking reference."""
+    return str(reservation.room_reservation_id or reservation.id)
+
+
+def sync_room_booking_status(db: Session, company_id, room_ids=None) -> None:
+    """Recompute the property's room occupancy flags from its reservations.
+
+    `room.Room_Booking_status` is what the Room View board, the Master Data
+    room list and -- importantly -- the Dashboard's occupancy figures all read,
+    and nothing ever wrote it back. A room flagged Occupied by a stay that
+    ended in July was still flagged Occupied in August, so the board and the
+    occupancy percentage were both reporting a hotel that no longer existed.
+
+    THE WHOLE PROPERTY, NOT JUST THE ROOMS THAT CHANGED
+        Reconciling only the affected rooms would leave the flags that are
+        already wrong wrong forever, because nothing will ever touch those
+        rooms again to correct them. A property has tens of rooms, not
+        millions; recomputing all of them costs two indexed queries and makes
+        the board self-healing on the next booking.
+
+    Occupied beats Reserved: a checked-in guest is in the room today, which is
+    a stronger statement than a booking that starts next week.
+
+    `room_ids` is accepted so call sites can document which rooms prompted the
+    reconcile, and is deliberately not used to narrow it.
+    """
+    today = date.today()
+
+    rooms = {
+        r.id: r
+        for r in db.query(MasterRoom)
+        .filter(
+            MasterRoom.company_id == str(company_id),
+            MasterRoom.status == STATUS,
+        )
+        .all()
+    }
+    if not rooms:
+        return
+
+    # Every reservation that can still say something about a room right now:
+    # one that runs to today or beyond, and -- separately -- any guest who is
+    # checked in. The second half matters for an overstay: a guest still in
+    # the room after their departure date has passed is exactly the case where
+    # dropping the row would hand their room to somebody else.
+    live = (
+        db.query(models.RoomReservation)
+        .filter(
+            models.RoomReservation.company_id == str(company_id),
+            models.RoomReservation.status == STATUS,
+            or_(
+                models.RoomReservation.departure_date >= today,
+                models.RoomReservation.reservation_status == rules.CHECKED_IN,
+            ),
+        )
+        .all()
+    )
+
+    terminal = {rules.normalise_status(s) for s in rules.TERMINAL}
+
+    occupied: set[int] = set()
+    reserved: set[int] = set()
+    for reservation in live:
+        # Terminal covers all three ways a stay stops holding a room *now*:
+        # cancelled, no-show, and checked out. A guest who has departed does
+        # not make the room Reserved just because the booking ran to Friday --
+        # that was the shape of the original bug, where nothing ever cleared
+        # the flag and rooms stayed Occupied months after the guest left.
+        if rules.normalise_status(reservation.reservation_status) in terminal:
+            continue
+        # Inclusive of the departure date: a guest who has not checked out yet
+        # is still in the room on the morning they are due to leave. The
+        # half-open comparison that is correct for *availability* (so the next
+        # guest can book that night) is the wrong one for *occupancy*.
+        is_here_now = rules.normalise_status(
+            reservation.reservation_status
+        ) == rules.normalise_status(rules.CHECKED_IN) and (
+            reservation.arrival_date <= today
+        )
+        for raw_id in reservation.room_ids or []:
+            try:
+                room_id = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            if room_id not in rooms:
+                continue
+            (occupied if is_here_now else reserved).add(room_id)
+
+    for room_id, room in rooms.items():
+        if room_id in occupied:
+            wanted = OCCUPIED_FLAG
+        elif room_id in reserved:
+            wanted = RESERVED_FLAG
+        else:
+            wanted = AVAILABLE_FLAG
+        if room.Room_Booking_status != wanted:
+            room.Room_Booking_status = wanted
+
+
+# ---------------------------------------------------------------------------
+# Response shaping
+# ---------------------------------------------------------------------------
+def _lookup_maps(db: Session, company_id) -> dict:
+    """Name lookups so a reservation can be returned with labels, not raw ids.
+
+    The list and detail payloads used to carry `payment_method_id: 2` and
+    `tax_type_id: 3` and nothing else, so every screen re-fetched all seven
+    master endpoints purely to turn them back into words -- and the print
+    receipt, which had no such lookup, printed the digit.
+    """
+    rooms = {
+        r.id: r
+        for r in db.query(MasterRoom)
+        .filter(MasterRoom.company_id == str(company_id))
+        .all()
+    }
+    room_types = {
+        t.id: t
+        for t in db.query(MasterRoomType)
+        .filter(MasterRoomType.company_id == str(company_id))
+        .all()
+    }
+    payment_methods = {
+        p.id: p.payment_method
+        for p in db.query(MasterPaymentMethod)
+        .filter(MasterPaymentMethod.company_id == str(company_id))
+        .all()
+    }
+    taxes = {
+        t.id: t.Tax_Name
+        for t in db.query(MasterTaxType)
+        .filter(MasterTaxType.company_id == str(company_id))
+        .all()
+    }
+    discounts = {
+        d.id: d.Discount_Name
+        for d in db.query(MasterDiscount)
+        .filter(MasterDiscount.company_id == str(company_id))
+        .all()
+    }
+    identities = {
+        i.id: i.Proof_Name
+        for i in db.query(MasterIdentityProof)
+        .filter(MasterIdentityProof.company_id == str(company_id))
+        .all()
+    }
+    statuses = {
+        s.id: s
+        for s in db.query(MasterReservationStatus)
+        .filter(MasterReservationStatus.company_id == str(company_id))
+        .all()
+    }
+    return {
+        "rooms": rooms,
+        "room_types": room_types,
+        "payment_methods": payment_methods,
+        "taxes": taxes,
+        "discounts": discounts,
+        "identities": identities,
+        "statuses": statuses,
+    }
+
+
+def _payment_state(reservation) -> str:
+    """Unpaid | Partly paid | Paid — derived, never stored."""
+    overall = rules.money(reservation.overall_amount)
+    paid = rules.money(reservation.paid_amount)
+    if overall <= 0:
+        return "Paid"
+    if paid <= 0:
+        return "Unpaid"
+    if paid + 0.01 >= overall:
+        return "Paid"
+    return "Partly paid"
+
+
+def _serialise(reservation, maps: dict) -> dict:
+    """One reservation as the API returns it.
+
+    Every raw id it always carried is still here -- the edit form binds to
+    them, and removing one would break a client mid-upgrade. The `*_name`
+    fields alongside them are what a table or a receipt should render.
+    """
+    room_ids = [int(r) for r in (reservation.room_ids or []) if str(r).strip() != ""]
+    room_type_ids = [
+        int(t) for t in (reservation.room_type_ids or []) if str(t).strip() != ""
+    ]
+
+    rooms = maps["rooms"]
+    room_types = maps["room_types"]
+    status_row = maps["statuses"].get(reservation.booking_status_id)
+
+    return {
+        # ---------------- Reference ----------------
+        "id": reservation.id,
+        "room_reservation_id": reservation.room_reservation_id,
+        # ---------------- Guest Details ----------------
+        "salutation": reservation.salutation,
+        "first_name": reservation.first_name,
+        "last_name": reservation.last_name,
+        "guest_name": " ".join(
+            p for p in [reservation.first_name, reservation.last_name] if p
+        ).strip()
+        or None,
+        "phone_number": reservation.phone_number,
+        "email": reservation.email,
+        # ---------------- Stay Details ----------------
+        "arrival_date": reservation.arrival_date,
+        "departure_date": reservation.departure_date,
+        "no_of_nights": reservation.no_of_nights,
+        # ---------------- Room Details ----------------
+        "room_type_ids": room_type_ids,
+        "room_ids": room_ids,
+        "room_nos": [
+            rooms[r].Room_No for r in room_ids if r in rooms
+        ],
+        "room_type_names": [
+            room_types[t].Type_Name for t in room_type_ids if t in room_types
+        ],
+        "rate_type": reservation.rate_type or [],
+        "no_of_rooms": reservation.no_of_rooms,
+        "no_of_adults": reservation.no_of_adults,
+        "no_of_children": reservation.no_of_children,
+        # ---------------- Payment ----------------
+        "payment_method_id": reservation.payment_method_id,
+        "payment_method": maps["payment_methods"].get(reservation.payment_method_id),
+        "extra_bed_count": reservation.extra_bed_count,
+        "extra_bed_cost": reservation.extra_bed_cost,
+        "room_amount": reservation.room_amount,
+        "tax_type_id": reservation.tax_type_id,
+        "tax_name": maps["taxes"].get(reservation.tax_type_id),
+        "total_amount": reservation.total_amount,
+        "tax_percentage": reservation.tax_percentage,
+        "tax_amount": reservation.tax_amount,
+        "discount_type_id": reservation.discount_type_id,
+        "discount_name": maps["discounts"].get(reservation.discount_type_id),
+        "discount_percentage": reservation.discount_percentage,
+        "discount_amount": reservation.discount_amount,
+        "extra_charges": reservation.extra_charges,
+        "overall_amount": reservation.overall_amount,
+        "paying_amount": reservation.paying_amount,
+        "paid_amount": reservation.paid_amount,
+        "balance_amount": reservation.balance_amount,
+        "extra_amount": reservation.extra_amount,
+        "payment_state": _payment_state(reservation),
+        # ---------------- Reservation Info ----------------
+        "booking_status_id": reservation.booking_status_id,
+        "reservation_type": reservation.reservation_type,
+        "reservation_status": reservation.reservation_status,
+        "status_color": getattr(status_row, "Color", None),
+        "room_complementary": reservation.room_complementary,
+        "common_complementary": reservation.common_complementary,
+        # ---------------- Identity ----------------
+        "identity_type_id": reservation.identity_type_id,
+        "identity_type": maps["identities"].get(reservation.identity_type_id),
+        "proof_document": reservation.proof_document,
+        "confirmation_code": reservation.confirmation_code,
+        # ---------------- Lifecycle ----------------
+        # What the UI is allowed to offer on this row. Derived from the same
+        # transition table the API enforces, so a button can never appear for
+        # an action the server would refuse.
+        "can_check_in": rules.can_transition(
+            reservation.reservation_status, rules.CHECKED_IN
+        )
+        and rules.normalise_status(reservation.reservation_status)
+        != rules.normalise_status(rules.CHECKED_IN),
+        "can_check_out": rules.normalise_status(reservation.reservation_status)
+        == rules.normalise_status(rules.CHECKED_IN),
+        "can_cancel": rules.can_transition(
+            reservation.reservation_status, rules.CANCELLED
+        ),
+        "can_mark_no_show": rules.can_transition(
+            reservation.reservation_status, rules.NO_SHOW
+        ),
+        "is_terminal": rules.normalise_status(reservation.reservation_status)
+        in {rules.normalise_status(s) for s in rules.TERMINAL},
+        # ---------------- System ----------------
+        "token": reservation.token,
+        "status": reservation.status,
+        "created_by": reservation.created_by,
+        "created_at": reservation.created_at,
+        "updated_at": reservation.updated_at,
+        "updated_by": reservation.updated_by,
+        "company_id": reservation.company_id,
+    }
+
+
+# =====================================================
+# PRICE A STAY WITHOUT BOOKING IT
+# =====================================================
+@router.post("/room_reservation_quote", status_code=status.HTTP_200_OK)
+async def quote_reservation(request: Request, db: Session = Depends(get_db)):
+    """What a stay would cost, priced by the same code that books it.
+
+    The Add Reservation and Edit screens call this instead of doing arithmetic
+    of their own. That is the point: the figures the guest is shown before
+    confirming are produced by the server that will store them, so the summary
+    and the saved booking cannot disagree.
+    """
+    user_id, role_id, company_id, _ = verify_authentication(request)
+    if not company_id:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    try:
+        arrival = _coerce_date(payload.get("arrival_date"), "arrival_date")
+        departure = _coerce_date(payload.get("departure_date"), "departure_date")
+        _assert_stay_dates(arrival, departure, allow_past=True)
+        nights = rules.nights_between(arrival, departure)
+
+        room_ids = [int(r) for r in (payload.get("room_ids") or [])]
+        if not room_ids:
+            raise rules.RuleError("Select at least one room")
+
+        priced = rules.quote(
+            db,
+            company_id,
+            room_ids=room_ids,
+            rate_types=[str(r) for r in (payload.get("rate_type") or [])],
+            nights=nights,
+            tax_type_id=payload.get("tax_type_id"),
+            discount_type_id=payload.get("discount_type_id"),
+            extra_charges=payload.get("extra_charges") or 0,
+            extra_bed_count=payload.get("extra_bed_count") or 0,
+            extra_bed_cost=payload.get("extra_bed_cost"),
+            room_amount_override=payload.get("room_amount"),
+            paying_amount=payload.get("paying_amount") or 0,
+        )
+    except rules.RuleError as exc:
+        raise _rule_http(exc)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="room_ids must contain only room ids")
+
+    return {"status": "success", "data": priced}
+
+
+def _coerce_date(value, field: str) -> date:
+    if isinstance(value, date):
+        return value
+    if not value:
+        raise HTTPException(status_code=400, detail=f"{field} is required")
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"{field} must be a date in YYYY-MM-DD form"
+        )
+
+
+def _assert_stay_dates(arrival: date, departure: date, *, allow_past: bool = False) -> None:
+    """The stay itself has to make sense before anything else is considered."""
+    if departure <= arrival:
+        raise HTTPException(
+            status_code=400,
+            detail="Departure date must be after arrival date",
+        )
+
+    nights = rules.nights_between(arrival, departure)
+    if nights > MAX_STAY_NIGHTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A stay cannot exceed {MAX_STAY_NIGHTS} nights",
+        )
+
+    if not allow_past:
+        earliest = date.today() - timedelta(days=MAX_BACKDATE_DAYS)
+        if arrival < earliest:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Arrival date is too far in the past. "
+                    f"The earliest bookable arrival is {earliest.isoformat()}."
+                ),
+            )
+
+
 # =====================================================
 # CREATE ROOM RESERVATION
 # =====================================================
 @router.post("/room_reservation", status_code=status.HTTP_201_CREATED)
 async def create_room_reservation(
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     # ---------------- Guest ----------------
-    room_reservation_id: str = Form(...),
     salutation: str = Form(None),
     first_name: str = Form(None),
     last_name: str = Form(None),
@@ -557,149 +1229,256 @@ async def create_room_reservation(
     # ---------------- Stay ----------------
     arrival_date: date = Form(...),
     departure_date: date = Form(...),
-    no_of_nights: int = Form(...),
-    room_type_ids: str = Form(...),  # JSON → [1,2]
-    room_ids: str = Form(...),  # JSON → [101,102]
-    rate_type: str = Form(...),  # JSON → ["daily","daily"]
-    no_of_rooms: int = Form(...),
-    no_of_adults: int = Form(...),
-    no_of_children: int = Form(...),
-    # ---------------- Payment ----------------
+    room_ids: str = Form(...),           # JSON -> [101, 102]
+    rate_type: str = Form(None),         # JSON -> ["daily", "weekly"]
+    room_occupancy: str = Form(None),    # JSON -> [{room_id, adults, children}]
+    no_of_adults: int = Form(None),
+    no_of_children: int = Form(None),
+    # ---------------- Pricing inputs ----------------
     payment_method_id: int = Form(...),
-    extra_bed_count: int = Form(0),
-    extra_bed_cost: float = Form(0),
-    room_amount: float = Form(0),
     tax_type_id: int = Form(None),
-    total_amount: float = Form(...),
-    tax_percentage: float = Form(0),
-    tax_amount: float = Form(0),
     discount_type_id: int = Form(None),
-    discount_percentage: float = Form(0),
-    discount_amount: float = Form(0),
     extra_charges: float = Form(0),
-    overall_amount: float = Form(...),
-    paid_amount: float = Form(0),
-    balance_amount: float = Form(0),
-    extra_amount: float = Form(0),
+    extra_bed_count: int = Form(0),
+    extra_bed_cost: float = Form(None),
+    room_amount: float = Form(None),     # negotiated rate; optional override
+    paying_amount: float = Form(0),
     # ---------------- Reservation ----------------
-    booking_status_id: int = Form(...),
+    booking_status_id: int = Form(None),
     reservation_type: str = Form(RESERVATION),
-    reservation_status: str = Form(...),
+    reservation_status: str = Form(None),
     room_complementary: str = Form(None),
     common_complementary: str = Form(None),
     # ---------------- Identity ----------------
     identity_type_id: int = Form(...),
     identity_file: UploadFile = File(...),
 ):
-    # -------------------------------------------------
-    # AUTHENTICATION
-    # -------------------------------------------------
-    user_id, role_id, company_id, token = verify_authentication(request)
+    """Create a reservation.
+
+    WHAT THE CALLER NO LONGER DECIDES
+        `room_reservation_id`, `no_of_nights`, `no_of_rooms`, `room_type_ids`,
+        `tax_percentage`, `tax_amount`, `discount_percentage`,
+        `discount_amount`, `overall_amount`, `total_amount`, `paid_amount` and
+        `balance_amount` were all form fields. Every one of them is now derived
+        here. They are still accepted -- an older client posting them gets a
+        booking rather than a 422 -- and ignored.
+
+    WHY IT IS ONE TRANSACTION
+        Locking the rooms, re-checking availability against that lock and
+        inserting the booking have to be indivisible. Split across commits (as
+        this used to be) the gap between "the room is free" and "the room is
+        mine" is exactly where a second booker fits.
+    """
+    user_id, role_id, company_id, _ = verify_authentication(request)
     if not user_id or not company_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # -------------------------------------------------
-    # DATE VALIDATION
-    # -------------------------------------------------
-    if departure_date <= arrival_date:
-        raise HTTPException(
-            status_code=400, detail="departure_date must be greater than arrival_date"
-        )
+    phone_number = (phone_number or "").strip()
+    if not phone_number:
+        raise HTTPException(status_code=400, detail="Phone number is required")
+    if not (first_name or "").strip():
+        raise HTTPException(status_code=400, detail="Guest first name is required")
 
-    # -------------------------------------------------
-    # JSON VALIDATION
-    # -------------------------------------------------
-    try:
-        room_type_ids_json = json.loads(room_type_ids)
-        room_ids_json = json.loads(room_ids)
-        rate_type_json = json.loads(rate_type)
-    except Exception:
+    _assert_stay_dates(arrival_date, departure_date)
+    nights = rules.nights_between(arrival_date, departure_date)
+
+    parsed_room_ids = _parse_room_ids(room_ids)
+    rate_types = [str(r) for r in _parse_json_list(rate_type, "rate_type", default=[])]
+    occupancy = _parse_occupancy(
+        room_occupancy, parsed_room_ids, no_of_adults, no_of_children
+    )
+
+    if reservation_type and reservation_type.upper() not in rules.RESERVATION_TYPES:
         raise HTTPException(
             status_code=400,
-            detail="room_type_ids, room_ids, rate_type must be valid JSON arrays",
+            detail=f"Reservation type must be one of: {', '.join(rules.RESERVATION_TYPES)}",
+        )
+    reservation_type = (reservation_type or RESERVATION).upper()
+
+    try:
+        # A status may be named directly or picked by its master-data id; the
+        # Add screen sends the id, the Edit screen sends the label.
+        wanted_status = reservation_status
+        if not wanted_status and booking_status_id:
+            status_row = (
+                db.query(MasterReservationStatus)
+                .filter(
+                    MasterReservationStatus.id == booking_status_id,
+                    MasterReservationStatus.company_id == str(company_id),
+                    MasterReservationStatus.status == STATUS,
+                )
+                .first()
+            )
+            if not status_row:
+                raise rules.RuleError(
+                    f"Reservation status {booking_status_id} does not exist for this property"
+                )
+            wanted_status = status_row.Reservation_Status
+
+        resolved_status = rules.resolve_status(db, company_id, wanted_status)
+
+        # Opening a booking directly in a terminal state is a data-entry error,
+        # not a workflow: it would occupy a reference and a reference number for
+        # a stay that never existed.
+        if rules.normalise_status(resolved_status) in {
+            rules.normalise_status(s) for s in rules.TERMINAL
+        }:
+            raise rules.RuleError(
+                f"A new reservation cannot start as {resolved_status}"
+            )
+
+        status_id = (
+            db.query(MasterReservationStatus.id)
+            .filter(
+                MasterReservationStatus.company_id == str(company_id),
+                MasterReservationStatus.Reservation_Status == resolved_status,
+                MasterReservationStatus.status == STATUS,
+            )
+            .scalar()
         )
 
-    # -------------------------------------------------
-    # FILE UPLOAD
-    # -------------------------------------------------
-    ext = identity_file.filename.split(".")[-1]
-    filename = f"{uuid.uuid4()}.{ext}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
+        rules.resolve_payment_method(db, payment_method_id, company_id)
+        rules.resolve_identity_type(db, identity_type_id, company_id)
 
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(identity_file.file, f)
+        # ---- Retry of a booking already made? Answer with that one. --------
+        replay = _find_replay(
+            db,
+            company_id,
+            phone_number=phone_number,
+            arrival=arrival_date,
+            departure=departure_date,
+            room_ids=parsed_room_ids,
+        )
+        if replay:
+            response.status_code = status.HTTP_200_OK
+            return {
+                "status": "success",
+                "message": "This reservation was already created",
+                "idempotent_replay": True,
+                "data": {
+                    "id": replay.id,
+                    "room_reservation_id": replay.room_reservation_id,
+                    "token": replay.token,
+                    "confirmation_code": replay.confirmation_code,
+                },
+            }
 
-    # -------------------------------------------------
-    # CREATE RESERVATION (SAFE ASSIGNMENT)
-    # -------------------------------------------------
+        # ---- Serialise every booker competing for these rooms --------------
+        rules.lock_rooms(db, parsed_room_ids)
+
+        rooms = rules.assert_rooms_bookable(
+            db,
+            company_id,
+            parsed_room_ids,
+            arrival_date,
+            departure_date,
+            occupancy=occupancy,
+        )
+
+        priced = rules.quote(
+            db,
+            company_id,
+            room_ids=parsed_room_ids,
+            rate_types=rate_types,
+            nights=nights,
+            tax_type_id=tax_type_id,
+            discount_type_id=discount_type_id,
+            extra_charges=extra_charges,
+            extra_bed_count=extra_bed_count,
+            extra_bed_cost=extra_bed_cost,
+            room_amount_override=room_amount,
+            paying_amount=paying_amount,
+        )
+    except rules.RuleError as exc:
+        db.rollback()
+        raise _rule_http(exc)
+
+    # The upload is written only once the booking is known to be valid, so a
+    # rejected request leaves no orphan file behind.
+    proof_document = await _store_identity_proof(identity_file)
+
     reservation = models.RoomReservation()
+    reservation.room_reservation_id = _generate_reservation_reference(db, company_id)
 
-    reservation.room_reservation_id = room_reservation_id
     reservation.salutation = salutation
-    reservation.first_name = first_name
-    reservation.last_name = last_name
+    reservation.first_name = (first_name or "").strip()
+    reservation.last_name = (last_name or "").strip() or None
     reservation.phone_number = phone_number
-    reservation.email = email
+    reservation.email = (email or "").strip().lower() or None
 
     reservation.arrival_date = arrival_date
     reservation.departure_date = departure_date
-    reservation.no_of_nights = no_of_nights
+    reservation.no_of_nights = nights
 
-    reservation.room_type_ids = room_type_ids_json
-    reservation.room_ids = room_ids_json
-    reservation.rate_type = rate_type_json
+    reservation.room_ids = parsed_room_ids
+    reservation.room_type_ids = sorted(
+        {rules.as_int(rooms[r].Room_Type_ID) for r in parsed_room_ids}
+    )
+    reservation.room_no = [rooms[r].Room_No for r in parsed_room_ids]
+    reservation.rate_type = [
+        line["rate_type"] for line in priced["lines"]
+    ] or [rules.DEFAULT_RATE_TYPE]
 
-    reservation.no_of_rooms = no_of_rooms
-    reservation.no_of_adults = no_of_adults
-    reservation.no_of_children = no_of_children
+    reservation.no_of_rooms = len(parsed_room_ids)
+    reservation.no_of_adults = sum(a for a, _ in occupancy.values())
+    reservation.no_of_children = sum(c for _, c in occupancy.values())
 
     reservation.payment_method_id = payment_method_id
+    rules.apply_quote(reservation, priced)
+    reservation.paying_amount = priced["paying_amount"]
+    reservation.paid_amount = priced["paid_amount"]
+    reservation.balance_amount = priced["balance_amount"]
+    reservation.extra_amount = priced["extra_amount"]
 
-    reservation.extra_bed_count = extra_bed_count
-    reservation.extra_bed_cost = extra_bed_cost
-
-    reservation.room_amount = room_amount
-    reservation.tax_type_id = tax_type_id
-    reservation.total_amount = total_amount
-    reservation.tax_percentage = tax_percentage
-    reservation.tax_amount = tax_amount
-
-    reservation.discount_type_id = discount_type_id
-    reservation.discount_percentage = discount_percentage
-    reservation.discount_amount = discount_amount
-
-    reservation.extra_charges = extra_charges
-
-    reservation.overall_amount = overall_amount
-    reservation.paid_amount = paid_amount
-    reservation.balance_amount = balance_amount
-    reservation.extra_amount = extra_amount
-
-    reservation.booking_status_id = booking_status_id
+    reservation.booking_status_id = status_id
     reservation.reservation_type = reservation_type
-    reservation.reservation_status = reservation_status
+    reservation.reservation_status = resolved_status
 
-    reservation.room_complementary = room_complementary
-    reservation.common_complementary = common_complementary
+    reservation.room_complementary = (room_complementary or "").strip() or None
+    reservation.common_complementary = (common_complementary or "").strip() or None
 
     reservation.identity_type_id = identity_type_id
-    reservation.proof_document = filename
+    reservation.proof_document = proof_document
 
     reservation.confirmation_code = str(uuid.uuid4())[:8].upper()
     reservation.status = STATUS
-    reservation.created_by = user_id
-    reservation.company_id = company_id
+    reservation.created_by = str(user_id)
+    reservation.company_id = str(company_id)
 
-    # -------------------------------------------------
-    # SAVE
-    # -------------------------------------------------
     db.add(reservation)
-    db.commit()
+    db.flush()
+
+    # An opening payment is part of the booking, so it belongs to the same
+    # transaction and the same audit trail as every later one.
+    if priced["paid_amount"] > 0:
+        db.add(
+            models.ReservationAmountPaidHistory(
+                reservation_id=_history_key(reservation),
+                user_id=str(user_id),
+                amount=priced["paid_amount"],
+                paid_date=date.today(),
+                payment_method=_payment_method_name(db, company_id, payment_method_id),
+                status=STATUS,
+                created_by=str(user_id),
+                company_id=str(company_id),
+            )
+        )
+
+    sync_room_booking_status(db, company_id, parsed_room_ids)
+
+    try:
+        db.commit()
+    except IntegrityError:
+        # The unique index on the reference is the last line of defence behind
+        # `_generate_reservation_reference`; report the collision rather than
+        # letting it surface as an opaque 500.
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="That reservation reference is already in use; please retry",
+        )
     db.refresh(reservation)
 
-    # -------------------------------------------------
-    # RESPONSE
-    # -------------------------------------------------
     return {
         "status": "success",
         "message": "Room reservation created successfully",
@@ -707,8 +1486,29 @@ async def create_room_reservation(
             "id": reservation.id,
             "room_reservation_id": reservation.room_reservation_id,
             "token": reservation.token,
+            "confirmation_code": reservation.confirmation_code,
+            "reservation_status": reservation.reservation_status,
+            "no_of_nights": reservation.no_of_nights,
+            "room_amount": reservation.room_amount,
+            "tax_amount": reservation.tax_amount,
+            "discount_amount": reservation.discount_amount,
+            "overall_amount": reservation.overall_amount,
+            "paid_amount": reservation.paid_amount,
+            "balance_amount": reservation.balance_amount,
         },
     }
+
+
+def _payment_method_name(db: Session, company_id, payment_method_id) -> str:
+    row = (
+        db.query(MasterPaymentMethod.payment_method)
+        .filter(
+            MasterPaymentMethod.id == payment_method_id,
+            MasterPaymentMethod.company_id == str(company_id),
+        )
+        .scalar()
+    )
+    return row or "Unknown"
 
 
 # =====================================================
@@ -720,85 +1520,81 @@ def get_room_availability(
     arrival_date: date,
     departure_date: date,
     db: Session = Depends(get_db),
+    exclude_reservation_id: int = None,
 ):
+    """Which rooms can be sold for a stay, and which cannot, and why.
+
+    `exclude_reservation_id` is what makes editing a booking work: a
+    reservation must not be told its own room is unavailable when the guest is
+    simply changing the dates around it.
+    """
     try:
-        # -------------------------------------------------
-        # AUTHENTICATION
-        # -------------------------------------------------
-        user_id, role_id, company_id, token = verify_authentication(request)
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not company_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
 
-        # -------------------------------------------------
-        # DATE VALIDATION
-        # -------------------------------------------------
-        if departure_date <= arrival_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="departure_date must be greater than arrival_date",
-            )
+        _assert_stay_dates(arrival_date, departure_date, allow_past=True)
 
-        # -------------------------------------------------
-        # FIND RESERVATIONS THAT OVERLAP THE REQUESTED STAY
-        # -------------------------------------------------
-        overlapping = (
-            db.query(models.RoomReservation)
+        conflicts = rules.booked_room_windows(
+            db,
+            company_id,
+            arrival_date,
+            departure_date,
+            exclude_id=exclude_reservation_id,
+        )
+
+        rooms = (
+            db.query(MasterRoom)
             .filter(
-                models.RoomReservation.company_id == company_id,
-                models.RoomReservation.status == STATUS,
-                models.RoomReservation.arrival_date < departure_date,
-                models.RoomReservation.departure_date > arrival_date,
+                MasterRoom.company_id == str(company_id),
+                MasterRoom.status == STATUS,
             )
+            .order_by(MasterRoom.id.asc())
             .all()
         )
 
-        # A reservation that was cancelled / never arrived never occupies the room.
-        NON_BLOCKING_STATUSES = {"cancelled", "no show", "no-show"}
-        raw_ranges_by_room = {}  # room_id -> [(start, end), ...], clipped to the query window
-        for r in overlapping:
-            if (r.reservation_status or "").strip().lower() in NON_BLOCKING_STATUSES:
-                continue
-            clipped_start = max(r.arrival_date, arrival_date)
-            clipped_end = min(r.departure_date, departure_date)
-            for rid in (r.room_ids or []):
-                try:
-                    rid = int(rid)
-                except (TypeError, ValueError):
-                    continue
-                raw_ranges_by_room.setdefault(rid, []).append((clipped_start, clipped_end))
+        blocked_ids = {
+            r.id for r in rooms if rules.normalise_status(r.Room_Status) == "blocking"
+        }
 
-        # Merge overlapping/adjacent conflict windows per room so a room double
-        # booked by two guests still reports one clean set of blocked nights.
-        conflicts_by_room = {}
-        for rid, ranges in raw_ranges_by_room.items():
-            merged = []
-            for start, end in sorted(ranges):
-                if merged and start <= merged[-1][1]:
-                    merged[-1] = (merged[-1][0], max(merged[-1][1], end))
-                else:
-                    merged.append((start, end))
-            conflicts_by_room[rid] = [
-                {"arrival_date": s, "departure_date": e} for s, e in merged
-            ]
+        nights = rules.nights_between(arrival_date, departure_date)
+        available = [
+            r.id
+            for r in rooms
+            if r.id not in conflicts and r.id not in blocked_ids
+        ]
 
         return {
             "status": "success",
             "data": {
                 "arrival_date": arrival_date,
                 "departure_date": departure_date,
-                "booked_room_ids": sorted(conflicts_by_room.keys()),
-                "conflicts": conflicts_by_room,
+                "no_of_nights": nights,
+                "booked_room_ids": sorted(conflicts.keys()),
+                # Out of order for maintenance. Reported separately from
+                # `booked_room_ids` so the UI can say why rather than showing
+                # one undifferentiated "unavailable".
+                "blocked_room_ids": sorted(blocked_ids),
+                "available_room_ids": available,
+                "conflicts": {
+                    room_id: [
+                        {"arrival_date": s, "departure_date": e} for s, e in windows
+                    ]
+                    for room_id, windows in conflicts.items()
+                },
             },
         }
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
+        logger.exception("room_availability_failed")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
         )
 
 
@@ -806,107 +1602,124 @@ def get_room_availability(
 # GET ALL ROOM RESERVATIONS
 # =====================================================
 @router.get("/room_reservation", status_code=status.HTTP_200_OK)
-def get_all_room_reservations(request: Request, db: Session = Depends(get_db)):
-    try:
-        # -------------------------------------------------
-        # AUTHENTICATION
-        # -------------------------------------------------
-        user_id, role_id, company_id, token = verify_authentication(request)
+def get_all_room_reservations(
+    request: Request,
+    db: Session = Depends(get_db),
+    q: str = None,
+    reservation_status: str = None,
+    reservation_type: str = None,
+    room_id: int = None,
+    room_type_id: int = None,
+    payment_state: str = None,
+    from_date: date = None,
+    to_date: date = None,
+    page: int = 1,
+    page_size: int = None,
+):
+    """List reservations, filtered and paged by the database.
 
+    Filtering happens here rather than in the browser because the browser only
+    ever had the rows it had already downloaded -- a "Cancelled" filter over an
+    un-paged list is a different answer from the same filter over the whole
+    book. `page_size` is opt-in so an unparameterised call keeps returning the
+    complete list, which is what the existing screens expect.
+    """
+    try:
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not company_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
 
-        # -------------------------------------------------
-        # FETCH ROOM RESERVATIONS
-        # -------------------------------------------------
-        reservations = (
-            db.query(models.RoomReservation)
-            .filter(
-                models.RoomReservation.company_id == company_id,
-                models.RoomReservation.status == STATUS,
-            )
-            .order_by(models.RoomReservation.id.desc())
-            .all()
+        query = db.query(models.RoomReservation).filter(
+            models.RoomReservation.company_id == str(company_id),
+            models.RoomReservation.status == STATUS,
         )
 
-        # -------------------------------------------------
-        # FORMAT RESPONSE (MODEL ORDER)
-        # -------------------------------------------------
-        data = [
-            {
-                # ---------------- Reference ----------------
-                "id": r.id,
-                "room_reservation_id": r.room_reservation_id,
-                # ---------------- Guest Details ----------------
-                "salutation": r.salutation,
-                "first_name": r.first_name,
-                "last_name": r.last_name,
-                "phone_number": r.phone_number,
-                "email": r.email,
-                # ---------------- Stay Details ----------------
-                "arrival_date": r.arrival_date,
-                "departure_date": r.departure_date,
-                "no_of_nights": r.no_of_nights,
-                # ---------------- Room Details ----------------
-                "room_type_ids": r.room_type_ids,
-                "room_ids": r.room_ids,
-                "rate_type": r.rate_type,
-                "no_of_rooms": r.no_of_rooms,
-                "no_of_adults": r.no_of_adults,
-                "no_of_children": r.no_of_children,
-                # ---------------- Payment ----------------
-                "payment_method_id": r.payment_method_id,
-                "extra_bed_count": r.extra_bed_count,
-                "extra_bed_cost": r.extra_bed_cost,
-                "room_amount": r.room_amount,
-                "tax_type_id": r.tax_type_id,
-                "total_amount": r.total_amount,
-                "tax_percentage": r.tax_percentage,
-                "tax_amount": r.tax_amount,
-                "discount_type_id": r.discount_type_id,
-                "discount_percentage": r.discount_percentage,
-                "discount_amount": r.discount_amount,
-                "extra_charges": r.extra_charges,
-                "overall_amount": r.overall_amount,
-                "paid_amount": r.paid_amount,
-                "balance_amount": r.balance_amount,
-                "extra_amount": r.extra_amount,
-                # ---------------- Reservation Info ----------------
-                "booking_status_id": r.booking_status_id,
-                "reservation_type": r.reservation_type,
-                "reservation_status": r.reservation_status,
-                "room_complementary": r.room_complementary,
-                "common_complementary": r.common_complementary,
-                # ---------------- Identity ----------------
-                "identity_type_id": r.identity_type_id,
-                "proof_document": r.proof_document,
-                "confirmation_code": r.confirmation_code,
-                # ---------------- System ----------------
-                "token": r.token,
-                "status": r.status,
-                "created_by": r.created_by,
-                "created_at": r.created_at,
-                "updated_at": r.updated_at,
-                "updated_by": r.updated_by,
-                "company_id": r.company_id,
-            }
-            for r in reservations
-        ]
+        if reservation_status:
+            # Fold-insensitive so "no-show" from a URL matches "No-Show".
+            wanted = rules.normalise_status(reservation_status)
+            labels = [
+                label
+                for label in rules.load_status_vocabulary(db, company_id)
+                if rules.normalise_status(label) == wanted
+            ]
+            query = query.filter(
+                models.RoomReservation.reservation_status.in_(labels or [reservation_status])
+            )
 
-        # -------------------------------------------------
-        # RESPONSE
-        # -------------------------------------------------
-        return {"status": "success", "count": len(data), "data": data}
+        if reservation_type:
+            query = query.filter(
+                models.RoomReservation.reservation_type == reservation_type.upper()
+            )
+
+        # Date filtering is on stay overlap, not on the arrival date alone: a
+        # guest already in-house on the date being asked about is part of that
+        # day's picture even though they arrived last week.
+        if from_date:
+            query = query.filter(models.RoomReservation.departure_date >= from_date)
+        if to_date:
+            query = query.filter(models.RoomReservation.arrival_date <= to_date)
+
+        if q:
+            term = f"%{q.strip()}%"
+            query = query.filter(
+                or_(
+                    models.RoomReservation.room_reservation_id.like(term),
+                    models.RoomReservation.confirmation_code.like(term),
+                    models.RoomReservation.first_name.like(term),
+                    models.RoomReservation.last_name.like(term),
+                    models.RoomReservation.phone_number.like(term),
+                    models.RoomReservation.email.like(term),
+                )
+            )
+
+        rows = query.order_by(models.RoomReservation.id.desc()).all()
+
+        # room_ids / room_type_ids are JSON arrays, so these two are matched in
+        # Python. Portable across MySQL versions, and the alternative --
+        # JSON_CONTAINS -- cannot use an index here either.
+        if room_id is not None:
+            rows = [r for r in rows if room_id in [int(x) for x in (r.room_ids or [])]]
+        if room_type_id is not None:
+            rows = [
+                r
+                for r in rows
+                if room_type_id in [int(x) for x in (r.room_type_ids or [])]
+            ]
+
+        if payment_state:
+            wanted = payment_state.strip().lower()
+            rows = [r for r in rows if _payment_state(r).lower() == wanted]
+
+        total = len(rows)
+
+        if page_size:
+            page = max(1, int(page or 1))
+            page_size = max(1, min(int(page_size), 200))
+            start = (page - 1) * page_size
+            rows = rows[start : start + page_size]
+
+        maps = _lookup_maps(db, company_id)
+        data = [_serialise(r, maps) for r in rows]
+
+        return {
+            "status": "success",
+            "count": len(data),
+            "total": total,
+            "page": page if page_size else 1,
+            "page_size": page_size or total,
+            "data": data,
+        }
 
     except HTTPException:
         raise
-
-    except Exception as e:
+    except Exception:
+        logger.exception("list_reservations_failed")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
         )
 
 
@@ -918,115 +1731,76 @@ def get_room_reservation_by_id(
     reservation_id: int, request: Request, db: Session = Depends(get_db)
 ):
     try:
-        # -------------------------------------------------
-        # AUTHENTICATION
-        # -------------------------------------------------
-        user_id, role_id, company_id, token = verify_authentication(request)
-
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not company_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
 
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
         if reservation_id <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reservation_id"
-            )
+            raise HTTPException(status_code=400, detail="Invalid reservation id")
 
-        # -------------------------------------------------
-        # FETCH RESERVATION
-        # -------------------------------------------------
         reservation = (
             db.query(models.RoomReservation)
             .filter(
                 models.RoomReservation.id == reservation_id,
-                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.company_id == str(company_id),
                 models.RoomReservation.status == STATUS,
             )
             .first()
         )
-
         if not reservation:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Room reservation not found",
-            )
+            raise HTTPException(status_code=404, detail="Room reservation not found")
 
-        # -------------------------------------------------
-        # RESPONSE (MODEL ORDER)
-        # -------------------------------------------------
-        return {
-            "status": "success",
-            "data": {
-                # ---------------- Reference ----------------
-                "id": reservation.id,
-                "room_reservation_id": reservation.room_reservation_id,
-                # ---------------- Guest Details ----------------
-                "salutation": reservation.salutation,
-                "first_name": reservation.first_name,
-                "last_name": reservation.last_name,
-                "phone_number": reservation.phone_number,
-                "email": reservation.email,
-                # ---------------- Stay Details ----------------
-                "arrival_date": reservation.arrival_date,
-                "departure_date": reservation.departure_date,
-                "no_of_nights": reservation.no_of_nights,
-                # ---------------- Room Details ----------------
-                "room_type_ids": reservation.room_type_ids,
-                "room_ids": reservation.room_ids,
-                "rate_type": reservation.rate_type,
-                "no_of_rooms": reservation.no_of_rooms,
-                "no_of_adults": reservation.no_of_adults,
-                "no_of_children": reservation.no_of_children,
-                # ---------------- Payment ----------------
-                "payment_method_id": reservation.payment_method_id,
-                "extra_bed_count": reservation.extra_bed_count,
-                "extra_bed_cost": reservation.extra_bed_cost,
-                "room_amount": reservation.room_amount,
-                "tax_type_id": reservation.tax_type_id,
-                "total_amount": reservation.total_amount,
-                "tax_percentage": reservation.tax_percentage,
-                "tax_amount": reservation.tax_amount,
-                "discount_type_id": reservation.discount_type_id,
-                "discount_percentage": reservation.discount_percentage,
-                "discount_amount": reservation.discount_amount,
-                "extra_charges": reservation.extra_charges,
-                "overall_amount": reservation.overall_amount,
-                "paid_amount": reservation.paid_amount,
-                "balance_amount": reservation.balance_amount,
-                "extra_amount": reservation.extra_amount,
-                # ---------------- Reservation Info ----------------
-                "booking_status_id": reservation.booking_status_id,
-                "reservation_type": reservation.reservation_type,
-                "reservation_status": reservation.reservation_status,
-                "room_complementary": reservation.room_complementary,
-                "common_complementary": reservation.common_complementary,
-                # ---------------- Identity ----------------
-                "identity_type_id": reservation.identity_type_id,
-                "proof_document": reservation.proof_document,
-                "confirmation_code": reservation.confirmation_code,
-                # ---------------- System ----------------
-                "token": reservation.token,
-                "status": reservation.status,
-                "created_by": reservation.created_by,
-                "created_at": reservation.created_at,
-                "updated_at": reservation.updated_at,
-                "updated_by": reservation.updated_by,
-                "company_id": reservation.company_id,
-            },
-        }
+        maps = _lookup_maps(db, company_id)
+        payload = _serialise(reservation, maps)
+
+        # The per-room breakdown behind the total, so the View screen can show
+        # what each room contributed instead of one opaque figure.
+        payload["rate_breakdown"] = _rate_breakdown(reservation, maps)
+
+        return {"status": "success", "data": payload}
 
     except HTTPException:
         raise
-
-    except Exception as e:
+    except Exception:
+        logger.exception("get_reservation_failed")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
         )
+
+
+def _rate_breakdown(reservation, maps: dict) -> list[dict]:
+    """Reconstruct the per-room lines from what was stored.
+
+    Read from the reservation rather than re-priced from today's rate card: a
+    stay booked in July at July's rates must keep showing July's rates.
+    """
+    rooms = maps["rooms"]
+    room_types = maps["room_types"]
+    room_ids = [int(r) for r in (reservation.room_ids or [])]
+    rate_types = list(reservation.rate_type or [])
+    nights = reservation.no_of_nights or 1
+
+    lines = []
+    for index, room_id in enumerate(room_ids):
+        room = rooms.get(room_id)
+        if not room:
+            continue
+        room_type = room_types.get(rules.as_int(room.Room_Type_ID))
+        rate = rate_types[index] if index < len(rate_types) else rules.DEFAULT_RATE_TYPE
+        lines.append(
+            {
+                "room_id": room_id,
+                "room_no": room.Room_No,
+                "room_type_name": getattr(room_type, "Type_Name", None),
+                "rate_type": rate,
+                "units": rules.units_for(rate, nights),
+            }
+        )
+    return lines
 
 
 # =====================================================
@@ -1036,153 +1810,248 @@ def get_room_reservation_by_id(
 async def update_room_reservation(
     request: Request,
     db: Session = Depends(get_db),
-    # -------- REQUIRED IDENTIFIER --------
-    id: int = Form(...),  # room_reservation.id
-    # -------- Guest --------
+    id: int = Form(...),
+    # ---------------- Guest ----------------
     salutation: str = Form(None),
     first_name: str = Form(None),
     last_name: str = Form(None),
     phone_number: str = Form(...),
     email: str = Form(None),
-    # -------- Stay --------
+    # ---------------- Stay ----------------
     arrival_date: date = Form(...),
     departure_date: date = Form(...),
-    no_of_nights: int = Form(...),
-    room_type_ids: str = Form(...),  # JSON → [room_type_id]
-    room_ids: str = Form(...),  # JSON → [room_id]
-    rate_type: str = Form(...),  # JSON → ["daily"]
-    no_of_rooms: int = Form(...),
-    no_of_adults: int = Form(...),
-    no_of_children: int = Form(...),
-    # -------- Payment --------
+    room_ids: str = Form(None),
+    rate_type: str = Form(None),
+    room_occupancy: str = Form(None),
+    no_of_adults: int = Form(None),
+    no_of_children: int = Form(None),
+    # ---------------- Pricing inputs ----------------
     payment_method_id: int = Form(...),
-    extra_bed_count: int = Form(0),
-    extra_bed_cost: float = Form(0),
-    room_amount: float = Form(0),
     tax_type_id: int = Form(None),
-    total_amount: float = Form(...),
-    tax_percentage: float = Form(0),
-    tax_amount: float = Form(0),
     discount_type_id: int = Form(None),
-    discount_percentage: float = Form(0),
-    discount_amount: float = Form(0),
     extra_charges: float = Form(0),
-    overall_amount: float = Form(...),
-    paid_amount: float = Form(0),
-    balance_amount: float = Form(0),
-    extra_amount: float = Form(0),
-    # -------- Reservation --------
-    booking_status_id: int = Form(...),
-    reservation_type: str = Form(...),
-    reservation_status: str = Form(...),
+    extra_bed_count: int = Form(0),
+    extra_bed_cost: float = Form(None),
+    room_amount: float = Form(None),
+    # ---------------- Reservation ----------------
+    booking_status_id: int = Form(None),
+    reservation_type: str = Form(None),
+    reservation_status: str = Form(None),
     room_complementary: str = Form(None),
     common_complementary: str = Form(None),
 ):
+    """Amend a reservation, re-checking everything the amendment could break.
+
+    An edit is a booking all over again: moving the dates or the room has to
+    pass the same availability check the original did, and changing the rate
+    type or the discount has to re-derive the total. The previous version
+    assigned whatever arrived and committed, so a reservation could be edited
+    into a room somebody else was already in, and its total could be set by
+    typing a different number into the form.
+
+    `paid_amount` and `balance_amount` are deliberately NOT editable here.
+    Money that has changed hands is recorded by the payment and refund
+    endpoints, which write an audit row; letting the edit form overwrite the
+    paid figure would silently erase that history.
+    """
     try:
-        # -------------------------------------------------
-        # AUTH
-        # -------------------------------------------------
-        user_id, role_id, company_id, token = verify_authentication(request)
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
         if id <= 0:
             raise HTTPException(status_code=400, detail="Invalid reservation id")
 
-        if departure_date <= arrival_date:
-            raise HTTPException(
-                status_code=400,
-                detail="departure_date must be greater than arrival_date",
-            )
-
-        # -------------------------------------------------
-        # FETCH
-        # -------------------------------------------------
         reservation = (
             db.query(models.RoomReservation)
             .filter(
                 models.RoomReservation.id == id,
-                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.company_id == str(company_id),
                 models.RoomReservation.status == STATUS,
             )
             .first()
         )
-
         if not reservation:
             raise HTTPException(status_code=404, detail="Room reservation not found")
 
-        # -------------------------------------------------
-        # UPDATE (SAFE ASSIGNMENT)
-        # -------------------------------------------------
-        reservation.salutation = salutation
-        reservation.first_name = first_name
-        reservation.last_name = last_name
-        reservation.phone_number = phone_number
-        reservation.email = email
+        previous_status = reservation.reservation_status
+        previous_rooms = [int(r) for r in (reservation.room_ids or [])]
 
-        reservation.arrival_date = arrival_date
-        reservation.departure_date = departure_date
-        reservation.no_of_nights = no_of_nights
+        # A finished or abandoned stay is a historical record. Editing one
+        # would rewrite revenue that has already been reported.
+        if rules.normalise_status(previous_status) in {
+            rules.normalise_status(s) for s in rules.TERMINAL
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This reservation is {previous_status} and can no longer be edited."
+                ),
+            )
 
-        reservation.room_type_ids = json.loads(room_type_ids)
-        reservation.room_ids = json.loads(room_ids)
-        reservation.rate_type = json.loads(rate_type)
+        phone_number = (phone_number or "").strip()
+        if not phone_number:
+            raise HTTPException(status_code=400, detail="Phone number is required")
+        if not (first_name or "").strip():
+            raise HTTPException(status_code=400, detail="Guest first name is required")
 
-        reservation.no_of_rooms = no_of_rooms
-        reservation.no_of_adults = no_of_adults
-        reservation.no_of_children = no_of_children
+        # Back-dating is allowed on an edit: a booking made last week for last
+        # week's arrival is legitimately still being corrected.
+        _assert_stay_dates(arrival_date, departure_date, allow_past=True)
+        nights = rules.nights_between(arrival_date, departure_date)
 
-        reservation.payment_method_id = payment_method_id
+        parsed_room_ids = (
+            _parse_room_ids(room_ids) if room_ids not in (None, "") else previous_rooms
+        )
+        if not parsed_room_ids:
+            raise HTTPException(status_code=400, detail="Select at least one room")
 
-        reservation.extra_bed_count = extra_bed_count
-        reservation.extra_bed_cost = extra_bed_cost
+        rate_types = [
+            str(r) for r in _parse_json_list(rate_type, "rate_type", default=[])
+        ] or list(reservation.rate_type or [])
 
-        reservation.room_amount = room_amount
-        reservation.tax_type_id = tax_type_id
-        reservation.total_amount = total_amount
-        reservation.tax_percentage = tax_percentage
-        reservation.tax_amount = tax_amount
-        reservation.discount_type_id = discount_type_id
-        reservation.discount_percentage = discount_percentage
-        reservation.discount_amount = discount_amount
-        reservation.extra_charges = extra_charges
+        occupancy = _parse_occupancy(
+            room_occupancy,
+            parsed_room_ids,
+            no_of_adults if no_of_adults is not None else reservation.no_of_adults,
+            no_of_children if no_of_children is not None else reservation.no_of_children,
+        )
 
-        reservation.overall_amount = overall_amount
-        reservation.paid_amount = paid_amount
-        reservation.balance_amount = balance_amount
-        reservation.extra_amount = extra_amount
+        if reservation_type and reservation_type.upper() not in rules.RESERVATION_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Reservation type must be one of: {', '.join(rules.RESERVATION_TYPES)}",
+            )
 
-        reservation.booking_status_id = booking_status_id
-        reservation.reservation_type = reservation_type
-        reservation.reservation_status = reservation_status
+        wanted_status = reservation_status
+        if not wanted_status and booking_status_id:
+            status_row = (
+                db.query(MasterReservationStatus)
+                .filter(
+                    MasterReservationStatus.id == booking_status_id,
+                    MasterReservationStatus.company_id == str(company_id),
+                    MasterReservationStatus.status == STATUS,
+                )
+                .first()
+            )
+            wanted_status = getattr(status_row, "Reservation_Status", None)
 
-        reservation.room_complementary = room_complementary
-        reservation.common_complementary = common_complementary
+        resolved_status = rules.resolve_status(
+            db, company_id, wanted_status or previous_status
+        )
+        rules.assert_transition(previous_status, resolved_status)
 
-        reservation.updated_by = user_id
+        rules.resolve_payment_method(db, payment_method_id, company_id)
 
-        # -------------------------------------------------
-        # SAVE
-        # -------------------------------------------------
-        db.commit()
-        db.refresh(reservation)
+        # Serialise against concurrent bookers for both the rooms being taken
+        # and the ones being released.
+        rules.lock_rooms(db, set(parsed_room_ids) | set(previous_rooms))
 
-        return {
-            "status": "success",
-            "message": "Room reservation updated successfully",
-            "data": {
-                "id": reservation.id,
-                "room_reservation_id": reservation.room_reservation_id,
-                "updated_at": reservation.updated_at,
-            },
-        }
+        rooms = rules.assert_rooms_bookable(
+            db,
+            company_id,
+            parsed_room_ids,
+            arrival_date,
+            departure_date,
+            exclude_id=reservation.id,
+            occupancy=occupancy,
+        )
 
+        priced = rules.quote(
+            db,
+            company_id,
+            room_ids=parsed_room_ids,
+            rate_types=rate_types,
+            nights=nights,
+            tax_type_id=tax_type_id,
+            discount_type_id=discount_type_id,
+            extra_charges=extra_charges,
+            extra_bed_count=extra_bed_count,
+            extra_bed_cost=extra_bed_cost,
+            room_amount_override=room_amount,
+            # Re-pricing must not disturb what has actually been collected.
+            paying_amount=rules.money(reservation.paid_amount),
+        )
+
+    except rules.RuleError as exc:
+        db.rollback()
+        raise _rule_http(exc)
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+
+    reservation.salutation = salutation
+    reservation.first_name = (first_name or "").strip()
+    reservation.last_name = (last_name or "").strip() or None
+    reservation.phone_number = phone_number
+    reservation.email = (email or "").strip().lower() or None
+
+    reservation.arrival_date = arrival_date
+    reservation.departure_date = departure_date
+    reservation.no_of_nights = nights
+
+    reservation.room_ids = parsed_room_ids
+    reservation.room_type_ids = sorted(
+        {rules.as_int(rooms[r].Room_Type_ID) for r in parsed_room_ids}
+    )
+    reservation.room_no = [rooms[r].Room_No for r in parsed_room_ids]
+    reservation.rate_type = [line["rate_type"] for line in priced["lines"]] or [
+        rules.DEFAULT_RATE_TYPE
+    ]
+
+    reservation.no_of_rooms = len(parsed_room_ids)
+    reservation.no_of_adults = sum(a for a, _ in occupancy.values())
+    reservation.no_of_children = sum(c for _, c in occupancy.values())
+
+    reservation.payment_method_id = payment_method_id
+    rules.apply_quote(reservation, priced)
+
+    # Paid stands; the balance follows from the new total. An amendment that
+    # reduces the bill below what was already paid turns the difference into a
+    # refundable amount rather than a negative balance.
+    reservation.balance_amount = priced["balance_amount"]
+    reservation.extra_amount = priced["extra_amount"]
+
+    if reservation_type:
+        reservation.reservation_type = reservation_type.upper()
+    reservation.reservation_status = resolved_status
+    reservation.booking_status_id = (
+        db.query(MasterReservationStatus.id)
+        .filter(
+            MasterReservationStatus.company_id == str(company_id),
+            MasterReservationStatus.Reservation_Status == resolved_status,
+            MasterReservationStatus.status == STATUS,
         )
+        .scalar()
+    )
+
+    reservation.room_complementary = (room_complementary or "").strip() or None
+    reservation.common_complementary = (common_complementary or "").strip() or None
+    reservation.updated_by = str(user_id)
+
+    # Both sets: rooms just released have to go back to Available.
+    sync_room_booking_status(db, company_id, set(parsed_room_ids) | set(previous_rooms))
+
+    db.commit()
+    db.refresh(reservation)
+
+    return {
+        "status": "success",
+        "message": "Room reservation updated successfully",
+        "data": {
+            "id": reservation.id,
+            "room_reservation_id": reservation.room_reservation_id,
+            "reservation_status": reservation.reservation_status,
+            "no_of_nights": reservation.no_of_nights,
+            "room_amount": reservation.room_amount,
+            "tax_amount": reservation.tax_amount,
+            "discount_amount": reservation.discount_amount,
+            "overall_amount": reservation.overall_amount,
+            "paid_amount": reservation.paid_amount,
+            "balance_amount": reservation.balance_amount,
+            "extra_amount": reservation.extra_amount,
+            "updated_at": reservation.updated_at,
+        },
+    }
 
 
 # =====================================================
@@ -1192,277 +2061,360 @@ async def update_room_reservation(
 def delete_room_reservation(
     reservation_id: int, request: Request, db: Session = Depends(get_db)
 ):
-    try:
-        # -------------------------------------------------
-        # AUTHENTICATION
-        # -------------------------------------------------
-        user_id, role_id, company_id, token = verify_authentication(request)
+    """Remove a reservation from the book.
 
+    Deleting is for a booking that should never have existed -- a test row, a
+    duplicate. A guest who is not coming should be *cancelled*, which keeps the
+    record and its money visible; that is what `/room_reservation_cancel` is
+    for. The two are refused here because a soft delete hides the row from the
+    reservation list, from search and from the revenue figures, and doing that
+    to a stay that is under way or has been paid for loses real information.
+    """
+    try:
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
 
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
         if reservation_id <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reservation_id"
-            )
+            raise HTTPException(status_code=400, detail="Invalid reservation id")
 
-        # -------------------------------------------------
-        # FETCH RECORD
-        # -------------------------------------------------
         reservation = (
             db.query(models.RoomReservation)
             .filter(
                 models.RoomReservation.id == reservation_id,
-                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.company_id == str(company_id),
                 models.RoomReservation.status == STATUS,
             )
             .first()
         )
-
         if not reservation:
+            raise HTTPException(status_code=404, detail="Room reservation not found")
+
+        if rules.normalise_status(reservation.reservation_status) in {
+            rules.normalise_status(rules.CHECKED_IN),
+            rules.normalise_status(rules.CHECKED_OUT),
+        }:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Room reservation not found",
+                status_code=409,
+                detail=(
+                    f"This guest is {reservation.reservation_status}, so the "
+                    "reservation cannot be deleted. Check the guest out first."
+                ),
             )
 
-        # -------------------------------------------------
-        # SOFT DELETE
-        # -------------------------------------------------
-        reservation.status = UNSTATUS
-        reservation.updated_by = user_id
+        if rules.money(reservation.paid_amount) > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{rules.money(reservation.paid_amount)} has been paid against this "
+                    "reservation. Cancel it instead so the payment stays on record."
+                ),
+            )
 
+        room_ids = [int(r) for r in (reservation.room_ids or [])]
+
+        reservation.status = UNSTATUS
+        reservation.updated_by = str(user_id)
+
+        sync_room_booking_status(db, company_id, room_ids)
         db.commit()
 
-        # -------------------------------------------------
-        # RESPONSE
-        # -------------------------------------------------
         return {"status": "success", "message": "Room reservation deleted successfully"}
 
     except HTTPException:
         raise
-
-    except Exception as e:
+    except Exception:
+        logger.exception("delete_reservation_failed")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
         )
 
 
 # =====================================================
-# CREATE ROOM DETAILS (AFTER RESERVATION)
+# STATUS TRANSITIONS
 # =====================================================
-@router.post("/room_details", status_code=status.HTTP_201_CREATED)
-async def create_room_details(
-    request: Request,
-    db: Session = Depends(get_db),
-    # -------- Reference --------
-    reservation_id: str = Form(...),  # room_reservation.id or token
-    # -------- Room Info --------
-    room_category: int = Form(...),  # room_type.id
-    available_rooms: int = Form(...),  # room.id
-    total_adults: int = Form(...),
-    total_children: int = Form(...),
-    arrival_date: date = Form(...),
-    departure_date: date = Form(...),
-    booking_status: str = Form(...),  # RESERVED / CHECKIN / etc
-    reservation_type: str = Form(...),  # RESERVATION / GROUP_RESERVATION
-    # -------- Extra --------
-    extra_bed_count: int = Form(0),
-    extra_bed_cost: float = Form(0),
-    total_amount: float = Form(...),
-    room_complementary: str = Form("No"),  # Yes / No
-):
-    # -------------------------------------------------
-    # AUTH
-    # -------------------------------------------------
-    user_id, role_id, company_id, token = verify_authentication(request)
-
-    if not user_id or not company_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    # -------------------------------------------------
-    # VALIDATE RESERVATION
-    # -------------------------------------------------
+def _load_by_token(db: Session, company_id, token: str):
     reservation = (
         db.query(models.RoomReservation)
         .filter(
-            models.RoomReservation.id == reservation_id,
+            models.RoomReservation.token == token,
+            models.RoomReservation.company_id == str(company_id),
             models.RoomReservation.status == STATUS,
         )
         .first()
     )
-
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservation not found")
-
-    # -------------------------------------------------
-    # CREATE ROOM DETAILS
-    # -------------------------------------------------
-    new_record = models.RoomDetails(
-        reservation_id=reservation.id,
-        room_category=room_category,
-        available_rooms=available_rooms,
-        total_adults=total_adults,
-        total_children=total_children,
-        arrival_date=arrival_date,
-        departure_date=departure_date,
-        booking_status=booking_status,
-        reservation_type=reservation_type,
-        extra_bed_count=extra_bed_count,
-        extra_bed_cost=extra_bed_cost,
-        total_amount=total_amount,
-        room_complementary=room_complementary,
-        status=STATUS,
-        created_by=user_id,
-        company_id=company_id,
-    )
-
-    db.add(new_record)
-    db.commit()
-    db.refresh(new_record)
-
-    # -------------------------------------------------
-    # UPDATE ROOM STATUS (OPTIONAL BUT IMPORTANT)
-    # -------------------------------------------------
-    if booking_status in ["RESERVED", "CHECKIN"]:
-        db.query(models.Room).filter(models.Room.id == available_rooms).update(
-            {"Room_Booking_status": booking_status}
-        )
-        db.commit()
-
-    # -------------------------------------------------
-    # RESPONSE
-    # -------------------------------------------------
-    return {
-        "status": "success",
-        "message": "Room details added successfully",
-        "data": {"room_details_id": new_record.id, "token": new_record.token},
-    }
+    return reservation
 
 
-@router.post("/room_reservation_checkin/{id}")
-def reservation_checkin(
-    id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-):
+def _load_by_id_or_token(db: Session, company_id, key: str):
+    """Accept either the numeric id or the token.
 
-    try:
-        user_id, role_id, company_id, token = verify_authentication(request)
-
-        if not user_id or not company_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token",
-            )
+    Check-in was keyed by id and check-out by token, for no reason anyone
+    recorded. Both work on both now so a caller does not have to remember
+    which endpoint wants which.
+    """
+    if str(key).isdigit():
         reservation = (
             db.query(models.RoomReservation)
             .filter(
-                models.RoomReservation.id == id,
-                models.RoomReservation.company_id == company_id,
+                models.RoomReservation.id == int(key),
+                models.RoomReservation.company_id == str(company_id),
                 models.RoomReservation.status == STATUS,
             )
             .first()
         )
+        if reservation:
+            return reservation
+    return _load_by_token(db, company_id, key)
 
-        if not reservation:
-            raise HTTPException(status_code=404, detail="Reservation not found")
 
-        if reservation.reservation_status != "Booked":
-            raise HTTPException(
-                status_code=400, detail="Only booked reservations can be checked in"
-            )
+def _apply_status(db: Session, reservation, company_id, user_id, target: str):
+    """Move a reservation to `target`, enforcing the transition table."""
+    resolved = rules.resolve_status(db, company_id, target)
+    rules.assert_transition(reservation.reservation_status, resolved)
 
-        reservation.reservation_status = "Checked-In"
-        # reservation.checkin_time = datetime.utcnow()
-
-        db.commit()
-        db.refresh(reservation)
-
-        return {
-            "message": "Check-in successful",
-            "reservation_id": reservation.id,
-            "status": reservation.reservation_status,
-            # "checkin_time": reservation.checkin_time
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+    reservation.reservation_status = resolved
+    reservation.booking_status_id = (
+        db.query(MasterReservationStatus.id)
+        .filter(
+            MasterReservationStatus.company_id == str(company_id),
+            MasterReservationStatus.Reservation_Status == resolved,
+            MasterReservationStatus.status == STATUS,
         )
+        .scalar()
+    )
+    reservation.updated_by = str(user_id)
+    return resolved
 
 
-@router.post("/room_reservation_checkout/{token}")
-def reservation_checkout(
-    token: str,
-    request: Request,
-    db: Session = Depends(get_db),
-):
+@router.post("/room_reservation_checkin/{key}")
+def reservation_checkin(key: str, request: Request, db: Session = Depends(get_db)):
+    """Arrive a guest.
+
+    This endpoint did not work at all. It required `reservation_status ==
+    "Booked"`, and "Booked" has never been one of this property's statuses --
+    the master list is Confirmed / Checked-In / Checked-Out / Cancelled /
+    No-Show / Pending / On Hold. Every check-in returned 400, and the frontend
+    only drew the button for the same impossible status, so the failure was
+    invisible. Which statuses may arrive is now the transition table's answer.
+    """
     try:
-        user_id, role_id, company_id, auth_token = verify_authentication(request)
-
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not user_id or not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        reservation = _load_by_id_or_token(db, company_id, key)
+
+        # Arriving before the booking starts is a real front-desk situation
+        # (an early arrival), but arriving after it has ended is not.
+        if reservation.departure_date <= date.today():
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token",
+                status_code=409,
+                detail=(
+                    "This reservation's departure date has already passed; "
+                    "amend the dates before checking the guest in."
+                ),
             )
 
-        reservation = (
-            db.query(models.RoomReservation)
-            .filter(
-                models.RoomReservation.token == token,
-                models.RoomReservation.company_id == company_id,
-            )
-            .first()
+        _apply_status(db, reservation, company_id, user_id, rules.CHECKED_IN)
+        sync_room_booking_status(
+            db, company_id, [int(r) for r in (reservation.room_ids or [])]
         )
-
-        if not reservation:
-            raise HTTPException(status_code=404, detail="Reservation not found")
-
-        if reservation.reservation_status != "Checked-In":
-            raise HTTPException(
-                status_code=400, detail="Only checked-in reservations can be checked out"
-            )
-
-        reservation.reservation_status = "Checked-Out"
-        # reservation.checkout_time = datetime.utcnow()
-
         db.commit()
         db.refresh(reservation)
 
         return {
-            "message": "Check-out successful",
-            "reservation_id": reservation.id,
-            "status": reservation.reservation_status,
+            "status": "success",
+            "message": "Check-in successful",
+            "data": {
+                "id": reservation.id,
+                "reservation_status": reservation.reservation_status,
+                "balance_amount": reservation.balance_amount,
+            },
         }
 
+    except rules.RuleError as exc:
+        db.rollback()
+        raise _rule_http(exc)
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+    except Exception:
+        logger.exception("checkin_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# =====================================================
-# RECORD A PARTIAL PAYMENT AGAINST THE BALANCE DUE
-# =====================================================
-@router.post("/room_reservation_pay/{token}", status_code=status.HTTP_200_OK)
-async def reservation_pay_due_amount(
-    token: str,
-    request: Request,
-    db: Session = Depends(get_db),
-):
+@router.post("/room_reservation_checkout/{key}")
+def reservation_checkout(key: str, request: Request, db: Session = Depends(get_db)):
+    """Depart a guest, once the folio is settled.
+
+    Checking out with money still owed is refused rather than allowed and
+    reported later: after checkout the reservation is terminal and can no
+    longer be edited, so an unsettled balance at that point is a debt with
+    nothing left to attach it to. The message names the amount so the desk can
+    take it through Record Payment and try again.
+    """
     try:
-        user_id, role_id, company_id, auth_token = verify_authentication(request)
+        user_id, role_id, company_id, _ = verify_authentication(request)
+        if not user_id or not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        reservation = _load_by_id_or_token(db, company_id, key)
+
+        outstanding = rules.money(reservation.balance_amount)
+        if outstanding > 0:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This guest still owes {outstanding:.2f}. "
+                    "Record the payment before checking out."
+                ),
+            )
+
+        _apply_status(db, reservation, company_id, user_id, rules.CHECKED_OUT)
+        sync_room_booking_status(
+            db, company_id, [int(r) for r in (reservation.room_ids or [])]
+        )
+        db.commit()
+        db.refresh(reservation)
+
+        return {
+            "status": "success",
+            "message": "Check-out successful",
+            "data": {
+                "id": reservation.id,
+                "reservation_status": reservation.reservation_status,
+                "extra_amount": reservation.extra_amount,
+            },
+        }
+
+    except rules.RuleError as exc:
+        db.rollback()
+        raise _rule_http(exc)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("checkout_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/room_reservation_cancel/{key}", status_code=status.HTTP_200_OK)
+async def reservation_cancel(key: str, request: Request, db: Session = Depends(get_db)):
+    """Cancel a booking, releasing its rooms.
+
+    Distinct from delete: the record stays, so the booking is still searchable,
+    still shows what was paid, and still appears in the day's figures as a
+    cancellation. The availability engine stops counting it the moment the
+    status changes -- see `releases_inventory`.
+    """
+    try:
+        user_id, role_id, company_id, _ = verify_authentication(request)
+        if not user_id or not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        reservation = _load_by_id_or_token(db, company_id, key)
+        _apply_status(db, reservation, company_id, user_id, rules.CANCELLED)
+        sync_room_booking_status(
+            db, company_id, [int(r) for r in (reservation.room_ids or [])]
+        )
+        db.commit()
+        db.refresh(reservation)
+
+        refundable = rules.money(reservation.paid_amount)
+        return {
+            "status": "success",
+            "message": "Reservation cancelled",
+            "data": {
+                "id": reservation.id,
+                "reservation_status": reservation.reservation_status,
+                # Surfaced rather than moved automatically: whether a
+                # cancellation is refundable is a policy decision, and this
+                # module has no cancellation-policy configuration to consult.
+                "amount_already_paid": refundable,
+            },
+        }
+
+    except rules.RuleError as exc:
+        db.rollback()
+        raise _rule_http(exc)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("cancel_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/room_reservation_no_show/{key}", status_code=status.HTTP_200_OK)
+def reservation_no_show(key: str, request: Request, db: Session = Depends(get_db)):
+    """Mark a booking as a no-show: the guest never arrived.
+
+    Like a cancellation it releases the rooms, but it is a different fact and
+    the two must not be conflated -- a no-show is usually chargeable and a
+    cancellation usually is not.
+    """
+    try:
+        user_id, role_id, company_id, _ = verify_authentication(request)
+        if not user_id or not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        reservation = _load_by_id_or_token(db, company_id, key)
+
+        # Transition first, then the date rule. Asked to no-show a cancelled
+        # booking, "Cancelled cannot become No-Show" is the useful answer;
+        # "it has not arrived yet" is true but beside the point.
+        rules.assert_transition(reservation.reservation_status, rules.NO_SHOW)
+
+        if reservation.arrival_date > date.today():
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This reservation has not arrived yet, so it cannot be a "
+                    f"no-show until {reservation.arrival_date.isoformat()}."
+                ),
+            )
+
+        _apply_status(db, reservation, company_id, user_id, rules.NO_SHOW)
+        sync_room_booking_status(
+            db, company_id, [int(r) for r in (reservation.room_ids or [])]
+        )
+        db.commit()
+        db.refresh(reservation)
+
+        return {
+            "status": "success",
+            "message": "Reservation marked as no-show",
+            "data": {
+                "id": reservation.id,
+                "reservation_status": reservation.reservation_status,
+                "balance_amount": reservation.balance_amount,
+            },
+        }
+
+    except rules.RuleError as exc:
+        db.rollback()
+        raise _rule_http(exc)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("no_show_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# =====================================================
+# PAYMENTS
+# =====================================================
+@router.post("/room_reservation_pay/{key}", status_code=status.HTTP_200_OK)
+async def reservation_pay_due_amount(
+    key: str, request: Request, db: Session = Depends(get_db)
+):
+    """Record a payment against the outstanding balance."""
+    try:
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
@@ -1471,53 +2423,56 @@ async def reservation_pay_due_amount(
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-        paying_amount = payload.get("paying_amount")
-        payment_method = payload.get("payment_method")
-
+        payment_method = (payload.get("payment_method") or "").strip()
         if not payment_method:
-            raise HTTPException(status_code=400, detail="payment_method is required")
+            raise HTTPException(status_code=400, detail="Payment method is required")
 
         try:
-            paying_amount = float(paying_amount)
+            paying_amount = rules.money(float(payload.get("paying_amount")))
         except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="paying_amount must be a number")
+            raise HTTPException(status_code=400, detail="Paying amount must be a number")
 
         if paying_amount <= 0:
-            raise HTTPException(status_code=400, detail="paying_amount must be greater than 0")
-
-        reservation = (
-            db.query(models.RoomReservation)
-            .filter(
-                models.RoomReservation.token == token,
-                models.RoomReservation.company_id == company_id,
-                models.RoomReservation.status == STATUS,
+            raise HTTPException(
+                status_code=400, detail="Paying amount must be greater than 0"
             )
-            .first()
-        )
-        if not reservation:
-            raise HTTPException(status_code=404, detail="Reservation not found")
 
-        balance = reservation.balance_amount or 0
+        reservation = _load_by_id_or_token(db, company_id, key)
+
+        if rules.normalise_status(reservation.reservation_status) in {
+            rules.normalise_status(rules.CANCELLED)
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail="This reservation is cancelled; no further payment can be taken.",
+            )
+
+        balance = rules.money(reservation.balance_amount)
         if paying_amount > balance:
             raise HTTPException(
                 status_code=400,
-                detail="paying_amount cannot exceed the outstanding balance",
+                detail=f"Paying amount cannot exceed the outstanding balance of {balance:.2f}",
             )
 
-        reservation.paid_amount = (reservation.paid_amount or 0) + paying_amount
-        reservation.balance_amount = balance - paying_amount
-        reservation.updated_by = user_id
+        reservation.paid_amount = rules.money(
+            (reservation.paid_amount or 0) + paying_amount
+        )
+        reservation.balance_amount = rules.money(balance - paying_amount)
+        reservation.updated_by = str(user_id)
 
         db.add(
             models.ReservationAmountPaidHistory(
-                reservation_id=str(reservation.id),
+                reservation_id=_history_key(reservation),
                 user_id=str(user_id),
                 amount=paying_amount,
-                paid_date=TODAY,
+                # date.today() at call time, not a module constant captured at
+                # import -- a service that stays up for a week was stamping
+                # every payment with the day it started.
+                paid_date=date.today(),
                 payment_method=payment_method,
                 status=STATUS,
-                created_by=user_id,
-                company_id=company_id,
+                created_by=str(user_id),
+                company_id=str(company_id),
             )
         )
 
@@ -1530,28 +2485,30 @@ async def reservation_pay_due_amount(
             "data": {
                 "paid_amount": reservation.paid_amount,
                 "balance_amount": reservation.balance_amount,
+                "payment_state": _payment_state(reservation),
             },
         }
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+    except Exception:
+        logger.exception("payment_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# =====================================================
-# REFUND PART OF AN OVERPAYMENT (EXTRA AMOUNT)
-# =====================================================
-@router.post("/room_reservation_refund/{token}", status_code=status.HTTP_200_OK)
+@router.post("/room_reservation_refund/{key}", status_code=status.HTTP_200_OK)
 async def reservation_refund_extra_amount(
-    token: str,
-    request: Request,
-    db: Session = Depends(get_db),
+    key: str, request: Request, db: Session = Depends(get_db)
 ):
+    """Refund an overpayment.
+
+    The refund now writes a history row of its own, as a negative amount, so
+    the payment history sums to the cash actually held. Previously it moved
+    `extra_amount` down and left no trace, which meant the only record that a
+    refund had happened was that a number had got smaller.
+    """
     try:
-        user_id, role_id, company_id, auth_token = verify_authentication(request)
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
@@ -1560,41 +2517,48 @@ async def reservation_refund_extra_amount(
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-        refund_amount = payload.get("refund_amount")
-        refund_method = payload.get("refund_method")
-
+        refund_method = (payload.get("refund_method") or "").strip()
         if not refund_method:
-            raise HTTPException(status_code=400, detail="refund_method is required")
+            raise HTTPException(status_code=400, detail="Refund method is required")
 
         try:
-            refund_amount = float(refund_amount)
+            refund_amount = rules.money(float(payload.get("refund_amount")))
         except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="refund_amount must be a number")
+            raise HTTPException(status_code=400, detail="Refund amount must be a number")
 
         if refund_amount <= 0:
-            raise HTTPException(status_code=400, detail="refund_amount must be greater than 0")
-
-        reservation = (
-            db.query(models.RoomReservation)
-            .filter(
-                models.RoomReservation.token == token,
-                models.RoomReservation.company_id == company_id,
-                models.RoomReservation.status == STATUS,
+            raise HTTPException(
+                status_code=400, detail="Refund amount must be greater than 0"
             )
-            .first()
-        )
-        if not reservation:
-            raise HTTPException(status_code=404, detail="Reservation not found")
 
-        extra = reservation.extra_amount or 0
-        if refund_amount > extra:
+        reservation = _load_by_id_or_token(db, company_id, key)
+
+        refundable = rules.money(reservation.extra_amount)
+        if refund_amount > refundable:
             raise HTTPException(
                 status_code=400,
-                detail="refund_amount cannot exceed the refundable (extra) amount",
+                detail=f"Refund amount cannot exceed the refundable amount of {refundable:.2f}",
             )
 
-        reservation.extra_amount = extra - refund_amount
-        reservation.updated_by = user_id
+        reservation.extra_amount = rules.money(refundable - refund_amount)
+        # The money leaves, so what the property holds goes down with it.
+        reservation.paid_amount = rules.money(
+            max(0.0, (reservation.paid_amount or 0) - refund_amount)
+        )
+        reservation.updated_by = str(user_id)
+
+        db.add(
+            models.ReservationAmountPaidHistory(
+                reservation_id=_history_key(reservation),
+                user_id=str(user_id),
+                amount=-refund_amount,
+                paid_date=date.today(),
+                payment_method=f"Refund - {refund_method}",
+                status=STATUS,
+                created_by=str(user_id),
+                company_id=str(company_id),
+            )
+        )
 
         db.commit()
         db.refresh(reservation)
@@ -1602,49 +2566,43 @@ async def reservation_refund_extra_amount(
         return {
             "status": "success",
             "message": "Refund processed successfully",
-            "data": {"extra_amount": reservation.extra_amount},
+            "data": {
+                "extra_amount": reservation.extra_amount,
+                "paid_amount": reservation.paid_amount,
+                "balance_amount": reservation.balance_amount,
+            },
         }
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+    except Exception:
+        logger.exception("refund_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-# =====================================================
-# PAYMENT HISTORY FOR A RESERVATION
-# =====================================================
-@router.get("/room_reservation_payments/{token}", status_code=status.HTTP_200_OK)
+@router.get("/room_reservation_payments/{key}", status_code=status.HTTP_200_OK)
 def get_reservation_payment_history(
-    token: str,
-    request: Request,
-    db: Session = Depends(get_db),
+    key: str, request: Request, db: Session = Depends(get_db)
 ):
     try:
-        user_id, role_id, company_id, auth_token = verify_authentication(request)
+        user_id, role_id, company_id, _ = verify_authentication(request)
         if not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
-        reservation = (
-            db.query(models.RoomReservation)
-            .filter(
-                models.RoomReservation.token == token,
-                models.RoomReservation.company_id == company_id,
-            )
-            .first()
-        )
-        if not reservation:
-            raise HTTPException(status_code=404, detail="Reservation not found")
+        reservation = _load_by_id_or_token(db, company_id, key)
 
         history = (
             db.query(models.ReservationAmountPaidHistory)
             .filter(
-                models.ReservationAmountPaidHistory.reservation_id == str(reservation.id),
+                models.ReservationAmountPaidHistory.reservation_id.in_(
+                    _history_keys(reservation)
+                ),
                 models.ReservationAmountPaidHistory.status == STATUS,
             )
-            .order_by(models.ReservationAmountPaidHistory.paid_date.desc(), models.ReservationAmountPaidHistory.id.desc())
+            .order_by(
+                models.ReservationAmountPaidHistory.paid_date.desc(),
+                models.ReservationAmountPaidHistory.id.desc(),
+            )
             .all()
         )
 
@@ -1656,14 +2614,23 @@ def get_reservation_payment_history(
                     "amount": h.amount,
                     "paid_date": h.paid_date,
                     "payment_method": h.payment_method,
+                    # A refund is stored as a negative amount; labelling the
+                    # direction saves every reader re-deriving it from the sign.
+                    "kind": "Refund" if (h.amount or 0) < 0 else "Payment",
                 }
                 for h in history
             ],
+            "summary": {
+                "overall_amount": reservation.overall_amount,
+                "paid_amount": reservation.paid_amount,
+                "balance_amount": reservation.balance_amount,
+                "extra_amount": reservation.extra_amount,
+                "payment_state": _payment_state(reservation),
+            },
         }
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+    except Exception:
+        logger.exception("payment_history_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")

@@ -242,14 +242,17 @@
 }
 
 .modal-section__title {
-  margin: 0 0 2px;
+  /* Enough room that the heading reads as a heading and not as part of the
+     first field's label. A hint, when present, pulls back up under it. */
+  margin: 0 0 var(--spacing-md);
   font-size: 13px;
   font-weight: 700;
+  letter-spacing: 0.01em;
   color: var(--text-primary);
 }
 
 .modal-section__hint {
-  margin: 0 0 var(--spacing-md);
+  margin: calc(var(--spacing-md) * -1 + 4px) 0 var(--spacing-md);
   font-size: 12px;
   color: var(--text-muted);
 }
@@ -773,3 +776,9 @@
    View modal rendered a narrow column of content inside a wide shell with
    dead space either side. The body now fills its modal; pick the modal size
    for the amount of content instead. */
+
+/* The current value of something a modal-section replaces — the attachment
+   already on the record, shown above the file picker that would overwrite it. */
+.modal-section__preview {
+  margin-bottom: var(--spacing-md);
+}

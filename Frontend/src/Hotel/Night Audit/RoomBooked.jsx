@@ -1,391 +1,297 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+
 import TableTemplate from "../../stories/TableTemplate";
+import TableFilters, { FilterDate, FilterSelect } from "../../stories/TableFilters";
+import Modal from "../../stories/Modal";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ViewSection from "../../stories/ViewSection";
+import ErrorAlert from "../../stories/ErrorAlert";
+import RowActions from "../../stories/RowActions";
+import APICall from "../../APICalls/APICalls";
+import { useApiResource } from "../../hooks/useApiResource";
 import {
-  ArrowLeft,
-  Download,
-  Eye,
-  RefreshCw,
-  X,
-  AlertCircle,
-  CheckCircle,
-} from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+    RESERVATION_STATUSES,
+    formatCount,
+    formatCurrency,
+    formatDate,
+    formatPrecise,
+} from "./nightAuditShared";
 import "./NightAudit.css";
-import "../Reservation/Reservation.css";
 
-// -------------------------------------------------------------------------
-// Helpers (mirror Page 14's shared conventions)
-// -------------------------------------------------------------------------
-const readList = (res) =>
-  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
+/**
+ * Room Booked Details -- which rooms were sold on one night, and what each
+ * earned.
+ *
+ * WHAT THIS SCREEN USED TO DO
+ * It fetched `/hotel/room_reservation` -- every reservation ever taken, with no
+ * date filter at all -- and listed them under the heading "Room Booked". It was
+ * not a night audit report; it was an unfiltered dump of the reservations
+ * table, and the number of rows it showed had no relationship to any night.
+ *
+ * WHAT IT DOES NOW
+ * Asks the server for the position on one business date and lists the
+ * reservations that actually held a room that night. The nightly revenue column
+ * is the same per-night accrual the audit records, so the rows on screen sum to
+ * the night's room revenue exactly -- an operator can reconcile the total by
+ * reading the table instead of taking it on trust.
+ */
 
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
+const readData = (res) => res?.data ?? null;
 
-const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
-const isPlainDate = (v) => /^\d{4}-\d{2}-\d{2}(T|$)/.test(String(v || ""));
-
-const formatDate = (v) => {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-};
-
-const humaniseKey = (k) =>
-  String(k || "")
-    .replace(/_/g, " ")
-    .replace(/([A-Z])/g, " $1")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-
-const isSensitive = (k) => {
-  const key = String(k || "").toLowerCase();
-  return (
-    key === "id" ||
-    key === "token" ||
-    key === "company_id" ||
-    key === "created_by" ||
-    key === "updated_by" ||
-    key === "created_at" ||
-    key === "updated_at" ||
-    key === "status" ||
-    key === "proof_document"
-  );
-};
-
-const displayValue = (v) => {
-  if (v === null || v === undefined || v === "") return "—";
-  if (Array.isArray(v)) return v.length > 0 ? v.join(", ") : "—";
-  if (typeof v === "object") {
-    try { return JSON.stringify(v); } catch { return "—"; }
-  }
-  if (isPlainDate(v)) return formatDate(v);
-  return String(v);
-};
-
-const guestFullName = (r) =>
-  [r?.salutation, r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "—";
-
-const statusClass = (status) => {
-  const s = String(status || "").toLowerCase();
-  if (s === "pending") return "status-pending";
-  if (s === "confirmed") return "status-confirmed";
-  if (s === "arrived" || s === "checked-in") return "status-checked-in";
-  if (s === "departures" || s === "checked-out") return "status-checked-out";
-  if (s === "cancelled" || s === "canceled") return "status-cancelled";
-  return "status-pending";
-};
-
-// -------------------------------------------------------------------------
-// Toast + Details modal (matches Page 14's shared patterns)
-// -------------------------------------------------------------------------
-const Toast = ({ toast, onClose }) => {
-  if (!toast) return null;
-  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
-  return (
-    <div
-      className={`reservation-toast ${toast.kind}`}
-      role={toast.kind === "success" ? "status" : "alert"}
-      aria-live={toast.kind === "success" ? "polite" : "assertive"}
-    >
-      <Icon size={18} aria-hidden="true" />
-      <span>{toast.text}</span>
-      <button
-        type="button"
-        className="reservation-toast-close"
-        onClick={onClose}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-};
-
-const DetailsModal = ({ open, title, entity, onClose }) => {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = original; };
-  }, [open]);
-
-  if (!open || !entity) return null;
-
-  const entries = Object.entries(entity).filter(([k]) => !isSensitive(k));
-
-  return (
-    <div
-      className="modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="rb-details-title"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="modal-card large">
-        <div className="modal-header">
-          <h3 id="rb-details-title">{title}</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={`Close ${title}`}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="modal-body grid view">
-          {entries.map(([key, value]) => (
-            <div className="form-group" key={key}>
-              <label htmlFor={`rb-detail-${key}`}>{humaniseKey(key)}</label>
-              <input
-                id={`rb-detail-${key}`}
-                value={displayValue(value)}
-                readOnly
-                aria-readonly="true"
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn secondary"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Page
-// -------------------------------------------------------------------------
 const RoomBooked = () => {
-  const navigate = useNavigate();
-  const mounted = useRef(true);
+    // Empty means "the current business date", which the server resolves. The
+    // screen deliberately does not default this to the browser's today: the
+    // hotel's date and the calendar date are different things, and this module
+    // exists because of that difference.
+    const [date, setDate] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
+    const [viewRow, setViewRow] = useState(null);
 
-  const [data, setData] = useState(null); // null = loading
-  const [error, setError] = useState(null);
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [viewReservation, setViewReservation] = useState(null);
-  const [toast, setToast] = useState(null);
+    const { data, loading, error } = useApiResource(
+        () =>
+            APICall.getT(
+                "/hotel/night_audit/preview",
+                date ? { business_date: date } : {},
+            ),
+        {
+            select: readData,
+            initial: null,
+            fallback: "Failed to load room bookings for this night.",
+            deps: [date],
+        },
+    );
 
-  const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
+    const auditedDate = data?.audited_date ?? null;
+    const occupancy = data?.occupancy ?? {};
+    const revenue = data?.revenue ?? {};
+    const rows = useMemo(() => {
+        const list = Array.isArray(data?.lists?.occupying) ? data.lists.occupying : [];
+        return statusFilter
+            ? list.filter((r) => r.reservation_status === statusFilter)
+            : list;
+    }, [data, statusFilter]);
 
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
+    // NOTE ON `type: "custom"`
+    // TableTemplate's renderCell only calls `column.render` when the column is
+    // typed "custom"; any other column falls through to the raw value and the
+    // render function is silently ignored. Leaving it off is why these dates
+    // first rendered as "2026-07-29" instead of "29 Jul 2026".
+    //
+    // Columns are kept to eight. Eleven of them squeezed "Night Revenue" down
+    // to a clipped "NIGH" and pushed "Night Tax" off the edge entirely; the
+    // fields dropped here (nights, tax, discount, extra charges) are all in
+    // the View modal, which is the right home for detail.
+    // Widths are set because the browser's automatic distribution gave every
+    // column an equal share, which broke "Mr. Rohan Mehta" over three lines
+    // and "29 Jul 2026" over two while leaving the numeric columns half empty.
+    // They are hints, not hard limits -- the table keeps its own 600px
+    // min-width and scrolls inside its wrapper on a narrow screen.
+    const columns = useMemo(
+        () => [
+            { key: "reservation_id", title: "Reservation", align: "left", width: "130px" },
+            { key: "guest_name", title: "Guest", align: "left", width: "150px" },
+            { key: "room_no", title: "Room", align: "center", width: "70px" },
+            {
+                key: "arrival_date",
+                title: "Arrival",
+                align: "center",
+                width: "100px",
+                type: "custom",
+                render: (row) => formatDate(row.arrival_date),
+                exportValue: (row) => row.arrival_date ?? "",
+            },
+            // Departure is deliberately absent. With nowrap the nine-column
+            // version measured 1159px inside a 1060px wrapper, which pushed
+            // Actions off the right edge at 1440. Departure is the least
+            // load-bearing column on a report about one night -- it is in the
+            // View modal, and the dashboard has a Departures Due tab of its
+            // own -- so it is the one that goes.
+            {
+                key: "reservation_status",
+                title: "Status",
+                align: "center",
+                width: "110px",
+                type: "badge",
+            },
+            {
+                key: "night_room_revenue",
+                title: "Night Revenue",
+                align: "right",
+                width: "120px",
+                type: "custom",
+                render: (row) => formatPrecise(row.night_room_revenue),
+                exportValue: (row) => row.night_room_revenue ?? 0,
+            },
+            {
+                key: "actions",
+                title: "Actions",
+                align: "center",
+                width: "80px",
+                type: "custom",
+                excludeFromExport: true,
+                render: (row) => (
+                    <RowActions label="booking" onView={() => setViewRow(row)} />
+                ),
+            },
+        ],
+        [],
+    );
 
-  const load = useCallback(() => {
-    setData(null);
-    setError(null);
-    APICall.getT("/hotel/room_reservation")
-      .then((res) => {
-        if (!mounted.current) return;
-        setData(Array.isArray(res?.data) ? res.data : readList(res));
-      })
-      .catch((err) => {
-        if (!mounted.current) return;
-        setData([]);
-        setError(errMsg(err, "Failed to load room bookings."));
-      });
-  }, []);
+    const filtersActive = Boolean(date || statusFilter);
 
-  useEffect(() => {
-    mounted.current = true;
-    load();
-    return () => { mounted.current = false; };
-  }, [load, refreshTick]);
+    return (
+        <div className="na-page">
+            <ErrorAlert message={error} />
 
-  const handleBack = () => navigate("/reservation");
-  const handleRefresh = () => setRefreshTick((n) => n + 1);
+            <header className="na-report__header">
+                <div className="na-report__context">
+                    <h2 className="na-report__title">Room Booked Details</h2>
+                    <span className="na-report__subtitle">
+                        Rooms held on the night of{" "}
+                        <b>{loading ? "…" : formatDate(auditedDate)}</b>
+                        {data && !data.is_current_business_date
+                            ? " · past night"
+                            : " · current business date"}
+                    </span>
+                </div>
+            </header>
 
-  const handleExportCsv = () => {
-    const list = Array.isArray(data) ? data : [];
-    if (list.length === 0) {
-      showToast("error", "No bookings to export.");
-      return;
-    }
-    const header = ["Reservation ID", "Guest", "Phone", "Arrival", "Departure", "Nights", "Rooms", "Adults", "Children", "Status"];
-    const rows = list.map((r) => [
-      r.room_reservation_id ?? r.id,
-      guestFullName(r),
-      r.phone_number ?? "",
-      r.arrival_date ?? "",
-      r.departure_date ?? "",
-      r.no_of_nights ?? "",
-      r.no_of_rooms ?? "",
-      r.no_of_adults ?? "",
-      r.no_of_children ?? "",
-      r.reservation_status ?? "",
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((cell) => {
-        const s = String(cell ?? "");
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      }).join(","))
-      .join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `room-booked-${isoDay(new Date().toISOString())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+            <section className="na-stats" aria-label="Night summary">
+                <div className="na-stat na-stat--primary">
+                    <span className="na-stat__label">Rooms sold</span>
+                    <strong className="na-stat__value">
+                        {formatCount(occupancy.rooms_occupied)}
+                    </strong>
+                    <span className="na-stat__hint">
+                        {formatCount(occupancy.room_nights)} room nights
+                    </span>
+                </div>
+                <div className="na-stat">
+                    <span className="na-stat__label">Room revenue</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(revenue.room_revenue)}
+                    </strong>
+                    <span className="na-stat__hint">Accrued for this night</span>
+                </div>
+                <div className="na-stat">
+                    <span className="na-stat__label">Tax</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(revenue.tax_amount)}
+                    </strong>
+                </div>
+                <div className="na-stat">
+                    <span className="na-stat__label">Gross</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(revenue.gross_revenue)}
+                    </strong>
+                </div>
+            </section>
 
-  const isLoading = data === null;
-  const tableData = Array.isArray(data) ? data : [];
+            <TableTemplate
+                title={`Rooms Held · ${formatDate(auditedDate)}`}
+                loading={loading}
+                emptyMessage={
+                    statusFilter
+                        ? `No ${statusFilter} reservations held a room on this night.`
+                        : "No rooms were held on this night."
+                }
+                columns={columns}
+                data={rows}
+                variant="striped"
+                pagination
+                pageSize={10}
+                searchable
+                exportable
+                filters={
+                    <TableFilters
+                        isActive={filtersActive}
+                        onClear={() => {
+                            setDate("");
+                            setStatusFilter("");
+                        }}
+                    >
+                        <FilterDate
+                            id="rb-date"
+                            label="Business date"
+                            value={date}
+                            onChange={(e) => setDate(e.target.value)}
+                        />
+                        <FilterSelect
+                            id="rb-status"
+                            label="Status"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            options={RESERVATION_STATUSES}
+                        />
+                    </TableFilters>
+                }
+            />
 
-  const columns = [
-    { key: "room_reservation_id", title: "Reservation ID", align: "center", width: "160px" },
-    {
-      key: "first_name",
-      title: "Guest",
-      render: (row) => guestFullName(row),
-    },
-    { key: "phone_number", title: "Phone", align: "center" },
-    {
-      key: "arrival_date",
-      title: "Arrival",
-      align: "center",
-      render: (row) => formatDate(row.arrival_date),
-    },
-    {
-      key: "departure_date",
-      title: "Departure",
-      align: "center",
-      render: (row) => formatDate(row.departure_date),
-    },
-    { key: "no_of_nights", title: "Nights", align: "center" },
-    { key: "no_of_rooms", title: "Rooms", align: "center" },
-    {
-      key: "reservation_status",
-      title: "Status",
-      align: "center",
-      type: "custom",
-      render: (row) => (
-        <span className={`rmv-status-badge ${statusClass(row.reservation_status)}`}>
-          {row.reservation_status || "—"}
-        </span>
-      ),
-    },
-    {
-      key: "action",
-      title: "Action",
-      align: "center",
-      type: "custom",
-      render: (row) => (
-        <button
-          type="button"
-          className="table-action-btn view"
-          title="View details"
-          aria-label={`View booking ${row.room_reservation_id || row.id}`}
-          onClick={() => setViewReservation(row)}
-        >
-          <Eye size={16} aria-hidden="true" />
-        </button>
-      ),
-    },
-  ];
+            <Modal
+                isOpen={!!viewRow}
+                title="Booking Details"
+                onClose={() => setViewRow(null)}
+                size="large"
+                viewMode
+                showFooter
+                actions={[
+                    { label: "Close", variant: "secondary", onClick: () => setViewRow(null) },
+                ]}
+            >
+                {viewRow && (
+                    <>
+                        <ViewSection title="Guest & Stay">
+                            <DetailList columns={3}>
+                                <DetailItem label="Reservation" value={viewRow.reservation_id} />
+                                <DetailItem label="Guest" value={viewRow.guest_name} />
+                                <DetailItem label="Phone" value={viewRow.phone_number} />
+                                <DetailItem label="Room" value={viewRow.room_no} />
+                                <DetailItem label="Arrival" value={formatDate(viewRow.arrival_date)} />
+                                <DetailItem
+                                    label="Departure"
+                                    value={formatDate(viewRow.departure_date)}
+                                />
+                                <DetailItem label="Nights" value={viewRow.no_of_nights} />
+                                <DetailItem label="Status" value={viewRow.reservation_status} />
+                            </DetailList>
+                        </ViewSection>
 
-  return (
-    <div className="userreserved-wrapper">
-      <div className="ur-toolbar">
-        <button
-          type="button"
-          className="rmv-back-btn"
-          onClick={handleBack}
-          aria-label="Back to reservations"
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-          <span>Back</span>
-        </button>
-        <div className="ur-header">
-          <span className="rmv-eyebrow">Night Audit</span>
-          <h1 className="rmv-title">Room Booked</h1>
+                        <ViewSection title={`Accrued for ${formatDate(auditedDate)}`}>
+                            <DetailList columns={4}>
+                                <DetailItem
+                                    label="Room revenue"
+                                    value={formatPrecise(viewRow.night_room_revenue)}
+                                />
+                                <DetailItem label="Tax" value={formatPrecise(viewRow.night_tax)} />
+                                <DetailItem
+                                    label="Discount"
+                                    value={formatPrecise(viewRow.night_discount)}
+                                />
+                                <DetailItem
+                                    label="Extra charges"
+                                    value={formatPrecise(viewRow.night_extra_charges)}
+                                />
+                            </DetailList>
+                        </ViewSection>
+
+                        <ViewSection title="Whole stay">
+                            <DetailList columns={3}>
+                                <DetailItem
+                                    label="Total billed"
+                                    value={formatPrecise(viewRow.overall_amount)}
+                                />
+                                <DetailItem label="Paid" value={formatPrecise(viewRow.paid_amount)} />
+                                <DetailItem
+                                    label="Balance"
+                                    value={formatPrecise(viewRow.balance_amount)}
+                                />
+                            </DetailList>
+                        </ViewSection>
+                    </>
+                )}
+            </Modal>
         </div>
-        <div className="rmv-toolbar-actions">
-          <button
-            type="button"
-            className="rmv-toolbar-btn"
-            onClick={handleRefresh}
-            aria-label="Refresh"
-            disabled={isLoading}
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="rmv-alert" role="alert">
-          <span>{error}</span>
-          <button type="button" className="rmv-alert-action" onClick={handleRefresh}>Retry</button>
-        </div>
-      )}
-
-      {isLoading && (
-        <div className="rmv-loading" role="status" aria-live="polite">
-          Loading room bookings…
-        </div>
-      )}
-
-      {!isLoading && (
-        <TableTemplate
-          title="Room Booked"
-          variant="striped"
-          pagination
-          pageSize={10}
-          searchable
-          exportable
-          hasActionButton
-          actionButton={{
-            icon: <Download size={18} />,
-            label: "Export CSV",
-            onClick: handleExportCsv,
-            size: "small",
-            variant: "outline",
-          }}
-          columns={columns}
-          data={tableData}
-        />
-      )}
-
-      {!isLoading && !error && tableData.length === 0 && (
-        <div className="rmv-empty">No room bookings yet.</div>
-      )}
-
-      <DetailsModal
-        open={Boolean(viewReservation)}
-        title="Booking Details"
-        entity={viewReservation}
-        onClose={() => setViewReservation(null)}
-      />
-
-      <Toast toast={toast} onClose={() => setToast(null)} />
-    </div>
-  );
+    );
 };
 
 export default RoomBooked;

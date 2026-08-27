@@ -41,8 +41,15 @@ class BaseConfig(object):
         o.strip() for o in _raw_origins.split(",") if o.strip() and o.strip() != "*"
     ]
 
+    # Upload limits for this service's own static mount (room incident
+    # attachments). Same names and defaults as MasterDataServices so the two
+    # upload paths are configured identically; this service's .env already
+    # sets UPLOAD_MAX_BYTES but nothing was reading it.
+    UPLOAD_MAX_BYTES = int(os.getenv("UPLOAD_MAX_BYTES", str(5 * 1024 * 1024)))
+    UPLOAD_ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
 
-# ------- Common Using Names -------#  
+
+# ------- Common Using Names -------#
 class CommonWords():
     STATUS = 'ACTIVE'
     UNSTATUS = 'INACTIVE'

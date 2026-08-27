@@ -1,414 +1,793 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
+import { Paperclip } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
-import Modal from "../../stories/Modal";
+import TableFilters, { FilterDate, FilterSelect } from "../../stories/TableFilters";
+import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
 import Select from "../../stories/Form/Select";
-import IconButton from "../../stories/IconButton";
-import { Eye, Pencil, Trash2 } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import Textarea from "../../stories/Form/Textarea";
+import RowActions from "../../stories/RowActions";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ViewSection from "../../stories/ViewSection";
+import AttachmentPreview from "../../stories/AttachmentPreview";
+import ErrorAlert from "../../stories/ErrorAlert";
+import Toast from "../../stories/Toast";
+import APICall from "../../APICalls/APICalls";
+import { readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
+import { useToast } from "../../hooks/useToast";
 
-// Bookkeeping columns the API returns on every row. They are meaningless to a
-// user and were previously dumped into the View dialog alongside the real data.
-const INTERNAL_FIELDS = new Set([
-  "company_id", "created_by", "created_at", "updated_at", "updated_by", "status",
-]);
+/**
+ * Room Incident Log — what went wrong in a room and what was done about it.
+ *
+ * WHAT A ROW MEANS
+ * A dated, timed record against one room: what happened, how bad it was, who
+ * was involved, who saw it, what action was taken, who reported it and when,
+ * plus an optional photo or scanned report. It is a log, not a workflow —
+ * there is no assignee and no open/closed state on `hsk_room_incident`, and an
+ * incident that needs cleaning or repair is recorded as a Task Assign row, not
+ * by mutating this one.
+ *
+ * THE LIST WAS ALWAYS EMPTY
+ * The loader read `res.data.data`. `APICall.getT` already returns the parsed
+ * body, so the rows are at `res.data` and that expression was `undefined` on
+ * every response — the table rendered "No incidents have been logged yet."
+ * however many incidents the database held. This is the readList the rest of
+ * the app uses.
+ *
+ * DROPDOWN SOURCES
+ *   Room         /masterdata/room   value = room.id (the column holds the id)
+ *   Reported By  /user/users        value = user.id
+ * "Reported By" was a free-text box while both stored rows hold a user id, so
+ * the column was already a reference in practice and the form let anyone type
+ * over it. A value that does not match a known user still renders as-is, so
+ * anything typed in before keeps displaying.
+ *
+ * SEVERITY is a true static constant — a four-value scale with no table,
+ * endpoint or admin screen behind it anywhere in the system, now validated by
+ * the API against the same list.
+ *
+ * ATTACHMENTS
+ * Uploads are served by the authenticated gateway proxy, so a plain <img src>
+ * at one gets a 401. `AttachmentPreview` fetches the bytes with the session
+ * token and renders them from an object URL, which is what makes a stored file
+ * viewable at all — before this it could be uploaded and never seen again.
+ */
+
+const PAGE_PATH = "/room_incident_log";
+
+/*
+ * ENDPOINT LITERALS, NOT A CONSTANT
+ * The endpoint is spelled out at each call site rather than held in a shared
+ * `const`. Backend/tools/build_rbac_map.py derives the gateway's permission map
+ * from these literals; a call whose argument it cannot resolve is treated as
+ * "this file issues POST dynamically", and it then pairs that verb with EVERY
+ * endpoint literal in the file. With a const, that handed this page create and
+ * edit rights over /masterdata/room and /user/users — both of which it only
+ * reads.
+ */
+
+
+/** hsk_room_incident.severity — how serious the incident was. */
+const SEVERITIES = ["Low", "Medium", "High", "Critical"];
+
+// varchar width from models.HousekeeperRoomIncident, mirrored so the user is
+// stopped at the field rather than by a 400 after pressing Submit.
+const MAX_TEXT = 255;
+
+// Mirrors the server's allow-list (BaseConfig.UPLOAD_ALLOWED_EXTENSIONS plus
+// PDF) so the user is stopped at the field rather than by a 400 after Submit.
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf"];
+const ACCEPT_ATTR = ".jpg,.jpeg,.png,.gif,.webp,.pdf";
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // BaseConfig.UPLOAD_MAX_BYTES
+
+const EMPTY_FORM = {
+  room_id: "",
+  incident_date: "",
+  incident_time: "",
+  incident_description: "",
+  involved_staff: "",
+  severity: "",
+  witnesses: "",
+  actions_taken: "",
+  reported_by: "",
+  report_date: "",
+  attachment: null,
+};
+
+const EMPTY_FILTERS = { severity: "", from: "", to: "" };
+
+const dayOf = (value) => String(value ?? "").slice(0, 10);
+
+const formatDate = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatTime = (value) => (value ? String(value).slice(0, 5) : "—");
+
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const NoteCell = ({ value }) =>
+  value ? (
+    <span className="table-cell-clamp" title={value}>
+      {value}
+    </span>
+  ) : (
+    "—"
+  );
 
 const RoomIncidentLog = () => {
-  const [data, setData] = useState([]);
-  const [rooms, setRooms] = useState([]);
+  const {
+    data: [rows, rooms, users],
+    loading,
+    error,
+    reload,
+  } = useApiResources([
+    { fetch: () => APICall.getT("/hotel/roomincident_log"), select: readList, fallback: "Failed to load incident logs." },
+    { fetch: () => APICall.getT("/masterdata/room"), select: readList },
+    { fetch: () => APICall.getT("/user/users"), select: readList },
+  ]);
 
+  const permissions = usePagePermissions(PAGE_PATH);
+  const { toast, showToast } = useToast();
+
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [editingRow, setEditingRow] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [formError, setFormError] = useState("");
-  const [pendingDelete, setPendingDelete] = useState(null);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [errors, setErrors] = useState({});
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  // Bumped to remount the file input, which is the only way to clear a
+  // <input type="file"> without reaching for a ref.
+  const [fileKey, setFileKey] = useState(0);
 
-  const initialForm = {
-    roomNo: "",
-    incidentDate: "",
-    incidentTime: "",
-    incidentDescription: "",
-    housekeepingStaff: "",
-    severity: "",
-    witnesses: "",
-    actionsTaken: "",
-    reportedBy: "",
-    reportDate: "",
-    attachments: null,
-  };
+  /* ================= LOOKUPS ================= */
 
-  const [formData, setFormData] = useState(initialForm);
+  const roomLabel = useMemo(() => {
+    const byId = new Map(rooms.map((room) => [String(room.id), room]));
+    return (id) => {
+      const room = byId.get(String(id));
+      if (!room) return id ? `Room #${id}` : "—";
+      return room.room_name ? `${room.room_no} · ${room.room_name}` : String(room.room_no);
+    };
+  }, [rooms]);
 
-  /* ================= API CALLS ================= */
+  const roomNumber = useMemo(() => {
+    const byId = new Map(rooms.map((room) => [String(room.id), room.room_no]));
+    return (id) => byId.get(String(id)) || (id ? `#${id}` : "—");
+  }, [rooms]);
 
-  // Errors were swallowed into console.error, so a failed load left an empty
-  // table that looked like "no incidents" rather than "this did not load".
-  const errMsg = (err, fallback) =>
-    (err instanceof ApiError && err.message) ? err.message : fallback;
+  const fullName = (user) =>
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() ||
+    user?.username ||
+    "";
 
-  const getRoomIncidentLog = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await APICall.getT("/hotel/roomincident_log");
-      setData(Array.isArray(res?.data?.data) ? res.data.data : []);
-      setError("");
-    } catch (err) {
-      setData([]);
-      setError(errMsg(err, "Failed to load incident logs."));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  /** A user id resolves to a name; anything else is shown as stored. */
+  const reporterName = useMemo(() => {
+    const byId = new Map(users.map((user) => [String(user.id), user]));
+    return (value) => {
+      if (!value) return "—";
+      const user = byId.get(String(value));
+      return user ? fullName(user) : String(value);
+    };
+  }, [users]);
 
-  const getAllRooms = useCallback(async () => {
-    try {
-      const res = await APICall.getT("/masterdata/room");
-      setRooms(Array.isArray(res?.data) ? res.data : []);
-    } catch (err) {
-      // Non-fatal: the table still renders, the room picker is just empty.
-      setError((prev) => prev || errMsg(err, "Could not load the room list."));
-    }
-  }, []);
+  const roomOptions = useMemo(
+    () =>
+      rooms.map((room) => ({
+        value: String(room.id),
+        label: room.room_name ? `${room.room_no} · ${room.room_name}` : String(room.room_no),
+      })),
+    [rooms],
+  );
 
-  const createRoomIncidentLog = async () => {
-    const form = new FormData();
+  const userOptions = useMemo(
+    () =>
+      users.map((user) => ({
+        value: String(user.id),
+        label: user.user_code ? `${fullName(user)} (${user.user_code})` : fullName(user),
+      })),
+    [users],
+  );
 
-    form.append("room_id", formData.roomNo);
-    form.append("incident_date", formData.incidentDate);
-    form.append("incident_time", formData.incidentTime);
-    form.append("incident_description", formData.incidentDescription);
+  /* ================= FILTERING ================= */
 
-    form.append("involved_staff", formData.housekeepingStaff || "");
-    form.append("severity", formData.severity || "");
-    form.append("witnesses", formData.witnesses || "");
-    form.append("actions_taken", formData.actionsTaken || "");
-    form.append("reported_by", formData.reportedBy || "");
-    form.append("report_date", formData.reportDate || "");
+  const filtersActive =
+    Boolean(filters.severity) || Boolean(filters.from) || Boolean(filters.to);
 
-    if (formData.attachments) {
-      form.append("attachment_file", formData.attachments);
-    }
-
-    await APICall.postT("/hotel/roomincident_log", form);
-  };
-
-  // The update path never existed on this page: handleSave always POSTed, so
-  // editing an incident silently created a duplicate. PUT /roomincident_log
-  // takes JSON and requires numeric ids.
-  const updateRoomIncidentLog = async () => {
-    await APICall.putT("/hotel/roomincident_log", {
-      id: Number(editId),
-      room_id: Number(formData.roomNo),
-      incident_date: formData.incidentDate,
-      incident_time: formData.incidentTime,
-      incident_description: formData.incidentDescription,
-      involved_staff: formData.housekeepingStaff || "",
-      severity: formData.severity || "",
-      witnesses: formData.witnesses || "",
-      actions_taken: formData.actionsTaken || "",
-      reported_by: formData.reportedBy || "",
-      report_date: formData.reportDate || "",
+  const visibleRows = useMemo(() => {
+    if (!filtersActive) return rows;
+    return rows.filter((row) => {
+      if (filters.severity && row.severity !== filters.severity) return false;
+      const day = dayOf(row.incident_date);
+      if (filters.from && (!day || day < filters.from)) return false;
+      if (filters.to && (!day || day > filters.to)) return false;
+      return true;
     });
+  }, [rows, filters, filtersActive]);
+
+  const setFilter = (key) => (event) =>
+    setFilters((prev) => ({ ...prev, [key]: event.target.value }));
+
+  /* ================= FORM ================= */
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => (prev[name] ? { ...prev, [name]: undefined } : prev));
+  };
+
+  const handleFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setFormData((prev) => ({ ...prev, attachment: null }));
+      return;
+    }
+
+    // Reported through the field's own helper text rather than alert(), which
+    // blocks the page and matches nothing else in the app.
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setErrors((prev) => ({ ...prev, attachment: "Attach a JPG, PNG, GIF, WEBP or PDF." }));
+      setFormData((prev) => ({ ...prev, attachment: null }));
+      setFileKey((n) => n + 1);
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setErrors((prev) => ({ ...prev, attachment: "The attachment must be 5 MB or smaller." }));
+      setFormData((prev) => ({ ...prev, attachment: null }));
+      setFileKey((n) => n + 1);
+      return;
+    }
+
+    setErrors((prev) => ({ ...prev, attachment: undefined }));
+    setFormData((prev) => ({ ...prev, attachment: file }));
+  };
+
+  const validate = () => {
+    const next = {};
+
+    if (!formData.room_id) next.room_id = "Room is required.";
+    if (!formData.incident_date) next.incident_date = "Incident date is required.";
+    if (!formData.incident_time) next.incident_time = "Incident time is required.";
+
+    const description = formData.incident_description.trim();
+    if (!description) next.incident_description = "Describe what happened.";
+    else if (description.length > MAX_TEXT)
+      next.incident_description = `Use ${MAX_TEXT} characters or fewer.`;
+
+    if (formData.severity && !SEVERITIES.includes(formData.severity))
+      next.severity = `Choose one of: ${SEVERITIES.join(", ")}.`;
+
+    // A report cannot be filed before the thing it reports happened.
+    if (formData.report_date && formData.incident_date && formData.report_date < formData.incident_date)
+      next.report_date = "The report date cannot be before the incident date.";
+
+    [
+      ["involved_staff", "Involved staff"],
+      ["witnesses", "Witnesses"],
+      ["actions_taken", "Actions taken"],
+    ].forEach(([key, label]) => {
+      if (formData[key].trim().length > MAX_TEXT)
+        next[key] = `${label} must be ${MAX_TEXT} characters or fewer.`;
+    });
+
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  /** Both create and update are multipart, so the attachment can be set on the
+   *  way in and replaced later. An untouched file field sends nothing and the
+   *  server keeps whatever it already had. */
+  const buildForm = () => {
+    const form = new FormData();
+    if (editId) form.append("id", String(editId));
+    form.append("room_id", formData.room_id);
+    form.append("incident_date", formData.incident_date);
+    form.append("incident_time", formData.incident_time);
+    form.append("incident_description", formData.incident_description.trim());
+    form.append("involved_staff", formData.involved_staff.trim());
+    form.append("severity", formData.severity);
+    form.append("witnesses", formData.witnesses.trim());
+    form.append("actions_taken", formData.actions_taken.trim());
+    form.append("reported_by", formData.reported_by);
+    form.append("report_date", formData.report_date);
+    if (formData.attachment instanceof File) {
+      form.append("attachment_file", formData.attachment);
+    }
+    return form;
   };
 
   /* ================= HANDLERS ================= */
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const openAddModal = () => {
+    setFormData(EMPTY_FORM);
+    setErrors({});
+    setEditId(null);
+    setEditingRow(null);
+    setFileKey((n) => n + 1);
+    setShowModal(true);
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleEdit = (row) => {
+    setFormData({
+      room_id: row.room_id != null ? String(row.room_id) : "",
+      incident_date: dayOf(row.incident_date),
+      incident_time: String(row.incident_time ?? "").slice(0, 5),
+      incident_description: row.incident_description ?? "",
+      involved_staff: row.involved_staff ?? "",
+      severity: row.severity ?? "",
+      witnesses: row.witnesses ?? "",
+      actions_taken: row.actions_taken ?? "",
+      reported_by: row.reported_by != null ? String(row.reported_by) : "",
+      report_date: dayOf(row.report_date),
+      attachment: null,
+    });
+    setErrors({});
+    setEditId(row.id);
+    setEditingRow(row);
+    setFileKey((n) => n + 1);
+    setShowModal(true);
+  };
 
-    // Surfaced in the dialog rather than through alert(), which blocks the
-    // page and does not match how the rest of the app reports problems.
-    const allowed = ["image/jpeg", "image/png", "application/pdf"];
-    if (!allowed.includes(file.type)) {
-      setFormError("Attachments must be a JPG, PNG or PDF.");
-      e.target.value = "";
-      return;
-    }
-    const MAX_BYTES = 5 * 1024 * 1024; // matches UPLOAD_MAX_BYTES on the server
-    if (file.size > MAX_BYTES) {
-      setFormError("Attachments must be 5 MB or smaller.");
-      e.target.value = "";
-      return;
-    }
-
-    setFormError("");
-    setFormData((prev) => ({ ...prev, attachments: file }));
+  const closeModal = () => {
+    if (saving) return;
+    setShowModal(false);
+    setEditId(null);
+    setEditingRow(null);
+    setFormData(EMPTY_FORM);
+    setErrors({});
   };
 
   const handleSave = async () => {
-    if (!formData.roomNo || !formData.incidentDate) {
-      setFormError("Room number and incident date are required.");
+    if (saving) return;
+    if (!validate()) {
+      showToast("Please correct the highlighted fields", "error");
       return;
     }
-    if (!formData.incidentDescription?.trim()) {
-      setFormError("Please describe the incident.");
-      return;
-    }
-    setFormError("");
+
     setSaving(true);
     try {
       // Branch on editId. This used to call create unconditionally, so every
       // save from the Edit dialog appended a second copy of the record.
       if (editId) {
-        await updateRoomIncidentLog();
+        await APICall.putT("/hotel/roomincident_log", buildForm());
+        showToast("Incident updated successfully", "update");
       } else {
-        await createRoomIncidentLog();
+        await APICall.postT("/hotel/roomincident_log", buildForm());
+        showToast("Incident logged successfully", "success");
       }
-      closeModal();
-      await getRoomIncidentLog();
+      await reload();
+      setShowModal(false);
+      setEditId(null);
+      setEditingRow(null);
+      setFormData(EMPTY_FORM);
+      setErrors({});
     } catch (err) {
-      setFormError(errMsg(err, editId ? "Could not update the incident." : "Could not save the incident."));
+      showToast(err?.message || "Save failed", "error");
     } finally {
       setSaving(false);
     }
   };
 
-  const closeModal = () => {
-    setShowModal(false);
-    setFormData(initialForm);
-    setEditId(null);
-    setFormError("");
-  };
-
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData({
-      ...initialForm,
-      roomNo: row.room_id,
-      incidentDate: row.incident_date,
-      incidentTime: row.incident_time,
-      incidentDescription: row.incident_description,
-      housekeepingStaff: row.involved_staff,
-      severity: row.severity,
-      witnesses: row.witnesses,
-      actionsTaken: row.actions_taken,
-      reportedBy: row.reported_by,
-      reportDate: row.report_date,
-    });
-    setShowModal(true);
-  };
-
-  // This used to filter the row out of local state and never call the API, so
-  // a "deleted" incident came straight back on the next refresh.
   const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    setSaving(true);
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/hotel/roomincident_log/${pendingDelete.id}`);
-      setPendingDelete(null);
-      await getRoomIncidentLog();
+      await APICall.deleteT(`/hotel/roomincident_log/${deleteTarget.id}`);
+      showToast("Incident deleted successfully", "delete");
+      await reload();
+      setDeleteTarget(null);
     } catch (err) {
-      setError(errMsg(err, "Could not delete the incident."));
-      setPendingDelete(null);
+      showToast(err?.message || "Delete failed", "error");
     } finally {
-      setSaving(false);
+      setDeleting(false);
     }
   };
-
-  /* ================= EFFECT ================= */
-
-  useEffect(() => {
-    getRoomIncidentLog();
-    getAllRooms();
-  }, [getRoomIncidentLog, getAllRooms]);
 
   /* ================= UI ================= */
 
+  const emptyMessage = filtersActive
+    ? "No incidents match the selected filters."
+    : "No incidents have been logged yet.";
+
+  const columns = [
+    {
+      key: "room_id",
+      title: "Room",
+      align: "left",
+      type: "custom",
+      exportValue: (row) => roomNumber(row.room_id),
+      render: (row) => roomNumber(row.room_id),
+    },
+    {
+      key: "incident_date",
+      title: "Occurred",
+      align: "left",
+      type: "custom",
+      exportValue: (row) => `${formatDate(row.incident_date)} ${formatTime(row.incident_time)}`,
+      render: (row) => (
+        <span className="table-cell-nowrap">
+          {`${formatDate(row.incident_date)} · ${formatTime(row.incident_time)}`}
+        </span>
+      ),
+    },
+    { key: "severity", title: "Severity", align: "center", type: "badge", badgeType: "priority" },
+    {
+      key: "incident_description",
+      title: "Description",
+      align: "left",
+      type: "custom",
+      exportValue: (row) => row.incident_description || "",
+      render: (row) => <NoteCell value={row.incident_description} />,
+    },
+    {
+      key: "reported_by",
+      title: "Reported By",
+      align: "left",
+      type: "custom",
+      exportValue: (row) => reporterName(row.reported_by),
+      render: (row) => reporterName(row.reported_by),
+    },
+    {
+      key: "attachment_file",
+      title: "File",
+      align: "center",
+      type: "custom",
+      exportValue: (row) => (row.attachment_file ? "Yes" : "No"),
+      render: (row) =>
+        row.attachment_file ? (
+          <Paperclip size={15} aria-label="Has an attachment" className="attachment-flag" />
+        ) : (
+          "—"
+        ),
+    },
+    {
+      key: "actions",
+      title: "Actions",
+      align: "center",
+      type: "custom",
+      excludeFromExport: true,
+      render: (row) => (
+        <RowActions
+          label={`incident in room ${roomNumber(row.room_id)}`}
+          onView={() => setViewData(row)}
+          onEdit={() => handleEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+          canEdit={permissions.edit}
+          canDelete={permissions.delete}
+        />
+      ),
+    },
+  ];
+
   return (
     <>
-      {/* A failed load previously left an empty table, which reads as "there are
-          no incidents" rather than "this did not load". */}
-      {error && (
-        <div role="alert" style={{ marginBottom: 12, color: "var(--error-color)" }}>
-          {error}{" "}
-          <button type="button" onClick={getRoomIncidentLog} style={{ textDecoration: "underline" }}>
-            Retry
-          </button>
-        </div>
-      )}
+      <ErrorAlert message={error} />
 
       <TableTemplate
         title="Room Incident Log"
-        hasActionButton
+        loading={loading}
+        emptyMessage={emptyMessage}
         searchable
         pagination
         exportable
-        loading={loading}
-        emptyMessage="No incidents have been logged yet."
+        hasActionButton={permissions.add}
         actionButton={{
           label: "Add Incident",
-          onClick: () => setShowModal(true),
+          onClick: openAddModal,
+          size: "medium",
+          variant: "primary",
         }}
-        columns={[
-          { key: "room_id", title: "Room No", align: "center" },
-
-          {
-            key: "incident_date",
-            title: "Incident Date",
-            align: "center",
-            render: (row) =>
-              new Date(row.incident_date).toLocaleDateString(),
-          },
-
-          {
-            key: "incident_time",
-            title: "Incident Time",
-            align: "center",
-            render: (row) => row.incident_time?.slice(0, 5),
-          },
-
-          { key: "witnesses", title: "Witnesses", align: "center" },
-          { key: "reported_by", title: "Reported By", align: "center" },
-
-          {
-            key: "report_date",
-            title: "Report Date",
-            align: "center",
-            render: (row) =>
-              new Date(row.report_date).toLocaleDateString(),
-          },
-
-          {
-            key: "actions",
-            title: "Actions",
-            align: "center",
-            type: "custom",
-            render: (row) => (
-              <div style={{ display: "flex", gap: 8 }}>
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => setViewData(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => handleEdit(row)} ariaLabel="Edit" />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} onClick={() => setPendingDelete(row)} ariaLabel="Delete" />
-              </div>
-            ),
-          },
-        ]}
-        data={data}
+        filters={
+          <TableFilters onClear={() => setFilters(EMPTY_FILTERS)} isActive={filtersActive}>
+            <FilterSelect
+              id="ril-filter-severity"
+              label="Severity"
+              value={filters.severity}
+              onChange={setFilter("severity")}
+              options={SEVERITIES}
+            />
+            <FilterDate
+              id="ril-filter-from"
+              label="Occurred from"
+              value={filters.from}
+              onChange={setFilter("from")}
+              max={filters.to}
+            />
+            <FilterDate
+              id="ril-filter-to"
+              label="Occurred to"
+              value={filters.to}
+              onChange={setFilter("to")}
+              min={filters.from}
+            />
+          </TableFilters>
+        }
+        columns={columns}
+        data={visibleRows}
       />
 
-
-      {/* ================= VIEW MODAL ================= */}
-      {viewData && (
-        <Modal
-          isOpen={!!viewData}
-          title="View Incident"
-          onClose={() => setViewData(null)}
-          size="large"
-          bodyLayout="grid"
-          viewMode
-        >
-          {Object.entries(viewData)
-            .filter(([k]) => !INTERNAL_FIELDS.has(k))
-            .map(([k, v]) => (
-              <Input key={k} label={k.replace(/_/g, " ")} value={v ?? ""} disabled />
-            ))}
-        </Modal>
-      )}
-
-      {/* ================= ADD / EDIT MODAL ================= */}
-      {showModal && (
-        <Modal
-          isOpen={showModal}
-          // The title said "Add Incident" even when editing an existing one.
-          title={editId ? "Edit Incident" : "Add Incident"}
-          onClose={closeModal}
-          showFooter
-          size="xlarge"
-          bodyLayout="grid"
-          actions={[
-            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
-            {
-              label: saving ? "Saving…" : (editId ? "Update" : "Submit"),
-              variant: "primary",
-              onClick: handleSave,
-              disabled: saving,
-            },
-          ]}
-        >
-          {formError && (
-            <div role="alert" style={{ gridColumn: "1 / -1", color: "var(--error-color)" }}>
-              {formError}
-            </div>
-          )}
-          <Select
-            label="Room Number"
-            name="roomNo"
-            value={formData.roomNo}
-            onChange={handleChange}
-            placeholder="Select Room"
-            options={rooms.map((r) => ({ value: r.id, label: r.room_no }))}
-          />
-
-          {[
-            ["Incident Date", "incidentDate", "date"],
-            ["Incident Time", "incidentTime", "time"],
-            ["Description", "incidentDescription"],
-            ["Housekeeping Staff", "housekeepingStaff"],
-            ["Witnesses", "witnesses"],
-            ["Actions Taken", "actionsTaken"],
-            ["Reported By", "reportedBy"],
-            ["Report Date", "reportDate", "date"],
-          ].map(([label, name, type]) => (
-            <Input
-              key={name}
-              label={label}
-              type={type || "text"}
-              name={name}
-              value={formData[name]}
-              onChange={handleChange}
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title={viewData ? `Incident · Room ${roomNumber(viewData.room_id)}` : "Incident Details"}
+        onClose={() => setViewData(null)}
+        size="large"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <ViewSection title="Incident">
+          {/* One DetailList per section, like every other View in the app.
+              `span` widens the description rather than starting a second list
+              just to get a full-width row. */}
+          <DetailList columns={3}>
+            <DetailItem label="Room" value={viewData && roomLabel(viewData.room_id)} />
+            <DetailItem label="Date" value={formatDate(viewData?.incident_date)} />
+            <DetailItem label="Time" value={formatTime(viewData?.incident_time)} />
+            <DetailItem label="Severity" value={viewData?.severity} />
+            <DetailItem
+              label="What Happened"
+              value={viewData?.incident_description}
+              span={3}
             />
-          ))}
+          </DetailList>
+        </ViewSection>
 
+        <ViewSection title="People">
+          <DetailList columns={2}>
+            <DetailItem label="Involved Staff" value={viewData?.involved_staff} />
+            <DetailItem label="Witnesses" value={viewData?.witnesses} />
+            <DetailItem label="Reported By" value={viewData && reporterName(viewData.reported_by)} />
+            <DetailItem label="Report Date" value={formatDate(viewData?.report_date)} />
+          </DetailList>
+        </ViewSection>
+
+        <ViewSection title="Resolution">
+          <DetailList columns={1}>
+            <DetailItem label="Actions Taken" value={viewData?.actions_taken} />
+          </DetailList>
+        </ViewSection>
+
+        {viewData?.attachment_file && (
+          <ViewSection title="Attachment">
+            <AttachmentPreview
+              path={viewData.attachment_file}
+              prefix="/hotel"
+              alt={`Attachment for the incident in room ${roomNumber(viewData.room_id)}`}
+            />
+          </ViewSection>
+        )}
+
+        <ViewSection title="Record">
+          <DetailList columns={2}>
+            <DetailItem label="Logged" value={formatDateTime(viewData?.created_at)} />
+            <DetailItem
+              label="Last Updated"
+              value={viewData?.updated_at ? formatDateTime(viewData.updated_at) : null}
+            />
+          </DetailList>
+        </ViewSection>
+      </Modal>
+
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        // The title said "Add Incident" even when editing an existing one.
+        title={editId ? "Edit Incident" : "Add Incident"}
+        onClose={closeModal}
+        showFooter
+        size="large"
+        bodyLayout="single"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal, disabled: saving },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <div className="field-grid">
+          <Select
+            label="Room"
+            required
+            name="room_id"
+            placeholder="Select room"
+            value={formData.room_id}
+            onChange={handleChange}
+            disabled={saving}
+            options={roomOptions}
+            error={!!errors.room_id}
+            helperText={errors.room_id}
+          />
+          <Input
+            label="Incident Date"
+            required
+            type="date"
+            name="incident_date"
+            value={formData.incident_date}
+            onChange={handleChange}
+            disabled={saving}
+            error={!!errors.incident_date}
+            helperText={errors.incident_date}
+          />
+          <Input
+            label="Incident Time"
+            required
+            type="time"
+            name="incident_time"
+            value={formData.incident_time}
+            onChange={handleChange}
+            disabled={saving}
+            error={!!errors.incident_time}
+            helperText={errors.incident_time}
+          />
           <Select
             label="Severity"
             name="severity"
+            placeholder="Select severity"
             value={formData.severity}
             onChange={handleChange}
-            placeholder="Select"
-            options={[
-              { value: "Low", label: "Low" },
-              { value: "Medium", label: "Medium" },
-              { value: "High", label: "High" },
-              { value: "Critical", label: "Critical" },
-            ]}
+            disabled={saving}
+            options={SEVERITIES}
+            error={!!errors.severity}
+            helperText={errors.severity}
           />
+          <Select
+            label="Reported By"
+            name="reported_by"
+            placeholder="Select staff"
+            value={formData.reported_by}
+            onChange={handleChange}
+            disabled={saving}
+            options={userOptions}
+            error={!!errors.reported_by}
+            helperText={errors.reported_by}
+          />
+          <Input
+            label="Report Date"
+            type="date"
+            name="report_date"
+            value={formData.report_date}
+            onChange={handleChange}
+            disabled={saving}
+            min={formData.incident_date || undefined}
+            error={!!errors.report_date}
+            helperText={errors.report_date}
+          />
+        </div>
 
-          <div style={{ gridColumn: "1/-1" }}>
-            <Input label="Attachment" type="file" onChange={handleFileChange} />
-          </div>
-        </Modal>
-      )}
+        <Textarea
+          label="What Happened"
+          required
+          name="incident_description"
+          rows={3}
+          placeholder="e.g. Minor water leak reported near the bathroom sink"
+          value={formData.incident_description}
+          onChange={handleChange}
+          disabled={saving}
+          maxLength={MAX_TEXT}
+          error={!!errors.incident_description}
+          helperText={errors.incident_description}
+        />
 
-      {/* ================= DELETE CONFIRMATION ================= */}
-      {/* Deleting used to happen immediately and only in local state. It now
-          asks first, because it is irreversible, and then calls the API. */}
-      {pendingDelete && (
-        <Modal
-          isOpen={Boolean(pendingDelete)}
-          title="Delete incident"
-          onClose={() => setPendingDelete(null)}
-          showFooter
-          size="small"
-          actions={[
-            { label: "Cancel", variant: "secondary", onClick: () => setPendingDelete(null), disabled: saving },
-            { label: saving ? "Deleting…" : "Delete", variant: "danger", onClick: confirmDelete, disabled: saving },
-          ]}
-        >
-          <p>
-            Delete the incident logged for room{" "}
-            <strong>{pendingDelete.room_id}</strong>? This cannot be undone.
+        <div className="field-grid">
+          <Input
+            label="Involved Staff"
+            name="involved_staff"
+            placeholder="e.g. Housekeeping — Floor 2"
+            value={formData.involved_staff}
+            onChange={handleChange}
+            disabled={saving}
+            maxLength={MAX_TEXT}
+            autoComplete="off"
+            error={!!errors.involved_staff}
+            helperText={errors.involved_staff || "The team or people handling it."}
+          />
+          <Input
+            label="Witnesses"
+            name="witnesses"
+            placeholder="e.g. Guest in 204"
+            value={formData.witnesses}
+            onChange={handleChange}
+            disabled={saving}
+            maxLength={MAX_TEXT}
+            autoComplete="off"
+            error={!!errors.witnesses}
+            helperText={errors.witnesses}
+          />
+        </div>
+
+        <Textarea
+          label="Actions Taken"
+          name="actions_taken"
+          rows={2}
+          placeholder="e.g. Maintenance notified, plumber dispatched"
+          value={formData.actions_taken}
+          onChange={handleChange}
+          disabled={saving}
+          maxLength={MAX_TEXT}
+          error={!!errors.actions_taken}
+          helperText={errors.actions_taken}
+        />
+
+        <div className="modal-section">
+          <h4 className="modal-section__title">Attachment</h4>
+          <p className="modal-section__hint">
+            Optional — a photo of the damage or a scanned report. JPG, PNG, GIF, WEBP or
+            PDF, up to 5 MB.
+            {editId && editingRow?.attachment_file
+              ? " Picking a file replaces the one already attached."
+              : ""}
           </p>
-        </Modal>
-      )}
+
+          {editId && editingRow?.attachment_file && !formData.attachment && (
+            <div className="modal-section__preview">
+              <AttachmentPreview
+                path={editingRow.attachment_file}
+                prefix="/hotel"
+                alt="The attachment currently on this incident"
+              />
+            </div>
+          )}
+
+          <Input
+            key={fileKey}
+            label={formData.attachment ? formData.attachment.name : "Choose a file"}
+            type="file"
+            accept={ACCEPT_ATTR}
+            onChange={handleFileChange}
+            disabled={saving}
+            error={!!errors.attachment}
+            helperText={errors.attachment}
+          />
+        </div>
+      </Modal>
+
+      {/* ================= DELETE ================= */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => (deleting ? null : setDeleteTarget(null))}
+        onConfirm={confirmDelete}
+        title="Delete Incident"
+        confirmText={deleting ? "Deleting…" : "Delete"}
+        size="small"
+        destructive
+      >
+        {`Delete the incident logged for room ${
+          deleteTarget ? roomNumber(deleteTarget.room_id) : ""
+        }? This action cannot be undone.`}
+      </ConfirmModal>
+
+      <Toast {...toast} />
     </>
   );
 };

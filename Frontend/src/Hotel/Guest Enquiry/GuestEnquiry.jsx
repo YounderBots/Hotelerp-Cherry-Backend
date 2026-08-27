@@ -1,801 +1,559 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useMemo, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import {
-  ArrowLeft,
-  RefreshCw,
-  Eye,
-  Pencil,
-  Trash2,
-  X,
-  Download,
-  AlertCircle,
-  CheckCircle,
-} from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../Reservation/Reservation.css";
+import TableFilters, { FilterDate, FilterSelect } from "../../stories/TableFilters";
+import Modal, { ConfirmModal } from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import Textarea from "../../stories/Form/Textarea";
+import RowActions from "../../stories/RowActions";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ViewSection from "../../stories/ViewSection";
+import ErrorAlert from "../../stories/ErrorAlert";
+import Toast from "../../stories/Toast";
+import APICall from "../../APICalls/APICalls";
+import { readList } from "../../functions/apiHelpers";
+import { useApiResource } from "../../hooks/useApiResource";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
+import { useToast } from "../../hooks/useToast";
 
-// -------------------------------------------------------------------------
-// Constants
-// -------------------------------------------------------------------------
-const INQUIRY_MODES = ["Phone", "Email", "Walk-in", "Web", "Referral", "Other"];
-const INQUIRY_STATUSES = ["Open", "In Progress", "Resolved", "Pending", "Closed"];
+/**
+ * Guest Enquiry — the front-office log of someone asking about the hotel
+ * before they are a guest.
+ *
+ * WHAT A ROW MEANS
+ * Who asked (guest_name), how the request reached us (inquiry_mode), what they
+ * were told (response), what we owe them next (follow_up), anything that went
+ * wrong while handling it (incidents), and whether the conversation is still
+ * open (inquiry_status). It closes by being marked Completed, or is withdrawn
+ * by a soft delete. There is no room, rate or booking link on this record —
+ * `hotel.inquiry` has no foreign keys, and an enquiry that turns into a stay is
+ * recorded by creating a reservation, not by mutating the enquiry.
+ *
+ * VOCABULARY IS NOT INVENTED HERE
+ * MODES and STATUSES below are the values documented on models.Inquiry, held by
+ * every row in the database, and now validated by the API. The previous version
+ * of this screen shipped two lists it had made up — six modes ("Phone",
+ * "Email", "Walk-in"...) and five statuses ("Open", "Resolved"...) — none of
+ * which the backend recognised. Because it also *validated* against them, every
+ * stored record failed the check and Edit could not be saved at all.
+ *
+ * These are true static constants, not master data: two closed sets of two
+ * values each, with no table, endpoint or admin screen behind them anywhere in
+ * the system. Reservation Status (Confirmed / Checked-In / ...) is master data
+ * and is deliberately NOT reused — it describes a booking's lifecycle, which is
+ * a different thing from whether a phone enquiry has been dealt with.
+ */
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;  
+const ENDPOINT = "/hotel/inquiry";
+const PAGE_PATH = "/guest_enquiry";
 
-// -------------------------------------------------------------------------
-// Helpers (shared conventions from Pages 7-16)
-// -------------------------------------------------------------------------
-const readList = (res) =>
-  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
+// hotel.inquiry.inquiry_mode — how the enquiry reached the front office.
+const MODES = ["Online", "Offline"];
+// hotel.inquiry.inquiry_status — the enquiry's lifecycle.
+const STATUSES = ["In Progress", "Completed"];
 
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
+// varchar column widths from models.Inquiry, mirrored so the user is stopped at
+// the field rather than by a 400 after pressing Submit.
+const MAX_GUEST_NAME = 255;
+const MAX_NOTE = 255;
 
-const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
-const isPlainDate = (v) => /^\d{4}-\d{2}-\d{2}(T|$)/.test(String(v || ""));
-
-const formatDate = (v) => {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-};
-
-const humaniseKey = (k) =>
-  String(k || "")
-    .replace(/_/g, " ")
-    .replace(/([A-Z])/g, " $1")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-
-const isSensitive = (k) => {
-  const key = String(k || "").toLowerCase();
-  return (
-    key === "id" ||
-    key === "token" ||
-    key === "company_id" ||
-    key === "created_by" ||
-    key === "updated_by" ||
-    key === "created_at" ||
-    key === "updated_at" ||
-    key === "status"
-  );
-};
-
-const displayValue = (v) => {
-  if (v === null || v === undefined || v === "") return "—";
-  if (Array.isArray(v)) return v.length > 0 ? v.join(", ") : "—";
-  if (typeof v === "object") {
-    try { return JSON.stringify(v); } catch { return "—"; }
-  }
-  if (isPlainDate(v)) return formatDate(v);
-  return String(v);
-};
-
-const inquiryStatusClass = (status) => {
-  const s = String(status || "").toLowerCase();
-  if (s === "open") return "status-confirmed";      // blue
-  if (s === "in progress") return "status-pending"; // amber
-  if (s === "resolved") return "status-checked-in"; // green
-  if (s === "pending") return "status-pending";     // amber
-  if (s === "closed") return "status-checked-out";  // pink/muted
-  return "status-pending";
-};
-
-// -------------------------------------------------------------------------
-// Toast
-// -------------------------------------------------------------------------
-const Toast = ({ toast, onClose }) => {
-  if (!toast) return null;
-  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
-  return (
-    <div
-      className={`reservation-toast ${toast.kind}`}
-      role={toast.kind === "success" ? "status" : "alert"}
-      aria-live={toast.kind === "success" ? "polite" : "assertive"}
-    >
-      <Icon size={18} aria-hidden="true" />
-      <span>{toast.text}</span>
-      <button
-        type="button"
-        className="reservation-toast-close"
-        onClick={onClose}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Confirm dialog
-// -------------------------------------------------------------------------
-const ConfirmDialog = ({
-  open,
-  title,
-  body,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
-  onConfirm,
-  onCancel,
-  loading = false,
-}) => {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !loading) onCancel(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onCancel, loading]);
-
-  if (!open) return null;
-  return (
-    <div
-      className="modal-container"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="ge-confirm-title"
-      onClick={(e) => { if (e.target === e.currentTarget && !loading) onCancel(); }}
-    >
-      <div className="modal-content confirm-modal">
-        <div className="modal-header">
-          <h2 className="modal-title" id="ge-confirm-title">{title}</h2>
-          <button
-            type="button"
-            className="modal-close-btn"
-            onClick={onCancel}
-            aria-label="Close confirmation"
-            disabled={loading}
-          >
-            <X size={22} />
-          </button>
-        </div>
-        <div className="modal-body"><p>{body}</p></div>
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onCancel}
-            disabled={loading}
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className="btn btn-danger"
-            onClick={onConfirm}
-            disabled={loading}
-            aria-busy={loading}
-          >
-            {loading ? "Working…" : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// View modal
-// -------------------------------------------------------------------------
-const DetailsModal = ({ open, title, entity, onClose }) => {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = original; };
-  }, [open]);
-
-  if (!open || !entity) return null;
-
-  const entries = Object.entries(entity).filter(([k]) => !isSensitive(k));
-
-  return (
-    <div
-      className="modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="ge-view-title"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="modal-card modal-sm">
-        <div className="modal-header">
-          <h3 id="ge-view-title">{title}</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={`Close ${title}`}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="modal-body single view">
-          {entries.map(([key, value]) => (
-            <div className="form-group" key={key}>
-              <label htmlFor={`ge-detail-${key}`}>{humaniseKey(key)}</label>
-              <input
-                id={`ge-detail-${key}`}
-                value={displayValue(value)}
-                readOnly
-                aria-readonly="true"
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn secondary"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Add / Edit modal
-// -------------------------------------------------------------------------
-const initialForm = {
-  inquiryMode: "",
-  guestName: "",
-  responseDate: "",
-  followUpDate: "",
+const EMPTY_FORM = {
+  guest_name: "",
+  inquiry_mode: "",
+  inquiry_status: "In Progress",
+  response: "",
+  follow_up: "",
   incidents: "",
-  status: "Open",
 };
 
-// -------------------------------------------------------------------------
-// Page
-// -------------------------------------------------------------------------
+const EMPTY_FILTERS = { status: "", mode: "", from: "", to: "" };
+
+/** "2026-07-31T12:30:55" -> "2026-07-31", for comparing against a date input. */
+const dayOf = (value) => String(value ?? "").slice(0, 10);
+
+const formatDate = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+/** Two-line free-text cell; the full value is on the tooltip and in View. */
+const NoteCell = ({ value }) =>
+  value ? (
+    <span className="table-cell-clamp" title={value}>
+      {value}
+    </span>
+  ) : (
+    "—"
+  );
+
 const GuestEnquiry = () => {
-  const navigate = useNavigate();
-  const mounted = useRef(true);
+  const { data, loading, error, reload } = useApiResource(
+    () => APICall.getT(ENDPOINT),
+    { select: readList, fallback: "Failed to load guest enquiries." },
+  );
 
-  const [data, setData] = useState(null); // null = loading
-  const [error, setError] = useState(null);
-  const [refreshTick, setRefreshTick] = useState(0);
+  const permissions = usePagePermissions(PAGE_PATH);
+  const { toast, showToast } = useToast();
 
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
-  const [formData, setFormData] = useState(initialForm);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [errors, setErrors] = useState({});
 
-  const [toast, setToast] = useState(null);
-  const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
 
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
+  /* ================= FILTERING ================= */
 
-  const load = useCallback(() => {
-    setData(null);
-    setError(null);
-    APICall.getT("/hotel/inquiry")
-      .then((res) => {
-        if (!mounted.current) return;
-        setData(Array.isArray(res?.data) ? res.data : readList(res));
-      })
-      .catch((err) => {
-        if (!mounted.current) return;
-        setData([]);
-        setError(errMsg(err, "Failed to load enquiries."));
-      });
-  }, []);
+  const filtersActive =
+    Boolean(filters.status) || Boolean(filters.mode) || Boolean(filters.from) || Boolean(filters.to);
 
-  useEffect(() => {
-    mounted.current = true;
-    load();
-    return () => { mounted.current = false; };
-  }, [load, refreshTick]);
-
-  // Escape / body-scroll-lock for the CRUD modal
-  useEffect(() => {
-    if (!showModal) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !saving) closeModal(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-     
-  }, [showModal, saving]);
-
-  useEffect(() => {
-    const anyOpen = showModal || showViewModal || Boolean(pendingDelete);
-    if (!anyOpen) return undefined;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = original; };
-  }, [showModal, showViewModal, pendingDelete]);
-
-  // ---------------------------------------------------------------
-  const openAddModal = () => {
-    setEditId(null);
-    setFormData(initialForm);
-    setFormError(null);
-    setShowModal(true);
-  };
-
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
-  };
-
-  const closeViewModal = () => {
-    setViewData(null);
-    setShowViewModal(false);
-  };
-
-  const closeModal = () => {
-    setEditId(null);
-    setFormError(null);
-    setShowModal(false);
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((p) => ({ ...p, [name]: value }));
-  };
-
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData({
-      inquiryMode: row.inquiry_mode || "",
-      guestName: row.guest_name || "",
-      status: row.inquiry_status || "Open",
-      responseDate: isoDay(row.response),
-      followUpDate: isoDay(row.follow_up),
-      incidents: row.incidents || "",
+  // Applied here rather than by the API: every list endpoint in this app
+  // returns the company's full set and the screens narrow it, which is also how
+  // TableTemplate's own search works. Splitting the two — server-side filters,
+  // client-side search — would make the record count in the toolbar disagree
+  // with the table under one of them.
+  const rows = useMemo(() => {
+    if (!filtersActive) return data;
+    return data.filter((row) => {
+      if (filters.status && row.inquiry_status !== filters.status) return false;
+      if (filters.mode && row.inquiry_mode !== filters.mode) return false;
+      const received = dayOf(row.created_at);
+      if (filters.from && (!received || received < filters.from)) return false;
+      if (filters.to && (!received || received > filters.to)) return false;
+      return true;
     });
-    setFormError(null);
-    setShowModal(true);
+  }, [data, filters, filtersActive]);
+
+  const setFilter = (key) => (event) =>
+    setFilters((prev) => ({ ...prev, [key]: event.target.value }));
+
+  /* ================= FORM ================= */
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    // Clear the field's error as soon as it is touched, so a message never
+    // outlives the problem it describes.
+    setErrors((prev) => (prev[name] ? { ...prev, [name]: undefined } : prev));
   };
 
   const validate = () => {
-    if (!formData.inquiryMode.trim()) return "Inquiry mode is required.";
-    if (!INQUIRY_MODES.includes(formData.inquiryMode)) return `Inquiry mode must be one of: ${INQUIRY_MODES.join(", ")}`;
-    if (!formData.guestName.trim()) return "Guest name is required.";
-    if (!INQUIRY_STATUSES.includes(formData.status)) return `Status must be one of: ${INQUIRY_STATUSES.join(", ")}`;
-    if (formData.responseDate && formData.followUpDate && isoDay(formData.followUpDate) < isoDay(formData.responseDate)) {
-      return "Follow-up date cannot be before the response date.";
-    }
-    return null;
+    const next = {};
+
+    const guestName = formData.guest_name.trim();
+    if (!guestName) next.guest_name = "Guest name is required.";
+    else if (guestName.length > MAX_GUEST_NAME)
+      next.guest_name = `Use ${MAX_GUEST_NAME} characters or fewer.`;
+
+    if (!formData.inquiry_mode) next.inquiry_mode = "Enquiry mode is required.";
+    else if (!MODES.includes(formData.inquiry_mode))
+      next.inquiry_mode = `Choose one of: ${MODES.join(", ")}.`;
+
+    if (!formData.inquiry_status) next.inquiry_status = "Status is required.";
+    else if (!STATUSES.includes(formData.inquiry_status))
+      next.inquiry_status = `Choose one of: ${STATUSES.join(", ")}.`;
+
+    [
+      ["response", "Response"],
+      ["follow_up", "Follow-up"],
+      ["incidents", "Incident notes"],
+    ].forEach(([key, label]) => {
+      if (formData[key].trim().length > MAX_NOTE)
+        next[key] = `${label} must be ${MAX_NOTE} characters or fewer.`;
+    });
+
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
 
-  const buildPayload = (includeId = false) => {
-    const payload = {
-      inquiry_mode: formData.inquiryMode,
-      guest_name: formData.guestName.trim(),
-      inquiry_status: formData.status,
-      response: formData.responseDate || null,
-      follow_up: formData.followUpDate || null,
-      incidents: formData.incidents || null,
-    };
-    if (includeId && editId) payload.id = editId;
-    return payload;
+  /** Blank optional notes are sent as null so the column is cleared rather than
+   *  storing an empty string that reads as "answered with nothing". */
+  const buildPayload = () => ({
+    inquiry_mode: formData.inquiry_mode,
+    guest_name: formData.guest_name.trim(),
+    inquiry_status: formData.inquiry_status,
+    response: formData.response.trim() || null,
+    follow_up: formData.follow_up.trim() || null,
+    incidents: formData.incidents.trim() || null,
+  });
+
+  /* ================= HANDLERS ================= */
+
+  const openAddModal = () => {
+    setFormData(EMPTY_FORM);
+    setErrors({});
+    setEditId(null);
+    setShowModal(true);
+  };
+
+  const handleEdit = (row) => {
+    setFormData({
+      guest_name: row.guest_name ?? "",
+      inquiry_mode: row.inquiry_mode ?? "",
+      inquiry_status: row.inquiry_status ?? "",
+      // The stored values are free text. The previous screen bound them to
+      // <input type="date">, so it rendered "Sent rate card for Deluxe
+      // rooms..." into a date field (blank on screen) and would have written
+      // back the first ten characters.
+      response: row.response ?? "",
+      follow_up: row.follow_up ?? "",
+      incidents: row.incidents ?? "",
+    });
+    setErrors({});
+    setEditId(row.id);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    if (saving) return;
+    setShowModal(false);
+    setEditId(null);
+    setFormData(EMPTY_FORM);
+    setErrors({});
   };
 
   const handleSave = async () => {
-    const v = validate();
-    if (v) {
-      setFormError(v);
-      showToast("error", v);
+    if (saving) return;
+    if (!validate()) {
+      showToast("Please correct the highlighted fields", "error");
       return;
     }
-    setFormError(null);
+
     setSaving(true);
     try {
       if (editId) {
-        await APICall.putT("/hotel/inquiry", buildPayload(true));
-        showToast("success", "Enquiry updated.");
+        await APICall.putT(ENDPOINT, { id: editId, ...buildPayload() });
+        showToast("Enquiry updated successfully", "update");
       } else {
-        await APICall.postT("/hotel/inquiry", buildPayload(false));
-        showToast("success", "Enquiry created.");
+        await APICall.postT(ENDPOINT, buildPayload());
+        showToast("Enquiry added successfully", "success");
       }
-      closeModal();
-      load();
+      // Awaited before closing: the list must not be repainted from a request
+      // that is still in flight.
+      await reload();
+      setShowModal(false);
+      setEditId(null);
+      setFormData(EMPTY_FORM);
+      setErrors({});
     } catch (err) {
-      const m = errMsg(err, editId ? "Failed to update enquiry." : "Failed to create enquiry.");
-      setFormError(m);
-      showToast("error", m);
+      showToast(err?.message || "Save failed", "error");
     } finally {
-      if (mounted.current) setSaving(false);
+      setSaving(false);
     }
   };
-
-  const handleDeleteClick = (row) => setPendingDelete(row);
 
   const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    setDeleteLoading(true);
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/hotel/inquiry/${pendingDelete.id}`);
-      showToast("success", "Enquiry deleted.");
-      setPendingDelete(null);
-      load();
+      // Spelled out rather than built from ENDPOINT: Backend/tools/
+      // build_rbac_map.py reads the SPA to decide which endpoints this page
+      // may call, and it can only resolve a path literal. Written as
+      // `${ENDPOINT}/${id}` the DELETE row drops out of ROUTE_PERMISSIONS
+      // into UNCALLED_ENDPOINTS, and the gateway then denies it to every
+      // role once RBAC_GATEWAY_MODE is `enforce`.
+      await APICall.deleteT(`/hotel/inquiry/${deleteTarget.id}`);
+      showToast("Enquiry deleted successfully", "delete");
+      await reload();
+      setDeleteTarget(null);
     } catch (err) {
-      showToast("error", errMsg(err, "Failed to delete enquiry."));
+      showToast(err?.message || "Delete failed", "error");
     } finally {
-      if (mounted.current) setDeleteLoading(false);
+      setDeleting(false);
     }
   };
 
-  const handleBack = () => navigate("/dashboard");
-  const handleRefresh = () => setRefreshTick((n) => n + 1);
+  /* ================= UI ================= */
 
-  const handleExportCsv = () => {
-    const list = Array.isArray(data) ? data : [];
-    if (list.length === 0) {
-      showToast("error", "No enquiries to export.");
-      return;
-    }
-    const header = ["Inquiry Mode", "Guest Name", "Response", "Follow Up", "Status", "Incidents"];
-    const rows = list.map((r) => [
-      r.inquiry_mode ?? "",
-      r.guest_name ?? "",
-      r.response ?? "",
-      r.follow_up ?? "",
-      r.inquiry_status ?? "",
-      r.incidents ?? "",
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((cell) => {
-        const s = String(cell ?? "");
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      }).join(","))
-      .join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `guest-enquiries-${isoDay(new Date().toISOString())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const isLoading = data === null;
-  const tableData = Array.isArray(data) ? data : [];
+  const emptyMessage = filtersActive
+    ? "No enquiries match the selected filters."
+    : "No guest enquiries yet. Add the first one to get started.";
 
   const columns = [
-    { key: "inquiry_mode", title: "Inquiry Mode", align: "center" },
-    { key: "guest_name", title: "Guest Name", align: "center" },
+    { key: "guest_name", title: "Guest Name", align: "left" },
+    { key: "inquiry_mode", title: "Mode", align: "left" },
     {
       key: "response",
       title: "Response",
-      align: "center",
-      render: (row) => formatDate(row.response),
+      align: "left",
+      type: "custom",
+      exportValue: (row) => row.response || "",
+      render: (row) => <NoteCell value={row.response} />,
     },
     {
       key: "follow_up",
-      title: "Follow Up",
-      align: "center",
-      render: (row) => formatDate(row.follow_up),
-    },
-    {
-      key: "inquiry_status",
-      title: "Status",
-      align: "center",
+      title: "Follow-up",
+      align: "left",
       type: "custom",
-      render: (row) => (
-        <span className={`rmv-status-badge ${inquiryStatusClass(row.inquiry_status)}`}>
-          {row.inquiry_status || "—"}
-        </span>
-      ),
+      exportValue: (row) => row.follow_up || "",
+      render: (row) => <NoteCell value={row.follow_up} />,
+    },
+    { key: "inquiry_status", title: "Status", align: "left", type: "badge" },
+    {
+      key: "created_at",
+      title: "Received",
+      align: "left",
+      type: "custom",
+      // Without this the toolbar search would match the raw ISO string while
+      // the cell shows "31 Jul 2026", so typing what is on screen found nothing.
+      exportValue: (row) => formatDate(row.created_at),
+      render: (row) => formatDate(row.created_at),
     },
     {
       key: "actions",
       title: "Actions",
       align: "center",
       type: "custom",
+      excludeFromExport: true,
       render: (row) => (
-        <div className="table-actions">
-          <button
-            type="button"
-            className="table-action-btn view"
-            title="View"
-            aria-label={`View enquiry for ${row.guest_name || "guest"}`}
-            onClick={() => openViewModal(row)}
-          >
-            <Eye size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn edit"
-            title="Edit"
-            aria-label={`Edit enquiry for ${row.guest_name || "guest"}`}
-            onClick={() => handleEdit(row)}
-          >
-            <Pencil size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="table-action-btn delete"
-            title="Delete"
-            aria-label={`Delete enquiry for ${row.guest_name || "guest"}`}
-            onClick={() => handleDeleteClick(row)}
-          >
-            <Trash2 size={16} aria-hidden="true" />
-          </button>
-        </div>
+        <RowActions
+          label={`enquiry from ${row.guest_name || "guest"}`}
+          onView={() => setViewData(row)}
+          onEdit={() => handleEdit(row)}
+          onDelete={() => setDeleteTarget(row)}
+          canEdit={permissions.edit}
+          canDelete={permissions.delete}
+        />
       ),
     },
   ];
 
   return (
-    <div className="ge-page">
-      <div className="ge-toolbar">
-        <button
-          type="button"
-          className="rmv-back-btn"
-          onClick={handleBack}
-          aria-label="Back to dashboard"
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-          <span>Back</span>
-        </button>
-        <div className="ge-header">
-          <span className="rmv-eyebrow">Front Office</span>
-          <h1 className="rmv-title">Guest Enquiry</h1>
-        </div>
-        <div className="rmv-toolbar-actions">
-          <button
-            type="button"
-            className="rmv-toolbar-btn"
-            onClick={handleRefresh}
-            aria-label="Refresh"
-            disabled={isLoading}
+    <>
+      <ErrorAlert message={error} />
+
+      <TableTemplate
+        title="Guest Enquiry"
+        loading={loading}
+        emptyMessage={emptyMessage}
+        searchable
+        pagination
+        exportable
+        hasActionButton={permissions.add}
+        actionButton={{
+          label: "Add Enquiry",
+          onClick: openAddModal,
+          size: "medium",
+          variant: "primary",
+        }}
+        filters={
+          <TableFilters
+            onClear={() => setFilters(EMPTY_FILTERS)}
+            isActive={filtersActive}
           >
-            <RefreshCw size={16} aria-hidden="true" />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="reservation-alert" role="alert">
-          <span>{error}</span>
-          <button
-            type="button"
-            className="reservation-alert-action"
-            onClick={handleRefresh}
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {isLoading && (
-        <div className="reservation-loading" role="status" aria-live="polite">
-          Loading enquiries…
-        </div>
-      )}
-
-      {!isLoading && (
-        <TableTemplate
-          title="Guest Enquiry"
-          variant="striped"
-          pagination
-          pageSize={10}
-          searchable
-          exportable
-          hasActionButton
-          actionButton={{
-            label: "Add New Enquiry",
-            onClick: openAddModal,
-            size: "medium",
-            variant: "primary",
-          }}
-          columns={columns}
-          data={tableData}
-        />
-      )}
-
-      {!isLoading && !error && tableData.length === 0 && (
-        <div className="reservation-empty">
-          No enquiries yet. Use "Add New Enquiry" to create the first one.
-        </div>
-      )}
-
-      {!isLoading && tableData.length > 0 && (
-        <div className="ge-export-bar">
-          <button
-            type="button"
-            className="rmv-toolbar-btn"
-            onClick={handleExportCsv}
-            aria-label="Export enquiries as CSV"
-          >
-            <Download size={16} aria-hidden="true" />
-            <span>Export CSV</span>
-          </button>
-        </div>
-      )}
-
-      {/* Add / Edit modal */}
-      {showModal && (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ge-modal-title"
-          onClick={(e) => { if (e.target === e.currentTarget && !saving) closeModal(); }}
-        >
-          <div className="modal-card modal-sm">
-            <div className="modal-header">
-              <h3 id="ge-modal-title">{editId ? "Edit Enquiry" : "Add Enquiry"}</h3>
-              <button
-                type="button"
-                onClick={closeModal}
-                aria-label="Close enquiry dialog"
-                disabled={saving}
-              >
-                <X size={18} aria-hidden="true" />
-              </button>
-            </div>
-
-            {formError && (
-              <div className="reservation-alert inline" role="alert">
-                {formError}
-              </div>
-            )}
-
-            <div className="modal-body single">
-              <div className="ge-form-grid">
-              <div className="form-group">
-                <label htmlFor="ge-mode">Inquiry Mode <span className="required">*</span></label>
-                <select
-                  id="ge-mode"
-                  name="inquiryMode"
-                  value={formData.inquiryMode}
-                  onChange={handleChange}
-                  disabled={saving}
-                  required
-                >
-                  <option value="">— select —</option>
-                  {INQUIRY_MODES.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="ge-name">Guest Name <span className="required">*</span></label>
-                <input
-                  id="ge-name"
-                  type="text"
-                  name="guestName"
-                  value={formData.guestName}
-                  onChange={handleChange}
-                  disabled={saving}
-                  maxLength={100}
-                  autoComplete="name"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="ge-response">Response Date</label>
-                <input
-                  id="ge-response"
-                  type="date"
-                  name="responseDate"
-                  value={formData.responseDate}
-                  onChange={handleChange}
-                  disabled={saving}
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="ge-followup">Follow-up Date</label>
-                <input
-                  id="ge-followup"
-                  type="date"
-                  name="followUpDate"
-                  value={formData.followUpDate}
-                  onChange={handleChange}
-                  disabled={saving}
-                  min={formData.responseDate || undefined}
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="ge-status">Status <span className="required">*</span></label>
-                <select
-                  id="ge-status"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  disabled={saving}
-                  required
-                >
-                  {INQUIRY_STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group ge-field-full">
-                <label htmlFor="ge-incidents">Incident Notes</label>
-                <textarea
-                  id="ge-incidents"
-                  name="incidents"
-                  value={formData.incidents}
-                  onChange={handleChange}
-                  disabled={saving}
-                  maxLength={1000}
-                  rows={4}
-                />
-              </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={closeModal}
-                disabled={saving}
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={handleSave}
-                disabled={saving}
-                aria-busy={saving}
-              >
-                {saving ? "Saving…" : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <DetailsModal
-        open={showViewModal}
-        title="View Guest Enquiry"
-        entity={viewData}
-        onClose={closeViewModal}
-      />
-
-      <ConfirmDialog
-        open={Boolean(pendingDelete)}
-        title="Delete enquiry"
-        body={
-          pendingDelete
-            ? `Delete enquiry from ${pendingDelete.guest_name || "guest"}? This action cannot be undone.`
-            : ""
+            <FilterSelect
+              id="ge-filter-status"
+              label="Status"
+              value={filters.status}
+              onChange={setFilter("status")}
+              options={STATUSES}
+            />
+            <FilterSelect
+              id="ge-filter-mode"
+              label="Mode"
+              value={filters.mode}
+              onChange={setFilter("mode")}
+              options={MODES}
+            />
+            <FilterDate
+              id="ge-filter-from"
+              label="Received from"
+              value={filters.from}
+              onChange={setFilter("from")}
+              max={filters.to}
+            />
+            <FilterDate
+              id="ge-filter-to"
+              label="Received to"
+              value={filters.to}
+              onChange={setFilter("to")}
+              min={filters.from}
+            />
+          </TableFilters>
         }
-        confirmLabel="Delete"
-        onConfirm={confirmDelete}
-        onCancel={() => setPendingDelete(null)}
-        loading={deleteLoading}
+        columns={columns}
+        data={rows}
       />
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
-    </div>
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Guest Enquiry Details"
+        onClose={() => setViewData(null)}
+        size="large"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <ViewSection title="Enquiry">
+          <DetailList columns={3}>
+            <DetailItem label="Guest Name" value={viewData?.guest_name} />
+            <DetailItem label="Mode" value={viewData?.inquiry_mode} />
+            <DetailItem label="Status" value={viewData?.inquiry_status} />
+          </DetailList>
+        </ViewSection>
+
+        <ViewSection title="Handling">
+          <DetailList columns={1}>
+            <DetailItem label="Response" value={viewData?.response} span={1} />
+            <DetailItem label="Follow-up" value={viewData?.follow_up} span={1} />
+            <DetailItem label="Incident Notes" value={viewData?.incidents} span={1} />
+          </DetailList>
+        </ViewSection>
+
+        <ViewSection title="Record">
+          <DetailList columns={2}>
+            <DetailItem label="Received" value={formatDateTime(viewData?.created_at)} />
+            <DetailItem
+              label="Last Updated"
+              value={viewData?.updated_at ? formatDateTime(viewData.updated_at) : null}
+            />
+          </DetailList>
+        </ViewSection>
+      </Modal>
+
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Enquiry" : "Add Enquiry"}
+        onClose={closeModal}
+        showFooter
+        size="large"
+        // "single" stacks the body with a gap and zeroes each field's own
+        // margin; the three short fields get their own row through .field-grid
+        // so the notes below can run full width.
+        bodyLayout="single"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal, disabled: saving },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <div className="field-grid">
+          <Input
+            label="Guest Name"
+            required
+            name="guest_name"
+            placeholder="e.g. Sameer Bhatia"
+            value={formData.guest_name}
+            onChange={handleChange}
+            disabled={saving}
+            maxLength={MAX_GUEST_NAME}
+            autoComplete="off"
+            error={!!errors.guest_name}
+            helperText={errors.guest_name}
+          />
+          <Select
+            label="Enquiry Mode"
+            required
+            name="inquiry_mode"
+            placeholder="Select mode"
+            value={formData.inquiry_mode}
+            onChange={handleChange}
+            disabled={saving}
+            options={MODES}
+            error={!!errors.inquiry_mode}
+            helperText={errors.inquiry_mode || "How the enquiry reached the front office."}
+          />
+          <Select
+            label="Status"
+            required
+            name="inquiry_status"
+            placeholder="Select status"
+            value={formData.inquiry_status}
+            onChange={handleChange}
+            disabled={saving}
+            options={STATUSES}
+            error={!!errors.inquiry_status}
+            helperText={errors.inquiry_status}
+          />
+        </div>
+
+        <Textarea
+          label="Response"
+          name="response"
+          rows={3}
+          placeholder="What the guest was told — e.g. Sent rate card for Deluxe rooms, awaiting confirmation"
+          value={formData.response}
+          onChange={handleChange}
+          disabled={saving}
+          maxLength={MAX_NOTE}
+          error={!!errors.response}
+          helperText={errors.response}
+        />
+
+        <Textarea
+          label="Follow-up"
+          name="follow_up"
+          rows={2}
+          placeholder="What is owed next — e.g. Call back within 24 hours"
+          value={formData.follow_up}
+          onChange={handleChange}
+          disabled={saving}
+          maxLength={MAX_NOTE}
+          error={!!errors.follow_up}
+          helperText={errors.follow_up}
+        />
+
+        <Textarea
+          label="Incident Notes"
+          name="incidents"
+          rows={2}
+          placeholder="Anything that went wrong while handling this enquiry"
+          value={formData.incidents}
+          onChange={handleChange}
+          disabled={saving}
+          maxLength={MAX_NOTE}
+          error={!!errors.incidents}
+          helperText={errors.incidents}
+        />
+      </Modal>
+
+      {/* ================= DELETE ================= */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => (deleting ? null : setDeleteTarget(null))}
+        onConfirm={confirmDelete}
+        title="Delete Enquiry"
+        confirmText={deleting ? "Deleting…" : "Delete"}
+        size="small"
+        destructive
+      >
+        {`Delete the enquiry from ${deleteTarget?.guest_name || "this guest"}? This action cannot be undone.`}
+      </ConfirmModal>
+
+      <Toast {...toast} />
+    </>
   );
 };
 

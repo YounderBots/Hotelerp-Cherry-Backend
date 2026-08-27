@@ -1,490 +1,352 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+
 import TableTemplate from "../../stories/TableTemplate";
+import TableFilters, { FilterDate } from "../../stories/TableFilters";
+import Modal from "../../stories/Modal";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ViewSection from "../../stories/ViewSection";
+import ErrorAlert from "../../stories/ErrorAlert";
+import RowActions from "../../stories/RowActions";
+import Tabs, { Tab } from "../../stories/Tabs";
+import APICall from "../../APICalls/APICalls";
+import { useApiResource } from "../../hooks/useApiResource";
 import {
-  ArrowLeft,
-  Download,
-  Eye,
-  RefreshCw,
-  X,
-  AlertCircle,
-  CheckCircle,
-} from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+    formatCount,
+    formatCurrency,
+    formatDate,
+    formatPrecise,
+} from "./nightAuditShared";
 import "./NightAudit.css";
-import "../Reservation/Reservation.css";
 
-// -------------------------------------------------------------------------
-// Helpers
-// -------------------------------------------------------------------------
-const readList = (res) =>
-  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
+/**
+ * Settlement Summary -- the money position for one night.
+ *
+ * WHAT CHANGED, AND WHY IT MATTERS
+ * The previous version fetched every reservation in the database and then added
+ * the columns up IN THE BROWSER to produce its totals. Two problems, both real:
+ *
+ *   * The totals covered every reservation ever taken, not a night. The
+ *     "Total paid" figure was the hotel's lifetime takings.
+ *   * A total computed in the browser is a number the backend never agreed to.
+ *     When the same figure appeared on the dashboard and here, nothing made
+ *     them match, and for a settlement report that is the whole job.
+ *
+ * Now every figure comes from the server's position for the chosen business
+ * date -- the same calculation the night audit snapshots. The screen formats
+ * numbers; it does not compute them.
+ *
+ * "Collected" and "Outstanding" answer different questions on purpose:
+ * collected is cash that moved ON this date, outstanding is what arrived guests
+ * still owe AS OF this date. They are not two views of one number and should
+ * not be expected to reconcile against each other.
+ */
 
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
+const readData = (res) => res?.data ?? null;
 
-const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
-const isPlainDate = (v) => /^\d{4}-\d{2}-\d{2}(T|$)/.test(String(v || ""));
-
-const num = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-
-const numberFmt = new Intl.NumberFormat(undefined, {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const formatAmount = (v) => numberFmt.format(num(v));
-
-const formatDate = (v) => {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-};
-
-const humaniseKey = (k) =>
-  String(k || "")
-    .replace(/_/g, " ")
-    .replace(/([A-Z])/g, " $1")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-
-const isSensitive = (k) => {
-  const key = String(k || "").toLowerCase();
-  return (
-    key === "id" ||
-    key === "token" ||
-    key === "company_id" ||
-    key === "created_by" ||
-    key === "updated_by" ||
-    key === "created_at" ||
-    key === "updated_at" ||
-    key === "status" ||
-    key === "proof_document"
-  );
-};
-
-const displayValue = (v) => {
-  if (v === null || v === undefined || v === "") return "—";
-  if (Array.isArray(v)) return v.length > 0 ? v.join(", ") : "—";
-  if (typeof v === "object") {
-    try { return JSON.stringify(v); } catch { return "—"; }
-  }
-  if (isPlainDate(v)) return formatDate(v);
-  return String(v);
-};
-
-const guestFullName = (r) =>
-  [r?.salutation, r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "—";
-
-// Derive settlement status from balance (client-side).
-// A settlement row is "Settled" when overall_amount was fully paid, "Outstanding"
-// when the guest still owes money, and "Overpaid" when we owe them a refund.
-const settlementBucket = (row) => {
-  const balance = num(row?.balance_amount);
-  if (balance > 0.005) return "outstanding";
-  if (balance < -0.005) return "overpaid";
-  return "settled";
-};
-
-const SETTLEMENT_LABEL = {
-  settled: "Settled",
-  outstanding: "Outstanding",
-  overpaid: "Overpaid",
-};
-
-const SETTLEMENT_CLASS = {
-  settled: "status-checked-in",     // green
-  outstanding: "status-cancelled",  // red
-  overpaid: "status-confirmed",     // blue
-};
-
-// -------------------------------------------------------------------------
-// Toast + Details modal (shared pattern)
-// -------------------------------------------------------------------------
-const Toast = ({ toast, onClose }) => {
-  if (!toast) return null;
-  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
-  return (
-    <div
-      className={`reservation-toast ${toast.kind}`}
-      role={toast.kind === "success" ? "status" : "alert"}
-      aria-live={toast.kind === "success" ? "polite" : "assertive"}
-    >
-      <Icon size={18} aria-hidden="true" />
-      <span>{toast.text}</span>
-      <button
-        type="button"
-        className="reservation-toast-close"
-        onClick={onClose}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-};
-
-const DetailsModal = ({ open, title, entity, onClose }) => {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = original; };
-  }, [open]);
-
-  if (!open || !entity) return null;
-
-  const entries = Object.entries(entity).filter(([k]) => !isSensitive(k));
-
-  return (
-    <div
-      className="modal-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="ss-details-title"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="modal-card large">
-        <div className="modal-header">
-          <h3 id="ss-details-title">{title}</h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label={`Close ${title}`}
-          >
-            <X size={18} aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="modal-body grid view">
-          {entries.map(([key, value]) => (
-            <div className="form-group" key={key}>
-              <label htmlFor={`ss-detail-${key}`}>{humaniseKey(key)}</label>
-              <input
-                id={`ss-detail-${key}`}
-                value={displayValue(value)}
-                readOnly
-                aria-readonly="true"
-              />
-            </div>
-          ))}
-        </div>
-
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn secondary"
-            onClick={onClose}
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Page
-// -------------------------------------------------------------------------
 const SettlementSummary = () => {
-  const navigate = useNavigate();
-  const mounted = useRef(true);
+    const [date, setDate] = useState("");
+    const [viewRow, setViewRow] = useState(null);
 
-  const [data, setData] = useState(null); // null = loading
-  const [error, setError] = useState(null);
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [viewSettlement, setViewSettlement] = useState(null);
-  const [toast, setToast] = useState(null);
+    const { data, loading, error } = useApiResource(
+        () =>
+            APICall.getT(
+                "/hotel/night_audit/preview",
+                date ? { business_date: date } : {},
+            ),
+        {
+            select: readData,
+            initial: null,
+            fallback: "Failed to load settlement data for this night.",
+            deps: [date],
+        },
+    );
 
-  const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
+    const auditedDate = data?.audited_date ?? null;
+    const settlement = data?.settlement ?? {};
+    const revenue = data?.revenue ?? {};
+    const breakdown = Array.isArray(settlement.payment_breakdown)
+        ? settlement.payment_breakdown
+        : [];
+    const unsettled = Array.isArray(data?.lists?.unsettled_folios)
+        ? data.lists.unsettled_folios
+        : [];
+    const occupying = Array.isArray(data?.lists?.occupying) ? data.lists.occupying : [];
 
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
+    // `type: "custom"` is required for `render` to be called at all -- see the
+    // note in RoomBooked.jsx. Arrival/departure are left to the View modal so
+    // the three money columns, which are the point of this report, get the
+    // width they need.
+    const folioColumns = useMemo(
+        () => [
+            { key: "reservation_id", title: "Reservation", align: "left", width: "130px" },
+            { key: "guest_name", title: "Guest", align: "left", width: "150px" },
+            { key: "room_no", title: "Room", align: "center", width: "70px" },
+            { key: "reservation_status", title: "Status", align: "center", width: "110px", type: "badge" },
+            {
+                // "Billed", not "Total Billed": headers are uppercased with
+                // 0.06em letter-spacing, so the label -- not the value -- sets
+                // this column's width, and the longer wording was the last
+                // 42px keeping this table from fitting 1280.
+                key: "overall_amount",
+                title: "Billed",
+                align: "right",
+                width: "115px",
+                type: "custom",
+                render: (row) => formatPrecise(row.overall_amount),
+                exportValue: (row) => row.overall_amount ?? 0,
+            },
+            {
+                key: "paid_amount",
+                title: "Paid",
+                align: "right",
+                width: "105px",
+                type: "custom",
+                render: (row) => formatPrecise(row.paid_amount),
+                exportValue: (row) => row.paid_amount ?? 0,
+            },
+            {
+                key: "balance_amount",
+                title: "Balance",
+                align: "right",
+                width: "105px",
+                type: "custom",
+                render: (row) => (
+                    <span className={row.balance_amount > 0 ? "na-amount--due" : ""}>
+                        {formatPrecise(row.balance_amount)}
+                    </span>
+                ),
+                exportValue: (row) => row.balance_amount ?? 0,
+            },
+            {
+                key: "actions",
+                title: "Actions",
+                align: "center",
+                width: "80px",
+                type: "custom",
+                excludeFromExport: true,
+                render: (row) => (
+                    <RowActions label="settlement" onView={() => setViewRow(row)} />
+                ),
+            },
+        ],
+        [],
+    );
 
-  const load = useCallback(() => {
-    setData(null);
-    setError(null);
-    APICall.getT("/hotel/room_reservation")
-      .then((res) => {
-        if (!mounted.current) return;
-        setData(Array.isArray(res?.data) ? res.data : readList(res));
-      })
-      .catch((err) => {
-        if (!mounted.current) return;
-        setData([]);
-        setError(errMsg(err, "Failed to load settlement data."));
-      });
-  }, []);
+    const paymentColumns = useMemo(
+        () => [
+            { key: "payment_method", title: "Payment Method", align: "left", width: "200px" },
+            {
+                key: "amount",
+                title: "Amount Collected",
+                align: "right",
+                width: "150px",
+                type: "custom",
+                render: (row) => formatPrecise(row.amount),
+                exportValue: (row) => row.amount ?? 0,
+            },
+        ],
+        [],
+    );
 
-  useEffect(() => {
-    mounted.current = true;
-    load();
-    return () => { mounted.current = false; };
-  }, [load, refreshTick]);
+    return (
+        <div className="na-page">
+            <ErrorAlert message={error} />
 
-  const handleBack = () => navigate("/reservation");
-  const handleRefresh = () => setRefreshTick((n) => n + 1);
+            <header className="na-report__header">
+                <div className="na-report__context">
+                    <h2 className="na-report__title">Settlement Summary</h2>
+                    <span className="na-report__subtitle">
+                        Money position for <b>{loading ? "…" : formatDate(auditedDate)}</b>
+                        {data && !data.is_current_business_date
+                            ? " · past night"
+                            : " · current business date"}
+                    </span>
+                </div>
+            </header>
 
-  const tableData = Array.isArray(data) ? data : [];
-  const isLoading = data === null;
+            <section className="na-stats" aria-label="Settlement summary">
+                <div className="na-stat na-stat--success">
+                    <span className="na-stat__label">Collected</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(settlement.payments_collected)}
+                    </strong>
+                    <span className="na-stat__hint">Payments dated this day</span>
+                </div>
+                <div
+                    className={`na-stat ${settlement.outstanding_balance > 0 ? "na-stat--warning" : ""
+                        }`}
+                >
+                    <span className="na-stat__label">Outstanding</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(settlement.outstanding_balance)}
+                    </strong>
+                    <span className="na-stat__hint">
+                        {formatCount(unsettled.length)} unsettled folio
+                        {unsettled.length === 1 ? "" : "s"}
+                    </span>
+                </div>
+                <div className="na-stat na-stat--primary">
+                    <span className="na-stat__label">Gross revenue</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(revenue.gross_revenue)}
+                    </strong>
+                    <span className="na-stat__hint">Accrued for this night</span>
+                </div>
+                <div className="na-stat">
+                    <span className="na-stat__label">Room revenue</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(revenue.room_revenue)}
+                    </strong>
+                </div>
+                <div className="na-stat">
+                    <span className="na-stat__label">Tax</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(revenue.tax_amount)}
+                    </strong>
+                </div>
+                <div className="na-stat">
+                    <span className="na-stat__label">Discount</span>
+                    <strong className="na-stat__value">
+                        {formatCurrency(revenue.discount_amount)}
+                    </strong>
+                </div>
+            </section>
 
-  const totals = useMemo(() => {
-    const t = { total: 0, paid: 0, balance: 0, settled: 0, outstanding: 0, overpaid: 0 };
-    for (const r of tableData) {
-      t.total += num(r.overall_amount ?? r.total_amount);
-      t.paid += num(r.paid_amount);
-      t.balance += num(r.balance_amount);
-      const b = settlementBucket(r);
-      t[b] += 1;
-    }
-    return t;
-  }, [tableData]);
+            <TableFilters
+                isActive={Boolean(date)}
+                onClear={() => setDate("")}
+            >
+                <FilterDate
+                    id="ss-date"
+                    label="Business date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                />
+            </TableFilters>
 
-  const handleExportCsv = () => {
-    if (tableData.length === 0) {
-      showToast("error", "No settlement data to export.");
-      return;
-    }
-    const header = ["Reservation ID", "Guest", "Phone", "Arrival", "Departure", "Total", "Paid", "Balance", "Settlement Status"];
-    const rows = tableData.map((r) => [
-      r.room_reservation_id ?? r.id,
-      guestFullName(r),
-      r.phone_number ?? "",
-      r.arrival_date ?? "",
-      r.departure_date ?? "",
-      num(r.overall_amount ?? r.total_amount).toFixed(2),
-      num(r.paid_amount).toFixed(2),
-      num(r.balance_amount).toFixed(2),
-      SETTLEMENT_LABEL[settlementBucket(r)],
-    ]);
-    // Totals row
-    rows.push([
-      "",
-      "TOTAL",
-      "",
-      "",
-      "",
-      totals.total.toFixed(2),
-      totals.paid.toFixed(2),
-      totals.balance.toFixed(2),
-      `Settled: ${totals.settled} · Outstanding: ${totals.outstanding} · Overpaid: ${totals.overpaid}`,
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((cell) => {
-        const s = String(cell ?? "");
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      }).join(","))
-      .join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `settlement-summary-${isoDay(new Date().toISOString())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+            <Tabs variant="default">
+                <Tab label={`Unsettled (${unsettled.length})`}>
+                    <p className="na-list__description">
+                        Guests who have arrived on or before this date and still owe money.
+                        The night audit records these balances; it does not collect them.
+                    </p>
+                    <TableTemplate
+                        title={`Unsettled Folios · ${formatDate(auditedDate)}`}
+                        loading={loading}
+                        emptyMessage="Every arrived reservation is settled for this night."
+                        columns={folioColumns}
+                        data={unsettled}
+                        variant="striped"
+                        pagination
+                        pageSize={10}
+                        searchable
+                        exportable
+                    />
+                </Tab>
 
-  const columns = [
-    { key: "room_reservation_id", title: "Reservation ID", align: "center", width: "160px" },
-    {
-      key: "first_name",
-      title: "Guest",
-      render: (row) => guestFullName(row),
-    },
-    { key: "phone_number", title: "Phone", align: "center" },
-    {
-      key: "arrival_date",
-      title: "Arrival",
-      align: "center",
-      render: (row) => formatDate(row.arrival_date),
-    },
-    {
-      key: "departure_date",
-      title: "Departure",
-      align: "center",
-      render: (row) => formatDate(row.departure_date),
-    },
-    {
-      key: "overall_amount",
-      title: "Total",
-      align: "right",
-      render: (row) => formatAmount(row.overall_amount ?? row.total_amount),
-    },
-    {
-      key: "paid_amount",
-      title: "Paid",
-      align: "right",
-      render: (row) => formatAmount(row.paid_amount),
-    },
-    {
-      key: "balance_amount",
-      title: "Balance",
-      align: "right",
-      type: "custom",
-      render: (row) => {
-        const bucket = settlementBucket(row);
-        const cls =
-          bucket === "outstanding" ? "ss-balance-outstanding"
-          : bucket === "overpaid" ? "ss-balance-overpaid"
-          : "ss-balance-settled";
-        return <span className={cls}>{formatAmount(row.balance_amount)}</span>;
-      },
-    },
-    {
-      key: "settlement_status",
-      title: "Settlement Status",
-      align: "center",
-      type: "custom",
-      render: (row) => {
-        const bucket = settlementBucket(row);
-        return (
-          <span className={`rmv-status-badge ${SETTLEMENT_CLASS[bucket]}`}>
-            {SETTLEMENT_LABEL[bucket]}
-          </span>
-        );
-      },
-    },
-    {
-      key: "actions",
-      title: "Action",
-      align: "center",
-      type: "custom",
-      render: (row) => (
-        <button
-          type="button"
-          className="table-action-btn view"
-          title="View settlement"
-          aria-label={`View settlement for ${row.room_reservation_id || row.id}`}
-          onClick={() => setViewSettlement(row)}
-        >
-          <Eye size={16} aria-hidden="true" />
-        </button>
-      ),
-    },
-  ];
+                <Tab label={`Payments (${breakdown.length})`}>
+                    <p className="na-list__description">
+                        Cash that moved on this date, grouped by the method it was taken on.
+                        Read from the payment history, so a guest who paid in two instalments
+                        on different days appears against each day separately.
+                    </p>
+                    <TableTemplate
+                        title={`Payments Collected · ${formatDate(auditedDate)}`}
+                        loading={loading}
+                        emptyMessage="No payments were recorded on this date."
+                        columns={paymentColumns}
+                        data={breakdown}
+                        variant="striped"
+                        pagination={false}
+                        searchable={false}
+                        exportable
+                    />
+                </Tab>
 
-  return (
-    <div className="userreserved-wrapper">
-      <div className="ur-toolbar">
-        <button
-          type="button"
-          className="rmv-back-btn"
-          onClick={handleBack}
-          aria-label="Back to reservations"
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-          <span>Back</span>
-        </button>
-        <div className="ur-header">
-          <span className="rmv-eyebrow">Night Audit</span>
-          <h1 className="rmv-title">Settlement Summary</h1>
+                <Tab label={`All Folios (${occupying.length})`}>
+                    <p className="na-list__description">
+                        Every reservation holding a room on this night, settled or not.
+                    </p>
+                    <TableTemplate
+                        title={`Folios · ${formatDate(auditedDate)}`}
+                        loading={loading}
+                        emptyMessage="No rooms were held on this night."
+                        columns={folioColumns}
+                        data={occupying}
+                        variant="striped"
+                        pagination
+                        pageSize={10}
+                        searchable
+                        exportable
+                    />
+                </Tab>
+            </Tabs>
+
+            <Modal
+                isOpen={!!viewRow}
+                title="Settlement Details"
+                onClose={() => setViewRow(null)}
+                size="large"
+                viewMode
+                showFooter
+                actions={[
+                    { label: "Close", variant: "secondary", onClick: () => setViewRow(null) },
+                ]}
+            >
+                {viewRow && (
+                    <>
+                        <ViewSection title="Guest & Stay">
+                            <DetailList columns={3}>
+                                <DetailItem label="Reservation" value={viewRow.reservation_id} />
+                                <DetailItem label="Guest" value={viewRow.guest_name} />
+                                <DetailItem label="Phone" value={viewRow.phone_number} />
+                                <DetailItem label="Room" value={viewRow.room_no} />
+                                <DetailItem label="Arrival" value={formatDate(viewRow.arrival_date)} />
+                                <DetailItem
+                                    label="Departure"
+                                    value={formatDate(viewRow.departure_date)}
+                                />
+                                <DetailItem label="Nights" value={viewRow.no_of_nights} />
+                                <DetailItem label="Status" value={viewRow.reservation_status} />
+                            </DetailList>
+                        </ViewSection>
+
+                        <ViewSection title="Folio (whole stay)">
+                            <DetailList columns={3}>
+                                <DetailItem
+                                    label="Total billed"
+                                    value={formatPrecise(viewRow.overall_amount)}
+                                />
+                                <DetailItem label="Paid" value={formatPrecise(viewRow.paid_amount)} />
+                                <DetailItem
+                                    label="Balance"
+                                    value={formatPrecise(viewRow.balance_amount)}
+                                />
+                            </DetailList>
+                        </ViewSection>
+
+                        <ViewSection title={`Accrued for ${formatDate(auditedDate)}`}>
+                            <DetailList columns={4}>
+                                <DetailItem
+                                    label="Room revenue"
+                                    value={formatPrecise(viewRow.night_room_revenue)}
+                                />
+                                <DetailItem label="Tax" value={formatPrecise(viewRow.night_tax)} />
+                                <DetailItem
+                                    label="Discount"
+                                    value={formatPrecise(viewRow.night_discount)}
+                                />
+                                <DetailItem
+                                    label="Extra charges"
+                                    value={formatPrecise(viewRow.night_extra_charges)}
+                                />
+                            </DetailList>
+                        </ViewSection>
+                    </>
+                )}
+            </Modal>
         </div>
-        <div className="rmv-toolbar-actions">
-          <button
-            type="button"
-            className="rmv-toolbar-btn"
-            onClick={handleRefresh}
-            aria-label="Refresh"
-            disabled={isLoading}
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="rmv-alert" role="alert">
-          <span>{error}</span>
-          <button type="button" className="rmv-alert-action" onClick={handleRefresh}>Retry</button>
-        </div>
-      )}
-
-      {!isLoading && !error && tableData.length > 0 && (
-        <div className="ss-totals" role="status" aria-live="polite">
-          <div>
-            <span>Bookings</span>
-            <b>{tableData.length}</b>
-          </div>
-          <div>
-            <span>Total billed</span>
-            <b>{formatAmount(totals.total)}</b>
-          </div>
-          <div>
-            <span>Total paid</span>
-            <b>{formatAmount(totals.paid)}</b>
-          </div>
-          <div>
-            <span>Outstanding</span>
-            <b className={totals.balance > 0.005 ? "ss-balance-outstanding" : ""}>
-              {formatAmount(totals.balance)}
-            </b>
-          </div>
-          <div>
-            <span>Settled / Outstanding / Overpaid</span>
-            <b>{totals.settled} / {totals.outstanding} / {totals.overpaid}</b>
-          </div>
-        </div>
-      )}
-
-      {isLoading && (
-        <div className="rmv-loading" role="status" aria-live="polite">
-          Loading settlement data…
-        </div>
-      )}
-
-      {!isLoading && (
-        <TableTemplate
-          title="Settlement Summary"
-          variant="striped"
-          pagination
-          pageSize={10}
-          searchable
-          exportable
-          hasActionButton
-          actionButton={{
-            icon: <Download size={18} />,
-            label: "Export CSV",
-            onClick: handleExportCsv,
-            size: "small",
-            variant: "outline",
-          }}
-          columns={columns}
-          data={tableData}
-        />
-      )}
-
-      {!isLoading && !error && tableData.length === 0 && (
-        <div className="rmv-empty">No settlement data yet.</div>
-      )}
-
-      <DetailsModal
-        open={Boolean(viewSettlement)}
-        title="Settlement Details"
-        entity={viewSettlement}
-        onClose={() => setViewSettlement(null)}
-      />
-
-      <Toast toast={toast} onClose={() => setToast(null)} />
-    </div>
-  );
+    );
 };
 
 export default SettlementSummary;

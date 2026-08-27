@@ -1,195 +1,59 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import Modal from "../../stories/Modal";
+import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
-import IconButton from "../../stories/IconButton";
-import {
-  ArrowLeft,
-  RefreshCw,
-  X,
-  Pencil,
-  Trash2,
-  Eye,
-  Download,
-  AlertCircle,
-  CheckCircle,
-} from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
-import "../Reservation/Reservation.css";
-import "./HRM.css";
-
-const readList = (res) =>
-  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
-
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
-
-const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
-
-const Toast = ({ toast, onClose }) => {
-  if (!toast) return null;
-  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
-  return (
-    <div
-      className={`reservation-toast ${toast.kind}`}
-      role={toast.kind === "success" ? "status" : "alert"}
-      aria-live={toast.kind === "success" ? "polite" : "assertive"}
-    >
-      <Icon size={18} aria-hidden="true" />
-      <span>{toast.text}</span>
-      <button
-        type="button"
-        className="reservation-toast-close"
-        onClick={onClose}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-};
-
-const ConfirmDialog = ({
-  open,
-  title,
-  body,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
-  onConfirm,
-  onCancel,
-  loading = false,
-}) => {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !loading) onCancel(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onCancel, loading]);
-
-  if (!open) return null;
-  return (
-    <div
-      className="modal-container"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="desig-confirm-title"
-      onClick={(e) => { if (e.target === e.currentTarget && !loading) onCancel(); }}
-    >
-      <div className="modal-content confirm-modal">
-        <div className="modal-header">
-          <h2 className="modal-title" id="desig-confirm-title">{title}</h2>
-          <button
-            type="button"
-            className="modal-close-btn"
-            onClick={onCancel}
-            aria-label="Close confirmation"
-            disabled={loading}
-          >
-            <X size={22} />
-          </button>
-        </div>
-        <div className="modal-body"><p>{body}</p></div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className="btn btn-danger"
-            onClick={onConfirm}
-            disabled={loading}
-            aria-busy={loading}
-          >
-            {loading ? "Working…" : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const initialForm = { designationName: "" };
+import RowActions from "../../stories/RowActions";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ErrorAlert from "../../stories/ErrorAlert";
+import Toast from "../../stories/Toast";
+import APICall from "../../APICalls/APICalls";
+import { readList } from "../../functions/apiHelpers";
+import { useApiResource } from "../../hooks/useApiResource";
+import { useToast } from "../../hooks/useToast";
 
 const Designation = () => {
-  const navigate = useNavigate();
-  const mounted = useRef(true);
+  const { data, loading, error, reload } = useApiResource(
+    () => APICall.getT("/user/designations"),
+    { select: readList, fallback: "Failed to load designations." },
+  );
 
-  const [data, setData] = useState(null); // null = loading
-  const [error, setError] = useState(null);
-  const [refreshTick, setRefreshTick] = useState(0);
+  const { toast, showToast } = useToast();
 
+  const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
+
+  const initialForm = { name: "" };
   const [formData, setFormData] = useState(initialForm);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState(null);
 
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  /* ================= API ================= */
 
-  const [toast, setToast] = useState(null);
-  const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
+  const createDesignation = async () => {
+    await APICall.postT("/user/designations", { designation_name: formData.name.trim() });
+    showToast("Designation created", "success");
+    reload();
+  };
 
-  const load = useCallback(() => {
-    setData(null);
-    setError(null);
-    APICall.getT("/user/designations")
-      .then((res) => {
-        if (!mounted.current) return;
-        setData(Array.isArray(res?.data) ? res.data : readList(res));
-      })
-      .catch((err) => {
-        if (!mounted.current) return;
-        setData([]);
-        setError(errMsg(err, "Failed to load designations."));
-      });
-  }, []);
+  const updateDesignation = async () => {
+    await APICall.putT("/user/designations", { id: editId, designation_name: formData.name.trim() });
+    showToast("Designation updated", "update");
+    reload();
+  };
 
-  useEffect(() => {
-    mounted.current = true;
-    load();
-    return () => { mounted.current = false; };
-  }, [load, refreshTick]);
-
-  // Escape closes the CRUD modal.
-  useEffect(() => {
-    if (!showModal && !showViewModal) return undefined;
-    const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      if (showModal && !saving) closeModal();
-      else if (showViewModal) closeViewModal();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showModal, showViewModal, saving]);
-
-  useEffect(() => {
-    const anyOpen = showModal || showViewModal || Boolean(pendingDelete);
-    if (!anyOpen) return undefined;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = original; };
-  }, [showModal, showViewModal, pendingDelete]);
+  /* ================= HANDLERS ================= */
 
   const openAddModal = () => {
-    setEditId(null);
     setFormData(initialForm);
-    setFormError(null);
+    setEditId(null);
     setShowModal(true);
   };
 
-  const openViewModal = (row) => {
-    setViewData(row);
-    setShowViewModal(true);
+  const handleEdit = (row) => {
+    setFormData({ name: row.designation_name ?? "" });
+    setEditId(row.id);
+    setShowModal(true);
   };
 
   const closeModal = () => {
@@ -197,302 +61,155 @@ const Designation = () => {
     setShowModal(false);
     setEditId(null);
     setFormData(initialForm);
-    setFormError(null);
-  };
-
-  const closeViewModal = () => {
-    setShowViewModal(false);
-    setViewData(null);
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const validate = () => {
-    if (!formData.designationName?.trim()) return "Designation name is required.";
-    if (formData.designationName.trim().length > 100) return "Designation name must be under 100 characters.";
-    return null;
   };
 
   const handleSave = async () => {
-    const v = validate();
-    if (v) {
-      setFormError(v);
-      showToast("error", v);
+    // The guard AND the disabled Submit are both needed. This screen used to
+    // swap only the button LABEL on `saving` and leave it enabled, so a double
+    // click posted twice and created a duplicate designation.
+    if (saving) return;
+    const name = formData.name.trim();
+    if (!name) {
+      showToast("Designation Name is required", "error");
       return;
     }
-    setFormError(null);
+    if (name.length > 100) {
+      showToast("Designation Name must be under 100 characters", "error");
+      return;
+    }
+
     setSaving(true);
     try {
       if (editId) {
-        await APICall.putT("/user/designations", {
-          id: editId,
-          designation_name: formData.designationName.trim(),
-        });
-        showToast("success", "Designation updated.");
+        await updateDesignation();
       } else {
-        await APICall.postT("/user/designations", {
-          designation_name: formData.designationName.trim(),
-        });
-        showToast("success", "Designation created.");
+        await createDesignation();
       }
       closeModal();
-      load();
     } catch (err) {
-      const m = errMsg(err, editId ? "Failed to update designation." : "Failed to create designation.");
-      setFormError(m);
-      showToast("error", m);
+      showToast(err?.message || "Save failed", "error");
     } finally {
-      if (mounted.current) setSaving(false);
+      setSaving(false);
     }
   };
-
-  const handleEdit = (row) => {
-    setEditId(row.id);
-    setFormData({ designationName: row.designation_name || "" });
-    setFormError(null);
-    setShowModal(true);
-  };
-
-  const handleDeleteClick = (row) => setPendingDelete(row);
 
   const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    setDeleteLoading(true);
+    const id = deleteId;
+    setDeleteId(null);
     try {
-      await APICall.deleteT(`/user/designations/${pendingDelete.id}`);
-      showToast("success", "Designation deleted.");
-      setPendingDelete(null);
-      load();
+      await APICall.deleteT(`/user/designations/${id}`);
+      showToast("Designation deleted", "delete");
+      reload();
     } catch (err) {
-      showToast("error", errMsg(err, "Failed to delete designation."));
-    } finally {
-      if (mounted.current) setDeleteLoading(false);
+      showToast(err?.message || "Delete failed", "error");
     }
   };
 
-  const handleBack = () => navigate("/dashboard");
-  const handleRefresh = () => setRefreshTick((n) => n + 1);
-
-  const handleExportCsv = () => {
-    const list = Array.isArray(data) ? data : [];
-    if (list.length === 0) {
-      showToast("error", "No designations to export.");
-      return;
-    }
-    const header = ["Designation Name"];
-    const rows = list.map((r) => [r.designation_name ?? ""]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((cell) => {
-        const s = String(cell ?? "");
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      }).join(","))
-      .join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `designations-${isoDay(new Date().toISOString())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const isLoading = data === null;
-  const tableData = Array.isArray(data) ? data : [];
-
-  const columns = [
-    { key: "designation_name", title: "Designation Name", align: "center" },
-    {
-      key: "actions",
-      title: "Actions",
-      align: "center",
-      type: "custom",
-      render: (row) => (
-        <div className="table-actions">
-          <IconButton
-            variant="ghost"
-            size="small"
-            icon={<Eye size={16} />}
-            onClick={() => openViewModal(row)}
-            ariaLabel={`View designation ${row.designation_name || row.id}`}
-          />
-          <IconButton
-            variant="subtle"
-            size="small"
-            icon={<Pencil size={16} />}
-            onClick={() => handleEdit(row)}
-            ariaLabel={`Edit designation ${row.designation_name || row.id}`}
-          />
-          <IconButton
-            variant="danger-ghost"
-            size="small"
-            icon={<Trash2 size={16} />}
-            onClick={() => handleDeleteClick(row)}
-            ariaLabel={`Delete designation ${row.designation_name || row.id}`}
-          />
-        </div>
-      ),
-    },
-  ];
+  /* ================= UI ================= */
 
   return (
-    <div className="desig-page">
-      <div className="desig-toolbar">
-        <button
-          type="button"
-          className="rmv-back-btn"
-          onClick={handleBack}
-          aria-label="Back to dashboard"
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-          <span>Back</span>
-        </button>
-        <div className="desig-header">
-          <span className="rmv-eyebrow">HRM</span>
-          <h1 className="rmv-title">Designations</h1>
-        </div>
-        <div className="rmv-toolbar-actions">
-          <button
-            type="button"
-            className="rmv-toolbar-btn"
-            onClick={handleRefresh}
-            aria-label="Refresh"
-            disabled={isLoading}
-          >
-            <RefreshCw size={16} aria-hidden="true" />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+    <>
+      <ErrorAlert message={error} />
 
-      {error && (
-        <div className="reservation-alert" role="alert">
-          <span>{error}</span>
-          <button
-            type="button"
-            className="reservation-alert-action"
-            onClick={handleRefresh}
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {isLoading && (
-        <div className="reservation-loading" role="status" aria-live="polite">
-          Loading designations…
-        </div>
-      )}
-
-      {!isLoading && (
-        <TableTemplate
-          title="Designation List"
-          variant="striped"
-          pagination
-          pageSize={10}
-          searchable
-          exportable
-          hasActionButton
-          actionButton={{
-            label: "Add Designation",
-            onClick: openAddModal,
-            size: "medium",
-            variant: "primary",
-          }}
-          columns={columns}
-          data={tableData}
-        />
-      )}
-
-      {!isLoading && !error && tableData.length === 0 && (
-        <div className="reservation-empty">
-          No designations yet. Use "Add Designation" to create the first one.
-        </div>
-      )}
-
-      {!isLoading && tableData.length > 0 && (
-        <div className="desig-export-bar">
-          <button
-            type="button"
-            className="rmv-toolbar-btn"
-            onClick={handleExportCsv}
-            aria-label="Export designations as CSV"
-          >
-            <Download size={16} aria-hidden="true" />
-            <span>Export CSV</span>
-          </button>
-        </div>
-      )}
-
-      {/* View modal */}
-      {showViewModal && viewData && (
-        <Modal
-          isOpen={showViewModal}
-          title={`View Designation — ${viewData.designation_name || `#${viewData.id}`}`}
-          onClose={closeViewModal}
-          showFooter
-          size="small"
-          bodyLayout="single"
-          viewMode
-          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
-        >
-          <Input label="Designation Name" value={viewData.designation_name || "—"} readOnly disabled />
-        </Modal>
-      )}
-
-      {/* Add / Edit modal */}
-      {showModal && (
-        <Modal
-          isOpen={showModal}
-          title={editId ? "Edit Designation" : "Add Designation"}
-          onClose={closeModal}
-          showFooter
-          size="small"
-          bodyLayout="single"
-          actions={[
-            { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
-            { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving, autoFocus: true },
-          ]}
-        >
-          {formError && (
-            <div className="reservation-alert inline" role="alert">
-              {formError}
-            </div>
-          )}
-
-          <Input
-            label="Designation Name"
-            required
-            type="text"
-            name="designationName"
-            value={formData.designationName}
-            onChange={handleChange}
-            disabled={saving}
-            maxLength={100}
-          />
-        </Modal>
-      )}
-
-      <ConfirmDialog
-        open={Boolean(pendingDelete)}
-        title="Delete designation"
-        body={
-          pendingDelete
-            ? `Delete designation "${pendingDelete.designation_name || pendingDelete.id}"? Employees assigned to this designation will need to be reassigned. This action cannot be undone.`
-            : ""
-        }
-        confirmLabel="Delete"
-        onConfirm={confirmDelete}
-        onCancel={() => setPendingDelete(null)}
-        loading={deleteLoading}
+      <TableTemplate
+        title="Designations"
+        loading={loading}
+        emptyMessage="No designations yet. Add the first one to get started."
+        hasActionButton
+        searchable
+        pagination
+        exportable
+        actionButton={{
+          label: "Add Designation",
+          onClick: openAddModal,
+          size: "medium",
+          variant: "primary",
+        }}
+        columns={[
+          { key: "designation_name", title: "Designation Name", align: "left" },
+          {
+            key: "actions",
+            title: "Actions",
+            align: "center",
+            type: "custom",
+            excludeFromExport: true,
+            render: (row) => (
+              <RowActions
+                label="designation"
+                onView={() => setViewData(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteId(row.id)}
+              />
+            ),
+          },
+        ]}
+        data={data}
       />
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
-    </div>
+      {/* ================= VIEW ================= */}
+      <Modal
+        isOpen={!!viewData}
+        title="Designation Details"
+        onClose={() => setViewData(null)}
+        size="small"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+        ]}
+      >
+        <DetailList columns={1}>
+          <DetailItem label="Designation Name" value={viewData?.designation_name} />
+        </DetailList>
+      </Modal>
+
+      {/* ================= ADD / EDIT ================= */}
+      <Modal
+        isOpen={showModal}
+        title={editId ? "Edit Designation" : "Add Designation"}
+        onClose={closeModal}
+        showFooter
+        size="small"
+        bodyLayout="single"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal, disabled: saving },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <Input
+          label="Designation Name"
+          required
+          type="text"
+          name="name"
+          placeholder="e.g. Front Desk Executive"
+          maxLength={100}
+          value={formData.name}
+          onChange={(e) => setFormData({ name: e.target.value })}
+          disabled={saving}
+        />
+      </Modal>
+
+      {/* ================= DELETE ================= */}
+      <ConfirmModal
+        isOpen={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={confirmDelete}
+        title="Delete Designation"
+        confirmText="Delete"
+        size="small"
+        destructive
+      >
+        Are you sure you want to delete this designation? Employees
+        assigned to it will need to be reassigned. This action cannot be undone.
+      </ConfirmModal>
+
+      <Toast {...toast} />
+    </>
   );
 };
 

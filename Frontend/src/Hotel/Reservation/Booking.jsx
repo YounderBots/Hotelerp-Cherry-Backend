@@ -170,7 +170,12 @@ const Booking = () => {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const loadBookings = useCallback(async () => {
+  // `showLoading` is false on mount, where `data` already starts as null, and
+  // true for a user-triggered refresh, where the list has to visibly go back
+  // to loading. Splitting the two keeps the mount path free of a synchronous
+  // setState inside an effect (react-hooks/set-state-in-effect).
+  const loadBookings = useCallback(async (showLoading = true) => {
+    if (showLoading) setData(null);
     try {
       const res = await APICall.getT("/hotel/room_booking");
       if (!mounted.current) return;
@@ -185,8 +190,7 @@ const Booking = () => {
 
   useEffect(() => {
     mounted.current = true;
-    setData(null);
-    loadBookings();
+    loadBookings(false);
 
     APICall.getT("/masterdata/room_types")
       .then((res) => {

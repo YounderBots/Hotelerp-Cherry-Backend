@@ -26,29 +26,37 @@ const formatDate = (v) => {
 const guestName = (r) =>
   [r?.salutation, r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "Guest";
 
-// Bucket by the real reservation_status master data vocabulary
-// (Booked / Checked-In / Checked-Out / Cancelled / No Show).
-// Also tolerates the legacy Confirmed/Arrived/Departures/Pending labels.
+// Bucket by the property's real status vocabulary, which is Master Data:
+// Confirmed / Checked-In / Checked-Out / Cancelled / No-Show / Pending /
+// On Hold. The previous version bucketed on "Booked", a label this system has
+// never stored, and labelled the upcoming-arrivals tab with it.
+//
+// Comparison folds case, spaces and hyphens so a property that retypes
+// "No Show" or "NO-SHOW" still lands in the right bucket -- the label is free
+// text an operator can edit under Master Data.
+const fold = (v) => String(v || "").toLowerCase().replace(/[^a-z]/g, "");
+
 const bucketOf = (r) => {
-  const s = String(r?.reservation_status || "").toLowerCase();
-  if (s === "checked-in" || s === "arrived") return "checked_in";
-  if (s === "checked-out" || s === "departures") return "checked_out";
+  const s = fold(r?.reservation_status);
+  if (s === "checkedin" || s === "arrived") return "checked_in";
+  if (s === "checkedout" || s === "departures") return "checked_out";
   if (s === "cancelled" || s === "canceled") return "cancelled";
-  if (s === "no show" || s === "no-show") return "no_show";
-  if (s === "booked" || s === "confirmed" || s === "pending") return "booked";
-  return "booked";
+  if (s === "noshow") return "no_show";
+  // Everything still ahead of arrival -- Confirmed, Pending, On Hold -- is an
+  // upcoming stay, which is what this tab is for.
+  return "upcoming";
 };
 
 const BUCKET_LABEL = {
-  booked: "Booked",
+  upcoming: "Upcoming",
   checked_in: "Checked-In",
   checked_out: "Checked-Out",
   cancelled: "Cancelled",
-  no_show: "No Show",
+  no_show: "No-Show",
 };
 
 const BUCKET_CLASS = {
-  booked: "status-pending",
+  upcoming: "status-pending",
   checked_in: "status-checked-in",
   checked_out: "status-checked-out",
   cancelled: "status-cancelled",
@@ -64,8 +72,12 @@ const ReservationView = () => {
   const [refreshTick, setRefreshTick] = useState(0);
   const [activeTab, setActiveTab] = useState("all");
 
-  const load = useCallback(() => {
-    setReservations(null);
+  // `showLoading` is false on mount, where `reservations` already starts null,
+  // and true for the Refresh button, where the list must visibly reset. That
+  // keeps the mount effect free of a synchronous setState
+  // (react-hooks/set-state-in-effect).
+  const load = useCallback((showLoading = true) => {
+    if (showLoading) setReservations(null);
     setError(null);
     APICall.getT("/hotel/room_reservation")
       .then((res) => {
@@ -81,13 +93,13 @@ const ReservationView = () => {
 
   useEffect(() => {
     mounted.current = true;
-    load();
+    load(false);
     return () => { mounted.current = false; };
   }, [load, refreshTick]);
 
   const counts = useMemo(() => {
     const list = reservations || [];
-    const c = { all: list.length, booked: 0, checked_in: 0, checked_out: 0, cancelled: 0, no_show: 0 };
+    const c = { all: list.length, upcoming: 0, checked_in: 0, checked_out: 0, cancelled: 0, no_show: 0 };
     for (const r of list) {
       const b = bucketOf(r);
       c[b] = (c[b] || 0) + 1;
@@ -148,11 +160,11 @@ const ReservationView = () => {
       <div className="rvw-tabs" role="tablist" aria-label="Filter reservations by status">
         {[
           { key: "all", label: "All" },
-          { key: "booked", label: "Booked" },
+          { key: "upcoming", label: "Upcoming" },
           { key: "checked_in", label: "Checked-In" },
           { key: "checked_out", label: "Checked-Out" },
           { key: "cancelled", label: "Cancelled" },
-          { key: "no_show", label: "No Show" },
+          { key: "no_show", label: "No-Show" },
         ].map((tab) => {
           const active = activeTab === tab.key;
           return (

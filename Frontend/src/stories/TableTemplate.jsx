@@ -38,13 +38,46 @@ const BADGE_CONFIGS = {
     'not assigne': { label: 'Unassigned', class: 'badge-neutral' },
     'not assigned': { label: 'Unassigned', class: 'badge-neutral' },
     reserved: { label: 'Reserved', class: 'badge-info' },
+    // Staff shift lifecycle (restaurant_staff_assignment.shift_status /
+    // bar_staff_assignment.shift_status), plus the synthetic "Not Scheduled"
+    // the roster screens show for an employee with no assignment today.
+    scheduled: { label: 'Scheduled', class: 'badge-info' },
+    'on shift': { label: 'On Shift', class: 'badge-success' },
+    'on break': { label: 'On Break', class: 'badge-warning' },
+    closed: { label: 'Closed', class: 'badge-neutral' },
+    'not scheduled': { label: 'Not Scheduled', class: 'badge-neutral' },
     unblocking: { label: 'Unblocked', class: 'badge-neutral' },
     blocking: { label: 'Blocked', class: 'badge-error' },
+    // housekeeper_task.task_status stores the hyphenated "In-Progress";
+    // hotel.inquiry.inquiry_status stores the spaced "In Progress". Both
+    // spellings are listed so either renders as the same amber badge rather
+    // than falling through to a grey one with the raw string as its label.
+    // 'completed' above is the other half of the enquiry pair.
+    'in-progress': { label: 'In Progress', class: 'badge-warning' },
+    'in progress': { label: 'In Progress', class: 'badge-warning' },
     available: { label: 'Available', class: 'badge-success' },
     occupied: { label: 'Occupied', class: 'badge-warning' },
     maintenance: { label: 'Maintenance', class: 'badge-error' },
+    // Reservation lifecycle, exactly as masterdata.reservation_status spells
+    // it (Confirmed / Checked-In / Checked-Out / Cancelled / No-Show /
+    // Pending / On Hold). 'pending' and 'cancelled' above are shared with
+    // other modules. Both hyphenations of no-show are listed because the
+    // label is free text a property can retype.
+    confirmed: { label: 'Confirmed', class: 'badge-success' },
+    'checked-in': { label: 'Checked-In', class: 'badge-info' },
+    'checked-out': { label: 'Checked-Out', class: 'badge-neutral' },
+    'no-show': { label: 'No-Show', class: 'badge-warning' },
+    'no show': { label: 'No-Show', class: 'badge-warning' },
+    'on hold': { label: 'On Hold', class: 'badge-warning' },
+    // Derived payment state on a reservation (API `payment_state`).
+    unpaid: { label: 'Unpaid', class: 'badge-error' },
+    'partly paid': { label: 'Partly Paid', class: 'badge-warning' },
+    paid: { label: 'Paid', class: 'badge-success' },
   },
   priority: {
+    // hsk_room_incident.severity uses this vocabulary, so Critical sits above
+    // High rather than sharing its badge.
+    critical: { label: 'Critical', class: 'badge-error' },
     high: { label: 'High', class: 'badge-error' },
     medium: { label: 'Medium', class: 'badge-warning' },
     low: { label: 'Low', class: 'badge-info' },
@@ -89,6 +122,10 @@ const TableToolbar = ({
   // buttons could not be hidden at all. They are honoured here.
   searchable = true,
   exportable = true,
+  // Business filters (status, date range, ...) supplied by the screen. Kept as
+  // a slot rather than a prop schema: what is worth filtering is a per-screen
+  // decision, while where the row sits and how it collapses is not.
+  filters = null,
 }) => {
   return (
     <div className="table-toolbar">
@@ -103,6 +140,7 @@ const TableToolbar = ({
           />
         )}
       </div>
+      {filters && <div className="toolbar-filters">{filters}</div>}
       <div className="toolbar-right">
         <div className="toolbar-actions">
           {exportable && (
@@ -234,6 +272,7 @@ const TableTemplate = ({
   emptyMessage = 'No data available',
   searchable = true,
   exportable = true,
+  filters = null,
   className = '',
   onRowClick,
   // New props for action button variant
@@ -601,6 +640,7 @@ const TableTemplate = ({
           searchPlaceholder={`Search ${filteredData.length} records...`}
           searchable={searchable}
           exportable={exportable}
+          filters={filters}
         />
       </div>
 

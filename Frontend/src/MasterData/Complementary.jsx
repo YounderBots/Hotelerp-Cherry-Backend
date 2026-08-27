@@ -46,13 +46,13 @@ const Complementary = () => {
   });
 
   const createComplementary = async () => {
-    await APICall.postT(ENDPOINT, payload());
+    await APICall.postT("/masterdata/complementry", payload());
     showToast("Complementary item added successfully", "success");
     reload();
   };
 
   const updateComplementary = async () => {
-    await APICall.putT(ENDPOINT, { id: editId, ...payload() });
+    await APICall.putT("/masterdata/complementry", { id: editId, ...payload() });
     showToast("Complementary item updated successfully", "update");
     reload();
   };
@@ -106,7 +106,10 @@ const Complementary = () => {
     const id = deleteId;
     setDeleteId(null);
     try {
-      await APICall.deleteT(`${ENDPOINT}/${id}`);
+      // Literal, not `${ENDPOINT}`: build_rbac_map.py reads these call
+      // sites to derive the gateway permission map, and cannot resolve a
+      // variable — this row had dropped out of it.
+      await APICall.deleteT(`/masterdata/complementry/${id}`);
       showToast("Complementary item deleted successfully", "delete");
       // This reload was missing: the row stayed on screen after a successful
       // delete until the page was reloaded by hand.

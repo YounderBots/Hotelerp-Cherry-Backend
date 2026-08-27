@@ -1,315 +1,37 @@
-import React, { useState } from "react";
-import TableTemplate from "../../stories/TableTemplate";
-import Modal from "../../stories/Modal";
-import Input from "../../stories/Form/Input";
-import Select from "../../stories/Form/Select";
-import IconButton from "../../stories/IconButton";
-import ErrorAlert from "../../stories/ErrorAlert";
-import { Eye, Pencil, LogIn, LogOut } from "lucide-react";
+import React from "react";
+import StaffShiftPlanning from "./staff/StaffShiftPlanning";
 import APICall from "../../APICalls/APICalls";
-import { errMsg, readList } from "../../functions/apiHelpers";
-import { useApiResources } from "../../hooks/useApiResource";
-const todayIso = () => new Date().toISOString().slice(0, 10);
+import { readList } from "../../functions/apiHelpers";
 
-// Bar shift scheduling + clock in/out — lives under HRM (not Bar) since
-// staffing is an HR concern; the bar module only contributes the day-to-day
-// shift/floor/cash-float data via /bar/staff_assignment.
-const BarShiftPlanning = () => {
-  const {
-    data: [shifts, employees, floors],
-    loading,
-    error,
-    reload: load,
-  } = useApiResources([
-    { fetch: () => APICall.getT("/bar/staff_assignment"), select: readList,
-      fallback: "Failed to load shifts." },
-    { fetch: () => APICall.getT("/user/users"), select: readList },
-    { fetch: () => APICall.getT("/bar/floor"), select: readList },
-  ]);
-
-  const [showShiftModal, setShowShiftModal] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
-  const [showClockModal, setShowClockModal] = useState(null); // "in" | "out" | null
-  const [editId, setEditId] = useState(null);
-  const [selectedShift, setSelectedShift] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState(null);
-  const [clockAmount, setClockAmount] = useState("");
-
-  const initialForm = { employee_id: "", role: "Bartender", shift_date: todayIso(), shift_start: "09:00", shift_end: "17:00", floor_id: "" };
-  const [formData, setFormData] = useState(initialForm);
-
-  const floorName = (id) => floors.find((f) => f.id === id)?.floor_name || "-";
-
-  const openAddModal = () => {
-    setEditId(null);
-    setFormData(initialForm);
-    setFormError(null);
-    setShowShiftModal(true);
-  };
-  const openEditModal = (row) => {
-    setEditId(row.id);
-    setFormError(null);
-    setFormData({
-      employee_id: row.employee_id,
-      role: row.role,
-      shift_date: row.shift_date,
-      shift_start: row.shift_start,
-      shift_end: row.shift_end || "",
-      floor_id: row.floor_id ?? "",
-    });
-    setShowShiftModal(true);
-  };
-  const closeShiftModal = () => {
-    if (saving) return;
-    setShowShiftModal(false);
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((p) => ({ ...p, [name]: value }));
-  };
-
-  const saveShift = async () => {
-    if (!formData.employee_id || !formData.shift_date || !formData.shift_start) {
-      setFormError("Employee, date and start time are required.");
-      return;
-    }
-    setSaving(true);
-    setFormError(null);
-    try {
-      if (editId) {
-        await APICall.putT(`/bar/staff_assignment/${editId}`, {
-          role: formData.role,
-          shift_start: formData.shift_start,
-          shift_end: formData.shift_end || null,
-          floor_id: formData.floor_id ? Number(formData.floor_id) : null,
-        });
-      } else {
-        const employee = employees.find((e) => String(e.id) === String(formData.employee_id));
-        await APICall.postT("/bar/staff_assignment", {
-          employee_id: Number(formData.employee_id),
-          employee_name: employee ? `${employee.first_name || ""} ${employee.last_name || ""}`.trim() : null,
-          role: formData.role,
-          shift_date: formData.shift_date,
-          shift_start: formData.shift_start,
-          shift_end: formData.shift_end || null,
-          floor_id: formData.floor_id ? Number(formData.floor_id) : null,
-        });
-      }
-      setShowShiftModal(false);
-      load();
-    } catch (err) {
-      setFormError(errMsg(err, "Failed to save shift."));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const openViewModal = (row) => {
-    setSelectedShift(row);
-    setShowViewModal(true);
-  };
-  const closeViewModal = () => {
-    setSelectedShift(null);
-    setShowViewModal(false);
-  };
-
-  const openClockModal = (row, direction) => {
-    setSelectedShift(row);
-    setClockAmount("");
-    setFormError(null);
-    setShowClockModal(direction);
-  };
-  const closeClockModal = () => {
-    if (saving) return;
-    setShowClockModal(null);
-    setSelectedShift(null);
-  };
-
-  const submitClock = async () => {
-    setSaving(true);
-    setFormError(null);
-    try {
-      if (showClockModal === "in") {
-        await APICall.postT(`/bar/staff_assignment/${selectedShift.id}/clock_in`, {
-          opening_cash_float: clockAmount ? Number(clockAmount) : null,
-        });
-      } else {
-        await APICall.postT(`/bar/staff_assignment/${selectedShift.id}/clock_out`, {
-          closing_cash_amount: clockAmount ? Number(clockAmount) : null,
-        });
-      }
-      setShowClockModal(null);
-      load();
-    } catch (err) {
-      setFormError(errMsg(err, "Failed to record clock time."));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <>
-      <ErrorAlert message={error} />
-
-      <TableTemplate
-        title="Bar Shift Planning"
-        hasActionButton
-        searchable
-        pagination
-        loading={loading}
-        actionButton={{ label: "Add Shift", variant: "primary", onClick: openAddModal }}
-        columns={[
-          { key: "shift_date", title: "Shift Date" },
-          { key: "employee_name", title: "Staff Name" },
-          { key: "role", title: "Role" },
-          { key: "floor_id", title: "Floor", type: "custom", render: (row) => floorName(row.floor_id) },
-          { key: "shift_start", title: "Start Time" },
-          { key: "shift_end", title: "End Time" },
-          { key: "shift_status", title: "Shift Status", type: "badge", align: "center" },
-          {
-            key: "actions",
-            title: "Action",
-            align: "center",
-            type: "custom",
-            render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} onClick={() => openViewModal(row)} ariaLabel="View" />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} onClick={() => openEditModal(row)} ariaLabel="Edit" />
-                {!row.clock_in_at && (
-                  <IconButton variant="subtle" size="small" icon={<LogIn size={16} />} onClick={() => openClockModal(row, "in")} ariaLabel="Clock In" />
-                )}
-                {row.clock_in_at && !row.clock_out_at && (
-                  <IconButton variant="subtle" size="small" icon={<LogOut size={16} />} onClick={() => openClockModal(row, "out")} ariaLabel="Clock Out" />
-                )}
-              </div>
-            ),
-          },
-        ]}
-        data={shifts}
-      />
-
-      {showShiftModal && (
-        <Modal
-          isOpen={showShiftModal}
-          title={editId ? "Edit Shift" : "Add Shift"}
-          onClose={closeShiftModal}
-          showFooter
-          size="xlarge"
-          bodyLayout="grid"
-          actions={[
-            { label: "Cancel", variant: "secondary", onClick: closeShiftModal, disabled: saving },
-            { label: saving ? "Saving…" : "Save Shift", variant: "primary", onClick: saveShift, disabled: saving },
-          ]}
-        >
-          <div style={{ gridColumn: "1 / -1" }}>
-            <ErrorAlert message={formError} />
-          </div>
-
-          <Select
-            label="Employee"
-            name="employee_id"
-            value={formData.employee_id}
-            onChange={handleChange}
-            placeholder="— select —"
-            disabled={!!editId}
-            options={employees.map((e) => ({ value: e.id, label: `${e.first_name} ${e.last_name}` }))}
-          />
-
-          <Input label="Shift Date" type="date" name="shift_date" value={formData.shift_date} onChange={handleChange} disabled={!!editId} />
-
-          <Input label="Start Time" type="time" name="shift_start" value={formData.shift_start} onChange={handleChange} />
-
-          <Input label="End Time" type="time" name="shift_end" value={formData.shift_end} onChange={handleChange} />
-
-          <Select
-            label="Role"
-            name="role"
-            value={formData.role}
-            onChange={handleChange}
-            options={[
-              { value: "Bartender", label: "Bartender" },
-              { value: "Cashier", label: "Cashier" },
-              { value: "Manager", label: "Manager" },
-            ]}
-          />
-
-          <Select
-            label="Floor"
-            name="floor_id"
-            value={formData.floor_id}
-            onChange={handleChange}
-            placeholder="— none —"
-            options={floors.map((f) => ({ value: f.id, label: f.floor_name }))}
-          />
-        </Modal>
-      )}
-
-      {showClockModal && selectedShift && (
-        <Modal
-          isOpen={!!showClockModal}
-          title={`${showClockModal === "in" ? "Clock In" : "Clock Out"} — ${selectedShift.employee_name}`}
-          onClose={closeClockModal}
-          showFooter
-          size="small"
-          bodyLayout="single"
-          actions={[
-            { label: "Cancel", variant: "secondary", onClick: closeClockModal, disabled: saving },
-            { label: saving ? "Saving…" : "Confirm", variant: "primary", onClick: submitClock, disabled: saving },
-          ]}
-        >
-          <ErrorAlert message={formError} />
-          <Input
-            label={showClockModal === "in" ? "Opening Cash Float" : "Closing Cash Amount"}
-            type="number"
-            value={clockAmount}
-            onChange={(e) => setClockAmount(e.target.value)}
-          />
-        </Modal>
-      )}
-
-      {showViewModal && selectedShift && (
-        <Modal
-          isOpen={showViewModal}
-          title="Shift Details"
-          onClose={closeViewModal}
-          showFooter
-          size="medium"
-          bodyLayout="single"
-          actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
-        >
-          <p>
-            <strong>Staff:</strong> {selectedShift.employee_name}
-          </p>
-          <p>
-            <strong>Date:</strong> {selectedShift.shift_date}
-          </p>
-          <p>
-            <strong>Role:</strong> {selectedShift.role}
-          </p>
-          <p>
-            <strong>Time:</strong> {selectedShift.shift_start} – {selectedShift.shift_end || "-"}
-          </p>
-          <p>
-            <strong>Status:</strong> {selectedShift.shift_status}
-          </p>
-          <p>
-            <strong>Clock In:</strong> {selectedShift.clock_in_at ? new Date(selectedShift.clock_in_at).toLocaleTimeString() : "-"}
-          </p>
-          <p>
-            <strong>Clock Out:</strong> {selectedShift.clock_out_at ? new Date(selectedShift.clock_out_at).toLocaleTimeString() : "-"}
-          </p>
-          <p>
-            <strong>Opening Float:</strong> {selectedShift.opening_cash_float ?? "-"}
-          </p>
-          <p>
-            <strong>Closing Cash:</strong> {selectedShift.closing_cash_amount ?? "-"}
-          </p>
-        </Modal>
-      )}
-    </>
-  );
+// Bar staff shift scheduling and clock in/out. Lives under HRM (not Bar) because staffing is an HR
+// concern; the bar module only contributes the day-to-day shift data.
+//
+// The endpoint literals below are what the gateway RBAC generator reads to
+// decide this page may call them — keep them literal, not composed.
+const api = {
+  readList,
+  listShifts: () => APICall.getT("/bar/staff_assignment"),
+  listEmployees: () => APICall.getT("/user/users"),
+  listFloors: () => APICall.getT("/bar/floor"),
+  createShift: (body) => APICall.postT("/bar/staff_assignment", body),
+  updateShift: (id, body) => APICall.putT(`/bar/staff_assignment/${id}`, body),
+  cancelShift: (id) => APICall.deleteT(`/bar/staff_assignment/${id}`),
+  clockIn: (id, body) => APICall.postT(`/bar/staff_assignment/${id}/clock_in`, body),
+  clockOut: (id, body) => APICall.postT(`/bar/staff_assignment/${id}/clock_out`, body),
 };
+
+// Mirrors the SAEnum on BarStaffAssignment.role in Backend/Services/BarServices/models/models.py.
+// Adding a value here without the matching migration writes a value the column
+// rejects.
+const ROLE_OPTIONS = ["Bartender", "Cashier", "Manager"];
+
+const BarShiftPlanning = () => (
+  <StaffShiftPlanning
+    venueLabel="Bar"
+    roleOptions={ROLE_OPTIONS}
+    hasSection={false}
+    api={api}
+  />
+);
 
 export default BarShiftPlanning;

@@ -2,6 +2,7 @@ from configs import BaseConfig
 import os
 from sqlalchemy import Boolean, Column,String, DateTime, LargeBinary ,func
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Time,Date,DateTime,BLOB, JSON,Float
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 from models import engine
@@ -275,15 +276,23 @@ class HousekeeperTask(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    # employee_id and assign_staff both hold the assigned user's id, and
+    # first/last name are that user's name denormalised onto the row (the
+    # dashboard and night-audit screens read the name from here rather than
+    # joining across to UserServices). One staff picker fills all four.
     employee_id = Column(String(100), nullable=False, index=True)  # stores users.id
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    assign_staff = Column(Date, nullable=False, index=True)
     schedule_time = Column(Time, nullable=False)
     schedule_date = Column(Date, nullable=False)
-    room_no = Column(Integer, nullable=False, index=True) # room id
-    task_type = Column(String(100), nullable=False, index=True) # task type id
-    assign_staff = Column(String(100), nullable=False, index=True) # users.id
+    room_no = Column(Integer, nullable=False, index=True)  # master room id (room.id)
+    # The task_type NAME from the masterdata task_type table, not its id --
+    # that is what every existing row holds and what the dashboard renders.
+    task_type = Column(String(100), nullable=False, index=True)
+    # `assign_staff` was declared twice: once above as a Date and again here as
+    # the String the column really is. SQLAlchemy kept the second, so the Date
+    # was dead weight that only made the model lie about the schema.
+    assign_staff = Column(String(100), nullable=False, index=True)  # users.id
     task_status = Column(String(50), nullable=False, index=True)  # Pending | In-Progress | Completed
     room_status = Column(String(50), nullable=False, index=True)  # Blocking | Unblocking
     lost_found = Column(String(255), nullable=True)
@@ -571,6 +580,143 @@ class Themes(Base):
     updated_by = Column(String(100), nullable=True)
     company_id = Column(String(100), nullable=False, index=True) 
     
+
+# =====================================================
+# NIGHT AUDIT
+# Hotel business date (one row per company)
+# =====================================================
+class HotelBusinessDate(Base):
+    """The hotel's own operating date, which is NOT the calendar date.
+
+    A hotel day runs from one night audit to the next, so between midnight and
+    the audit the property is still transacting on *yesterday's* date. Every
+    Night Audit figure is scoped to this value rather than `date.today()`, and
+    the audit is the only thing that moves it forward.
+
+    Deriving the date from the server clock -- which is what the module used to
+    do everywhere -- means the books roll over at midnight whether or not the
+    day was ever closed, so a night that was never audited is silently skipped
+    and can never be audited afterwards.
+    """
+
+    __tablename__ = "hotel_business_date"
+    __table_args__ = (
+        # One business date per property. The upsert path relies on this to
+        # make a concurrent first-time initialisation fail rather than create
+        # a second, divergent date for the same company.
+        UniqueConstraint("company_id", name="uq_business_date_company"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    business_date = Column(Date, nullable=False, index=True)
+
+    # Set by the audit that last advanced the date; null until the first run.
+    last_audit_at = Column(DateTime, nullable=True)
+    last_audit_by = Column(String(100), nullable=True)
+
+    # ---------------- System Fields ----------------
+    status = Column(String(50), nullable=False, index=True, default="ACTIVE")
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True)
+    company_id = Column(String(100), nullable=False, index=True)
+
+
+# =====================================================
+# NIGHT AUDIT
+# One immutable record per audited business date
+# =====================================================
+class NightAudit(Base):
+    """The record of one night's audit, and the module's idempotency guard.
+
+    WHY THE UNIQUE CONSTRAINT IS THE DESIGN
+        Everything else about running an audit twice -- a double-clicked
+        button, a retried request, a second browser tab, two operators at two
+        terminals -- is a race that application code cannot close on its own.
+        `uq_night_audit_company_date` closes it in the database: the second
+        writer for a given business date fails on the constraint, so the day's
+        figures can only ever be recorded once and the date can only advance
+        once.
+
+    WHY THE TOTALS ARE STORED RATHER THAN RECOMPUTED
+        A night audit is a statement of the property's position at a point in
+        time. Recomputing it later from live reservation rows would produce a
+        different answer every time somebody edits an old booking, which is the
+        opposite of what an audit trail is for. These columns are a snapshot
+        and are never rewritten after the run completes.
+    """
+
+    __tablename__ = "night_audit"
+    __table_args__ = (
+        UniqueConstraint("company_id", "business_date", name="uq_night_audit_company_date"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    night_audit_id = Column(String(100), unique=True, nullable=False, index=True)
+
+    # ---------------- Dates ----------------
+    # The night that was audited, and the date the property moved to.
+    business_date = Column(Date, nullable=False, index=True)
+    next_business_date = Column(Date, nullable=True)
+
+    # ---------------- Run State ----------------
+    # Running | Completed | Failed  -- see AUDIT_STATUSES in the controller.
+    audit_status = Column(String(20), nullable=False, index=True, default="Running")
+
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    run_by = Column(String(100), nullable=True)
+    error_message = Column(String(500), nullable=True)
+
+    # ---------------- Occupancy ----------------
+    # rooms_occupied is derived from reservations, which this service owns.
+    # rooms_total comes from the room master in another service and is fetched
+    # best-effort, so it -- and anything derived from it -- may be null.
+    rooms_total = Column(Integer, nullable=True)
+    rooms_occupied = Column(Integer, nullable=True)
+    occupancy_percent = Column(Float, nullable=True)
+    room_nights = Column(Integer, nullable=True)
+
+    # ---------------- Guest Movement ----------------
+    arrivals_expected = Column(Integer, nullable=True)
+    arrivals_completed = Column(Integer, nullable=True)
+    departures_expected = Column(Integer, nullable=True)
+    departures_completed = Column(Integer, nullable=True)
+    in_house = Column(Integer, nullable=True)
+    stayovers = Column(Integer, nullable=True)
+
+    no_shows_marked = Column(Integer, nullable=True)
+    # Reservation ids this run moved to No-Show, so the change is attributable
+    # and reversible by hand if an operator marked a late arrival in error.
+    no_show_reservation_ids = Column(JSON, nullable=True)
+
+    # ---------------- Revenue (accrued for this night only) ----------------
+    room_revenue = Column(Float, nullable=True)
+    extra_charges = Column(Float, nullable=True)
+    tax_amount = Column(Float, nullable=True)
+    discount_amount = Column(Float, nullable=True)
+    gross_revenue = Column(Float, nullable=True)
+
+    # ---------------- Settlement (cash movement on this date) ----------------
+    payments_collected = Column(Float, nullable=True)
+    # [{payment_method, amount}] -- by method name as recorded on the payment.
+    payment_breakdown = Column(JSON, nullable=True)
+    outstanding_balance = Column(Float, nullable=True)
+
+    # ---------------- System Fields ----------------
+    token = Column(String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
+    status = Column(String(50), nullable=False, index=True, default="ACTIVE")
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    updated_by = Column(String(100), nullable=True)
+    company_id = Column(String(100), nullable=False, index=True)
+
+
 # ---------------------------------------------------------------------------
 # Schema creation is opt-in.
 #

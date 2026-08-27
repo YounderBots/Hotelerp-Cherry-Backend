@@ -194,6 +194,54 @@ const APICall = {
     },
 
     // -------------------------
+    // GET a stored file as a Blob (With Token)
+    // -------------------------
+    // Uploads are served by the same authenticated gateway proxy as the JSON
+    // API, so pointing an <img src> or an <a href> straight at one gets a 401:
+    // the browser sends no Authorization header on a plain subresource request.
+    // Fetching the bytes here and handing back a Blob is what lets a stored
+    // attachment actually be shown. Callers own the object URL they create from
+    // it and must revoke it.
+    getBlobT: async (endpoint, opts = {}) => {
+        const { timeoutMs = DEFAULT_TIMEOUT_MS } = opts;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+        let response;
+        try {
+            response = await fetch(`${baseURL}${endpoint}`, {
+                method: "GET",
+                headers: { ...getAuthHeader() },
+                signal: controller.signal,
+            });
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err?.name === "AbortError") {
+                throw new ApiError("The request timed out. Please try again.", {
+                    status: 0,
+                    code: "timeout",
+                });
+            }
+            throw new ApiError("Cannot reach the server. Check your connection.", {
+                status: 0,
+                code: "network",
+            });
+        }
+        clearTimeout(timeoutId);
+
+        if (response.status === 401) {
+            try { unauthorizedHandler(); } catch { /* ignore handler errors */ }
+        }
+        if (!response.ok) {
+            throw new ApiError(messageFor(response.status, null), {
+                status: response.status,
+                code: `http_${response.status}`,
+            });
+        }
+        return response.blob();
+    },
+
+    // -------------------------
     // DELETE (With Token)
     // -------------------------
     deleteT: (endpoint, opts = {}) =>

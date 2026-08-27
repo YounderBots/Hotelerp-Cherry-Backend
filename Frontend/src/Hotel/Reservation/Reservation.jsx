@@ -1,32 +1,55 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, CreditCard, Download, HandCoins, LogOut } from "lucide-react";
+
 import TableTemplate from "../../stories/TableTemplate";
-import {
-  Download,
-  Eye,
-  Pencil,
-  Printer,
-  Trash2,
-  Check,
-  X,
-  LogOut,
-  AlertCircle,
-  CheckCircle,
-  CreditCard,
-  HandCoins,
-} from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import TableFilters, { FilterDate, FilterSelect } from "../../stories/TableFilters";
+import Modal, { ConfirmModal } from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import RowActions from "../../stories/RowActions";
+import IconButton from "../../stories/IconButton";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ViewSection from "../../stories/ViewSection";
+import ErrorAlert from "../../stories/ErrorAlert";
+import Toast from "../../stories/Toast";
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
+import { useToast } from "../../hooks/useToast";
 import "./Reservation.css";
 
-// reservation_status is master-data-driven (see /masterdata/reservation_status);
-// checkin flips Booked → Checked-In, checkout flips Checked-In → Checked-Out.
-const CAN_CHECKIN = new Set(["Booked"]);
-const CAN_CHECKOUT = new Set(["Checked-In"]);
-const LOCKED_STATUSES = new Set(["Checked-Out", "Cancelled", "No Show"]);
-
-const RESERVATION_TYPES = ["RESERVATION", "GROUP_RESERVATION", "CHECKIN"];
-const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
+/**
+ * Reservation list.
+ *
+ * WHAT THIS SCREEN NO LONGER DECIDES
+ *   Which actions a row offers used to be a set of status literals kept here
+ *   ("Booked" for check-in, "No Show" for locked). Neither matched the
+ *   property's actual vocabulary, which is Master Data and reads Confirmed /
+ *   Checked-In / Checked-Out / Cancelled / No-Show / Pending / On Hold. The
+ *   check-in button was therefore drawn for a status no reservation could ever
+ *   hold, and the endpoint behind it refused every request for the same
+ *   reason. Each row now carries `can_check_in` / `can_check_out` /
+ *   `can_cancel` / `can_mark_no_show` from the API, derived from the same
+ *   transition table the API enforces, so a button can never offer something
+ *   the server would refuse.
+ *
+ *   The edit form no longer decides money either. Total, tax, discount,
+ *   overall and balance were free-text number inputs posted straight to the
+ *   database; they are now priced by /hotel/room_reservation_quote and shown
+ *   read-only.
+ */
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
+
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const amountFmt = new Intl.NumberFormat(undefined, {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const money = (v) => (Number.isFinite(Number(v)) ? amountFmt.format(Number(v)) : "—");
 
 const escapeHtml = (v) =>
   String(v ?? "")
@@ -36,321 +59,432 @@ const escapeHtml = (v) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const num = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+const nightsBetween = (start, end) => {
+  if (!start || !end) return 0;
+  const a = new Date(start);
+  const d = new Date(end);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(d.getTime())) return 0;
+  const ms = d.getTime() - a.getTime();
+  return ms <= 0 ? 0 : Math.round(ms / (1000 * 60 * 60 * 24));
 };
 
-const parseArr = (v) => {
-  if (Array.isArray(v)) return v;
-  if (v === null || v === undefined || v === "") return [];
-  try {
-    const parsed = JSON.parse(v);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+// Compact date for table cells. A receptionist reads "07 Aug 26" faster than
+// "2026-08-07", and two of them fit the column where two ISO strings did not.
+// The View modal and the printed receipt keep the unambiguous ISO form.
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const shortDate = (v) => {
+  const day = isoDay(v);
+  if (day.length !== 10) return day || "—";
+  const [y, m, d] = day.split("-");
+  const month = MONTHS[Number(m) - 1];
+  return month ? `${d} ${month} ${y.slice(2)}` : day;
 };
 
-const readList = (res) => {
-  if (Array.isArray(res?.data)) return res.data;
-  if (Array.isArray(res?.data?.data)) return res.data.data;
-  return [];
+const guestName = (r) =>
+  [r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "—";
+
+const joinList = (values) =>
+  Array.isArray(values) && values.length ? values.join(", ") : "—";
+
+const PAYMENT_STATES = ["Unpaid", "Partly paid", "Paid"];
+const RESERVATION_TYPES = ["RESERVATION", "GROUP_RESERVATION", "CHECKIN"];
+const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
+
+const EMPTY_FILTERS = {
+  reservation_status: "",
+  reservation_type: "",
+  payment_state: "",
+  from_date: "",
+  to_date: "",
 };
 
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
-
-const getStatusBadgeClass = (status) => {
-  const s = String(status || "").toLowerCase();
-  if (s === "booked" || s === "pending") return "status-pending";
-  if (s === "confirmed") return "status-confirmed";
-  if (s === "checked-in" || s === "arrived") return "status-checked-in";
-  if (s === "checked-out" || s === "departures") return "status-checked-out";
-  if (s === "cancelled" || s === "canceled" || s === "no show" || s === "no-show") return "status-cancelled";
-  return "status-pending";
-};
-
-// -------------------------------------------------------------------------
-// Toast
-// -------------------------------------------------------------------------
-const Toast = ({ toast, onClose }) => {
-  if (!toast) return null;
-  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
-  return (
-    <div
-      className={`reservation-toast ${toast.kind}`}
-      role={toast.kind === "success" ? "status" : "alert"}
-      aria-live={toast.kind === "success" ? "polite" : "assertive"}
-    >
-      <Icon size={18} aria-hidden="true" />
-      <span>{toast.text}</span>
-      <button
-        type="button"
-        className="reservation-toast-close"
-        onClick={onClose}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Confirm dialog
-// -------------------------------------------------------------------------
-const ConfirmDialog = ({
-  open,
-  title,
-  body,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
-  tone = "danger",
-  onConfirm,
-  onCancel,
-  loading = false,
-}) => {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !loading) onCancel(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onCancel, loading]);
-
-  if (!open) return null;
-  return (
-    <div
-      className="modal-container"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="confirm-modal-title"
-      onClick={(e) => { if (e.target === e.currentTarget && !loading) onCancel(); }}
-    >
-      <div className="modal-content confirm-modal">
-        <div className="modal-header">
-          <h2 className="modal-title" id="confirm-modal-title">{title}</h2>
-          <button
-            type="button"
-            className="modal-close-btn"
-            onClick={onCancel}
-            aria-label="Close confirmation"
-            disabled={loading}
-          >
-            <X size={22} />
-          </button>
-        </div>
-        <div className="modal-body">
-          <p>{body}</p>
-        </div>
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onCancel}
-            disabled={loading}
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`}
-            onClick={onConfirm}
-            disabled={loading}
-            aria-busy={loading}
-          >
-            {loading ? "Working…" : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// -------------------------------------------------------------------------
-// Reservation page
-// -------------------------------------------------------------------------
 const Reservation = () => {
-  const [data, setData] = useState(null); // null = loading
-  const [error, setError] = useState(null);
-  const [refreshTick, setRefreshTick] = useState(0);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const filtersActive = Object.values(filters).some(Boolean);
 
-  const [selectedReservation, setSelectedReservation] = useState(null);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editFormData, setEditFormData] = useState({});
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState(null);
+  // Filtering happens on the server so it applies to the whole book, not just
+  // the page already downloaded.
+  const query = useMemo(() => {
+    const params = {};
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params[key] = value;
+    });
+    return params;
+  }, [filters]);
+  const queryKey = JSON.stringify(query);
 
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const {
+    data: [reservations, statuses, rooms, paymentMethods, taxTypes, discountTypes],
+    loading,
+    error,
+    reload,
+  } = useApiResources(
+    [
+      {
+        fetch: () => APICall.getT("/hotel/room_reservation", query),
+        select: readList,
+        fallback: "Failed to load reservations.",
+      },
+      { fetch: () => APICall.getT("/masterdata/reservation_status"), select: readList },
+      // Room *types* are not fetched here: the reservation payload already
+      // carries `room_type_names`, so this screen no longer re-joins ids to
+      // names against a second endpoint.
+      { fetch: () => APICall.getT("/masterdata/room"), select: readList },
+      { fetch: () => APICall.getT("/masterdata/payment_methods"), select: readList },
+      { fetch: () => APICall.getT("/masterdata/tax"), select: readList },
+      { fetch: () => APICall.getT("/masterdata/discount"), select: readList },
+    ],
+    { deps: [queryKey] },
+  );
 
-  const [rowLocks, setRowLocks] = useState({});
-  const [toast, setToast] = useState(null);
+  const { toast, showToast } = useToast();
 
-  const [identityTypes, setIdentityTypes] = useState([]);
-  const [roomTypes, setRoomTypes] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [paymentMethods, setPaymentMethods] = useState([]);
-  const [taxTypes, setTaxTypes] = useState([]);
-  const [discountTypes, setDiscountTypes] = useState([]);
-  const [reservationStatuses, setReservationStatuses] = useState([]);
-
+  const [viewRow, setViewRow] = useState(null);
   const [paymentHistory, setPaymentHistory] = useState([]);
 
-  const [payModal, setPayModal] = useState(null); // { row, amount, method }
+  const [editRow, setEditRow] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState(null);
+  const [editQuote, setEditQuote] = useState(null);
+  const [editQuoteError, setEditQuoteError] = useState(null);
+  const [editAvailability, setEditAvailability] = useState(null);
+
+  const [deleteRow, setDeleteRow] = useState(null);
+  const [cancelRow, setCancelRow] = useState(null);
+  const [noShowRow, setNoShowRow] = useState(null);
+  const [rowBusy, setRowBusy] = useState({});
+
+  const [payModal, setPayModal] = useState(null);
   const [paySaving, setPaySaving] = useState(false);
   const [payError, setPayError] = useState(null);
 
-  const [refundModal, setRefundModal] = useState(null); // { row, amount, method }
+  const [refundModal, setRefundModal] = useState(null);
   const [refundSaving, setRefundSaving] = useState(false);
   const [refundError, setRefundError] = useState(null);
 
-  const mounted = useRef(true);
+  const statusOptions = useMemo(
+    () => statuses.map((s) => s.reservation_status).filter(Boolean),
+    [statuses],
+  );
 
-  const showToast = useCallback((kind, text) => {
-    setToast({ kind, text, at: Date.now() });
-  }, []);
-
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  const loadReservations = useCallback(async () => {
-    try {
-      const res = await APICall.getT("/hotel/room_reservation");
-      if (!mounted.current) return;
-      setData(Array.isArray(res?.data) ? res.data : []);
-      setError(null);
-    } catch (err) {
-      if (!mounted.current) return;
-      setData([]);
-      setError(errMsg(err, "Failed to load reservations."));
-    }
-  }, []);
-
-  useEffect(() => {
-    mounted.current = true;
-    setData(null);
-    loadReservations();
-
-    Promise.allSettled([
-      APICall.getT("/masterdata/identity_proof"),
-      APICall.getT("/masterdata/room_types"),
-      APICall.getT("/masterdata/room"),
-      APICall.getT("/masterdata/payment_methods"),
-      APICall.getT("/masterdata/tax"),
-      APICall.getT("/masterdata/discount"),
-      APICall.getT("/masterdata/reservation_status"),
-    ]).then((results) => {
-      if (!mounted.current) return;
-      const [rIdent, rRT, rRoom, rPM, rTax, rDisc, rStatus] = results;
-      setIdentityTypes(rIdent.status === "fulfilled" ? readList(rIdent.value) : []);
-      setRoomTypes(rRT.status === "fulfilled" ? readList(rRT.value) : []);
-      setRooms(rRoom.status === "fulfilled" ? readList(rRoom.value) : []);
-      setPaymentMethods(rPM.status === "fulfilled" ? readList(rPM.value) : []);
-      setTaxTypes(rTax.status === "fulfilled" ? readList(rTax.value) : []);
-      setDiscountTypes(rDisc.status === "fulfilled" ? readList(rDisc.value) : []);
-      setReservationStatuses(rStatus.status === "fulfilled" ? readList(rStatus.value) : []);
+  const lockRow = (id, what) => setRowBusy((m) => ({ ...m, [id]: what }));
+  const unlockRow = (id) =>
+    setRowBusy((m) => {
+      const next = { ...m };
+      delete next[id];
+      return next;
     });
 
-    return () => {
-      mounted.current = false;
-    };
-  }, [loadReservations, refreshTick]);
+  /* ======================= Row lifecycle actions ======================= */
 
-  // Escape closes the topmost modal.
-  useEffect(() => {
-    if (!isViewModalOpen && !isEditModalOpen) return undefined;
-    const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      if (isEditModalOpen && !editSaving) setIsEditModalOpen(false);
-      else if (isViewModalOpen) setIsViewModalOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [isViewModalOpen, isEditModalOpen, editSaving]);
-
-  // Lock body scroll while a modal is open.
-  useEffect(() => {
-    const anyOpen = isViewModalOpen || isEditModalOpen || Boolean(pendingDelete);
-    if (!anyOpen) return undefined;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = original; };
-  }, [isViewModalOpen, isEditModalOpen, pendingDelete]);
-
-  // -----------------------------------------------------------------------
-  // Row action handlers
-  // -----------------------------------------------------------------------
-  const handleApprove = async (id) => {
-    setRowLocks((m) => ({ ...m, [id]: "checkin" }));
-    try {
-      await APICall.postT(`/hotel/room_reservation_checkin/${id}`);
-      showToast("success", "Guest checked in.");
-      loadReservations();
-    } catch (err) {
-      showToast("error", errMsg(err, "Check-in failed."));
-    } finally {
-      // Guarded with `if (mounted)` rather than an early `return`: returning
-      // from a finally block discards any exception still propagating, so a
-      // throw inside the catch above would vanish silently.
-      if (mounted.current) {
-        setRowLocks((m) => {
-          const next = { ...m };
-          delete next[id];
-          return next;
-        });
+  // Takes a thunk rather than a URL string, so every endpoint this screen
+  // POSTs to is spelled out at its own call site.
+  //
+  // THIS IS NOT A STYLE CHOICE. Backend/tools/build_rbac_map.py derives the
+  // gateway permission map from these call sites. Its pass B treats a verb
+  // dispatched through a variable as evidence that the page might POST to any
+  // endpoint literal in the same file. This file names /masterdata/room,
+  // /masterdata/tax, /masterdata/discount, /masterdata/payment_methods and
+  // /masterdata/reservation_status because it READS them, so a single
+  // variable-dispatched POST silently granted the Reservation page write
+  // access to five master-data tables. Keeping the literal at the call site
+  // keeps the generated permissions honest.
+  const runRowAction = useCallback(
+    async (row, action, request, successText) => {
+      if (rowBusy[row.id]) return;
+      lockRow(row.id, action);
+      try {
+        await request();
+        showToast(successText, "success");
+        reload();
+      } catch (err) {
+        showToast(errMsg(err, `${action} failed.`), "error");
+      } finally {
+        unlockRow(row.id);
       }
+    },
+    [rowBusy, reload, showToast],
+  );
+
+  const handleCheckIn = (row) =>
+    runRowAction(
+      row,
+      "check-in",
+      () =>
+        APICall.postT(
+          `/hotel/room_reservation_checkin/${encodeURIComponent(row.token)}`,
+        ),
+      `${guestName(row)} checked in.`,
+    );
+
+  const handleCheckOut = (row) =>
+    runRowAction(
+      row,
+      "check-out",
+      () =>
+        APICall.postT(
+          `/hotel/room_reservation_checkout/${encodeURIComponent(row.token)}`,
+        ),
+      `${guestName(row)} checked out.`,
+    );
+
+  const confirmCancel = async () => {
+    const row = cancelRow;
+    setCancelRow(null);
+    if (!row) return;
+    try {
+      const res = await APICall.postT(
+        `/hotel/room_reservation_cancel/${encodeURIComponent(row.token)}`,
+      );
+      const paid = num(res?.data?.amount_already_paid);
+      showToast(
+        paid > 0
+          ? `Reservation cancelled. ${money(paid)} already paid — refund it from the folio if your policy allows.`
+          : "Reservation cancelled.",
+        "success",
+      );
+      reload();
+    } catch (err) {
+      showToast(errMsg(err, "Cancellation failed."), "error");
     }
   };
 
-  const handleCheckout = async (id, token) => {
-    if (!token) {
-      showToast("error", "This reservation has no checkout token — please refresh.");
+  const confirmNoShow = async () => {
+    const row = noShowRow;
+    setNoShowRow(null);
+    if (!row) return;
+    try {
+      await APICall.postT(
+        `/hotel/room_reservation_no_show/${encodeURIComponent(row.token)}`,
+      );
+      showToast("Reservation marked as no-show.", "success");
+      reload();
+    } catch (err) {
+      showToast(errMsg(err, "Could not mark as no-show."), "error");
+    }
+  };
+
+  const confirmDelete = async () => {
+    const row = deleteRow;
+    setDeleteRow(null);
+    if (!row) return;
+    try {
+      await APICall.deleteT(`/hotel/room_reservation/${row.id}`);
+      showToast("Reservation deleted.", "delete");
+      reload();
+    } catch (err) {
+      showToast(errMsg(err, "Delete failed."), "error");
+    }
+  };
+
+  /* ============================== View ============================== */
+
+  const openView = (row) => {
+    setViewRow(row);
+    setPaymentHistory([]);
+    if (row?.token) {
+      APICall.getT(`/hotel/room_reservation_payments/${encodeURIComponent(row.token)}`)
+        .then((res) => setPaymentHistory(readList(res)))
+        .catch(() => {
+          /* history is best-effort; the rest of the view still stands */
+        });
+    }
+  };
+
+  /* ============================== Edit ============================== */
+
+  const openEdit = (row) => {
+    setEditRow(row);
+    setEditError(null);
+    setEditQuote(null);
+    setEditQuoteError(null);
+    setEditAvailability(null);
+    setEditForm({
+      salutation: row.salutation || "",
+      first_name: row.first_name || "",
+      last_name: row.last_name || "",
+      phone_number: row.phone_number || "",
+      email: row.email || "",
+      arrival_date: isoDay(row.arrival_date),
+      departure_date: isoDay(row.departure_date),
+      room_ids: Array.isArray(row.room_ids) ? row.room_ids : [],
+      rate_type: Array.isArray(row.rate_type) ? row.rate_type : [],
+      no_of_adults: row.no_of_adults ?? 1,
+      no_of_children: row.no_of_children ?? 0,
+      payment_method_id: row.payment_method_id || "",
+      tax_type_id: row.tax_type_id || "",
+      discount_type_id: row.discount_type_id || "",
+      extra_charges: row.extra_charges ?? 0,
+      extra_bed_count: row.extra_bed_count ?? 0,
+      room_amount: "",
+      reservation_type: row.reservation_type || "RESERVATION",
+      reservation_status: row.reservation_status || "",
+      room_complementary: row.room_complementary || "",
+      common_complementary: row.common_complementary || "",
+    });
+  };
+
+  const closeEdit = () => {
+    if (editSaving) return;
+    setEditRow(null);
+    setEditForm({});
+  };
+
+  const setField = (field) => (e) =>
+    setEditForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  // Nights are derived, never typed. The old form had a Number of Nights input
+  // that was posted as-is, so it could disagree with the dates beside it.
+  const editNights = nightsBetween(editForm.arrival_date, editForm.departure_date);
+
+  const editQuoteRequest = useMemo(
+    () => ({
+      arrival_date: editForm.arrival_date,
+      departure_date: editForm.departure_date,
+      room_ids: editForm.room_ids || [],
+      rate_type: editForm.rate_type || [],
+      tax_type_id: editForm.tax_type_id || null,
+      discount_type_id: editForm.discount_type_id || null,
+      extra_charges: num(editForm.extra_charges),
+      extra_bed_count: num(editForm.extra_bed_count),
+      room_amount: editForm.room_amount === "" ? null : num(editForm.room_amount),
+      paying_amount: num(editRow?.paid_amount),
+    }),
+    [editForm, editRow],
+  );
+  const editQuoteKey = JSON.stringify(editQuoteRequest);
+
+  // Re-price and re-check availability whenever the amendment changes either.
+  // Editing a booking is booking it again: moving the dates has to prove the
+  // room is still free, which the old form never asked.
+  useEffect(() => {
+    if (!editRow) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      if (!editForm.arrival_date || !editForm.departure_date || editNights < 1) {
+        setEditQuote(null);
+        return;
+      }
+
+      APICall.postT("/hotel/room_reservation_quote", editQuoteRequest)
+        .then((res) => {
+          if (!cancelled) {
+            setEditQuote(res?.data || null);
+            setEditQuoteError(null);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setEditQuote(null);
+            setEditQuoteError(errMsg(err, "Could not price this stay."));
+          }
+        });
+
+      APICall.getT("/hotel/room_availability", {
+        arrival_date: editForm.arrival_date,
+        departure_date: editForm.departure_date,
+        // Without this the reservation collides with itself the moment the
+        // guest so much as reopens the form.
+        exclude_reservation_id: editRow.id,
+      })
+        .then((res) => {
+          if (cancelled) return;
+          const taken = new Set((res?.data?.booked_room_ids || []).map(Number));
+          const clashing = (editForm.room_ids || []).filter((id) => taken.has(Number(id)));
+          setEditAvailability(
+            clashing.length
+              ? `Room ${clashing
+                  .map((id) => rooms.find((r) => r.id === Number(id))?.room_no || id)
+                  .join(", ")} is not free for these dates.`
+              : null,
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setEditAvailability(null);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editQuoteKey, editRow, editNights]);
+
+  const validateEdit = () => {
+    if (!editForm.first_name?.trim()) return "First name is required.";
+    if (!editForm.phone_number?.trim()) return "Phone number is required.";
+    if (!editForm.arrival_date || !editForm.departure_date)
+      return "Arrival and departure dates are required.";
+    if (editNights < 1) return "Departure must be at least one night after arrival.";
+    if (!editForm.payment_method_id) return "Payment method is required.";
+    if (!editForm.reservation_status) return "Reservation status is required.";
+    if (editAvailability) return editAvailability;
+    if (editQuoteError) return editQuoteError;
+    return null;
+  };
+
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    if (editSaving) return;
+
+    const problem = validateEdit();
+    if (problem) {
+      setEditError(problem);
       return;
     }
-    setRowLocks((m) => ({ ...m, [id]: "checkout" }));
+
+    setEditSaving(true);
+    setEditError(null);
     try {
-      await APICall.postT(`/hotel/room_reservation_checkout/${encodeURIComponent(token)}`);
-      showToast("success", "Guest checked out.");
-      loadReservations();
-    } catch (err) {
-      showToast("error", errMsg(err, "Check-out failed."));
-    } finally {
-      // Guarded with `if (mounted)` rather than an early `return`: returning
-      // from a finally block discards any exception still propagating, so a
-      // throw inside the catch above would vanish silently.
-      if (mounted.current) {
-        setRowLocks((m) => {
-          const next = { ...m };
-          delete next[id];
-          return next;
-        });
+      const fd = new FormData();
+      fd.set("id", String(editRow.id));
+      fd.set("salutation", editForm.salutation || "");
+      fd.set("first_name", editForm.first_name.trim());
+      fd.set("last_name", (editForm.last_name || "").trim());
+      fd.set("phone_number", editForm.phone_number.trim());
+      fd.set("email", (editForm.email || "").trim());
+      fd.set("arrival_date", editForm.arrival_date);
+      fd.set("departure_date", editForm.departure_date);
+      fd.set("room_ids", JSON.stringify(editForm.room_ids || []));
+      fd.set("rate_type", JSON.stringify((editForm.rate_type || []).filter(Boolean)));
+      fd.set("no_of_adults", String(num(editForm.no_of_adults) || 1));
+      fd.set("no_of_children", String(num(editForm.no_of_children)));
+      fd.set("payment_method_id", String(num(editForm.payment_method_id)));
+      if (editForm.tax_type_id) fd.set("tax_type_id", String(num(editForm.tax_type_id)));
+      if (editForm.discount_type_id) {
+        fd.set("discount_type_id", String(num(editForm.discount_type_id)));
       }
+      fd.set("extra_charges", String(num(editForm.extra_charges)));
+      fd.set("extra_bed_count", String(num(editForm.extra_bed_count)));
+      if (editForm.room_amount !== "") {
+        fd.set("room_amount", String(num(editForm.room_amount)));
+      }
+      fd.set("reservation_type", editForm.reservation_type);
+      fd.set("reservation_status", editForm.reservation_status);
+      fd.set("room_complementary", editForm.room_complementary || "");
+      fd.set("common_complementary", editForm.common_complementary || "");
+
+      await APICall.putT("/hotel/room_reservation", fd);
+      showToast("Reservation updated.", "update");
+      setEditRow(null);
+      reload();
+    } catch (err) {
+      setEditError(errMsg(err, "Failed to update reservation."));
+    } finally {
+      setEditSaving(false);
     }
   };
 
-  const openPayModal = (row) => {
-    setPayError(null);
-    setPayModal({ row, amount: "", method: "" });
-  };
-  const closePayModal = () => { if (!paySaving) setPayModal(null); };
+  /* ============================ Payments ============================ */
 
   const submitPay = async () => {
-    if (!payModal?.row?.token) {
-      setPayError("This reservation has no payment token — please refresh.");
-      return;
-    }
-    const amount = num(payModal.amount);
+    if (paySaving) return;
+    const amount = num(payModal?.amount);
     if (amount <= 0) {
       setPayError("Enter an amount greater than 0.");
-      return;
-    }
-    if (amount > num(payModal.row.balance_amount)) {
-      setPayError("Amount cannot exceed the outstanding balance.");
       return;
     }
     if (!payModal.method) {
@@ -360,38 +494,25 @@ const Reservation = () => {
     setPaySaving(true);
     setPayError(null);
     try {
-      await APICall.postT(`/hotel/room_reservation_pay/${encodeURIComponent(payModal.row.token)}`, {
-        paying_amount: amount,
-        payment_method: payModal.method,
-      });
-      showToast("success", "Payment recorded.");
+      await APICall.postT(
+        `/hotel/room_reservation_pay/${encodeURIComponent(payModal.row.token)}`,
+        { paying_amount: amount, payment_method: payModal.method },
+      );
+      showToast("Payment recorded.", "success");
       setPayModal(null);
-      loadReservations();
+      reload();
     } catch (err) {
       setPayError(errMsg(err, "Failed to record payment."));
     } finally {
-      if (mounted.current) setPaySaving(false);
+      setPaySaving(false);
     }
   };
-
-  const openRefundModal = (row) => {
-    setRefundError(null);
-    setRefundModal({ row, amount: "", method: "" });
-  };
-  const closeRefundModal = () => { if (!refundSaving) setRefundModal(null); };
 
   const submitRefund = async () => {
-    if (!refundModal?.row?.token) {
-      setRefundError("This reservation has no refund token — please refresh.");
-      return;
-    }
-    const amount = num(refundModal.amount);
+    if (refundSaving) return;
+    const amount = num(refundModal?.amount);
     if (amount <= 0) {
       setRefundError("Enter an amount greater than 0.");
-      return;
-    }
-    if (amount > num(refundModal.row.extra_amount)) {
-      setRefundError("Amount cannot exceed the refundable amount.");
       return;
     }
     if (!refundModal.method) {
@@ -401,270 +522,98 @@ const Reservation = () => {
     setRefundSaving(true);
     setRefundError(null);
     try {
-      await APICall.postT(`/hotel/room_reservation_refund/${encodeURIComponent(refundModal.row.token)}`, {
-        refund_amount: amount,
-        refund_method: refundModal.method,
-      });
-      showToast("success", "Refund processed.");
+      await APICall.postT(
+        `/hotel/room_reservation_refund/${encodeURIComponent(refundModal.row.token)}`,
+        { refund_amount: amount, refund_method: refundModal.method },
+      );
+      showToast("Refund processed.", "success");
       setRefundModal(null);
-      loadReservations();
+      reload();
     } catch (err) {
       setRefundError(errMsg(err, "Failed to process refund."));
     } finally {
-      if (mounted.current) setRefundSaving(false);
+      setRefundSaving(false);
     }
   };
 
-  const handleDelete = (row) => setPendingDelete(row);
+  /* ============================== Print ============================== */
 
-  const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    setDeleteLoading(true);
-    try {
-      await APICall.deleteT(`/hotel/room_reservation/${pendingDelete.id}`);
-      showToast("success", "Reservation deleted.");
-      setPendingDelete(null);
-      loadReservations();
-    } catch (err) {
-      showToast("error", errMsg(err, "Failed to delete reservation."));
-    } finally {
-      if (mounted.current) setDeleteLoading(false);
-    }
-  };
-
-  const handleView = (row) => {
-    setSelectedReservation(row);
-    setIsViewModalOpen(true);
-    setPaymentHistory([]);
-    if (row?.token) {
-      APICall.getT(`/hotel/room_reservation_payments/${encodeURIComponent(row.token)}`)
-        .then((res) => {
-          if (mounted.current) setPaymentHistory(readList(res));
-        })
-        .catch(() => { /* history is best-effort; view still works without it */ });
-    }
-  };
-
-  const handleEdit = (row) => {
-    setSelectedReservation(row);
-    setEditFormData({
-      ...row,
-      room_type_ids: parseArr(row.room_type_ids),
-      room_ids: parseArr(row.room_ids),
-      rate_type: parseArr(row.rate_type),
-      arrival_date: isoDay(row.arrival_date),
-      departure_date: isoDay(row.departure_date),
-    });
-    setEditError(null);
-    setIsEditModalOpen(true);
-  };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setEditFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSingleIdChange = (name) => (e) => {
-    const v = e.target.value;
-    setEditFormData((prev) => ({ ...prev, [name]: v ? [Number(v)] : [] }));
-  };
-
-  const handleRateTypeChange = (index, value) => {
-    setEditFormData((prev) => {
-      const next = [...(prev.rate_type || [])];
-      next[index] = value;
-      return { ...prev, rate_type: next };
-    });
-  };
-
-  const validateEdit = (form) => {
-    if (!form.first_name?.trim()) return "First name is required.";
-    if (!form.phone_number?.trim()) return "Phone number is required.";
-    if (!form.arrival_date || !form.departure_date) return "Arrival and departure dates are required.";
-    if (isoDay(form.arrival_date) > isoDay(form.departure_date)) return "Departure date must be on or after arrival.";
-    if (num(form.no_of_nights) < 1) return "Number of nights must be at least 1.";
-    if (num(form.no_of_adults) < 1) return "At least one adult is required.";
-    if (num(form.no_of_rooms) < 1) return "At least one room is required.";
-    if (!form.identity_type_id) return "Identity type is required.";
-    const statusLabels = reservationStatuses.map((s) => s.reservation_status);
-    if (!form.reservation_status || (statusLabels.length > 0 && !statusLabels.includes(form.reservation_status))) {
-      return `Reservation status must be one of: ${statusLabels.join(", ")}`;
-    }
-    if (num(form.overall_amount) < 0) return "Overall amount cannot be negative.";
-    if (num(form.total_amount) < 0) return "Total amount cannot be negative.";
-    if (num(form.tax_percentage) < 0 || num(form.tax_percentage) > 100) return "Tax percentage must be between 0 and 100.";
-    if (num(form.discount_percentage) < 0 || num(form.discount_percentage) > 100) return "Discount percentage must be between 0 and 100.";
-    return null;
-  };
-
-  const handleEditSubmit = async (e) => {
-    e.preventDefault();
-    const v = validateEdit(editFormData);
-    if (v) {
-      setEditError(v);
-      return;
-    }
-    if (!selectedReservation?.id) {
-      setEditError("Missing reservation id.");
-      return;
-    }
-
-    setEditSaving(true);
-    setEditError(null);
-    try {
-      const fd = new FormData();
-      const put = (k, val) => {
-        if (val === undefined || val === null) return;
-        fd.append(k, typeof val === "object" ? JSON.stringify(val) : String(val));
-      };
-      Object.keys(editFormData).forEach((k) => put(k, editFormData[k]));
-
-      const numeric = {
-        no_of_nights: num(editFormData.no_of_nights),
-        no_of_rooms: num(editFormData.no_of_rooms) || 1,
-        no_of_adults: num(editFormData.no_of_adults) || 1,
-        no_of_children: num(editFormData.no_of_children),
-        extra_bed_count: num(editFormData.extra_bed_count),
-        extra_bed_cost: num(editFormData.extra_bed_cost),
-        total_amount: num(editFormData.total_amount),
-        tax_percentage: num(editFormData.tax_percentage),
-        tax_amount: num(editFormData.tax_amount),
-        discount_percentage: num(editFormData.discount_percentage),
-        discount_amount: num(editFormData.discount_amount),
-        extra_charges: num(editFormData.extra_charges),
-        overall_amount: num(editFormData.overall_amount),
-        paid_amount: num(editFormData.paid_amount),
-        balance_amount: num(editFormData.balance_amount),
-        extra_amount: num(editFormData.extra_amount),
-        payment_method_id: num(editFormData.payment_method_id) || 1,
-        booking_status_id: num(editFormData.booking_status_id) || 1,
-        identity_type_id: num(editFormData.identity_type_id) || 1,
-      };
-      Object.entries(numeric).forEach(([k, val]) => fd.set(k, String(val)));
-      fd.set("room_type_ids", JSON.stringify(editFormData.room_type_ids || []));
-      fd.set("room_ids", JSON.stringify(editFormData.room_ids || []));
-      fd.set("rate_type", JSON.stringify((editFormData.rate_type || []).filter(Boolean)));
-      fd.set("id", String(selectedReservation.id));
-
-      await APICall.putT("/hotel/room_reservation", fd);
-      showToast("success", "Reservation updated.");
-      setIsEditModalOpen(false);
-      loadReservations();
-    } catch (err) {
-      setEditError(errMsg(err, "Failed to update reservation."));
-    } finally {
-      if (mounted.current) setEditSaving(false);
-    }
-  };
-
-  // -----------------------------------------------------------------------
-  // Print — HTML-escapes every user-controlled field.
-  // -----------------------------------------------------------------------
   const handlePrint = (row) => {
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      showToast("error", "The print window was blocked. Please allow pop-ups for this site.");
+    const win = window.open("", "_blank", "noopener,noreferrer");
+    if (!win) {
+      showToast("The print window was blocked. Please allow pop-ups for this site.", "error");
       return;
     }
-    const content = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Reservation Receipt ${escapeHtml(row.room_reservation_id)}</title>
+    const line = (label, value) =>
+      `<div class="row"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
+
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8" />
+<title>Reservation ${escapeHtml(row.room_reservation_id)}</title>
 <style>
-  body { font-family: Arial, sans-serif; margin: 40px; color: #111827; }
-  .header { text-align: center; margin-bottom: 30px; }
-  .section { margin-bottom: 20px; }
-  .section h3 { border-bottom: 2px solid #000; padding-bottom: 5px; }
-  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .detail-item { margin-bottom: 8px; }
-  .label { font-weight: bold; color: #555; }
-  .total { font-size: 18px; font-weight: bold; margin-top: 20px; }
-</style>
-</head>
-<body>
-  <div class="header">
-    <h1>Reservation Receipt</h1>
-    <p>Reservation ID: ${escapeHtml(row.room_reservation_id)}</p>
-    <p>Date: ${escapeHtml(new Date().toLocaleDateString())}</p>
-  </div>
-  <div class="section">
-    <h3>Guest Information</h3>
-    <div class="grid">
-      <div class="detail-item"><span class="label">Name:</span> ${escapeHtml(`${row.first_name || ""} ${row.last_name || ""}`.trim() || "—")}</div>
-      <div class="detail-item"><span class="label">Phone:</span> ${escapeHtml(row.phone_number || "—")}</div>
-      <div class="detail-item"><span class="label">Email:</span> ${escapeHtml(row.email || "N/A")}</div>
-      <div class="detail-item"><span class="label">Reservation Type:</span> ${escapeHtml(row.reservation_type || "")}</div>
-      <div class="detail-item"><span class="label">Status:</span> ${escapeHtml(row.reservation_status || "")}</div>
-      <div class="detail-item"><span class="label">Confirmation Code:</span> ${escapeHtml(row.confirmation_code || "N/A")}</div>
-    </div>
-  </div>
-  <div class="section">
-    <h3>Stay Information</h3>
-    <div class="grid">
-      <div class="detail-item"><span class="label">Arrival Date:</span> ${escapeHtml(row.arrival_date || "")}</div>
-      <div class="detail-item"><span class="label">Departure Date:</span> ${escapeHtml(row.departure_date || "")}</div>
-      <div class="detail-item"><span class="label">Nights:</span> ${escapeHtml(row.no_of_nights ?? "")}</div>
-      <div class="detail-item"><span class="label">Rooms:</span> ${escapeHtml(row.no_of_rooms ?? "")}</div>
-      <div class="detail-item"><span class="label">Adults:</span> ${escapeHtml(row.no_of_adults ?? "")}</div>
-      <div class="detail-item"><span class="label">Children:</span> ${escapeHtml(row.no_of_children ?? 0)}</div>
-      <div class="detail-item"><span class="label">Extra Beds:</span> ${escapeHtml(row.extra_bed_count ?? 0)}</div>
-      <div class="detail-item"><span class="label">Payment Method:</span> ${escapeHtml(row.payment_method_id ?? "")}</div>
-    </div>
-  </div>
-  <div class="section">
-    <h3>Payment Summary</h3>
-    <div class="detail-item"><span class="label">Total Amount:</span> ${escapeHtml(row.total_amount ?? 0)}</div>
-    <div class="detail-item"><span class="label">Tax Amount:</span> ${escapeHtml(row.tax_amount ?? 0)}</div>
-    <div class="detail-item"><span class="label">Discount Amount:</span> ${escapeHtml(row.discount_amount ?? 0)}</div>
-    <div class="detail-item"><span class="label">Extra Charges:</span> ${escapeHtml(row.extra_charges ?? 0)}</div>
-    <div class="detail-item"><span class="label">Paid Amount:</span> ${escapeHtml(row.paid_amount ?? 0)}</div>
-    <div class="detail-item"><span class="label">Balance Amount:</span> ${escapeHtml(row.balance_amount ?? 0)}</div>
-    <div class="detail-item total"><span class="label">Overall Amount:</span> ${escapeHtml(row.overall_amount ?? 0)}</div>
-  </div>
-  <script>window.addEventListener("load", function(){ window.print(); });</script>
-</body>
-</html>`;
-    printWindow.document.write(content);
-    printWindow.document.close();
+ body{font-family:Arial,Helvetica,sans-serif;margin:40px;color:#111827}
+ h1{margin:0 0 4px;font-size:22px} .sub{color:#6b7280;margin-bottom:24px}
+ h3{border-bottom:2px solid #111827;padding-bottom:6px;margin:24px 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:.04em}
+ .row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6}
+ .row span{color:#6b7280} .total{font-size:18px;font-weight:700;border-top:2px solid #111827;padding-top:10px;margin-top:10px}
+</style></head><body>
+<h1>Reservation Receipt</h1>
+<div class="sub">${escapeHtml(row.room_reservation_id)} &middot; ${escapeHtml(new Date().toLocaleDateString())}</div>
+<h3>Guest</h3>
+${line("Name", guestName(row))}
+${line("Phone", row.phone_number || "—")}
+${line("Email", row.email || "—")}
+${line("Confirmation code", row.confirmation_code || "—")}
+${line("Status", row.reservation_status || "—")}
+<h3>Stay</h3>
+${line("Arrival", isoDay(row.arrival_date))}
+${line("Departure", isoDay(row.departure_date))}
+${line("Nights", row.no_of_nights ?? "—")}
+${line("Rooms", joinList(row.room_nos))}
+${line("Room types", joinList(row.room_type_names))}
+${line("Guests", `${row.no_of_adults ?? 0} adult(s), ${row.no_of_children ?? 0} child(ren)`)}
+<h3>Charges</h3>
+${line("Room amount", money(row.room_amount))}
+${line("Extra charges", money(row.extra_charges))}
+${line(`Tax${row.tax_name ? ` (${row.tax_name} ${row.tax_percentage}%)` : ""}`, money(row.tax_amount))}
+${line(`Discount${row.discount_name ? ` (${row.discount_name} ${row.discount_percentage}%)` : ""}`, `-${money(row.discount_amount)}`)}
+<div class="row total"><span>Total</span><b>${escapeHtml(money(row.overall_amount))}</b></div>
+${line("Paid", money(row.paid_amount))}
+${line("Balance", money(row.balance_amount))}
+${line("Payment method", row.payment_method || "—")}
+<scr` + `ipt>window.addEventListener("load",function(){window.print()});</scr` + `ipt>
+</body></html>`);
+    win.document.close();
   };
 
-  // -----------------------------------------------------------------------
-  // CSV export
-  // -----------------------------------------------------------------------
+  /* ============================== Export ============================== */
+
   const handleExportCsv = () => {
-    const list = Array.isArray(data) ? data : [];
-    if (list.length === 0) {
-      showToast("error", "No reservations to export.");
+    if (!reservations.length) {
+      showToast("No reservations to export.", "error");
       return;
     }
     const header = [
-      "Reservation ID", "Type", "Name", "Phone", "Email",
-      "Arrival", "Departure", "Nights", "Rooms", "Adults", "Children",
-      "Status", "Overall Amount", "Paid", "Balance",
+      "Reservation ID", "Confirmation", "Type", "Guest", "Phone", "Email",
+      "Arrival", "Departure", "Nights", "Rooms", "Room Types",
+      "Adults", "Children", "Status", "Total", "Paid", "Balance", "Payment",
     ];
-    const rows = list.map((r) => [
-      r.room_reservation_id ?? "",
-      r.reservation_type ?? "",
-      `${r.first_name || ""} ${r.last_name || ""}`.trim(),
-      r.phone_number ?? "",
-      r.email ?? "",
-      r.arrival_date ?? "",
-      r.departure_date ?? "",
-      r.no_of_nights ?? "",
-      r.no_of_rooms ?? "",
-      r.no_of_adults ?? "",
-      r.no_of_children ?? "",
-      r.reservation_status ?? "",
-      r.overall_amount ?? "",
-      r.paid_amount ?? "",
-      r.balance_amount ?? "",
+    const rows = reservations.map((r) => [
+      r.room_reservation_id, r.confirmation_code, r.reservation_type,
+      guestName(r), r.phone_number, r.email,
+      isoDay(r.arrival_date), isoDay(r.departure_date), r.no_of_nights,
+      (r.room_nos || []).join(" / "), (r.room_type_names || []).join(" / "),
+      r.no_of_adults, r.no_of_children, r.reservation_status,
+      r.overall_amount, r.paid_amount, r.balance_amount, r.payment_state,
     ]);
     const csv = [header, ...rows]
-      .map((row) => row.map((cell) => {
-        const s = String(cell ?? "");
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      }).join(","))
+      .map((row) =>
+        row
+          .map((cell) => {
+            const s = String(cell ?? "");
+            return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+          })
+          .join(","),
+      )
       .join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -677,1260 +626,783 @@ const Reservation = () => {
     URL.revokeObjectURL(url);
   };
 
-  const isLoading = data === null;
-  const tableData = Array.isArray(data) ? data : [];
+  /* =============================== UI =============================== */
 
-  // -----------------------------------------------------------------------
-  // Render
-  // -----------------------------------------------------------------------
   return (
     <>
-      {error && (
-        <div className="reservation-alert" role="alert">
-          <span>{error}</span>
-          <button
-            type="button"
-            className="reservation-alert-action"
-            onClick={() => setRefreshTick((n) => n + 1)}
-          >
-            Retry
-          </button>
-        </div>
-      )}
+      <ErrorAlert message={error} />
 
-      {isLoading && (
-        <div className="reservation-loading" role="status" aria-live="polite">
-          Loading reservations…
-        </div>
-      )}
-
-      {!isLoading && (
-        <TableTemplate
-          title="Reservation List"
-          variant="striped"
-          pagination
-          pageSize={5}
-          searchable
-          exportable
-          hasActionButton
-          actionButton={{
-            icon: <Download size={18} />,
-            label: "Export CSV",
-            onClick: handleExportCsv,
-            size: "small",
-            variant: "outline",
-          }}
-          columns={[
-            { key: "room_reservation_id", title: "Reservation ID", align: "center", width: "160px" },
-            { key: "reservation_type", title: "Reservation Type", align: "center" },
-            {
-              key: "first_name",
-              title: "Name",
-              align: "center",
-              render: (row) => `${row.first_name || ""} ${row.last_name || ""}`.trim() || "—",
-            },
-            { key: "phone_number", title: "Phone", align: "center" },
-            { key: "arrival_date", title: "Arrival Date", align: "center" },
-            { key: "departure_date", title: "Departure Date", align: "center" },
-            { key: "reservation_status", title: "Reservation Status", align: "center", type: "badge" },
-            {
-              key: "actions",
-              title: "Actions",
-              align: "center",
-              type: "custom",
-              render: (row) => {
-                const lock = rowLocks[row.id];
-                const status = row.reservation_status;
-                const isLocked = LOCKED_STATUSES.has(status);
-                return (
-                  <div className="table-actions">
-                    <button
-                      type="button"
-                      className="table-action-btn print"
-                      title="Print receipt"
-                      aria-label={`Print reservation ${row.room_reservation_id}`}
-                      onClick={() => handlePrint(row)}
-                    >
-                      <Printer size={16} />
-                    </button>
-
-                    {CAN_CHECKIN.has(status) && (
-                      <button
-                        type="button"
-                        className="table-action-btn approve"
-                        title="Check in"
-                        aria-label={`Check in ${row.first_name || "guest"}`}
-                        onClick={() => handleApprove(row.id)}
-                        disabled={lock === "checkin"}
-                        aria-busy={lock === "checkin"}
-                      >
-                        <Check size={16} />
-                      </button>
-                    )}
-
-                    {CAN_CHECKOUT.has(status) && (
-                      <button
-                        type="button"
-                        className="table-action-btn checkout"
-                        title="Check out"
-                        aria-label={`Check out ${row.first_name || "guest"}`}
-                        onClick={() => handleCheckout(row.id, row.token)}
-                        disabled={lock === "checkout"}
-                        aria-busy={lock === "checkout"}
-                      >
-                        <LogOut size={16} />
-                      </button>
-                    )}
-
-                    <button
-                      type="button"
-                      className="table-action-btn view"
-                      title="View details"
-                      aria-label={`View reservation ${row.room_reservation_id}`}
-                      onClick={() => handleView(row)}
-                    >
-                      <Eye size={16} />
-                    </button>
-
-                    {!isLocked && (
-                      <button
-                        type="button"
-                        className="table-action-btn edit"
-                        title="Edit"
-                        aria-label={`Edit reservation ${row.room_reservation_id}`}
-                        onClick={() => handleEdit(row)}
-                      >
-                        <Pencil size={16} />
-                      </button>
-                    )}
-
-                    {!isLocked && (
-                      <button
-                        type="button"
-                        className="table-action-btn delete"
-                        title="Delete"
-                        aria-label={`Delete reservation ${row.room_reservation_id}`}
-                        onClick={() => handleDelete(row)}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-
-                    {num(row.balance_amount) > 0 && (
-                      <button
-                        type="button"
-                        className="table-action-btn pay"
-                        title="Record payment"
-                        aria-label={`Record payment for ${row.first_name || "guest"}`}
-                        onClick={() => openPayModal(row)}
-                      >
-                        <CreditCard size={16} />
-                      </button>
-                    )}
-
-                    {num(row.extra_amount) > 0 && (
-                      <button
-                        type="button"
-                        className="table-action-btn refund"
-                        title="Refund"
-                        aria-label={`Refund ${row.first_name || "guest"}`}
-                        onClick={() => openRefundModal(row)}
-                      >
-                        <HandCoins size={16} />
-                      </button>
-                    )}
-                  </div>
-                );
-              },
-            },
-          ]}
-          data={tableData}
-        />
-      )}
-
-      {!isLoading && tableData.length === 0 && !error && (
-        <div className="reservation-empty">
-          No reservations yet. Use “Add New Reservation” to create the first one.
-        </div>
-      )}
-
-      {/* -------------------------------------------------------------- */}
-      {/* View Modal                                                     */}
-      {/* -------------------------------------------------------------- */}
-      {isViewModalOpen && selectedReservation && (
-        <div
-          className="modal-container"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="view-modal-title"
-          onClick={(e) => { if (e.target === e.currentTarget) setIsViewModalOpen(false); }}
-        >
-          <div className="modal-content view-modal">
-            <div className="modal-header">
-              <h2 className="modal-title" id="view-modal-title">
-                Reservation Details
-                <span className="reservation-id">#{selectedReservation.room_reservation_id}</span>
-              </h2>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setIsViewModalOpen(false)}
-                aria-label="Close reservation details"
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="modal-body">
-              <div className="view-modal-grid">
-                <div className="view-section">
-                  <h3 className="section-title">Guest Information</h3>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Salutation</span>
-                      <span className="field-value">{selectedReservation.salutation || "N/A"}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">First Name</span>
-                      <span className="field-value">{selectedReservation.first_name || "—"}</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Last Name</span>
-                      <span className="field-value">{selectedReservation.last_name || "—"}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Email</span>
-                      <span className="field-value email-value">{selectedReservation.email || "N/A"}</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Phone Number</span>
-                      <span className="field-value phone-value">{selectedReservation.phone_number || "—"}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Reservation Status</span>
-                      <span className={`field-value status-badge ${getStatusBadgeClass(selectedReservation.reservation_status)}`}>
-                        {selectedReservation.reservation_status || "—"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="view-section">
-                  <h3 className="section-title">Stay Information</h3>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Arrival Date</span>
-                      <span className="field-value">{selectedReservation.arrival_date || "—"}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Departure Date</span>
-                      <span className="field-value">{selectedReservation.departure_date || "—"}</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">No. of Nights</span>
-                      <span className="field-value">{selectedReservation.no_of_nights ?? "—"}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">No. of Rooms</span>
-                      <span className="field-value">{selectedReservation.no_of_rooms ?? "—"}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="view-section">
-                  <h3 className="section-title">Room Details</h3>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Room Type</span>
-                      <span className="field-value json-value">
-                        {parseArr(selectedReservation.room_type_ids)
-                          .map((id) => roomTypes.find((rt) => rt.id === id)?.room_type_name)
-                          .filter(Boolean)
-                          .join(", ") || "N/A"}
-                      </span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Room Number</span>
-                      <span className="field-value json-value">
-                        {parseArr(selectedReservation.room_ids)
-                          .map((id) => rooms.find((r) => r.id === id)?.room_no)
-                          .filter(Boolean)
-                          .join(", ") || "N/A"}
-                      </span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Rate Types</span>
-                      <span className="field-value json-value">
-                        {parseArr(selectedReservation.rate_type).join(", ") || "N/A"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="view-section">
-                  <h3 className="section-title">Occupancy</h3>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">No. of Adults</span>
-                      <span className="field-value">{selectedReservation.no_of_adults ?? "—"}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">No. of Children</span>
-                      <span className="field-value">{selectedReservation.no_of_children ?? 0}</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Extra Bed Count</span>
-                      <span className="field-value">{selectedReservation.extra_bed_count ?? 0}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Extra Bed Cost</span>
-                      <span className="field-value">{selectedReservation.extra_bed_cost ?? 0}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="view-section">
-                  <h3 className="section-title">Complementary</h3>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Room Complementary</span>
-                      <span className="field-value">{selectedReservation.room_complementary || "None"}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Common Complementary</span>
-                      <span className="field-value">{selectedReservation.common_complementary || "None"}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="view-section">
-                  <h3 className="section-title">Payment Details</h3>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Total Amount</span>
-                      <span className="field-value amount">{selectedReservation.total_amount ?? 0}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Tax Percentage</span>
-                      <span className="field-value">{selectedReservation.tax_percentage ?? 0}%</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Tax Amount</span>
-                      <span className="field-value amount">{selectedReservation.tax_amount ?? 0}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Tax Type</span>
-                      <span className="field-value">
-                        {taxTypes.find((t) => t.id === selectedReservation.tax_type_id)?.tax_name || "N/A"}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Discount Percentage</span>
-                      <span className="field-value">{selectedReservation.discount_percentage ?? 0}%</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Discount Amount</span>
-                      <span className="field-value amount discount">
-                        {selectedReservation.discount_amount ? `-${selectedReservation.discount_amount}` : 0}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Discount Type</span>
-                      <span className="field-value">
-                        {discountTypes.find((d) => d.id === selectedReservation.discount_type_id)?.discount_name
-                          || discountTypes.find((d) => d.id === selectedReservation.discount_type_id)?.name
-                          || "N/A"}
-                      </span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Extra Charges</span>
-                      <span className="field-value amount">{selectedReservation.extra_charges ?? 0}</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Room Amount</span>
-                      <span className="field-value amount">{selectedReservation.room_amount ?? 0}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Overall Amount</span>
-                      <span className="field-value amount total">{selectedReservation.overall_amount ?? 0}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="view-section">
-                  <h3 className="section-title">Payment Status</h3>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Payment Method</span>
-                      <span className="field-value">
-                        {paymentMethods.find((p) => p.id === selectedReservation.payment_method_id)?.payment_method
-                          || selectedReservation.payment_method_id
-                          || "N/A"}
-                      </span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Paying Amount</span>
-                      <span className="field-value amount">{selectedReservation.paying_amount ?? 0}</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Paid Amount</span>
-                      <span className="field-value amount paid">{selectedReservation.paid_amount ?? 0}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Balance Amount</span>
-                      <span className="field-value amount balance">{selectedReservation.balance_amount ?? 0}</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Extra Amount</span>
-                      <span className="field-value amount">{selectedReservation.extra_amount ?? 0}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Identity Type</span>
-                      <span className="field-value">
-                        {identityTypes.find((i) => i.id === selectedReservation.identity_type_id)?.proof_name
-                          || "N/A"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="view-section">
-                  <h3 className="section-title">Payment History</h3>
-                  {paymentHistory.length === 0 ? (
-                    <div className="rmv-empty inline">No payments recorded yet.</div>
-                  ) : (
-                    <table className="payment-history-table">
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>Method</th>
-                          <th>Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paymentHistory.map((p) => (
-                          <tr key={p.id}>
-                            <td>{p.paid_date}</td>
-                            <td>{p.payment_method}</td>
-                            <td>{p.amount}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-
-                <div className="view-section">
-                  <h3 className="section-title">Additional Information</h3>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Booking Status</span>
-                      <span className="field-value">{selectedReservation.booking_status_id || "N/A"}</span>
-                    </div>
-                    <div className="field-group">
-                      <span className="field-label">Reservation Type</span>
-                      <span className="field-value">{selectedReservation.reservation_type || "N/A"}</span>
-                    </div>
-                  </div>
-                  <div className="field-pair">
-                    <div className="field-group">
-                      <span className="field-label">Confirmation Code</span>
-                      <span className="field-value code">{selectedReservation.confirmation_code || "N/A"}</span>
-                    </div>
-                    <div className="field-group full-width">
-                      <span className="field-label">Proof Document</span>
-                      <span className="field-value">{selectedReservation.proof_document || "No document uploaded"}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <div className="footer-actions">
-                <button
-                  type="button"
-                  className="btn btn-icon"
-                  onClick={() => handlePrint(selectedReservation)}
-                  title="Print receipt"
-                >
-                  <Printer size={18} />
-                  Print Receipt
-                </button>
-                <div className="action-buttons">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setIsViewModalOpen(false)}
-                  >
-                    Close
-                  </button>
-                  {!LOCKED_STATUSES.has(selectedReservation.reservation_status) && (
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => {
-                        setIsViewModalOpen(false);
-                        handleEdit(selectedReservation);
-                      }}
-                    >
-                      Edit Reservation
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* -------------------------------------------------------------- */}
-      {/* Edit Modal                                                     */}
-      {/* -------------------------------------------------------------- */}
-      {isEditModalOpen && selectedReservation && (
-        <div
-          className="modal-container"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-modal-title"
-          onClick={(e) => { if (e.target === e.currentTarget && !editSaving) setIsEditModalOpen(false); }}
-        >
-          <div className="modal-content edit-modal">
-            <div className="modal-header">
-              <h2 className="modal-title" id="edit-modal-title">Edit Reservation</h2>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setIsEditModalOpen(false)}
-                aria-label="Close edit reservation"
-                disabled={editSaving}
-              >
-                <X size={24} />
-              </button>
-            </div>
-
-            <form onSubmit={handleEditSubmit} className="edit-modal-form" noValidate>
-              {editError && (
-                <div className="reservation-alert inline" role="alert">
-                  {editError}
-                </div>
-              )}
-
-              <div className="modal-body edit-modal-body">
-                <div className="modal-body-content">
-                  {/* Guest Information */}
-                  <div className="modal-section">
-                    <h3 className="section-title">Guest Information</h3>
-                    <div className="form-grid">
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-salutation">Salutation</label>
-                        <select
-                          id="edit-salutation"
-                          name="salutation"
-                          value={editFormData.salutation || ""}
-                          onChange={handleInputChange}
-                          className="form-select"
-                        >
-                          <option value="">Select</option>
-                          {SALUTATIONS.map((s) => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-first-name">First Name *</label>
-                        <input
-                          id="edit-first-name"
-                          type="text"
-                          name="first_name"
-                          value={editFormData.first_name || ""}
-                          onChange={handleInputChange}
-                          required
-                          maxLength={100}
-                          autoComplete="given-name"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-last-name">Last Name</label>
-                        <input
-                          id="edit-last-name"
-                          type="text"
-                          name="last_name"
-                          value={editFormData.last_name || ""}
-                          onChange={handleInputChange}
-                          maxLength={100}
-                          autoComplete="family-name"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-phone">Phone Number *</label>
-                        <input
-                          id="edit-phone"
-                          type="tel"
-                          name="phone_number"
-                          inputMode="tel"
-                          value={editFormData.phone_number || ""}
-                          onChange={handleInputChange}
-                          required
-                          maxLength={20}
-                          autoComplete="tel"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-email">Email</label>
-                        <input
-                          id="edit-email"
-                          type="email"
-                          name="email"
-                          inputMode="email"
-                          value={editFormData.email || ""}
-                          onChange={handleInputChange}
-                          maxLength={100}
-                          autoComplete="email"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-identity-type">
-                          Identity Type <span className="required">*</span>
-                        </label>
-                        <select
-                          id="edit-identity-type"
-                          style={{ height: "40px" }}
-                          value={editFormData.identity_type_id || ""}
-                          onChange={handleInputChange}
-                          name="identity_type_id"
-                          required
-                        >
-                          <option value="">— select —</option>
-                          {identityTypes.map((identity) => (
-                            <option key={identity.id} value={identity.id}>
-                              {identity.proof_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stay Information */}
-                  <div className="modal-section">
-                    <h3 className="section-title">Stay Information</h3>
-                    <div className="form-grid">
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-arrival">Arrival Date *</label>
-                        <input
-                          id="edit-arrival"
-                          type="date"
-                          name="arrival_date"
-                          value={editFormData.arrival_date || ""}
-                          onChange={handleInputChange}
-                          required
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-departure">Departure Date *</label>
-                        <input
-                          id="edit-departure"
-                          type="date"
-                          name="departure_date"
-                          value={editFormData.departure_date || ""}
-                          onChange={handleInputChange}
-                          required
-                          min={editFormData.arrival_date || undefined}
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-nights">Number of Nights *</label>
-                        <input
-                          id="edit-nights"
-                          type="number"
-                          name="no_of_nights"
-                          value={editFormData.no_of_nights ?? ""}
-                          onChange={handleInputChange}
-                          required
-                          min="1"
-                          className="form-input"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Room Information */}
-                  <div className="modal-section">
-                    <h3 className="section-title">Room Information</h3>
-                    <div className="form-grid">
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-room-type">
-                          Room Type <span className="required">*</span>
-                        </label>
-                        <select
-                          id="edit-room-type"
-                          style={{ height: "40px" }}
-                          value={(editFormData.room_type_ids && editFormData.room_type_ids[0]) || ""}
-                          onChange={handleSingleIdChange("room_type_ids")}
-                          name="room_type_ids"
-                          required
-                        >
-                          <option value="">— select —</option>
-                          {roomTypes.map((roomType) => (
-                            <option key={roomType.id} value={roomType.id}>
-                              {roomType.room_type_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-room-number">Room Number</label>
-                        <input
-                          id="edit-room-number"
-                          className="form-input"
-                          type="text"
-                          readOnly
-                          aria-readonly="true"
-                          title="Room assignment is managed under Booking / Room View"
-                          name="room_ids_display"
-                          value={
-                            (editFormData?.room_ids?.length > 0
-                              ? editFormData.room_ids
-                                  .map((id) => rooms.find((rt) => rt.id === id)?.room_no)
-                                  .filter(Boolean)
-                                  .join(", ")
-                              : "—")
-                          }
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-rate-type">Rate Type</label>
-                        <input
-                          id="edit-rate-type"
-                          type="text"
-                          name="rate_type_input"
-                          value={(editFormData.rate_type && editFormData.rate_type[0]) || ""}
-                          onChange={(e) => handleRateTypeChange(0, e.target.value)}
-                          placeholder="e.g. STANDARD"
-                          maxLength={50}
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-no-rooms">Number of Rooms *</label>
-                        <input
-                          id="edit-no-rooms"
-                          type="number"
-                          name="no_of_rooms"
-                          value={editFormData.no_of_rooms ?? ""}
-                          onChange={handleInputChange}
-                          required
-                          min="1"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-adults">Adults *</label>
-                        <input
-                          id="edit-adults"
-                          type="number"
-                          name="no_of_adults"
-                          value={editFormData.no_of_adults ?? ""}
-                          onChange={handleInputChange}
-                          required
-                          min="1"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-children">Children</label>
-                        <input
-                          id="edit-children"
-                          type="number"
-                          name="no_of_children"
-                          value={editFormData.no_of_children ?? ""}
-                          onChange={handleInputChange}
-                          min="0"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-extra-bed-count">Extra Bed Count</label>
-                        <input
-                          id="edit-extra-bed-count"
-                          type="number"
-                          name="extra_bed_count"
-                          value={editFormData.extra_bed_count ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-extra-bed-cost">Extra Bed Cost</label>
-                        <input
-                          id="edit-extra-bed-cost"
-                          type="number"
-                          name="extra_bed_cost"
-                          value={editFormData.extra_bed_cost ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Reservation Details */}
-                  <div className="modal-section">
-                    <h3 className="section-title">Reservation Details</h3>
-                    <div className="form-grid">
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-payment-method">Payment Method *</label>
-                        <select
-                          id="edit-payment-method"
-                          name="payment_method_id"
-                          value={editFormData.payment_method_id || ""}
-                          onChange={handleInputChange}
-                          required
-                          className="form-select"
-                        >
-                          <option value="">— select —</option>
-                          {paymentMethods.map((pm) => (
-                            <option key={pm.id} value={pm.id}>{pm.payment_method}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-booking-status">Booking Status *</label>
-                        <input
-                          id="edit-booking-status"
-                          type="number"
-                          name="booking_status_id"
-                          value={editFormData.booking_status_id ?? 1}
-                          onChange={handleInputChange}
-                          required
-                          min="1"
-                          className="form-input"
-                          title="Booking status ID — dropdown pending master-data endpoint"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-reservation-type">Reservation Type *</label>
-                        <select
-                          id="edit-reservation-type"
-                          name="reservation_type"
-                          value={editFormData.reservation_type || ""}
-                          onChange={handleInputChange}
-                          required
-                          className="form-select"
-                        >
-                          <option value="">— select —</option>
-                          {RESERVATION_TYPES.map((rt) => (
-                            <option key={rt} value={rt}>{rt}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-reservation-status">Reservation Status *</label>
-                        <select
-                          id="edit-reservation-status"
-                          name="reservation_status"
-                          value={editFormData.reservation_status || ""}
-                          onChange={handleInputChange}
-                          required
-                          className="form-select"
-                        >
-                          <option value="">— select —</option>
-                          {reservationStatuses.map((s) => (
-                            <option key={s.id} value={s.reservation_status}>{s.reservation_status}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-room-comp">Room Complementary</label>
-                        <input
-                          id="edit-room-comp"
-                          type="text"
-                          name="room_complementary"
-                          value={editFormData.room_complementary || ""}
-                          onChange={handleInputChange}
-                          maxLength={200}
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-common-comp">Common Complementary</label>
-                        <input
-                          id="edit-common-comp"
-                          type="text"
-                          name="common_complementary"
-                          value={editFormData.common_complementary || ""}
-                          onChange={handleInputChange}
-                          maxLength={200}
-                          className="form-input"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Payment Information */}
-                  <div className="modal-section">
-                    <h3 className="section-title">Payment Information</h3>
-                    <div className="form-grid">
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-total-amount">Total Amount *</label>
-                        <input
-                          id="edit-total-amount"
-                          type="number"
-                          name="total_amount"
-                          value={editFormData.total_amount ?? ""}
-                          onChange={handleInputChange}
-                          required
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-tax-type">Tax Type</label>
-                        <select
-                          id="edit-tax-type"
-                          name="tax_type_id"
-                          value={editFormData.tax_type_id || ""}
-                          onChange={handleInputChange}
-                          className="form-select"
-                        >
-                          <option value="">— select —</option>
-                          {taxTypes.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.tax_name} ({t.tax_percentage}%)
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-tax-percentage">Tax Percentage</label>
-                        <input
-                          id="edit-tax-percentage"
-                          type="number"
-                          name="tax_percentage"
-                          value={editFormData.tax_percentage ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-tax-amount">Tax Amount</label>
-                        <input
-                          id="edit-tax-amount"
-                          type="number"
-                          name="tax_amount"
-                          value={editFormData.tax_amount ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-discount-type">Discount Type</label>
-                        <select
-                          id="edit-discount-type"
-                          name="discount_type_id"
-                          value={editFormData.discount_type_id || ""}
-                          onChange={handleInputChange}
-                          className="form-select"
-                        >
-                          <option value="">— select —</option>
-                          {discountTypes.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              {d.discount_name || d.name || `#${d.id}`}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-discount-percentage">Discount Percentage</label>
-                        <input
-                          id="edit-discount-percentage"
-                          type="number"
-                          name="discount_percentage"
-                          value={editFormData.discount_percentage ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          max="100"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-discount-amount">Discount Amount</label>
-                        <input
-                          id="edit-discount-amount"
-                          type="number"
-                          name="discount_amount"
-                          value={editFormData.discount_amount ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-extra-charges">Extra Charges</label>
-                        <input
-                          id="edit-extra-charges"
-                          type="number"
-                          name="extra_charges"
-                          value={editFormData.extra_charges ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-overall">Overall Amount *</label>
-                        <input
-                          id="edit-overall"
-                          type="number"
-                          name="overall_amount"
-                          value={editFormData.overall_amount ?? ""}
-                          onChange={handleInputChange}
-                          required
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-paid">Paid Amount</label>
-                        <input
-                          id="edit-paid"
-                          type="number"
-                          name="paid_amount"
-                          value={editFormData.paid_amount ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-balance">Balance Amount</label>
-                        <input
-                          id="edit-balance"
-                          type="number"
-                          name="balance_amount"
-                          value={editFormData.balance_amount ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label" htmlFor="edit-extra-amount">Extra Amount</label>
-                        <input
-                          id="edit-extra-amount"
-                          type="number"
-                          name="extra_amount"
-                          value={editFormData.extra_amount ?? 0}
-                          onChange={handleInputChange}
-                          min="0"
-                          step="0.01"
-                          className="form-input"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setIsEditModalOpen(false)}
-                  disabled={editSaving}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={editSaving}
-                  aria-busy={editSaving}
-                >
-                  {editSaving ? "Updating…" : "Update Reservation"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete confirmation */}
-      <ConfirmDialog
-        open={Boolean(pendingDelete)}
-        title="Delete reservation"
-        body={
-          pendingDelete
-            ? `Delete reservation ${pendingDelete.room_reservation_id} for ${pendingDelete.first_name || "guest"}? This action cannot be undone.`
-            : ""
+      <TableTemplate
+        title="Reservations"
+        className="reservation-table"
+        loading={loading}
+        emptyMessage={
+          filtersActive
+            ? "No reservations match these filters."
+            : "No reservations yet. Use Add New Reservation to create the first one."
         }
-        confirmLabel="Delete"
-        onConfirm={confirmDelete}
-        onCancel={() => setPendingDelete(null)}
-        loading={deleteLoading}
+        variant="striped"
+        pagination
+        pageSize={10}
+        searchable
+        exportable
+        hasActionButton
+        actionButton={{
+          icon: <Download size={18} />,
+          label: "Export CSV",
+          onClick: handleExportCsv,
+          size: "small",
+          variant: "outline",
+        }}
+        filters={
+          <TableFilters
+            onClear={() => setFilters(EMPTY_FILTERS)}
+            isActive={filtersActive}
+          >
+            <FilterSelect
+              id="res-filter-status"
+              label="Status"
+              value={filters.reservation_status}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, reservation_status: e.target.value }))
+              }
+              options={statusOptions}
+            />
+            <FilterSelect
+              id="res-filter-type"
+              label="Type"
+              value={filters.reservation_type}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, reservation_type: e.target.value }))
+              }
+              options={RESERVATION_TYPES}
+            />
+            <FilterSelect
+              id="res-filter-payment"
+              label="Payment"
+              value={filters.payment_state}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, payment_state: e.target.value }))
+              }
+              options={PAYMENT_STATES}
+            />
+            <FilterDate
+              id="res-filter-from"
+              label="Staying from"
+              value={filters.from_date}
+              onChange={(e) => setFilters((f) => ({ ...f, from_date: e.target.value }))}
+              max={filters.to_date || undefined}
+            />
+            <FilterDate
+              id="res-filter-to"
+              label="Staying to"
+              value={filters.to_date}
+              onChange={(e) => setFilters((f) => ({ ...f, to_date: e.target.value }))}
+              min={filters.from_date || undefined}
+            />
+          </TableFilters>
+        }
+        columns={[
+          { key: "room_reservation_id", title: "Reservation ID", align: "left", width: "150px" },
+          {
+            key: "first_name",
+            title: "Guest",
+            align: "left",
+            width: "150px",
+            type: "custom",
+            exportValue: guestName,
+            render: (row) => (
+              <div className="res-guest-cell">
+                <span className="res-guest-name">{guestName(row)}</span>
+                <span className="res-guest-phone">{row.phone_number || "—"}</span>
+              </div>
+            ),
+          },
+          {
+            key: "arrival_date",
+            title: "Stay",
+            align: "left",
+            width: "115px",
+            type: "custom",
+            exportValue: (row) => `${isoDay(row.arrival_date)} to ${isoDay(row.departure_date)}`,
+            render: (row) => (
+              <div className="res-stay-cell">
+                <span className="res-stay-dates">{shortDate(row.arrival_date)}</span>
+                <span className="res-stay-dates">{shortDate(row.departure_date)}</span>
+                <span className="res-stay-nights">
+                  {row.no_of_nights} night{row.no_of_nights === 1 ? "" : "s"}
+                </span>
+              </div>
+            ),
+          },
+          {
+            // Room numbers and type names, never the foreign keys they used to
+            // be. The list payload carries both so no screen has to join by
+            // hand against seven master endpoints.
+            key: "room_nos",
+            title: "Room",
+            align: "left",
+            width: "130px",
+            type: "custom",
+            exportValue: (row) => (row.room_nos || []).join(" / "),
+            render: (row) => (
+              <div className="res-room-cell">
+                <span className="res-room-no">{joinList(row.room_nos)}</span>
+                <span className="res-room-type">{joinList(row.room_type_names)}</span>
+              </div>
+            ),
+          },
+          {
+            // Total, what is still owed, and the payment state in one column.
+            // As three separate columns the table needed more width than a
+            // laptop has, and Status -- the thing a receptionist scans for --
+            // ended up off the right edge behind a horizontal scroll.
+            key: "overall_amount",
+            title: "Amount",
+            align: "right",
+            width: "130px",
+            type: "custom",
+            exportValue: (row) => row.overall_amount ?? "",
+            render: (row) => {
+              const due = num(row.balance_amount);
+              return (
+                <div className="res-amount-cell">
+                  <span className="res-amount">{money(row.overall_amount)}</span>
+                  <span
+                    className={
+                      due > 0 ? "res-amount-sub res-amount--due" : "res-amount-sub"
+                    }
+                  >
+                    {due > 0 ? `${money(due)} due` : row.payment_state}
+                  </span>
+                </div>
+              );
+            },
+          },
+          { key: "reservation_status", title: "Status", align: "center", width: "120px", type: "badge" },
+          {
+            key: "actions",
+            title: "Actions",
+            align: "center",
+            type: "custom",
+            excludeFromExport: true,
+            render: (row) => {
+              const busy = rowBusy[row.id];
+              // Deliberately short. Nine icons per row did not fit beside the
+              // data columns, and a row of nine same-sized chips is unreadable
+              // anyway. What stays here is the everyday work: look at it,
+              // change it, arrive or depart the guest, take money. Cancel,
+              // no-show and print are one deliberate step further in, in the
+              // View modal, which is the right distance for two irreversible
+              // actions and one that opens a print dialog.
+              return (
+                <RowActions
+                  label={`reservation ${row.room_reservation_id}`}
+                  onView={() => openView(row)}
+                  onEdit={() => openEdit(row)}
+                  onDelete={() => setDeleteRow(row)}
+                  canEdit={!row.is_terminal}
+                  canDelete={!row.is_terminal && num(row.paid_amount) === 0}
+                >
+                  {row.can_check_in && (
+                    <IconButton
+                      variant="action-view"
+                      size="action"
+                      icon={<Check size={16} />}
+                      onClick={() => handleCheckIn(row)}
+                      disabled={Boolean(busy)}
+                      title="Check in"
+                      ariaLabel={`Check in ${guestName(row)}`}
+                    />
+                  )}
+                  {row.can_check_out && (
+                    <IconButton
+                      variant="action-view"
+                      size="action"
+                      icon={<LogOut size={16} />}
+                      onClick={() => handleCheckOut(row)}
+                      disabled={Boolean(busy)}
+                      title="Check out"
+                      ariaLabel={`Check out ${guestName(row)}`}
+                    />
+                  )}
+                  {num(row.balance_amount) > 0 && !row.is_terminal && (
+                    <IconButton
+                      variant="action-edit"
+                      size="action"
+                      icon={<CreditCard size={16} />}
+                      onClick={() => {
+                        setPayError(null);
+                        setPayModal({ row, amount: "", method: "" });
+                      }}
+                      title="Record payment"
+                      ariaLabel={`Record payment for ${guestName(row)}`}
+                    />
+                  )}
+                  {num(row.extra_amount) > 0 && (
+                    <IconButton
+                      variant="action-edit"
+                      size="action"
+                      icon={<HandCoins size={16} />}
+                      onClick={() => {
+                        setRefundError(null);
+                        setRefundModal({ row, amount: "", method: "" });
+                      }}
+                      title="Refund"
+                      ariaLabel={`Refund ${guestName(row)}`}
+                    />
+                  )}
+                </RowActions>
+              );
+            },
+          },
+        ]}
+        data={reservations}
       />
 
-      {/* Pay due amount */}
-      {payModal && (
-        <div
-          className="modal-container"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="pay-modal-title"
-          onClick={(e) => { if (e.target === e.currentTarget) closePayModal(); }}
-        >
-          <div className="modal-content confirm-modal">
-            <div className="modal-header">
-              <h2 className="modal-title" id="pay-modal-title">Record Payment</h2>
-              <button type="button" className="modal-close-btn" onClick={closePayModal} aria-label="Close" disabled={paySaving}>
-                <X size={22} />
-              </button>
+      {/* ============================== VIEW ============================== */}
+      <Modal
+        isOpen={Boolean(viewRow)}
+        title={`Reservation ${viewRow?.room_reservation_id || ""}`}
+        onClose={() => setViewRow(null)}
+        size="large"
+        viewMode
+        showFooter
+        actions={[
+          {
+            label: "Print receipt",
+            variant: "secondary",
+            onClick: () => viewRow && handlePrint(viewRow),
+          },
+          ...(viewRow?.can_mark_no_show
+            ? [{
+                label: "Mark no-show",
+                variant: "secondary",
+                onClick: () => {
+                  const row = viewRow;
+                  setViewRow(null);
+                  setNoShowRow(row);
+                },
+              }]
+            : []),
+          ...(viewRow?.can_cancel
+            ? [{
+                label: "Cancel reservation",
+                variant: "error",
+                onClick: () => {
+                  const row = viewRow;
+                  setViewRow(null);
+                  setCancelRow(row);
+                },
+              }]
+            : []),
+          { label: "Close", variant: "primary", onClick: () => setViewRow(null) },
+        ]}
+      >
+        <ViewSection title="Reservation">
+          <DetailList columns={3}>
+            <DetailItem label="Reservation ID" value={viewRow?.room_reservation_id} />
+            <DetailItem label="Confirmation code" value={viewRow?.confirmation_code} />
+            <DetailItem label="Status" value={viewRow?.reservation_status} />
+            <DetailItem label="Type" value={viewRow?.reservation_type} />
+            <DetailItem label="Booked on" value={isoDay(viewRow?.created_at)} />
+            <DetailItem label="Last updated" value={isoDay(viewRow?.updated_at)} />
+          </DetailList>
+        </ViewSection>
+
+        <ViewSection title="Guest">
+          <DetailList columns={3}>
+            <DetailItem label="Name" value={guestName(viewRow)} />
+            <DetailItem label="Salutation" value={viewRow?.salutation} />
+            <DetailItem label="Phone" value={viewRow?.phone_number} />
+            <DetailItem label="Email" value={viewRow?.email} span={2} />
+            <DetailItem label="Identity type" value={viewRow?.identity_type} />
+            <DetailItem label="Identity document" value={viewRow?.proof_document} span={3} />
+          </DetailList>
+        </ViewSection>
+
+        <ViewSection title="Stay">
+          <DetailList columns={3}>
+            <DetailItem label="Arrival" value={isoDay(viewRow?.arrival_date)} />
+            <DetailItem label="Departure" value={isoDay(viewRow?.departure_date)} />
+            <DetailItem label="Nights" value={viewRow?.no_of_nights} />
+            <DetailItem label="Rooms" value={joinList(viewRow?.room_nos)} />
+            <DetailItem label="Room types" value={joinList(viewRow?.room_type_names)} />
+            <DetailItem
+              label="Rate types"
+              value={joinList((viewRow?.rate_type || []).map((r) => String(r).replace(/_/g, " ")))}
+            />
+            <DetailItem label="Adults" value={viewRow?.no_of_adults} />
+            <DetailItem label="Children" value={viewRow?.no_of_children ?? 0} />
+            <DetailItem label="Extra beds" value={viewRow?.extra_bed_count ?? 0} />
+            <DetailItem label="Room complementary" value={viewRow?.room_complementary} />
+            <DetailItem label="Common complementary" value={viewRow?.common_complementary} span={2} />
+          </DetailList>
+        </ViewSection>
+
+        <ViewSection title="Charges">
+          <DetailList columns={3}>
+            <DetailItem label="Room amount" value={money(viewRow?.room_amount)} />
+            <DetailItem label="Extra charges" value={money(viewRow?.extra_charges)} />
+            <DetailItem
+              label="Extra bed cost"
+              value={`${money(viewRow?.extra_bed_cost)} × ${viewRow?.extra_bed_count ?? 0}`}
+            />
+            <DetailItem
+              label={`Tax${viewRow?.tax_name ? ` — ${viewRow.tax_name}` : ""}`}
+              value={`${money(viewRow?.tax_amount)} (${viewRow?.tax_percentage ?? 0}%)`}
+            />
+            <DetailItem
+              label={`Discount${viewRow?.discount_name ? ` — ${viewRow.discount_name}` : ""}`}
+              value={`-${money(viewRow?.discount_amount)} (${viewRow?.discount_percentage ?? 0}%)`}
+            />
+            <DetailItem label="Total" value={money(viewRow?.overall_amount)} />
+          </DetailList>
+        </ViewSection>
+
+        <ViewSection title="Payment">
+          <DetailList columns={3}>
+            <DetailItem label="Method" value={viewRow?.payment_method} />
+            <DetailItem label="Paid" value={money(viewRow?.paid_amount)} />
+            <DetailItem label="Balance" value={money(viewRow?.balance_amount)} />
+            <DetailItem label="Refundable" value={money(viewRow?.extra_amount)} />
+            <DetailItem label="State" value={viewRow?.payment_state} span={2} />
+          </DetailList>
+
+          {paymentHistory.length > 0 && (
+            <div className="res-history-scroll">
+              <table className="payment-history-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Method</th>
+                    <th scope="col" className="num">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentHistory.map((p) => (
+                    <tr key={p.id}>
+                      <td>{isoDay(p.paid_date)}</td>
+                      <td>{p.kind}</td>
+                      <td>{p.payment_method}</td>
+                      <td className="num">{money(p.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="modal-body">
-              {payError && <div className="reservation-alert inline" role="alert">{payError}</div>}
-              <div className="form-group">
-                <label className="form-label">Due Amount</label>
-                <input className="form-input" type="text" value={payModal.row?.balance_amount ?? 0} readOnly />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="pay-amount">Paying Amount</label>
-                <input
-                  id="pay-amount"
-                  className="form-input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={payModal.amount}
-                  onChange={(e) => setPayModal((m) => ({ ...m, amount: e.target.value }))}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="pay-method">Payment Method</label>
+          )}
+        </ViewSection>
+      </Modal>
+
+      {/* ============================ ADD / EDIT ============================ */}
+      <Modal
+        isOpen={Boolean(editRow)}
+        title={`Edit Reservation ${editRow?.room_reservation_id || ""}`}
+        onClose={closeEdit}
+        size="large"
+        showFooter
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeEdit, disabled: editSaving },
+          {
+            label: editSaving ? "Saving…" : "Save changes",
+            variant: "primary",
+            onClick: submitEdit,
+            disabled: editSaving,
+          },
+        ]}
+      >
+        <form onSubmit={submitEdit} noValidate>
+          <ErrorAlert message={editError} />
+          <ErrorAlert message={editAvailability} />
+
+          <ViewSection title="Guest">
+            <div className="res-form-grid">
+              <label className="res-field">
+                <span className="res-field-label">Salutation</span>
                 <select
-                  id="pay-method"
-                  className="form-select"
-                  value={payModal.method}
-                  onChange={(e) => setPayModal((m) => ({ ...m, method: e.target.value }))}
+                  className="select-control"
+                  value={editForm.salutation || ""}
+                  onChange={setField("salutation")}
+                >
+                  <option value="">—</option>
+                  {SALUTATIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+              <Input
+                label="First Name"
+                required
+                value={editForm.first_name || ""}
+                onChange={setField("first_name")}
+                maxLength={100}
+              />
+              <Input
+                label="Last Name"
+                value={editForm.last_name || ""}
+                onChange={setField("last_name")}
+                maxLength={100}
+              />
+              <Input
+                label="Phone Number"
+                required
+                type="tel"
+                value={editForm.phone_number || ""}
+                onChange={setField("phone_number")}
+                maxLength={20}
+              />
+              <Input
+                label="Email"
+                type="email"
+                value={editForm.email || ""}
+                onChange={setField("email")}
+                maxLength={100}
+              />
+            </div>
+          </ViewSection>
+
+          <ViewSection title="Stay">
+            <div className="res-form-grid">
+              <Input
+                label="Arrival Date"
+                required
+                type="date"
+                value={editForm.arrival_date || ""}
+                onChange={setField("arrival_date")}
+              />
+              <Input
+                label="Departure Date"
+                required
+                type="date"
+                value={editForm.departure_date || ""}
+                onChange={setField("departure_date")}
+                min={editForm.arrival_date || undefined}
+              />
+              <Input
+                label="Nights"
+                type="number"
+                value={editNights}
+                readOnly
+                helperText="Calculated from the dates"
+              />
+              <Input
+                label="Rooms"
+                value={
+                  (editForm.room_ids || [])
+                    .map((id) => rooms.find((r) => r.id === Number(id))?.room_no || id)
+                    .join(", ") || "—"
+                }
+                readOnly
+                helperText="Room assignment is managed under Room View"
+              />
+              <Input
+                label="Adults"
+                required
+                type="number"
+                min="1"
+                value={editForm.no_of_adults ?? 1}
+                onChange={setField("no_of_adults")}
+              />
+              <Input
+                label="Children"
+                type="number"
+                min="0"
+                value={editForm.no_of_children ?? 0}
+                onChange={setField("no_of_children")}
+              />
+            </div>
+          </ViewSection>
+
+          <ViewSection title="Reservation">
+            <div className="res-form-grid">
+              <label className="res-field">
+                <span className="res-field-label">
+                  Status <span className="required">*</span>
+                </span>
+                <select
+                  className="select-control"
+                  value={editForm.reservation_status || ""}
+                  onChange={setField("reservation_status")}
+                  required
+                >
+                  <option value="">— select —</option>
+                  {statusOptions.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="res-field">
+                <span className="res-field-label">Type</span>
+                <select
+                  className="select-control"
+                  value={editForm.reservation_type || ""}
+                  onChange={setField("reservation_type")}
+                >
+                  {RESERVATION_TYPES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="res-field">
+                <span className="res-field-label">
+                  Payment Method <span className="required">*</span>
+                </span>
+                <select
+                  className="select-control"
+                  value={editForm.payment_method_id || ""}
+                  onChange={setField("payment_method_id")}
+                  required
                 >
                   <option value="">— select —</option>
                   {paymentMethods.map((pm) => (
-                    <option key={pm.id} value={pm.payment_method}>{pm.payment_method}</option>
+                    <option key={pm.id} value={pm.id}>{pm.payment_method}</option>
                   ))}
                 </select>
-              </div>
+              </label>
+              <Input
+                label="Room Complementary"
+                value={editForm.room_complementary || ""}
+                onChange={setField("room_complementary")}
+                maxLength={100}
+              />
+              <Input
+                label="Common Complementary"
+                value={editForm.common_complementary || ""}
+                onChange={setField("common_complementary")}
+                maxLength={100}
+              />
             </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={closePayModal} disabled={paySaving}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={submitPay} disabled={paySaving} aria-busy={paySaving}>
-                {paySaving ? "Saving…" : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </ViewSection>
 
-      {/* Refund */}
-      {refundModal && (
-        <div
-          className="modal-container"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="refund-modal-title"
-          onClick={(e) => { if (e.target === e.currentTarget) closeRefundModal(); }}
-        >
-          <div className="modal-content confirm-modal">
-            <div className="modal-header">
-              <h2 className="modal-title" id="refund-modal-title">Refund Amount</h2>
-              <button type="button" className="modal-close-btn" onClick={closeRefundModal} aria-label="Close" disabled={refundSaving}>
-                <X size={22} />
-              </button>
-            </div>
-            <div className="modal-body">
-              {refundError && <div className="reservation-alert inline" role="alert">{refundError}</div>}
-              <div className="form-group">
-                <label className="form-label">Refundable Amount</label>
-                <input className="form-input" type="text" value={refundModal.row?.extra_amount ?? 0} readOnly />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="refund-amount">Refund Amount</label>
-                <input
-                  id="refund-amount"
-                  className="form-input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={refundModal.amount}
-                  onChange={(e) => setRefundModal((m) => ({ ...m, amount: e.target.value }))}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label" htmlFor="refund-method">Refund Method</label>
+          {/* Charges: the inputs are the desk's decisions, everything below
+              them is the server's answer. This section used to be twelve
+              editable number boxes including the total itself. */}
+          <ViewSection title="Charges">
+            <ErrorAlert message={editQuoteError} />
+            <div className="res-form-grid">
+              <label className="res-field">
+                <span className="res-field-label">Tax Type</span>
                 <select
-                  id="refund-method"
-                  className="form-select"
-                  value={refundModal.method}
-                  onChange={(e) => setRefundModal((m) => ({ ...m, method: e.target.value }))}
+                  className="select-control"
+                  value={editForm.tax_type_id || ""}
+                  onChange={setField("tax_type_id")}
                 >
-                  <option value="">— select —</option>
-                  {paymentMethods.map((pm) => (
-                    <option key={pm.id} value={pm.payment_method}>{pm.payment_method}</option>
+                  <option value="">No tax</option>
+                  {taxTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.tax_name} ({t.tax_percentage}%)
+                    </option>
                   ))}
                 </select>
-              </div>
+              </label>
+              <label className="res-field">
+                <span className="res-field-label">Discount Type</span>
+                <select
+                  className="select-control"
+                  value={editForm.discount_type_id || ""}
+                  onChange={setField("discount_type_id")}
+                >
+                  <option value="">No discount</option>
+                  {discountTypes.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.discount_name} ({d.discount_percentage}%)
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Input
+                label="Extra Charges"
+                type="number"
+                min="0"
+                step="0.01"
+                value={editForm.extra_charges ?? 0}
+                onChange={setField("extra_charges")}
+              />
+              <Input
+                label="Extra Bed Count"
+                type="number"
+                min="0"
+                value={editForm.extra_bed_count ?? 0}
+                onChange={setField("extra_bed_count")}
+              />
+              <Input
+                label="Room Amount"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder={String(editQuote?.computed_room_amount ?? "")}
+                value={editForm.room_amount}
+                onChange={setField("room_amount")}
+                helperText="Leave blank to use the rate card"
+              />
             </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={closeRefundModal} disabled={refundSaving}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={submitRefund} disabled={refundSaving} aria-busy={refundSaving}>
-                {refundSaving ? "Saving…" : "Submit"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
+            <DetailList columns={3}>
+              <DetailItem label="Room amount" value={money(editQuote?.room_amount)} />
+              <DetailItem
+                label="Tax"
+                value={`${money(editQuote?.tax_amount)} (${editQuote?.tax_percentage ?? 0}%)`}
+              />
+              <DetailItem
+                label="Discount"
+                value={`-${money(editQuote?.discount_amount)} (${editQuote?.discount_percentage ?? 0}%)`}
+              />
+              <DetailItem label="New total" value={money(editQuote?.overall_amount)} />
+              <DetailItem label="Already paid" value={money(editRow?.paid_amount)} />
+              <DetailItem label="Balance after change" value={money(editQuote?.balance_amount)} />
+            </DetailList>
+          </ViewSection>
+        </form>
+      </Modal>
+
+      {/* ============================ CONFIRMATIONS ============================ */}
+      <ConfirmModal
+        isOpen={Boolean(deleteRow)}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        title="Delete reservation"
+        confirmText="Delete"
+        size="small"
+        destructive
+      >
+        Delete {deleteRow?.room_reservation_id} for {guestName(deleteRow)}? This removes
+        it from the book entirely. To keep the record and free the room, cancel it instead.
+      </ConfirmModal>
+
+      <ConfirmModal
+        isOpen={Boolean(cancelRow)}
+        onClose={() => setCancelRow(null)}
+        onConfirm={confirmCancel}
+        title="Cancel reservation"
+        confirmText="Cancel reservation"
+        cancelText="Keep it"
+        size="small"
+        destructive
+      >
+        Cancel {cancelRow?.room_reservation_id} for {guestName(cancelRow)}?{" "}
+        {joinList(cancelRow?.room_nos)} becomes available for those dates immediately.
+        {num(cancelRow?.paid_amount) > 0 &&
+          ` ${money(cancelRow?.paid_amount)} has already been paid and stays on the record.`}
+      </ConfirmModal>
+
+      <ConfirmModal
+        isOpen={Boolean(noShowRow)}
+        onClose={() => setNoShowRow(null)}
+        onConfirm={confirmNoShow}
+        title="Mark as no-show"
+        confirmText="Mark no-show"
+        size="small"
+        destructive
+      >
+        Mark {noShowRow?.room_reservation_id} for {guestName(noShowRow)} as a no-show?
+        The room is released, and the booking stays on record as chargeable.
+      </ConfirmModal>
+
+      {/* ============================ PAYMENT ============================ */}
+      <Modal
+        isOpen={Boolean(payModal)}
+        title="Record Payment"
+        onClose={() => !paySaving && setPayModal(null)}
+        size="small"
+        showFooter
+        actions={[
+          {
+            label: "Cancel",
+            variant: "secondary",
+            onClick: () => setPayModal(null),
+            disabled: paySaving,
+          },
+          {
+            label: paySaving ? "Saving…" : "Record payment",
+            variant: "primary",
+            onClick: submitPay,
+            disabled: paySaving,
+          },
+        ]}
+      >
+        <ErrorAlert message={payError} />
+        <Input
+          label="Outstanding balance"
+          value={money(payModal?.row?.balance_amount)}
+          readOnly
+        />
+        <Input
+          label="Paying now"
+          type="number"
+          min="0"
+          step="0.01"
+          value={payModal?.amount ?? ""}
+          onChange={(e) => setPayModal((m) => ({ ...m, amount: e.target.value }))}
+        />
+        <label className="res-field">
+          <span className="res-field-label">Payment method</span>
+          <select
+            className="select-control"
+            value={payModal?.method ?? ""}
+            onChange={(e) => setPayModal((m) => ({ ...m, method: e.target.value }))}
+          >
+            <option value="">— select —</option>
+            {paymentMethods.map((pm) => (
+              <option key={pm.id} value={pm.payment_method}>{pm.payment_method}</option>
+            ))}
+          </select>
+        </label>
+      </Modal>
+
+      {/* ============================ REFUND ============================ */}
+      <Modal
+        isOpen={Boolean(refundModal)}
+        title="Refund Overpayment"
+        onClose={() => !refundSaving && setRefundModal(null)}
+        size="small"
+        showFooter
+        actions={[
+          {
+            label: "Cancel",
+            variant: "secondary",
+            onClick: () => setRefundModal(null),
+            disabled: refundSaving,
+          },
+          {
+            label: refundSaving ? "Saving…" : "Refund",
+            variant: "primary",
+            onClick: submitRefund,
+            disabled: refundSaving,
+          },
+        ]}
+      >
+        <ErrorAlert message={refundError} />
+        <Input
+          label="Refundable amount"
+          value={money(refundModal?.row?.extra_amount)}
+          readOnly
+        />
+        <Input
+          label="Refund amount"
+          type="number"
+          min="0"
+          step="0.01"
+          value={refundModal?.amount ?? ""}
+          onChange={(e) => setRefundModal((m) => ({ ...m, amount: e.target.value }))}
+        />
+        <label className="res-field">
+          <span className="res-field-label">Refund method</span>
+          <select
+            className="select-control"
+            value={refundModal?.method ?? ""}
+            onChange={(e) => setRefundModal((m) => ({ ...m, method: e.target.value }))}
+          >
+            <option value="">— select —</option>
+            {paymentMethods.map((pm) => (
+              <option key={pm.id} value={pm.payment_method}>{pm.payment_method}</option>
+            ))}
+          </select>
+        </label>
+      </Modal>
+
+      <Toast {...toast} />
     </>
   );
 };

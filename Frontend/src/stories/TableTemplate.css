@@ -74,6 +74,16 @@
   min-width: 0;
 }
 
+/* Business filters sit between the search box and the export actions. The
+   toolbar is space-between, so this middle child takes the slack rather than
+   the gap between the two ends doing it. */
+.toolbar-filters {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
 .toolbar-right {
   display: flex;
   align-items: center;
@@ -497,7 +507,11 @@
   .toolbar-left {
     max-width: none;
   }
-  
+
+  .toolbar-filters {
+    justify-content: stretch;
+  }
+
   .toolbar-right {
     justify-content: center;
   }
@@ -718,6 +732,13 @@ body.dark .filter-checkbox:hover {
 /* Long free-text cell (a description, a note). Clamped to two lines so one
    long value cannot set the row height for the whole table; the full text is
    on the title attribute and in the View modal. */
+/* A value that reads as one token and must not break across lines — a
+   date+time pair, a code, a range. Without it "31 Jul 2026 · 10:00" wraps
+   after the separator and the cell shows a dangling "·". */
+.table-cell-nowrap {
+  white-space: nowrap;
+}
+
 .table-cell-clamp {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -874,4 +895,10 @@ body.dark .filter-checkbox:hover {
   .table-template .table tr.table-message-row td::before {
     display: none;
   }
+}
+
+/* Opt-out of wrapping for short atomic values (a date, a time range) that read
+   badly broken across lines. */
+.table .nowrap {
+  white-space: nowrap;
 }

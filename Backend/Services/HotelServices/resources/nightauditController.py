@@ -7,15 +7,31 @@ from jose import JWTError
 import jwt
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from typing import Optional
 from datetime import date, timedelta
 import datetime as dt
+
+import logging
+import os
+
+import httpx
 
 from models import get_db, models
 from configs.base_config import BaseConfig, CommonWords
 from fastapi import HTTPException
 from resources.utils import verify_authentication
+from resources import nightAuditService as nas
+from resources.nightAuditService import AuditConflict
 
+logger = logging.getLogger("hotelservice.nightaudit")
+
+# The room master lives in MasterDataServices, so the room INVENTORY count is
+# not a fact this service owns. It is read over loopback, best-effort, purely
+# to turn "8 rooms occupied" into "8 of 25 (32%)" on the audit record. Every
+# call site treats a failure as "unknown" and carries on -- see
+# `_fetch_rooms_total`.
+MASTER_SERVICE_URL = os.getenv("MASTER_SERVICE_URL", "http://127.0.0.1:8030")
 
 router = APIRouter()
 
@@ -657,117 +673,390 @@ async def export_settlement_summary(request: Request,
         detail="Unsupported format. Use 'excel' or 'json'"
     )
 
-# Night Audit Process (React API)
+# =====================================================================
+# NIGHT AUDIT
+#
+# Everything below is the operational module: the business date, the
+# readiness check, the run, and the history. The report endpoints above are
+# unchanged.
+#
+# One rule holds throughout: the business date comes from
+# `hotel_business_date`, never from `date.today()`. A hotel day ends when the
+# audit says it ends, not at midnight, and the whole point of the module is
+# that a night which was never closed cannot be quietly skipped.
+# =====================================================================
 
-@router.get("/night_audit_process")
-async def night_audit_process(request: Request,
-    db: Session = Depends(get_db)):
-    # company_id now comes from the verified token. It used to be a
-    # caller-supplied parameter on an unauthenticated route.
+
+async def _fetch_rooms_total(token: str) -> Optional[int]:
+    """Room inventory count from MasterDataServices. Best-effort, never fatal.
+
+    Used only to express occupancy as a percentage. It is fetched BEFORE the
+    audit transaction opens and outside it, so a slow or unreachable master
+    service can never hold a database lock or fail a run -- the audit simply
+    records `rooms_total = null` and the percentage is omitted.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"{MASTER_SERVICE_URL}/room",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if resp.status_code != 200:
+            logger.info("rooms_total_unavailable status=%s", resp.status_code)
+            return None
+        payload = resp.json() or {}
+        count = payload.get("count")
+        if isinstance(count, int):
+            return count
+        data = payload.get("data")
+        return len(data) if isinstance(data, list) else None
+    except (httpx.HTTPError, ValueError):
+        # Occupancy percentage is a nicety; the audit is not.
+        logger.info("rooms_total_fetch_failed", exc_info=True)
+        return None
+
+
+def _business_date_payload(bd_row) -> dict:
+    return {
+        "business_date": bd_row.business_date,
+        "next_business_date": bd_row.business_date + timedelta(days=1),
+        "last_audit_at": bd_row.last_audit_at,
+        "last_audit_by": bd_row.last_audit_by,
+        # Exposed so the UI can show "the calendar has moved on, you are
+        # behind" rather than leaving an operator to work it out.
+        "server_date": date.today(),
+        "days_behind": max((date.today() - bd_row.business_date).days, 0),
+    }
+
+
+@router.get("/night_audit/status", status_code=status.HTTP_200_OK)
+def night_audit_status(request: Request, db: Session = Depends(get_db)):
+    """Business date, readiness and headline counts. The dashboard's first call."""
     user_id, role_id, company_id, token = verify_authentication(request)
-    # Session validation
-    if "sessid" not in request.session:
-        return RedirectResponse(
-            CommonWords.LOGINER_URL,
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT
+
+    bd_row = nas.ensure_business_date(db, company_id, user_id)
+    business_date = bd_row.business_date
+
+    position = nas.compute_position(db, company_id, business_date)
+    existing = (
+        db.query(models.NightAudit)
+        .filter(
+            models.NightAudit.company_id == str(company_id),
+            models.NightAudit.business_date == business_date,
         )
+        .first()
+    )
+    readiness = nas.build_readiness(position, business_date, existing)
+
+    last_audit = (
+        db.query(models.NightAudit)
+        .filter(
+            models.NightAudit.company_id == str(company_id),
+            models.NightAudit.audit_status == nas.AUDIT_COMPLETED,
+        )
+        .order_by(models.NightAudit.business_date.desc())
+        .first()
+    )
+
+    return {
+        "status": "success",
+        "data": {
+            **_business_date_payload(bd_row),
+            "readiness": readiness,
+            "movement": position["movement"],
+            "revenue": position["revenue"],
+            "settlement": position["settlement"],
+            "occupancy": position["occupancy"],
+            # A Failed row here is what makes the UI able to offer Retry.
+            "current_audit": nas.audit_to_dict(existing) if existing else None,
+            "last_completed_audit": nas.audit_to_dict(last_audit) if last_audit else None,
+        },
+    }
+
+
+@router.get("/night_audit/preview", status_code=status.HTTP_200_OK)
+def night_audit_preview(
+    request: Request,
+    business_date: Optional[str] = Query(
+        None,
+        description="Inspect a past night (YYYY-MM-DD). Defaults to the current business date.",
+    ),
+    db: Session = Depends(get_db),
+):
+    """The full position for a night, including the reservation lists.
+
+    This is what the operator reviews before running, and it is computed by the
+    same `compute_position` the run itself snapshots -- so what is approved on
+    screen is exactly what gets recorded. The frontend never adds up a total of
+    its own.
+    """
+    user_id, role_id, company_id, token = verify_authentication(request)
+
+    bd_row = nas.ensure_business_date(db, company_id, user_id)
+    target = bd_row.business_date
+    if business_date:
+        try:
+            target = dt.datetime.strptime(business_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid date format. Use YYYY-MM-DD"
+            )
+
+    position = nas.compute_position(db, company_id, target)
+    existing = (
+        db.query(models.NightAudit)
+        .filter(
+            models.NightAudit.company_id == str(company_id),
+            models.NightAudit.business_date == target,
+        )
+        .first()
+    )
+
+    return {
+        "status": "success",
+        "data": {
+            **_business_date_payload(bd_row),
+            "audited_date": target,
+            "is_current_business_date": target == bd_row.business_date,
+            "readiness": nas.build_readiness(position, target, existing),
+            "movement": position["movement"],
+            "revenue": position["revenue"],
+            "settlement": position["settlement"],
+            "occupancy": position["occupancy"],
+            "lists": position["lists"],
+            "existing_audit": nas.audit_to_dict(existing) if existing else None,
+        },
+    }
+
+
+@router.post("/night_audit/run", status_code=status.HTTP_200_OK)
+async def night_audit_run(request: Request, db: Session = Depends(get_db)):
+    """Close the current business day.
+
+    IDEMPOTENCY
+        `night_audit` carries UNIQUE(company_id, business_date), and the run
+        holds a FOR UPDATE lock on the business-date row for its whole
+        duration. A double-clicked button, a retried request, a refresh
+        mid-run, a second tab and a second operator all converge on the same
+        outcome: one audit row, one date roll, and a 409 for the loser.
+
+    ATOMICITY
+        No-show updates, the snapshot and the date roll commit together or not
+        at all. There is no window in which the date has advanced but the night
+        was not recorded.
+
+    FAILURE
+        The transaction is rolled back and the night is recorded as Failed with
+        its reason, so the UI can never show a failure as a completed audit.
+        Retrying reuses that row -- the failed run left nothing behind to undo.
+    """
+    user_id, role_id, company_id, token = verify_authentication(request)
 
     try:
-        # JWT validation
-        token = request.session["sessid"]
-        payload = jwt.decode(
-            token,
-            BaseConfig.SECRET_KEY,
-            algorithms=[BaseConfig.ALGORITHM]
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    # Defaults to True because an arrival that never happened is the normal
+    # thing a night audit resolves, but it stays an explicit operator choice:
+    # the run writes to real reservations, and the ids it changed are stored on
+    # the audit row so the change is attributable and can be undone by hand.
+    mark_no_shows = bool(payload.get("mark_no_shows", True))
+
+    # Required, not optional. The caller has to say which night it believes it
+    # is closing; that is what stops a double-click from closing two nights in
+    # a row. See run_audit's docstring -- this was added after eight concurrent
+    # runs each correctly closed a DIFFERENT night.
+    raw_date = payload.get("business_date")
+    if not raw_date:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "business_date is required. Send the date shown on the Night Audit "
+                "screen so a stale page cannot close the wrong night."
+            ),
+        )
+    try:
+        expected_business_date = dt.datetime.strptime(str(raw_date), "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid business_date format. Use YYYY-MM-DD"
         )
 
-        created_by = payload.get("user_id")
-        company_id = payload.get("company_id")
+    bd_row = nas.ensure_business_date(db, company_id, user_id)
+    business_date = bd_row.business_date
 
-        if not created_by or not company_id:
-            return RedirectResponse(
-                CommonWords.LOGINER_URL,
-                status_code=status.HTTP_307_TEMPORARY_REDIRECT
+    # Outside the transaction on purpose -- see _fetch_rooms_total.
+    rooms_total = await _fetch_rooms_total(token)
+
+    try:
+        audit = nas.run_audit(
+            db,
+            company_id,
+            user_id,
+            expected_business_date=expected_business_date,
+            mark_no_shows=mark_no_shows,
+            rooms_total=rooms_total,
+        )
+        db.commit()
+        db.refresh(audit)
+    except AuditConflict as conflict:
+        db.rollback()
+        raise HTTPException(
+            status_code=conflict.http_status,
+            detail=conflict.message,
+        )
+    except IntegrityError as exc:
+        # uq_night_audit_company_date fired: another run recorded this night
+        # between our readiness check and our INSERT. The database is the last
+        # line of the idempotency guarantee, and reaching it is not an error
+        # condition -- it is the guarantee working. It must read to the
+        # operator as "already done", never as "the audit crashed".
+        db.rollback()
+        if "uq_night_audit_company_date" in str(getattr(exc, "orig", exc)):
+            logger.info(
+                "night_audit_race_lost date=%s company=%s", business_date, company_id
             )
-
-        # Audit date (yesterday)
-        audit_date = (dt.datetime.now() - timedelta(days=1)).date()
-
-        # Reservation position for the audit date (stays spanning that night)
-        reservations = db.query(models.RoomReservation).filter(
-            models.RoomReservation.company_id == company_id,
-            models.RoomReservation.arrival_date <= audit_date,
-            models.RoomReservation.departure_date >= audit_date,
-            models.RoomReservation.status == CommonWords.STATUS
-        ).all()
-
-        # Room revenue booked to arrive on the audit date
-        room_revenue = db.query(
-            func.coalesce(func.sum(models.RoomReservation.room_amount), 0)
-        ).filter(
-            models.RoomReservation.company_id == company_id,
-            models.RoomReservation.arrival_date == audit_date,
-            models.RoomReservation.status == CommonWords.STATUS
-        ).scalar()
-
-        # Extra charges (RoomReservation carries this as a plain column here,
-        # not a separate Extra_Charges table)
-        extra_charges = db.query(
-            func.coalesce(func.sum(models.RoomReservation.extra_charges), 0)
-        ).filter(
-            models.RoomReservation.company_id == company_id,
-            models.RoomReservation.arrival_date == audit_date,
-            models.RoomReservation.status == CommonWords.STATUS
-        ).scalar()
-
-        # Payment summary by payment_method_id (PaymentMethod master lives in
-        # MasterDataServices, so only the id is available here)
-        payment_summary_query = (
-            db.query(
-                models.RoomReservation.payment_method_id,
-                func.coalesce(func.sum(models.RoomReservation.paid_amount), 0).label("total_amount")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"{business_date.isoformat()} has already been audited. "
+                    "Refresh to see the completed audit."
+                ),
             )
-            .filter(
-                models.RoomReservation.company_id == company_id,
-                models.RoomReservation.arrival_date == audit_date,
-                models.RoomReservation.status == CommonWords.STATUS
-            )
-            .group_by(models.RoomReservation.payment_method_id)
-            .all()
-        )
-
-        payment_summary = [
-            {
-                "payment_method_id": payment_method_id,
-                "amount": amount
-            }
-            for payment_method_id, amount in payment_summary_query
-        ]
-
-        total_payments = sum(item["amount"] for item in payment_summary)
-
-        # Final audit report
-        audit_report = {
-            "audit_date": audit_date,
-            "reservations_count": len(reservations),
-            "room_revenue": room_revenue,
-            "extra_charges": extra_charges,
-            "payment_summary": payment_summary,
-            "total_payments": total_payments
-        }
-
-        return JSONResponse(
-            content=jsonable_encoder(audit_report),
-            status_code=status.HTTP_200_OK
-        )
-
-    except JWTError:
-        return RedirectResponse(
-            CommonWords.LOGINER_URL,
-            status_code=status.HTTP_307_TEMPORARY_REDIRECT
-        )
-    except Exception as e:
+        logger.exception("night_audit_integrity_error date=%s", business_date)
+        nas.record_failure(db, company_id, business_date, user_id, str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail="Night audit failed and was rolled back. No changes were applied.",
         )
+    except Exception as exc:
+        db.rollback()
+        # The rollback discarded the audit row too, so the failure is written
+        # again in its own transaction. "We tried and it failed" and "nobody
+        # ever ran it" are different facts, and only the first says "retry".
+        logger.exception("night_audit_failed date=%s company=%s", business_date, company_id)
+        nas.record_failure(db, company_id, business_date, user_id, str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Night audit failed and was rolled back. No changes were applied.",
+        )
+
+    fresh_bd = nas.get_business_date_row(db, company_id)
+    return {
+        "status": "success",
+        "message": f"Night audit completed for {business_date.isoformat()}.",
+        "data": {
+            "audit": nas.audit_to_dict(audit),
+            **(_business_date_payload(fresh_bd) if fresh_bd else {}),
+        },
+    }
+
+
+@router.get("/night_audit/history", status_code=status.HTTP_200_OK)
+def night_audit_history(
+    request: Request,
+    limit: int = Query(90, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    """Past runs, newest night first. Includes Failed runs -- deliberately.
+
+    A history that hid failures would let a night that blew up look like a
+    night that was never due.
+    """
+    user_id, role_id, company_id, token = verify_authentication(request)
+
+    rows = (
+        db.query(models.NightAudit)
+        .filter(models.NightAudit.company_id == str(company_id))
+        .order_by(models.NightAudit.business_date.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "status": "success",
+        "count": len(rows),
+        "data": [nas.audit_to_dict(r) for r in rows],
+    }
+
+
+# Declared AFTER /night_audit/status, /preview, /run and /history: FastAPI
+# matches in declaration order, so a `{audit_id}` route placed above them would
+# swallow "status" and "history" as ids.
+@router.get("/night_audit/{audit_id}", status_code=status.HTTP_200_OK)
+def night_audit_detail(
+    request: Request,
+    audit_id: int,
+    db: Session = Depends(get_db),
+):
+    """One audit as it was recorded. Never recomputed from live reservations."""
+    user_id, role_id, company_id, token = verify_authentication(request)
+
+    audit = (
+        db.query(models.NightAudit)
+        .filter(
+            models.NightAudit.id == audit_id,
+            models.NightAudit.company_id == str(company_id),
+        )
+        .first()
+    )
+    if not audit:
+        raise HTTPException(status_code=404, detail="Night audit not found")
+
+    return {"status": "success", "data": nas.audit_to_dict(audit)}
+
+
+# ---------------------------------------------------------------------------
+# Legacy report endpoint, repaired.
+#
+# WHAT WAS WRONG WITH IT
+#   1. It gated on `request.session["sessid"]`. Every external request arrives
+#      through the gateway proxy, which forwards a bearer token and no cookie
+#      session, so that key was never present and the endpoint returned a 307
+#      redirect to the login page on EVERY call. It had never once executed.
+#   2. It summed the FULL `room_amount` of reservations *arriving* that day and
+#      called the result one day's room revenue. `room_amount` is the whole
+#      stay, so a 6-night booking counted six nights of money against its
+#      arrival date -- while every guest already in-house that night counted
+#      nothing at all.
+#   3. It grouped payments by `payment_method_id` off the reservation, which is
+#      the method chosen at booking, not the methods actually used to pay.
+#
+# It now delegates to the same position calculation as the rest of the module,
+# so it can no longer disagree with the audit record.
+# ---------------------------------------------------------------------------
+
+@router.get("/night_audit_process")
+def night_audit_process(
+    request: Request,
+    business_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    user_id, role_id, company_id, token = verify_authentication(request)
+
+    bd_row = nas.ensure_business_date(db, company_id, user_id)
+    audit_date = bd_row.business_date
+    if business_date:
+        try:
+            audit_date = dt.datetime.strptime(business_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="Invalid date format. Use YYYY-MM-DD"
+            )
+
+    position = nas.compute_position(db, company_id, audit_date)
+
+    return {
+        "status": "success",
+        "data": {
+            "audit_date": audit_date,
+            "reservations_count": position["movement"]["in_house"],
+            "room_revenue": position["revenue"]["room_revenue"],
+            "extra_charges": position["revenue"]["extra_charges"],
+            "payment_summary": position["settlement"]["payment_breakdown"],
+            "total_payments": position["settlement"]["payments_collected"],
+        },
+    }
