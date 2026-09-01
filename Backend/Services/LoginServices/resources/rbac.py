@@ -35,7 +35,12 @@ import logging
 import os
 from typing import Iterable, Optional
 
-from resources.rbac_map import METHOD_ACTION, PAGE_PARENTS, ROUTE_PERMISSIONS
+from resources.rbac_map import (
+    ACTION_OVERRIDES,
+    METHOD_ACTION,
+    PAGE_PARENTS,
+    ROUTE_PERMISSIONS,
+)
 
 logger = logging.getLogger("loginservice.rbac")
 
@@ -87,6 +92,15 @@ def build_permission_claim(menus: Iterable[dict]) -> dict[str, int]:
     return claim
 
 
+def _action_for(key, method: str) -> Optional[str]:
+    """The permission a route needs -- its override, else its verb's default.
+
+    Looked up by the ROUTE key rather than by method, so a pattern row and the
+    literal path that matched it resolve identically.
+    """
+    return ACTION_OVERRIDES.get(key) or METHOD_ACTION.get(method)
+
+
 def _match(prefix: str, path: str, method: str):
     """Resolve a proxied request against the map. Returns (action, pages) or None."""
     path = (path or "").strip("/")
@@ -95,7 +109,7 @@ def _match(prefix: str, path: str, method: str):
 
     key = (prefix, path, method)
     if key in ROUTE_PERMISSIONS:
-        return METHOD_ACTION.get(method), ROUTE_PERMISSIONS[key]
+        return _action_for(key, method), ROUTE_PERMISSIONS[key]
 
     # Fall back to pattern rows, where {id} stands for exactly one segment.
     for (p, pattern, m), pages in ROUTE_PERMISSIONS.items():
@@ -106,7 +120,7 @@ def _match(prefix: str, path: str, method: str):
             continue
         if all(ps == s or (ps.startswith("{") and ps.endswith("}"))
                for ps, s in zip(pat_segs, segs)):
-            return METHOD_ACTION.get(method), pages
+            return _action_for((p, pattern, m), method), pages
     return None
 
 

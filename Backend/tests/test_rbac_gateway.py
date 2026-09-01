@@ -285,15 +285,18 @@ def test_no_row_is_grantable_only_through_a_dead_route():
 def test_write_rows_are_essentially_unambiguous():
     """Writes are the operations worth guarding; they must resolve to one page.
 
-    Seven known exceptions, each several views of a single feature: a roster
-    and its shift planner, a reservation and its edit view, the kitchen display
-    mounted once per station, and the reservation pricing call. Pinned as an
-    exact set rather than a count, so a genuinely new ambiguity fails here even
-    if a known one is removed.
+    Six known exceptions, each several views of a single feature: a roster and
+    its shift planner, the kitchen display mounted once per station, and the
+    reservation pricing call. Pinned as an exact set rather than a count, so a
+    genuinely new ambiguity fails here even if a known one is removed.
+
+    `("hotel", "room_reservation", "PUT")` used to be a seventh. It resolved to
+    /reservation and /ReservationEdit -- a second edit screen nothing in the app
+    ever navigated to. Deleting that screen left the edit exactly one home, so
+    the ambiguity is gone rather than merely reviewed.
     """
     expected = {
         ("bar", "staff_assignment", "POST"),
-        ("hotel", "room_reservation", "PUT"),
         # Reviewed: /hotel/room_reservation_quote is a POST that writes
         # nothing -- it prices a stay and returns the figures, and it is a POST
         # only because the request carries a room list and dates that do not
@@ -316,3 +319,192 @@ def test_write_rows_are_essentially_unambiguous():
         f"unreviewed ambiguous writes: {sorted(shared_writes - expected)}; "
         f"gone: {sorted(expected - shared_writes)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# ACTION_OVERRIDES -- when the HTTP verb is the wrong name for what a route does
+# ---------------------------------------------------------------------------
+# METHOD_ACTION is a good default and a poor rule for action endpoints. A POST
+# that changes an existing record is an EDIT of it, not a create.
+#
+# The Front Office role in this product holds view+edit on /reservation and NOT
+# add. Under `enforce` with the default mapping it was denied check-in,
+# check-out, payment, refund, cancel, no-show and the pricing quote -- the whole
+# front-desk job -- while still being able to edit the same booking through the
+# form. These tests pin the fix so a regeneration cannot quietly undo it.
+
+def test_reservation_lifecycle_actions_require_edit_not_create():
+    """Acting on a booking that already exists is an edit."""
+    from resources.rbac_map import ACTION_OVERRIDES
+
+    for path in (
+        "room_reservation_checkin/{id}",
+        "room_reservation_checkout/{id}",
+        "room_reservation_cancel/{id}",
+        "room_reservation_no_show/{id}",
+        "room_reservation_pay/{id}",
+        "room_reservation_refund/{id}",
+    ):
+        assert ACTION_OVERRIDES[("hotel", path, "POST")] == "edit", path
+
+
+def test_the_pricing_quote_is_a_read():
+    """It stores nothing; it is a POST only because the request body is a list
+    of rooms and dates that will not fit in a query string."""
+    from resources.rbac_map import ACTION_OVERRIDES
+
+    assert ACTION_OVERRIDES[("hotel", "room_reservation_quote", "POST")] == "view"
+
+
+def test_a_view_and_edit_role_can_run_the_front_desk(enforce):
+    """The end-to-end consequence, asserted against rbac.check itself."""
+    from resources import rbac
+
+    # Exactly what the Front Office role holds: view + edit, no add, no delete.
+    perm = {"/reservation": rbac.VIEW | rbac.EDIT}
+
+    for path in (
+        "room_reservation_checkin/{id}",
+        "room_reservation_checkout/{id}",
+        "room_reservation_cancel/{id}",
+        "room_reservation_no_show/{id}",
+        "room_reservation_pay/{id}",
+        "room_reservation_refund/{id}",
+    ):
+        assert rbac.check(perm, "hotel", path, "POST") is None, path
+
+
+def test_that_role_still_cannot_create_or_delete_a_reservation(enforce):
+    """The override must not have widened anything: add and delete are still
+    the permissions they always were."""
+    from resources import rbac
+
+    perm = {"/reservation": rbac.VIEW | rbac.EDIT, "/add_new_reservation": rbac.VIEW}
+
+    # Creating a booking is a genuine create, and this role lacks it.
+    assert rbac.check(perm, "hotel", "room_reservation", "POST") is not None
+    # Deleting one is a genuine delete, and this role lacks it.
+    assert rbac.check(perm, "hotel", "room_reservation/{id}", "DELETE") is not None
+
+
+def test_every_override_names_a_route_that_exists():
+    """An override for a route that is not in the map does nothing, and would
+    hide a typo behind silence."""
+    from resources.rbac_map import ACTION_OVERRIDES, ROUTE_PERMISSIONS
+
+    unknown = [k for k in ACTION_OVERRIDES if k not in ROUTE_PERMISSIONS]
+    assert not unknown, f"overrides for routes not in the map: {unknown}"
+
+
+def test_every_override_names_a_real_action():
+    from resources.rbac import ACTION_BIT
+    from resources.rbac_map import ACTION_OVERRIDES
+
+    bad = {k: v for k, v in ACTION_OVERRIDES.items() if v not in ACTION_BIT}
+    assert not bad, f"overrides naming an unknown action: {bad}"
+
+
+# ---------------------------------------------------------------------------
+# PAGE_PARENTS must never be empty
+# ---------------------------------------------------------------------------
+
+def test_detail_routes_still_resolve_to_a_menu_page():
+    """PAGE_PARENTS renders from the shipped menus, and the generator returned
+    an EMPTY set when it could not read them -- which it could not, after
+    hotelerp_users.sql was removed from the repo. An empty table is invisible
+    in `audit` and denies every user in `enforce`: GET /hotel/room_reservation/
+    {id} names only detail views, so with no parents it grants nothing to
+    anybody, owners included."""
+    from resources.rbac_map import PAGE_PARENTS, ROUTE_PERMISSIONS
+
+    assert PAGE_PARENTS, "PAGE_PARENTS is empty -- the generator could not read the menus"
+    assert "/ReservationView" in PAGE_PARENTS
+
+    # And the row that motivated it must be grantable to somebody.
+    pages = ROUTE_PERMISSIONS[("hotel", "room_reservation/{id}", "GET")]
+    parents = set()
+    for page in pages:
+        parents |= set(PAGE_PARENTS.get(page, ()))
+    assert parents, f"{pages} resolve to no menu page, so nobody can be granted them"
+
+
+# ---------------------------------------------------------------------------
+# The map GENERATOR's path normalisation
+#
+# These guard the tool that writes rbac_map.py rather than the gateway that
+# reads it, but they belong with the gateway tests: a generator bug here does
+# not crash, it emits a row under a key no request will ever match, and the
+# endpoint silently loses the page that grants it. Under `enforce` that is a
+# 403 for everyone, with nothing failing to point at it.
+# ---------------------------------------------------------------------------
+
+def _normalise():
+    """Import the generator by path -- it lives in tools/, not on sys.path."""
+    import importlib.util
+    import sys
+    from pathlib import Path
+
+    tool = Path(__file__).resolve().parents[1] / "tools" / "build_rbac_map.py"
+    spec = importlib.util.spec_from_file_location("_build_rbac_map", tool)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["_build_rbac_map"] = module
+    spec.loader.exec_module(module)
+    return module.normalise
+
+
+def test_normalise_collapses_a_template_placeholder():
+    assert _normalise()("/bar/guest/${id}/feedback") == "bar/guest/{id}/feedback"
+
+
+def test_normalise_strips_a_real_query_string():
+    assert _normalise()("/bar/guest/${id}/feedback?x=1") == "bar/guest/{id}/feedback"
+
+
+def test_normalise_survives_optional_chaining_inside_a_placeholder():
+    """The '?' in `r?.token` is JavaScript, not the start of a query string.
+
+    Cutting at the first '?' before collapsing `${...}` truncated the
+    placeholder to `${encodeURIComponent(r`, which then failed to match for
+    want of its closing brace. The row was emitted under that literal text, so
+    the real endpoint lost the page that calls it.
+    """
+    got = _normalise()(
+        "/hotel/room_reservation_payments/${encodeURIComponent(reservation?.token)}"
+    )
+    assert got == "hotel/room_reservation_payments/{id}"
+
+
+def test_normalise_handles_optional_chaining_and_a_query_string_together():
+    got = _normalise()("/hotel/thing/${a?.b}/sub?page=1")
+    assert got == "hotel/thing/{id}/sub"
+
+
+# ---------------------------------------------------------------------------
+# Guest contact details are not a dashboard capability
+# ---------------------------------------------------------------------------
+
+def test_a_dashboard_only_role_cannot_read_the_reservation_list(enforce):
+    """The Dashboard is a reporting screen, not a guest-contact export.
+
+    `/hotel/room_reservation` returns every guest's phone number and email.
+    /dashboard used to be granted it, because both Dashboard tabs fetched the
+    whole book to derive four counts and two short lists of names. They now
+    call /hotel/reports/reservation_summary, which carries no contact details,
+    and the generated map no longer names /dashboard on the list route.
+
+    If a future change makes a dashboard fetch the list again, the generator
+    will silently re-grant it and this test is what notices.
+    """
+    dashboard_only = {"/dashboard": VIEW}
+    denial = check(dashboard_only, "hotel", "room_reservation", "GET")
+    assert denial is not None
+
+
+def test_a_dashboard_only_role_can_read_the_summary_it_needs(enforce):
+    dashboard_only = {"/dashboard": VIEW}
+    assert check(dashboard_only, "hotel", "reports/reservation_summary", "GET") is None
+
+
+def test_the_reservation_screens_still_read_the_list(enforce):
+    for page in ("/reservation", "/reservation_view"):
+        assert check({page: VIEW}, "hotel", "room_reservation", "GET") is None

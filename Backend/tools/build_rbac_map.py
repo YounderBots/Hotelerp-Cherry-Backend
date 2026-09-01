@@ -60,6 +60,7 @@ import ast
 import collections
 import pathlib
 import re
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SRC = ROOT / "Frontend" / "src"
@@ -89,8 +90,25 @@ PREFIXES = ("masterdata", "hotel", "user", "restaurant", "bar")
 #       path, so no literal exists to match either. Without this row it is
 #       unmapped, and unmapped means denied under RBAC_GATEWAY_MODE=enforce:
 #       every incident attachment would 403 in production.
+#
+#   /masterdata/templates/static/upload_image/{file}
+#   /user/templates/static/users/{file}
+#   /hotel/templates/static/identity_proofs/{file}
+#       The same shape, for the other three upload directories: room photos
+#       (Rooms), employee photos (Employee) and a reservation's scanned ID
+#       proof. All three are behind StaticFiles mounts, so none is derivable,
+#       and all three are now fetched with the session token by ImagePicker /
+#       AttachmentPreview. Without these rows every stored photo in the app
+#       403s the moment the gateway is switched to enforce.
 CURATED_ROWS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("hotel", "templates/static/room_incidents/{id}", "GET"): ("/room_incident_log",),
+    ("masterdata", "templates/static/upload_image/{id}", "GET"): ("/rooms",),
+    ("restaurant", "templates/static/upload_image/{id}", "GET"): ("/menus",),
+    ("user", "templates/static/users/{id}", "GET"): ("/employee",),
+    ("hotel", "templates/static/identity_proofs/{id}", "GET"): (
+        "/add_new_reservation",
+        "/reservation",
+    ),
 }
 
 SERVICES = {
@@ -113,17 +131,34 @@ ENDPOINT_LITERAL = re.compile(
     r"[`\"'](/(?:" + "|".join(PREFIXES) + r")/[^`\"'\s]*)[`\"']")
 
 # navigate("/x") and to="/x" -- how a page hands off to another route.
+# `navigate("/x")`, `navigate(`/x?y=z`)` and `to="/x"`. The backtick form
+# matters: the idle lock navigates to `/authentication/lockscreen?next=...` as a
+# template literal, and without it that route reads as one nothing can reach.
 NAVIGATE = re.compile(
-    r"""navigate\(\s*["'](/[A-Za-z0-9_/-]*)["']|to=\{?\s*["'](/[A-Za-z0-9_/-]*)["']""")
+    r"""navigate\(\s*["'`](/[A-Za-z0-9_/-]*)["'`?]|to=\{?\s*["'`](/[A-Za-z0-9_/-]*)["'`?]""")
 # Menu rows as shipped. Read only to tell which routes a menu can reach; see
 # page_parents() for why, and what to do when a deployment's menus differ.
 MENU_SEED = ROOT / "hotelerp_users.sql"
 MENU_PATH = re.compile(r"'(/[A-Za-z0-9_/-]*)'")
+# `path: "/x"` in the frontend's fallback MENU.
+SIDEBAR_PATH = re.compile(r'''path:\s*["'](/[A-Za-z0-9_/-]*)["']''')
 
 LAZY = re.compile(
     r"const\s+(\w+)\s*=\s*lazy\(\s*\(\)\s*=>\s*import\(\s*[\"']([^\"']+)[\"']")
+# `<Route path element={<Wrapper><Wrapper><Component /></...>}`.
+#
+# The wrapper list used to be exactly (Page|PageLoader), so the login route --
+# whose element is <RedirectIfAuthed><PageLoader><Login /> -- resolved to
+# nothing. Login.jsx was therefore never scanned, and the <Link to=
+# "/authentication/register"> on it went unseen: the report called a route the
+# user can reach from the sign-in page an unreachable one, which is exactly the
+# kind of false positive that teaches people to ignore the report.
+#
+# Any number of capitalised single-tag wrappers are skipped, and the first
+# component that is not one of the known guards is taken as the page.
+ROUTE_GUARDS = ("Page", "PageLoader", "ProtectedRoute", "RedirectIfAuthed", "RequirePage")
 ROUTE = re.compile(
-    r"<Route\s+path=[\"']([^\"']+)[\"']\s+element=\{\s*<(?:Page|PageLoader)>\s*<(\w+)\s*/?>")
+    r"<Route\s+path=[\"']([^\"']+)[\"']\s+element=\{\s*((?:<[A-Z]\w*>\s*)+)<(\w+)\s*/?>")
 IMPORT = re.compile(r"(?:from\s*|import\s*\(\s*)[\"'](\.[^\"']+)[\"']")
 
 
@@ -169,9 +204,24 @@ def strip_comments(text: str) -> str:
 
 
 def normalise(raw: str) -> str:
-    """`/bar/guest/${id}/feedback?x=1` -> `bar/guest/{id}/feedback`."""
-    ep = raw.split("?")[0].rstrip("/")
-    ep = re.sub(r"\$\{[^}]*\}", "{id}", ep)
+    """`/bar/guest/${id}/feedback?x=1` -> `bar/guest/{id}/feedback`.
+
+    ORDER MATTERS: placeholders collapse BEFORE the query string is cut.
+
+    Cutting at the first "?" used to come first, which corrupted any path whose
+    interpolation contained optional chaining. `${encodeURIComponent(r?.token)}`
+    was truncated to `${encodeURIComponent(r`, the `${...}` pattern then failed
+    to match for want of its closing brace, and the row was emitted under the
+    key `room_reservation_payments/${encodeURIComponent(r`. That is worse than
+    a crash: the real endpoint silently lost the page that calls it, so under
+    `enforce` the request would have been denied to everyone with no failing
+    test to show for it.
+
+    A `?` inside `${...}` is JavaScript, not a query string. Collapsing
+    placeholders first means only a `?` in the literal part can start one.
+    """
+    ep = re.sub(r"\$\{[^}]*\}", "{id}", raw)
+    ep = ep.split("?")[0].rstrip("/")
     return ep.strip("/")
 
 
@@ -257,7 +307,11 @@ def route_entries() -> dict[str, pathlib.Path]:
     app = source(SRC / "App.jsx")
     lazy = dict(LAZY.findall(app))
     entries: dict[str, pathlib.Path] = {}
-    for route_path, comp in ROUTE.findall(app):
+    for route_path, _wrappers, comp in ROUTE.findall(app):
+        # A guard used as the innermost element means the route renders only a
+        # guard, so there is no page to attribute calls to.
+        if comp in ROUTE_GUARDS:
+            continue
         rel = lazy.get(comp)
         if not rel:
             continue
@@ -268,11 +322,70 @@ def route_entries() -> dict[str, pathlib.Path]:
 
 
 def menu_paths() -> set[str]:
-    """The route paths the shipped navigation menu points at."""
-    if not MENU_SEED.is_file():
+    """The route paths the navigation menu points at.
+
+    WHY THIS READS THE DATABASE, NOT JUST THE SEED FILE
+        It used to read `hotelerp_users.sql` alone and return an EMPTY SET when
+        that file was absent -- and the file was later removed from the repo
+        because it carried a published admin password. An empty set is not a
+        harmless default here: with no menu paths, `page_parents()` finds no
+        parents, PAGE_PARENTS renders empty, and under `enforce` every row
+        naming only detail views denies everyone. GET /hotel/room_reservation/
+        {id} is exactly such a row, so regenerating without the seed silently
+        reintroduced a 403 for every user including the owner -- the precise
+        failure PAGE_PARENTS exists to prevent.
+
+        The menus live in the `menus` table, which is the authoritative source
+        and is present wherever this tool can usefully run. The seed file stays
+        as a fallback for a checkout with no database.
+    """
+    if MENU_SEED.is_file():
+        found = set(MENU_PATH.findall(
+            MENU_SEED.read_text(encoding="utf-8", errors="replace")))
+        if found:
+            return found
+
+    return _menu_paths_from_db()
+
+
+def _menu_paths_from_db() -> set[str]:
+    """Menu and submenu links straight from UserServices' database."""
+    env = ROOT / "Backend" / "Services" / "UserServices" / ".env"
+    if not env.is_file():
         return set()
-    return set(MENU_PATH.findall(
-        MENU_SEED.read_text(encoding="utf-8", errors="replace")))
+
+    uri = None
+    for line in env.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if line.startswith("DB_URI="):
+            uri = line.split("=", 1)[1].strip()
+            break
+    if not uri:
+        return set()
+
+    try:
+        import sqlalchemy as sa
+    except ImportError:
+        return set()
+
+    try:
+        engine = sa.create_engine(uri)
+        with engine.connect() as conn:
+            paths = {
+                r[0] for r in conn.execute(sa.text("SELECT menu_link FROM menus")) if r[0]
+            }
+            paths |= {
+                r[0]
+                for r in conn.execute(sa.text("SELECT submenu_link FROM submenus"))
+                if r[0]
+            }
+        return paths
+    except Exception:  # noqa: BLE001 -- a tool, not a service; degrade to empty
+        return set()
+
+
+SHELL = "(app shell)"
+SIDEBAR = "(sidebar)"
 
 
 def page_parents(entries: dict[str, pathlib.Path]):
@@ -300,6 +413,28 @@ def page_parents(entries: dict[str, pathlib.Path]):
     """
     menus = menu_paths()
     inbound: dict[str, set[str]] = collections.defaultdict(set)
+
+    # App.jsx is the shell every route renders inside, so a navigation it makes
+    # can happen from any page. The idle lock lives there; without this, the
+    # lock screen it navigates to reads as a route nothing can reach.
+    for a, b in NAVIGATE.findall(source(SRC / "App.jsx")):
+        target = a or b
+        if target and target in entries:
+            inbound[target].add(SHELL)
+
+    # The sidebar is how a user reaches most pages, and it is data: the server
+    # sends the menu, with Sidemenu.js's MENU as the fallback the app ships
+    # with. A route named there is reachable by clicking, even when the
+    # DEPLOYMENT'S menu table has no row for it yet -- which is the state a
+    # newly added page is in until its migration is applied.
+    #
+    # Grantability still comes from menu_paths() (the database), so a page in
+    # that state is correctly still reported under "rows nothing can grant":
+    # reachable in the UI, refused by the gateway until the row exists.
+    for target in set(SIDEBAR_PATH.findall(source(SRC / "Sidemenu.js"))):
+        if target in entries:
+            inbound[target].add(SIDEBAR)
+
     for route, entry in entries.items():
         for f in closure(entry):
             for a, b in NAVIGATE.findall(source(f)):
@@ -312,7 +447,12 @@ def page_parents(entries: dict[str, pathlib.Path]):
         if route in menus or not menus:
             continue
         if inbound.get(route):
-            parents[route] = tuple(sorted(inbound[route]))
+            # The shell sentinel proves a route is REACHABLE but is not a page,
+            # so it must not reach PAGE_PARENTS -- a permission claim is keyed
+            # by menu path and could never contain it.
+            real = sorted(p for p in inbound[route] if p not in (SHELL, SIDEBAR))
+            if real:
+                parents[route] = tuple(real)
         else:
             unreachable.append(route)
     return parents, unreachable
@@ -434,6 +574,36 @@ FOOTER_HEAD = '''}
 METHOD_ACTION = {"GET": "view", "POST": "create", "PUT": "edit",
                  "PATCH": "edit", "DELETE": "delete"}
 
+# Routes whose HTTP verb does not describe what they DO.
+#
+# METHOD_ACTION above is a good default and a poor rule for action endpoints.
+# A POST that changes an existing record -- check a guest in, take a payment,
+# cancel a booking -- is an EDIT of that record, not the creation of a new
+# one. Mapping it to `create` means a role granted view+edit on Reservation is
+# refused every one of them.
+#
+# That is not hypothetical. The Front Office role in this database holds
+# exactly view+edit on /reservation, and under `enforce` it was denied
+# check-in, check-out, payment, refund, cancel, no-show AND the pricing quote
+# -- the entire front-desk job -- while still being able to edit the booking
+# through the form. The permission a receptionist is given did not match the
+# permission the buttons required.
+#
+# A POST that only READS is `view` for the same reason: /room_reservation_quote
+# prices a stay and stores nothing, and is a POST purely because the request
+# carries a room list and dates that will not fit in a query string.
+ACTION_OVERRIDES: dict[tuple[str, str, str], str] = {
+    # ---- hotel: reservation lifecycle acts on a booking that already exists
+    ("hotel", "room_reservation_checkin/{id}", "POST"): "edit",
+    ("hotel", "room_reservation_checkout/{id}", "POST"): "edit",
+    ("hotel", "room_reservation_cancel/{id}", "POST"): "edit",
+    ("hotel", "room_reservation_no_show/{id}", "POST"): "edit",
+    ("hotel", "room_reservation_pay/{id}", "POST"): "edit",
+    ("hotel", "room_reservation_refund/{id}", "POST"): "edit",
+    # ---- reads that happen to be POSTs
+    ("hotel", "room_reservation_quote", "POST"): "view",
+}
+
 # Endpoints the services expose that no page was shown to call. Under
 # RBAC_GATEWAY_MODE=enforce these are denied, which is the intended
 # fail-closed behaviour: an endpoint nobody has classified should not be
@@ -526,6 +696,22 @@ def main() -> int:
             print(f"    {method:6} /{prefix}/{pattern}")
         print("\n--report: nothing written")
         return 0
+
+    # Writing an empty PAGE_PARENTS is worse than not writing at all: the map
+    # keeps working in `audit` and starts 403-ing detail routes for everyone
+    # the moment somebody switches to `enforce`. Refuse, and say why.
+    if not menu_paths():
+        print(
+            "\nREFUSING TO WRITE: no navigation menus could be read.\n"
+            "  Tried  hotelerp_users.sql  and  UserServices' database.\n"
+            "  Without them PAGE_PARENTS renders empty, and under enforce every\n"
+            "  route whose only pages are detail views (GET /hotel/"
+            "room_reservation/{id}\n"
+            "  among them) would deny every user, owners included.\n"
+            "  Start the database, or restore the seed, then re-run.",
+            file=sys.stderr,
+        )
+        return 1
 
     OUT.write_text(render(table, uncalled, parents, unreachable), encoding="utf-8")
     print(f"\nwrote {OUT.relative_to(ROOT)}")

@@ -40,6 +40,46 @@ def _get_proxy_client() -> httpx.AsyncClient:
     return _proxy_client
 
 
+# Connection-level failures: the request never reached the upstream, or the
+# socket died before a byte of response came back. Distinct from an upstream
+# that answered with an error, which is not ours to retry.
+_STALE_CONNECTION_ERRORS = (
+    httpx.ConnectError,
+    httpx.ReadError,
+    httpx.RemoteProtocolError,
+)
+
+
+async def _proxy_request(client: httpx.AsyncClient, **kwargs) -> httpx.Response:
+    """Send an upstream request, retrying ONCE if the connection was stale.
+
+    WHY THIS EXISTS
+        The client keeps a connection pool, and a pooled connection can be
+        closed by the far side (or by Windows) while it sits idle. The next
+        request handed that socket fails with httpx.ReadError before the
+        upstream ever sees it, and the caller gets a 502 for a service that is
+        perfectly healthy -- observed on GET /masterdata/room_types with all
+        six services up and every retry after it returning 200.
+
+        This is the HTTP twin of `pool_pre_ping` on the database engine, which
+        the same codebase already sets for the same reason.
+
+    WHY ONLY IDEMPOTENT METHODS
+        On a ReadError the request may or may not have been processed upstream.
+        For GET/HEAD/OPTIONS that does not matter. For POST/PUT/DELETE it very
+        much does -- retrying could double-charge a folio or create a second
+        reservation -- so those surface the 502 and let the caller decide.
+    """
+    method = str(kwargs.get("method", "GET")).upper()
+    try:
+        return await client.request(**kwargs)
+    except _STALE_CONNECTION_ERRORS:
+        if method not in ("GET", "HEAD", "OPTIONS"):
+            raise
+        logger.info("proxy_retry_after_stale_connection", extra={"method": method})
+        return await client.request(**kwargs)
+
+
 # ---------------------------------------------------------------------------
 # In-memory sliding-window rate limiter for /login_post.
 # ---------------------------------------------------------------------------
@@ -243,7 +283,8 @@ def _build_proxy(prefix: str, upstream_base: str):
 
         try:
             if request.method in ("GET", "DELETE"):
-                upstream = await client.request(
+                upstream = await _proxy_request(
+                    client,
                     method=request.method,
                     url=target,
                     headers=forward_headers,
@@ -260,7 +301,8 @@ def _build_proxy(prefix: str, upstream_base: str):
                         )
                     else:
                         data[key] = value
-                upstream = await client.request(
+                upstream = await _proxy_request(
+                    client,
                     method=request.method,
                     url=target,
                     headers=forward_headers,
@@ -273,7 +315,8 @@ def _build_proxy(prefix: str, upstream_base: str):
                     body = await request.json()
                 except Exception:
                     body = None
-                upstream = await client.request(
+                upstream = await _proxy_request(
+                    client,
                     method=request.method,
                     url=target,
                     headers=forward_headers,
