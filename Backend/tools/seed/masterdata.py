@@ -248,12 +248,11 @@ def seed(conn) -> dict:
         shots = []
         for variant, queries in enumerate(ROOM_TYPE_QUERIES.get(name, [])):
             fname = im.hex_name("jpg")
-            got = photos.best_photo(queries, prefer="openverse", skip=seen)
+            got = photos.resolve(f"{name} (view {variant + 1})", queries,
+                                 (1024, 683), prefer="openverse", skip=seen)
             if got:
-                img, meta = got
-                photos.cover(img, (1024, 683)).save(
-                    os.path.join(photo_dir, fname), "JPEG", quality=86, optimize=True)
-                photos.record(f"{name} (view {variant + 1})", meta, fname)
+                got[0].save(os.path.join(photo_dir, fname), "JPEG",
+                            quality=86, optimize=True)
             else:
                 im.save(im.room_image("", name, variant), photo_dir, fname)
             shots.append(f"/templates/static/upload_image/{fname}")

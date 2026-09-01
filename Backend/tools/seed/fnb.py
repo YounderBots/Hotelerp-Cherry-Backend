@@ -261,14 +261,12 @@ def _menu_rows(items, image_dir, *, bar: bool):
         fname = im.hex_name("jpg")
         queries = [q for q in _PHOTO_QUERIES.get(name, [])] or [name]
         queries.append(category_name)
-        got = (photos.pin_commons(_PINNED[name]) if name in _PINNED
-               else None) or photos.best_photo(queries, prefer="commons",
-                                               skip=_seen_photos)
+        subject = f"{'Bar' if bar else 'Restaurant'}: {name}"
+        got = photos.resolve(subject, queries, (800, 600), prefer="commons",
+                             pinned=_PINNED.get(name), skip=_seen_photos)
         if got:
-            img, meta = got
-            photos.cover(img, (800, 600)).save(
-                os.path.join(image_dir, fname), "JPEG", quality=86, optimize=True)
-            photos.record(f"{'Bar' if bar else 'Restaurant'}: {name}", meta, fname)
+            got[0].save(os.path.join(image_dir, fname), "JPEG",
+                        quality=86, optimize=True)
         else:
             im.save(im.menu_image(name, category_name, veg=veg), image_dir, fname)
         image_path = f"/templates/static/upload_image/{fname}"

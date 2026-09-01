@@ -48,6 +48,91 @@ BLOCKED_LICENCES = ("nd", "by-nd", "by-nc-nd")
 
 CACHE = os.path.join(os.path.dirname(__file__), "_photo_cache")
 
+# The cropped photographs that actually ship, kept beside the seed and
+# committed. The raw downloads in CACHE are ~41 MB of originals at whatever
+# size the source served them; these are the finished 800x600 / 1024x683 files,
+# about 9 MB, and they are what a rebuild reuses.
+#
+# WHY VENDOR AT ALL
+#   Without them, `seed_demo_data.py --confirm` needs Wikimedia and Openverse
+#   to be reachable and to still be serving the same files. A seed that only
+#   works with a network, on a good day, is not a seed you can rely on to
+#   rebuild a client's database.
+VENDOR = os.path.join(os.path.dirname(__file__), "photos")
+MANIFEST = os.path.join(VENDOR, "manifest.json")
+
+_manifest: dict | None = None
+
+
+def _load_manifest() -> dict:
+    global _manifest
+    if _manifest is None:
+        try:
+            with open(MANIFEST, encoding="utf-8") as fh:
+                _manifest = json.load(fh)
+        except Exception:
+            _manifest = {}
+    return _manifest
+
+
+def _save_manifest(data: dict) -> None:
+    os.makedirs(VENDOR, exist_ok=True)
+    with open(MANIFEST, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=1, sort_keys=True)
+
+
+def resolve(subject: str, queries: list[str], size: tuple[int, int], *,
+            prefer: str = "commons", pinned: str | None = None,
+            skip: set | None = None, offline: bool = False):
+    """The finished photograph for `subject`, cropped to `size`.
+
+    Vendored copy first, network second. So the first run downloads and banks
+    the result, and every run after that -- including one with no network at
+    all -- reproduces exactly the same dataset.
+
+    Returns (PIL image, meta) or None if there is nothing vendored and nothing
+    can be fetched; the caller draws a placeholder in that case.
+    """
+    manifest = _load_manifest()
+    entry = manifest.get(subject)
+    if entry:
+        path = os.path.join(VENDOR, entry["file"])
+        if os.path.exists(path):
+            try:
+                img = Image.open(path)
+                img.load()
+                _used_fingerprints.add(_fingerprint(img))
+                _credits.append({**entry, "subject": subject})
+                return img.convert("RGB"), entry
+            except Exception:
+                pass
+
+    if offline:
+        return None
+
+    got = (pin_commons(pinned) if pinned else None) or best_photo(
+        queries, prefer=prefer, skip=skip)
+    if not got:
+        return None
+
+    img, meta = got
+    img = cover(img, size)
+
+    # Bank it under a name derived from the subject, so the vendored set is
+    # readable and a subject always maps to the same file.
+    safe = "".join(c if c.isalnum() else "-" for c in subject.lower()).strip("-")
+    safe = "-".join(p for p in safe.split("-") if p)[:60] + ".jpg"
+    os.makedirs(VENDOR, exist_ok=True)
+    img.save(os.path.join(VENDOR, safe), "JPEG", quality=86, optimize=True)
+
+    entry = {"file": safe, "title": meta.get("title", ""),
+             "licence": meta.get("licence", ""), "credit": meta.get("credit", ""),
+             "source": meta.get("source", ""), "via": meta.get("via", "")}
+    manifest[subject] = entry
+    _save_manifest(manifest)
+    _credits.append({**entry, "subject": subject})
+    return img, entry
+
 _credits: list[dict] = []
 
 # Fingerprints of images already placed. Deduplicating on URL alone was not
