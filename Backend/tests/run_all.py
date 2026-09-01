@@ -68,6 +68,10 @@ def main() -> int:
         (NIGHT_AUDIT_SERVICE, "test_night_audit.py"),
         # Reservation's rules are pure functions in the same service.
         (NIGHT_AUDIT_SERVICE, "test_reservation_rules.py"),
+        # The checkout -> housekeeping handover. Unlike the rules above this
+        # one touches the database, so it builds the Master Data schema as a
+        # second in-memory SQLite database to resolve the cross-schema mapping.
+        (NIGHT_AUDIT_SERVICE, "test_reservation_housekeeping.py"),
     ]
     # Billing exists only in these two, and both expose the same endpoint, so
     # the money guards run against each.

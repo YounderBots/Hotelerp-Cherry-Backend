@@ -624,3 +624,34 @@ def test_deleted_reservation_is_absent_from_the_night_position(db):
 
     assert position["revenue"]["room_revenue"] == 4000.0
     assert position["occupancy"]["rooms_occupied"] == 1
+
+
+def test_a_cancelled_booking_earns_nothing(db):
+    """Revenue is what the property earned, not what it once expected to.
+
+    This is the figure the dashboard's "Revenue Today" now reads. It used to
+    be computed in the browser as the sum of every reservation's
+    `overall_amount` with no status filter at all, so a cancelled booking was
+    still counted as money taken -- 11,760 of one property's headline total.
+    """
+    set_business_date(db, date(2026, 8, 1))
+    make_reservation(
+        db, date(2026, 8, 1), date(2026, 8, 2),
+        room_amount=4000.0, tax_amount=480.0, rooms=(1,),
+    )
+    make_reservation(
+        db, date(2026, 8, 1), date(2026, 8, 2),
+        room_amount=9000.0, tax_amount=1080.0, rooms=(2,),
+        status="Cancelled",
+    )
+    make_reservation(
+        db, date(2026, 8, 1), date(2026, 8, 2),
+        room_amount=7000.0, tax_amount=840.0, rooms=(3,),
+        status="No-Show",
+    )
+
+    position = nas.compute_position(db, TENANT, date(2026, 8, 1))
+
+    assert position["revenue"]["room_revenue"] == 4000.0
+    assert position["revenue"]["tax_amount"] == 480.0
+    assert position["occupancy"]["rooms_sold"] == 1

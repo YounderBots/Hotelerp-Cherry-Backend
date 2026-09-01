@@ -10,7 +10,7 @@ other system sharing the secret was accepted as ours.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from fastapi import HTTPException, Request, status
 from jose import JWTError, jwt
@@ -79,3 +79,49 @@ def verify_authentication(request: Request) -> Tuple[Any, Any, Any, str]:
         raise _unauthorized("Invalid session")
 
     return user_id, payload.get("role_id"), payload.get("company_id"), token
+
+
+# ---------------------------------------------------------------------------
+# Reading the caller's page permissions
+# ---------------------------------------------------------------------------
+# The gateway mints the access token with a `perm` claim: {page_path: bitmask}
+# built from the role's menus. It uses that claim to authorise the ROUTE. A
+# service can read the same claim to decide how much of a response a particular
+# caller should see, which is a different question -- one endpoint can legitimately
+# serve two screens that need different amounts of the same record.
+#
+# The bit values mirror LoginServices/resources/rbac.py. They are a wire format
+# rather than an implementation detail: they travel inside a signed token, so
+# they cannot be changed on one side alone.
+PERM_VIEW, PERM_CREATE, PERM_EDIT, PERM_DELETE = 1, 2, 4, 8
+
+
+def token_permissions(token: str) -> Dict[str, int]:
+    """The `perm` claim, or {} when the token carries none.
+
+    Never raises: the caller has already been authenticated by the time this
+    runs, and an unreadable claim must degrade to "no extra permissions"
+    rather than to an error.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            BaseConfig.SECRET_KEY,
+            algorithms=[BaseConfig.ALGORITHM],
+            issuer=BaseConfig.JWT_ISSUER,
+        )
+    except JWTError:
+        return {}
+    claim = payload.get("perm")
+    return claim if isinstance(claim, dict) else {}
+
+
+def can_view_any(token: str, *pages: str) -> bool:
+    """Whether the caller may view at least one of `pages`.
+
+    An empty claim answers False. That is the safe direction and matches the
+    gateway: a token minted when the permission service was unreachable carries
+    `perm: {}`, and such a token must not unlock anything extra.
+    """
+    perms = token_permissions(token)
+    return any(int(perms.get(page, 0)) & PERM_VIEW for page in pages)

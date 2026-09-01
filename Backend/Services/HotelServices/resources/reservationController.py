@@ -30,6 +30,7 @@ from models.masterdata import (
     MasterRoomType,
     MasterTaxType,
 )
+from resources import nightAuditService as nas
 from resources import reservation_rules as rules
 from resources.utils import verify_authentication
 
@@ -840,6 +841,62 @@ def _history_key(reservation) -> str:
     return str(reservation.room_reservation_id or reservation.id)
 
 
+# Housekeeping's own vocabulary, as the room master already stores it:
+# Ready | Not Ready | Not Assigne. Not a new set invented here.
+NEEDS_CLEANING = "Not Ready"
+
+# The most rows any single list response will carry. Both the default and the
+# ceiling: a caller that asks for more gets this, a caller that asks for
+# nothing gets this. See `get_all_room_reservations`.
+MAX_PAGE_SIZE = 200
+
+# How many rows the dashboard's "recent bookings" panel shows.
+RECENT_BOOKINGS = 5
+
+
+def mark_rooms_for_housekeeping(db: Session, company_id, room_ids) -> list:
+    """A departed guest leaves a dirty room. Say so, once, at checkout.
+
+    WHY A ROOM FLAG AND NOT A HOUSEKEEPER TASK
+        `housekeeper_task` requires an assigned employee -- employee_id,
+        first_name, last_name and assign_staff are all NOT NULL, alongside a
+        schedule date and time. There is no unassigned queue. Creating a task
+        here would mean this module picking which housekeeper cleans the room,
+        which it has no basis to decide, or a migration widening four columns
+        and a Housekeeping UI that can show an unassigned task.
+
+        `Room_Working_status` already carries exactly this fact, is already
+        what Room View buckets under "Not Ready", and is already what the
+        dashboard counts as unavailable. Housekeeping raises its own task
+        against the room from there, which is the workflow that already
+        exists.
+
+    WHY THIS IS ONE-WAY AND NOT PART OF THE RECONCILE
+        `sync_room_booking_status` recomputes occupancy from reservations
+        every time it runs. Housekeeping readiness is not derivable from
+        reservations -- once a cleaner marks a room Ready, only housekeeping
+        knows that. Folding this into the reconcile would overwrite their work
+        on the next booking. So it fires once, at the moment of departure, and
+        never again.
+
+    Returns the room numbers marked, so the caller can say what happened.
+    """
+    ids = sorted({int(r) for r in (room_ids or [])})
+    if not ids:
+        return []
+
+    marked = []
+    for room in rules.load_rooms(db, company_id, ids).values():
+        # Never override a room that is out of order -- that is a stronger
+        # statement than "needs cleaning" and is not ours to clear.
+        if rules.normalise_status(room.Room_Status) == "blocking":
+            continue
+        if room.Room_Working_status != NEEDS_CLEANING:
+            room.Room_Working_status = NEEDS_CLEANING
+            marked.append(room.Room_No)
+    return marked
+
+
 def sync_room_booking_status(db: Session, company_id, room_ids=None) -> None:
     """Recompute the property's room occupancy flags from its reservations.
 
@@ -1127,6 +1184,185 @@ def _serialise(reservation, maps: dict) -> dict:
         "updated_by": reservation.updated_by,
         "company_id": reservation.company_id,
     }
+
+
+# =====================================================
+# ROOM REVENUE FOR ONE DAY
+# =====================================================
+@router.get("/reports/daily_sales", status_code=status.HTTP_200_OK)
+def hotel_daily_sales(
+    request: Request,
+    report_date: date = None,
+    db: Session = Depends(get_db),
+):
+    """Room revenue accrued on one date. Mirrors the restaurant and bar report.
+
+    WHY THIS EXISTS
+        The dashboard shows one headline figure, "Revenue Today", built by
+        adding three departments together. Restaurant and bar each called
+        `/reports/daily_sales?report_date=...` and got exactly that day. Hotel
+        had no such endpoint, so the dashboard fetched the WHOLE reservation
+        list and summed `overall_amount` across every row.
+
+        That is wrong three times over:
+
+          * it is not today -- it is every reservation ever booked, past and
+            future alike;
+          * it counts cancelled bookings as revenue (the restaurant report
+            excludes cancelled bills for exactly this reason);
+          * it counts a stay's whole total on one day, when the stay accrues
+            across its nights.
+
+        On this property it read 508,550 for a day whose actual arrivals were
+        worth 0, and 11,760 of that belonged to a cancelled booking.
+
+    WHY IT DELEGATES TO THE NIGHT AUDIT SERVICE
+        `compute_position` already answers "what did this night earn", accrues
+        per night rather than per stay, excludes soft-deleted rows through
+        `active_reservations`, and skips cancellations and no-shows. It is the
+        figure the audit records permanently. A second implementation here
+        would be a second answer to the same question, free to drift from the
+        one the books are closed on.
+    """
+    try:
+        user_id, role_id, company_id, _ = verify_authentication(request)
+        if not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        day = report_date or date.today()
+        position = nas.compute_position(db, company_id, day)
+        revenue = position["revenue"]
+        occupancy = position["occupancy"]
+
+        return {
+            "status": "success",
+            "data": {
+                "report_date": day,
+                "room_revenue": revenue["room_revenue"],
+                "extra_charges": revenue["extra_charges"],
+                "tax_amount": revenue["tax_amount"],
+                "discount_amount": revenue["discount_amount"],
+                # `grand_total` is the key the restaurant and bar reports use,
+                # so the dashboard reads all three departments the same way.
+                "grand_total": revenue["gross_revenue"],
+                "rooms_sold": occupancy["rooms_sold"],
+                "room_nights": occupancy["room_nights"],
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("hotel_daily_sales_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# =====================================================
+# WHAT THE FRONT DESK NEEDS TO KNOW ABOUT TODAY
+# =====================================================
+@router.get("/reports/reservation_summary", status_code=status.HTTP_200_OK)
+def reservation_summary(
+    request: Request,
+    report_date: date = None,
+    db: Session = Depends(get_db),
+):
+    """Arrivals, departures and new bookings for one date, WITHOUT guest contact details.
+
+    WHY THIS EXISTS
+        The two Dashboard tabs each fetched the whole of `/hotel/room_reservation`
+        to derive four numbers and two short lists of names. That was wrong in
+        two independent ways.
+
+        IT HANDED OUT CONTACT DETAILS NOBODY ON THAT SCREEN USES.
+            The reservation list returns `phone_number` and `email` for every
+            guest in the book. The Dashboard renders neither -- it shows a name,
+            a status and a date -- but the data still crossed the wire, so
+            anyone who could open the Dashboard could read every guest's phone
+            number and email out of the response. `/dashboard` was granted
+            `room_reservation GET` purely to support this, which made a
+            reporting screen a full guest-contact export.
+
+        IT DOWNLOADED THE WHOLE BOOK TO COUNT TO FOUR.
+            Every dashboard load pulled every reservation ever made. At this
+            property that is 19 rows; at a real one it is the entire history,
+            fetched twice per visit, to compute three counts and two filters.
+
+        This returns exactly what those screens draw and nothing else. Adding a
+        contact field here should be treated as a deliberate act, not a
+        convenience.
+    """
+    try:
+        user_id, role_id, company_id, _ = verify_authentication(request)
+        if not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        day = report_date or date.today()
+        rows = nas.active_reservations(db, company_id).all()
+
+        def summarise(reservation):
+            """Name, room, status, dates. Deliberately no phone and no email."""
+            return {
+                "id": reservation.id,
+                "room_reservation_id": reservation.room_reservation_id,
+                "guest_name": " ".join(
+                    p for p in (
+                        reservation.salutation,
+                        reservation.first_name,
+                        reservation.last_name,
+                    ) if p
+                ).strip() or "Guest",
+                "room_nos": reservation.room_no or [],
+                "no_of_rooms": reservation.no_of_rooms,
+                "no_of_nights": reservation.no_of_nights,
+                "reservation_status": reservation.reservation_status,
+                "arrival_date": reservation.arrival_date,
+                "departure_date": reservation.departure_date,
+            }
+
+        arrivals = [r for r in rows if r.arrival_date == day]
+        departures = [r for r in rows if r.departure_date == day]
+
+        # `created_at` is a timestamp; the comparison is on its calendar date.
+        new_bookings = [
+            r for r in rows
+            if r.created_at is not None and r.created_at.date() == day
+        ]
+
+        # In house: arrived on or before the date and not yet departed, and
+        # actually checked in rather than merely booked.
+        in_house = [
+            r for r in rows
+            if r.arrival_date <= day < r.departure_date
+            and rules.normalise_status(r.reservation_status) == rules.normalise_status(rules.CHECKED_IN)
+        ]
+
+        # The dashboard's "recent bookings" panel: the latest few, newest first.
+        # Rows with no `created_at` sort last rather than blowing up the sort.
+        recent = sorted(
+            rows,
+            key=lambda r: (r.created_at is not None, r.created_at, r.id),
+            reverse=True,
+        )[:RECENT_BOOKINGS]
+
+        return {
+            "status": "success",
+            "data": {
+                "report_date": day,
+                "arrivals_today": len(arrivals),
+                "departures_today": len(departures),
+                "new_bookings_today": len(new_bookings),
+                "in_house": len(in_house),
+                "arrivals": [summarise(r) for r in arrivals],
+                "departures": [summarise(r) for r in departures],
+                "recent_bookings": [summarise(r) for r in recent],
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("reservation_summary_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # =====================================================
@@ -1631,8 +1867,24 @@ def get_all_room_reservations(
     Filtering happens here rather than in the browser because the browser only
     ever had the rows it had already downloaded -- a "Cancelled" filter over an
     un-paged list is a different answer from the same filter over the whole
-    book. `page_size` is opt-in so an unparameterised call keeps returning the
-    complete list, which is what the existing screens expect.
+    book.
+
+    THE RESPONSE IS ALWAYS BOUNDED.
+        `page_size` used to be opt-in, so an unparameterised call returned the
+        complete book. That was survivable only because this property has
+        nineteen reservations; on a real one it meant serialising the entire
+        reservation history on every screen that asked. It now defaults to
+        MAX_PAGE_SIZE rather than to "everything", and no caller can raise it
+        past that ceiling.
+
+        `total` always reports the size of the whole filtered set, so a caller
+        that receives fewer rows than `total` knows it is seeing a page and can
+        say so rather than quietly showing a truncated book.
+
+        `status_counts` is likewise computed across the ENTIRE filtered set,
+        before paging. The card screen buckets reservations by status and shows
+        a count on each tab; counting the returned page instead would have made
+        those tabs disagree with the book as soon as paging bit.
     """
     try:
         user_id, role_id, company_id, _ = verify_authentication(request)
@@ -1705,11 +1957,16 @@ def get_all_room_reservations(
 
         total = len(rows)
 
-        if page_size:
-            page = max(1, int(page or 1))
-            page_size = max(1, min(int(page_size), 200))
-            start = (page - 1) * page_size
-            rows = rows[start : start + page_size]
+        # Across the whole filtered set, not the page -- see the docstring.
+        status_counts: dict[str, int] = {}
+        for r in rows:
+            label = (r.reservation_status or "").strip() or "Unknown"
+            status_counts[label] = status_counts.get(label, 0) + 1
+
+        page = max(1, int(page or 1))
+        page_size = max(1, min(int(page_size or MAX_PAGE_SIZE), MAX_PAGE_SIZE))
+        start = (page - 1) * page_size
+        rows = rows[start : start + page_size]
 
         maps = _lookup_maps(db, company_id)
         data = [_serialise(r, maps) for r in rows]
@@ -1718,8 +1975,9 @@ def get_all_room_reservations(
             "status": "success",
             "count": len(data),
             "total": total,
-            "page": page if page_size else 1,
-            "page_size": page_size or total,
+            "page": page,
+            "page_size": page_size,
+            "status_counts": status_counts,
             "data": data,
         }
 
@@ -2223,7 +2481,13 @@ def reservation_checkin(key: str, request: Request, db: Session = Depends(get_db
 
         # Arriving before the booking starts is a real front-desk situation
         # (an early arrival), but arriving after it has ended is not.
-        if reservation.departure_date <= date.today():
+        #
+        # STRICTLY earlier, not <=. A one-night stay that arrived yesterday
+        # departs TODAY, and checking that guest in today is ordinary -- a
+        # late-night arrival written up after midnight, or a booking the desk
+        # is catching up on.  refused every such stay with a message
+        # saying the departure had passed when it had not.
+        if rules.stay_has_ended(reservation.departure_date, date.today()):
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -2460,10 +2724,15 @@ async def reservation_checkout(
                 ),
             )
 
+        room_ids = [int(r) for r in (reservation.room_ids or [])]
+
         _apply_status(db, reservation, company_id, user_id, rules.CHECKED_OUT)
-        sync_room_booking_status(
-            db, company_id, [int(r) for r in (reservation.room_ids or [])]
-        )
+        sync_room_booking_status(db, company_id, room_ids)
+        # The room is free to sell again (above) AND dirty (below). Those are
+        # two different facts and both have to be recorded, or housekeeping
+        # never learns the guest has gone.
+        needs_cleaning = mark_rooms_for_housekeeping(db, company_id, room_ids)
+
         db.commit()
         db.refresh(reservation)
 
@@ -2473,6 +2742,7 @@ async def reservation_checkout(
             "data": {
                 "id": reservation.id,
                 "reservation_status": reservation.reservation_status,
+                "rooms_needing_cleaning": needs_cleaning,
                 "stay_adjusted": adjust_stay,
                 "departure_date": reservation.departure_date,
                 "no_of_nights": reservation.no_of_nights,

@@ -276,6 +276,21 @@ def early_departure(
     return True, actual, max(0, booked_nights - actual)
 
 
+def stay_has_ended(departure: date, on_date: date) -> bool:
+    """Whether a stay is over, for the purpose of refusing a check-in.
+
+    STRICTLY earlier than the departure date, not on-or-earlier. A one-night
+    stay that arrived yesterday departs TODAY, and checking that guest in
+    today is ordinary front-desk work -- a late-night arrival written up after
+    midnight, or a booking the desk is catching up on.
+
+    The first version of this guard used <=, so it refused every same-day
+    departure with a message claiming the departure date had already passed
+    when it had not.
+    """
+    return departure < on_date
+
+
 def can_offer(current: Optional[str], target: str) -> bool:
     """Whether `target` is worth OFFERING as an action on a booking at `current`.
 

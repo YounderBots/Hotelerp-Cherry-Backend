@@ -20,7 +20,7 @@ import httpx
 from models import get_db, models
 from configs.base_config import BaseConfig, CommonWords
 from fastapi import HTTPException
-from resources.utils import verify_authentication
+from resources.utils import can_view_any, verify_authentication
 from resources import nightAuditService as nas
 from resources.nightAuditService import AuditConflict
 
@@ -75,21 +75,39 @@ def user_activity_log(request: Request,
         .all()
     )
 
-    formatted_room_data = [
-        {
+    # WHO GETS THE GUEST'S PHONE NUMBER AND EMAIL
+    #
+    # This endpoint serves two screens with different needs. /user_reserved_details
+    # is a guest contact list and shows both. /dashboard shows a name, a status
+    # and a date -- it renders neither -- yet both fields crossed the wire to it
+    # anyway, so anyone who could open the Dashboard could read every guest's
+    # contact details straight out of the response.
+    #
+    # Contact details are therefore included only for a caller who can already
+    # view a screen that shows them. This grants nobody anything new: both pages
+    # named here display guest contact details in full. It only stops the
+    # Dashboard being an undeclared contact export.
+    #
+    # Decided from the signed `perm` claim rather than a request parameter --
+    # a caller-supplied flag would be no boundary at all.
+    include_contact = can_view_any(token, "/user_reserved_details", "/reservation")
+
+    formatted_room_data = []
+    for r in room_data:
+        entry = {
             "id": r.id,
             "room_no": ", ".join(str(n) for n in r.room_no) if isinstance(r.room_no, list) else r.room_no,
             "reservation_id": r.room_reservation_id,
             "first_name": r.first_name,
             "last_name": r.last_name,
-            "phone": r.phone_number,
-            "email": r.email,
             "arrival_date": r.arrival_date,
             "departure_date": r.departure_date,
             "booking_status": r.reservation_status,
         }
-        for r in room_data
-    ]
+        if include_contact:
+            entry["phone"] = r.phone_number
+            entry["email"] = r.email
+        formatted_room_data.append(entry)
 
     # -------------------------------
     # Housekeeping / Staff Activity

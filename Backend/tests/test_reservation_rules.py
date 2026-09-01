@@ -327,3 +327,23 @@ def test_unused_nights_never_go_negative():
     exist where it was a form field the client could set to anything."""
     early, actual, unused = rules.early_departure(ARRIVE, DEPART, 1, date(2026, 8, 14))
     assert unused == 0
+
+
+# ---------------------------------------------------------------------------
+# Check-in date guard
+# ---------------------------------------------------------------------------
+
+def test_a_stay_departing_today_has_not_ended():
+    """A one-night stay that arrived yesterday departs today, and checking
+    that guest in today is ordinary. The first version of this guard used <=
+    and refused every same-day departure, claiming the date had passed."""
+    assert rules.stay_has_ended(date(2026, 9, 1), date(2026, 9, 1)) is False
+
+
+def test_a_stay_departing_in_the_past_has_ended():
+    assert rules.stay_has_ended(date(2026, 8, 30), date(2026, 9, 1)) is True
+
+
+def test_a_future_stay_has_not_ended():
+    """An early arrival is legitimate; the booking is still ahead of them."""
+    assert rules.stay_has_ended(date(2026, 9, 5), date(2026, 9, 1)) is False
