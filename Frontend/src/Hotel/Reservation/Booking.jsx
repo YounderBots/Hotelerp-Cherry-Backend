@@ -1,14 +1,45 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
+
 import TableTemplate from "../../stories/TableTemplate";
-import { Eye, Pencil, Trash2, X, AlertCircle, CheckCircle, Download } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import Modal, { ConfirmModal } from "../../stories/Modal";
+import Input from "../../stories/Form/Input";
+import Select from "../../stories/Form/Select";
+import RowActions from "../../stories/RowActions";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ViewSection from "../../stories/ViewSection";
+import ErrorAlert from "../../stories/ErrorAlert";
+import Toast from "../../stories/Toast";
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { useApiResources } from "../../hooks/useApiResource";
+import { useToast } from "../../hooks/useToast";
 import "./Reservation.css";
+
+/**
+ * Booking requests — an enquiry that names dates and room *types* but no
+ * specific room, and carries no money. It becomes a Reservation later.
+ *
+ * WHY THIS SCREEN WAS REWRITTEN
+ *   It hand-rolled everything the design system already owns: its own modal
+ *   (`.modal-overlay` / `.modal-card`), its own Toast, its own ConfirmDialog,
+ *   its own three action buttons, and bare `<label>` / `<input>` / `<select>`
+ *   markup styled by global element selectors in Reservation.css.
+ *
+ *   That last part had a consequence beyond this file. Those globals could not
+ *   be scoped while any screen depended on them, and scoping them is what
+ *   stops Reservation.css reaching into the shared components on every other
+ *   Reservation screen. This screen was the last holdout.
+ *
+ *   The View mode is now a DetailList rather than the same form with every
+ *   field disabled — a record to read, not a form somebody switched off.
+ */
 
 const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[+()\-\s\d]{7,20}$/;
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
+
 const num = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -18,18 +49,12 @@ const parseArr = (v) => {
   if (Array.isArray(v)) return v;
   if (v === null || v === undefined || v === "") return [];
   try {
-    const p = JSON.parse(v);
-    return Array.isArray(p) ? p : [];
+    const parsed = JSON.parse(v);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 };
-
-const readList = (res) =>
-  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
-
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
 
 const nightsBetween = (start, end) => {
   if (!start || !end) return 0;
@@ -37,99 +62,13 @@ const nightsBetween = (start, end) => {
   const d = new Date(end);
   if (Number.isNaN(a.getTime()) || Number.isNaN(d.getTime())) return 0;
   const ms = d.getTime() - a.getTime();
-  if (ms <= 0) return 0;
-  return Math.round(ms / (1000 * 60 * 60 * 24));
+  return ms <= 0 ? 0 : Math.round(ms / (1000 * 60 * 60 * 24));
 };
 
-const Toast = ({ toast, onClose }) => {
-  if (!toast) return null;
-  const Icon = toast.kind === "success" ? CheckCircle : AlertCircle;
-  return (
-    <div
-      className={`reservation-toast ${toast.kind}`}
-      role={toast.kind === "success" ? "status" : "alert"}
-      aria-live={toast.kind === "success" ? "polite" : "assertive"}
-    >
-      <Icon size={18} aria-hidden="true" />
-      <span>{toast.text}</span>
-      <button
-        type="button"
-        className="reservation-toast-close"
-        onClick={onClose}
-        aria-label="Dismiss notification"
-      >
-        <X size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-};
+const guestName = (r) =>
+  [r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "—";
 
-const ConfirmDialog = ({
-  open,
-  title,
-  body,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
-  tone = "danger",
-  onConfirm,
-  onCancel,
-  loading = false,
-}) => {
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !loading) onCancel(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onCancel, loading]);
-
-  if (!open) return null;
-  return (
-    <div
-      className="modal-container"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="booking-confirm-title"
-      onClick={(e) => { if (e.target === e.currentTarget && !loading) onCancel(); }}
-    >
-      <div className="modal-content confirm-modal">
-        <div className="modal-header">
-          <h2 className="modal-title" id="booking-confirm-title">{title}</h2>
-          <button
-            type="button"
-            className="modal-close-btn"
-            onClick={onCancel}
-            aria-label="Close confirmation"
-            disabled={loading}
-          >
-            <X size={22} />
-          </button>
-        </div>
-        <div className="modal-body"><p>{body}</p></div>
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onCancel}
-            disabled={loading}
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`}
-            onClick={onConfirm}
-            disabled={loading}
-            aria-busy={loading}
-          >
-            {loading ? "Working…" : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const initialForm = {
+const emptyForm = {
   salutation: "Mr.",
   first_name: "",
   last_name: "",
@@ -137,102 +76,98 @@ const initialForm = {
   email: "",
   arrival_date: "",
   departure_date: "",
-  room_type: [], // array of room type ids
+  room_type: [], // room type ids
   no_of_rooms: "",
   no_of_adults: "",
   no_of_children: 0,
 };
 
 const Booking = () => {
-  const [data, setData] = useState(null); // null = loading
-  const [error, setError] = useState(null);
-  const [roomTypes, setRoomTypes] = useState([]);
-  const [refreshTick, setRefreshTick] = useState(0);
+  const {
+    data: [bookings, roomTypes],
+    loading,
+    error,
+    reload,
+  } = useApiResources([
+    {
+      fetch: () => APICall.getT("/hotel/room_booking"),
+      select: readList,
+      fallback: "Failed to load bookings.",
+    },
+    { fetch: () => APICall.getT("/masterdata/room_types"), select: readList },
+  ]);
 
-  const [formData, setFormData] = useState(initialForm);
-  const [showModal, setShowModal] = useState(false);
-  const [mode, setMode] = useState("add");
-  const [selectedId, setSelectedId] = useState(null);
+  const { toast, showToast } = useToast();
+
+  const [form, setForm] = useState(emptyForm);
+  const [editId, setEditId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const [pendingDelete, setPendingDelete] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [viewRow, setViewRow] = useState(null);
+  const [deleteRow, setDeleteRow] = useState(null);
 
-  const [toast, setToast] = useState(null);
-  const mounted = useRef(true);
+  const roomTypeOptions = useMemo(
+    () => roomTypes.map((t) => ({ value: t.id, label: t.room_type_name })),
+    [roomTypes],
+  );
 
-  const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
-
-  useEffect(() => {
-    if (!toast) return undefined;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  // `showLoading` is false on mount, where `data` already starts as null, and
-  // true for a user-triggered refresh, where the list has to visibly go back
-  // to loading. Splitting the two keeps the mount path free of a synchronous
-  // setState inside an effect (react-hooks/set-state-in-effect).
-  const loadBookings = useCallback(async (showLoading = true) => {
-    if (showLoading) setData(null);
-    try {
-      const res = await APICall.getT("/hotel/room_booking");
-      if (!mounted.current) return;
-      setData(Array.isArray(res?.data) ? res.data : readList(res));
-      setError(null);
-    } catch (err) {
-      if (!mounted.current) return;
-      setData([]);
-      setError(errMsg(err, "Failed to load bookings."));
-    }
-  }, []);
-
-  useEffect(() => {
-    mounted.current = true;
-    loadBookings(false);
-
-    APICall.getT("/masterdata/room_types")
-      .then((res) => {
-        if (!mounted.current) return;
-        setRoomTypes(readList(res));
-      })
-      .catch(() => {
-        if (!mounted.current) return;
-        setRoomTypes([]);
-      });
-
-    return () => { mounted.current = false; };
-  }, [loadBookings, refreshTick]);
-
-  // Escape to close the CRUD modal.
-  useEffect(() => {
-    if (!showModal) return undefined;
-    const onKey = (e) => { if (e.key === "Escape" && !saving) closeModal(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-     
-  }, [showModal, saving]);
-
-  useEffect(() => {
-    const anyOpen = showModal || Boolean(pendingDelete);
-    if (!anyOpen) return undefined;
-    const original = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = original; };
-  }, [showModal, pendingDelete]);
-
-  // ----------------------------------------------------------------
-  const openAddModal = () => {
-    setFormData(initialForm);
-    setMode("add");
-    setSelectedId(null);
-    setFormError(null);
-    setShowModal(true);
+  // `room_booking.room_type` holds TWO shapes in live data. Rows written by
+  // the current API hold room-type ids; rows already in the client's database
+  // hold the type NAMES ("Deluxe Room"). Both have to render, and both have to
+  // survive a round trip through the edit form.
+  //
+  // This is not hypothetical: reading only ids meant every existing booking
+  // displayed "#Deluxe Room", and -- worse -- opening one for edit resolved
+  // its types to an empty list, so the guest's requested room types silently
+  // vanished from the form and validation then refused to save until the user
+  // picked them again.
+  const resolveRoomType = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return null;
+    const byId = roomTypes.find((t) => String(t.id) === raw);
+    if (byId) return byId;
+    const byName = roomTypes.find(
+      (t) => (t.room_type_name || "").toLowerCase() === raw.toLowerCase(),
+    );
+    return byName || null;
   };
 
-  const openEditModal = (row) => {
-    setFormData({
+  /** Ids for the multi-select, from either shape. */
+  const roomTypeIds = (value) =>
+    parseArr(value)
+      .map((v) => resolveRoomType(v)?.id)
+      .filter((id) => id !== undefined && id !== null);
+
+  /** Human labels for the table and the View modal, from either shape. */
+  const roomTypeNames = (value) => {
+    const parts = parseArr(value).map((v) => {
+      const match = resolveRoomType(v);
+      if (match) return match.room_type_name;
+      // A type that no longer exists in Master Data. Show what was stored
+      // rather than a dangling id, so the record stays readable.
+      return String(v);
+    });
+    return parts.join(", ") || "—";
+  };
+
+  const nights = nightsBetween(form.arrival_date, form.departure_date);
+
+  const setField = (field) => (e) =>
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  /* ============================== Handlers ============================== */
+
+  const openAdd = () => {
+    setForm(emptyForm);
+    setEditId(null);
+    setFormError(null);
+    setShowForm(true);
+  };
+
+  const openEdit = (row) => {
+    setForm({
       salutation: row.salutation || "Mr.",
       first_name: row.first_name || "",
       last_name: row.last_name || "",
@@ -240,564 +175,372 @@ const Booking = () => {
       email: row.email || "",
       arrival_date: isoDay(row.arrival_date),
       departure_date: isoDay(row.departure_date),
-      room_type: parseArr(row.room_type).map(Number).filter(Number.isFinite),
+      room_type: roomTypeIds(row.room_type),
       no_of_rooms: row.no_of_rooms ?? "",
       no_of_adults: row.no_of_adults ?? "",
       no_of_children: row.no_of_children ?? 0,
     });
-    setSelectedId(row.id);
-    setMode("edit");
+    setEditId(row.id);
     setFormError(null);
-    setShowModal(true);
+    setShowForm(true);
   };
 
-  const openViewModal = (row) => {
-    setFormData({
-      salutation: row.salutation || "",
-      first_name: row.first_name || "",
-      last_name: row.last_name || "",
-      phone_number: row.phone_number || "",
-      email: row.email || "",
-      arrival_date: isoDay(row.arrival_date),
-      departure_date: isoDay(row.departure_date),
-      room_type: parseArr(row.room_type).map(Number).filter(Number.isFinite),
-      no_of_rooms: row.no_of_rooms ?? "",
-      no_of_adults: row.no_of_adults ?? "",
-      no_of_children: row.no_of_children ?? 0,
-    });
-    setMode("view");
-    setSelectedId(row.id);
-    setFormError(null);
-    setShowModal(true);
-  };
-
-  const closeModal = () => {
-    setShowModal(false);
-    setSelectedId(null);
+  const closeForm = () => {
+    if (saving) return;
+    setShowForm(false);
+    setEditId(null);
     setFormError(null);
   };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const totalNights = useMemo(
-    () => nightsBetween(formData.arrival_date, formData.departure_date),
-    [formData.arrival_date, formData.departure_date],
-  );
 
   const validate = () => {
-    if (!formData.first_name?.trim()) return "First name is required.";
-    if (!formData.last_name?.trim()) return "Last name is required.";
-    if (!formData.phone_number?.trim()) return "Phone number is required.";
-    if (!PHONE_RE.test(formData.phone_number.trim())) return "Enter a valid phone number.";
-    if (formData.email && !EMAIL_RE.test(formData.email.trim())) return "Enter a valid email address.";
-    if (!formData.arrival_date) return "Arrival date is required.";
-    if (!formData.departure_date) return "Departure date is required.";
-    if (isoDay(formData.arrival_date) >= isoDay(formData.departure_date)) return "Departure date must be after arrival date.";
-    if (!Array.isArray(formData.room_type) || formData.room_type.length === 0) return "Pick at least one room type.";
-    if (num(formData.no_of_rooms) < 1) return "Number of rooms must be at least 1.";
-    if (num(formData.no_of_adults) < 1) return "Number of adults must be at least 1.";
-    if (num(formData.no_of_children) < 0) return "Children count cannot be negative.";
+    if (!form.first_name?.trim()) return "First name is required.";
+    if (!form.last_name?.trim()) return "Last name is required.";
+    if (!form.phone_number?.trim()) return "Phone number is required.";
+    if (!PHONE_RE.test(form.phone_number.trim())) return "Enter a valid phone number.";
+    if (form.email && !EMAIL_RE.test(form.email.trim())) return "Enter a valid email address.";
+    if (!form.arrival_date) return "Arrival date is required.";
+    if (!form.departure_date) return "Departure date is required.";
+    if (isoDay(form.arrival_date) >= isoDay(form.departure_date))
+      return "Departure date must be after arrival date.";
+    if (!form.room_type.length) return "Pick at least one room type.";
+    if (num(form.no_of_rooms) < 1) return "Number of rooms must be at least 1.";
+    if (num(form.no_of_adults) < 1) return "Number of adults must be at least 1.";
+    if (num(form.no_of_children) < 0) return "Children count cannot be negative.";
     return null;
   };
 
-  const buildPayload = (includeId = false) => {
-    const payload = {
-      salutation: formData.salutation || null,
-      first_name: formData.first_name.trim(),
-      last_name: formData.last_name.trim(),
-      phone_number: formData.phone_number.trim(),
-      email: formData.email ? formData.email.trim().toLowerCase() : null,
-      arrival_date: formData.arrival_date,
-      departure_date: formData.departure_date,
-      no_of_nights: totalNights || 1,
-      room_type: formData.room_type.map(Number).filter(Number.isFinite),
-      no_of_rooms: num(formData.no_of_rooms) || 1,
-      no_of_adults: num(formData.no_of_adults) || 1,
-      no_of_children: num(formData.no_of_children),
-    };
-    if (includeId) payload.id = selectedId;
-    return payload;
-  };
-
   const handleSave = async () => {
-    const v = validate();
-    if (v) {
-      setFormError(v);
-      showToast("error", v);
+    if (saving) return;
+    const problem = validate();
+    if (problem) {
+      setFormError(problem);
       return;
     }
     setFormError(null);
     setSaving(true);
+
+    const payload = {
+      salutation: form.salutation || null,
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      phone_number: form.phone_number.trim(),
+      email: form.email ? form.email.trim().toLowerCase() : null,
+      arrival_date: form.arrival_date,
+      departure_date: form.departure_date,
+      no_of_nights: nights || 1,
+      room_type: form.room_type.map(Number).filter(Number.isFinite),
+      no_of_rooms: num(form.no_of_rooms) || 1,
+      no_of_adults: num(form.no_of_adults) || 1,
+      no_of_children: num(form.no_of_children),
+    };
+
     try {
-      if (mode === "edit") {
-        await APICall.putT("/hotel/room_booking", buildPayload(true));
-        showToast("success", "Booking updated.");
+      if (editId) {
+        await APICall.putT("/hotel/room_booking", { ...payload, id: editId });
+        showToast("Booking updated", "update");
       } else {
-        await APICall.postT("/hotel/room_booking", buildPayload(false));
-        showToast("success", "Booking created.");
+        await APICall.postT("/hotel/room_booking", payload);
+        showToast("Booking created", "success");
       }
-      closeModal();
-      loadBookings();
+      setShowForm(false);
+      setEditId(null);
+      reload();
     } catch (err) {
-      const m = errMsg(err, mode === "edit" ? "Failed to update booking." : "Failed to create booking.");
-      setFormError(m);
-      showToast("error", m);
+      setFormError(errMsg(err, editId ? "Failed to update booking." : "Failed to create booking."));
     } finally {
-      if (mounted.current) setSaving(false);
+      setSaving(false);
     }
   };
-
-  const handleDeleteClick = (row) => setPendingDelete(row);
 
   const confirmDelete = async () => {
-    if (!pendingDelete) return;
-    setDeleteLoading(true);
+    const row = deleteRow;
+    setDeleteRow(null);
+    if (!row) return;
     try {
-      await APICall.deleteT(`/hotel/room_booking/${pendingDelete.id}`);
-      showToast("success", "Booking deleted.");
-      setPendingDelete(null);
-      loadBookings();
+      await APICall.deleteT(`/hotel/room_booking/${row.id}`);
+      showToast("Booking deleted", "delete");
+      reload();
     } catch (err) {
-      showToast("error", errMsg(err, "Failed to delete booking."));
-    } finally {
-      if (mounted.current) setDeleteLoading(false);
+      showToast(errMsg(err, "Failed to delete booking."), "error");
     }
   };
 
-  const handleExportCsv = () => {
-    const list = Array.isArray(data) ? data : [];
-    if (list.length === 0) {
-      showToast("error", "No bookings to export.");
-      return;
-    }
-    const header = [
-      "Booking ID", "First Name", "Last Name", "Phone", "Email",
-      "Arrival", "Departure", "Nights", "Rooms", "Adults", "Children",
-    ];
-    const rows = list.map((r) => [
-      r.room_booking_id ?? r.id,
-      r.first_name ?? "",
-      r.last_name ?? "",
-      r.phone_number ?? "",
-      r.email ?? "",
-      r.arrival_date ?? "",
-      r.departure_date ?? "",
-      r.no_of_nights ?? "",
-      r.no_of_rooms ?? "",
-      r.no_of_adults ?? "",
-      r.no_of_children ?? "",
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((cell) => {
-        const s = String(cell ?? "");
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      }).join(","))
-      .join("\r\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `bookings-${isoDay(new Date().toISOString())}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const isView = mode === "view";
-  const isLoading = data === null;
-  const tableData = Array.isArray(data) ? data : [];
-  const modalTitle = mode === "add" ? "Add Booking" : mode === "edit" ? "Edit Booking" : "View Booking";
+  /* ================================= UI ================================= */
 
   return (
     <>
-      {error && (
-        <div className="reservation-alert" role="alert">
-          <span>{error}</span>
-          <button
-            type="button"
-            className="reservation-alert-action"
-            onClick={() => setRefreshTick((n) => n + 1)}
-          >
-            Retry
-          </button>
-        </div>
-      )}
+      <ErrorAlert message={error} />
 
-      {isLoading && (
-        <div className="reservation-loading" role="status" aria-live="polite">
-          Loading bookings…
-        </div>
-      )}
-
-      {!isLoading && (
-        <TableTemplate
-          title="Booking List"
-          hasActionButton
-          searchable
-          pagination
-          exportable
-          actionButton={{
-            label: "Add Booking",
-            onClick: openAddModal,
-            variant: "primary",
-          }}
-          columns={[
-            { key: "room_booking_id", title: "Booking ID", align: "center" },
-            { key: "first_name", title: "First Name", align: "center" },
-            { key: "last_name", title: "Last Name", align: "center" },
-            { key: "phone_number", title: "Phone", align: "center" },
-            { key: "no_of_rooms", title: "Rooms", align: "center" },
-            { key: "arrival_date", title: "Arrival", align: "center" },
-            { key: "departure_date", title: "Departure", align: "center" },
-            {
-              key: "actions",
-              title: "Actions",
-              align: "center",
-              type: "custom",
-              render: (row) => (
-                <div className="table-actions">
-                  <button
-                    type="button"
-                    className="table-action-btn view"
-                    title="View"
-                    aria-label={`View booking ${row.room_booking_id || row.id}`}
-                    onClick={() => openViewModal(row)}
-                  >
-                    <Eye size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="table-action-btn edit"
-                    title="Edit"
-                    aria-label={`Edit booking ${row.room_booking_id || row.id}`}
-                    onClick={() => openEditModal(row)}
-                  >
-                    <Pencil size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="table-action-btn delete"
-                    title="Delete"
-                    aria-label={`Delete booking ${row.room_booking_id || row.id}`}
-                    onClick={() => handleDeleteClick(row)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ),
-            },
-          ]}
-          data={tableData}
-        />
-      )}
-
-      {!isLoading && tableData.length === 0 && !error && (
-        <div className="reservation-empty">
-          No bookings yet. Use "Add Booking" to create the first one.
-        </div>
-      )}
-
-      {/* Export bar shown alongside the table when data is present */}
-      {!isLoading && tableData.length > 0 && (
-        <div className="bkg-export-bar">
-          <button
-            type="button"
-            className="rmv-toolbar-btn"
-            onClick={handleExportCsv}
-            aria-label="Export bookings as CSV"
-          >
-            <Download size={16} aria-hidden="true" />
-            <span>Export CSV</span>
-          </button>
-        </div>
-      )}
-
-      {/* CRUD modal */}
-      {showModal && (
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="booking-modal-title"
-          onClick={(e) => { if (e.target === e.currentTarget && !saving) closeModal(); }}
-        >
-          <div className="modal-card">
-            <div className="modal-header">
-              <h3 id="booking-modal-title">{modalTitle}</h3>
-              <button
-                type="button"
-                onClick={closeModal}
-                aria-label="Close booking dialog"
-                disabled={saving}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {formError && (
-              <div className="reservation-alert inline" role="alert">
-                {formError}
+      <TableTemplate
+        title="Booking Requests"
+        loading={loading}
+        emptyMessage="No booking requests yet. Use Add Booking to create the first one."
+        hasActionButton
+        searchable
+        pagination
+        // TableTemplate's own toolbar already offers CSV, Excel, print and
+        // copy. This screen used to render a second "Export CSV" bar beneath
+        // the table that did the same job with a hand-written serialiser.
+        exportable
+        actionButton={{
+          label: "Add Booking",
+          onClick: openAdd,
+          variant: "primary",
+        }}
+        columns={[
+          { key: "room_booking_id", title: "Booking ID", align: "left" },
+          {
+            key: "first_name",
+            title: "Guest",
+            align: "left",
+            type: "custom",
+            exportValue: guestName,
+            render: (row) => (
+              <div className="res-guest-cell">
+                <span className="res-guest-name">{guestName(row)}</span>
+                <span className="res-guest-phone">{row.phone_number || "—"}</span>
               </div>
-            )}
-
-            <div className="modal-body grid">
-              <div className="form-group">
-                <label htmlFor="bkg-salutation">Salutation</label>
-                <select
-                  id="bkg-salutation"
-                  name="salutation"
-                  value={formData.salutation}
-                  onChange={handleChange}
-                  disabled={isView}
-                >
-                  {SALUTATIONS.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+            ),
+          },
+          {
+            key: "arrival_date",
+            title: "Stay",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => `${isoDay(row.arrival_date)} to ${isoDay(row.departure_date)}`,
+            render: (row) => (
+              <div className="res-stay-cell">
+                <span className="res-stay-dates">{isoDay(row.arrival_date)}</span>
+                <span className="res-stay-dates">{isoDay(row.departure_date)}</span>
+                <span className="res-stay-nights">
+                  {row.no_of_nights} night{row.no_of_nights === 1 ? "" : "s"}
+                </span>
               </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-first-name">First Name *</label>
-                <input
-                  id="bkg-first-name"
-                  type="text"
-                  name="first_name"
-                  value={formData.first_name}
-                  onChange={handleChange}
-                  disabled={isView}
-                  required
-                  maxLength={100}
-                  autoComplete="given-name"
-                />
+            ),
+          },
+          {
+            // Room type names, not the raw ids the column used to omit
+            // entirely — a booking request is *about* which types were asked
+            // for, so the list was missing its most useful field.
+            key: "room_type",
+            title: "Room Types",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => roomTypeNames(row.room_type),
+            render: (row) => roomTypeNames(row.room_type),
+          },
+          {
+            key: "no_of_rooms",
+            title: "Party",
+            align: "left",
+            type: "custom",
+            exportValue: (row) =>
+              `${row.no_of_rooms} room(s), ${row.no_of_adults} adult(s), ${row.no_of_children || 0} child(ren)`,
+            render: (row) => (
+              <div className="res-stay-cell">
+                <span>{row.no_of_rooms} room{row.no_of_rooms === 1 ? "" : "s"}</span>
+                <span className="res-stay-nights">
+                  {row.no_of_adults} adult{row.no_of_adults === 1 ? "" : "s"}
+                  {row.no_of_children ? `, ${row.no_of_children} child` : ""}
+                </span>
               </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-last-name">Last Name *</label>
-                <input
-                  id="bkg-last-name"
-                  type="text"
-                  name="last_name"
-                  value={formData.last_name}
-                  onChange={handleChange}
-                  disabled={isView}
-                  required
-                  maxLength={100}
-                  autoComplete="family-name"
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-email">Email</label>
-                <input
-                  id="bkg-email"
-                  type="email"
-                  inputMode="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  disabled={isView}
-                  maxLength={100}
-                  autoComplete="email"
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-phone">Phone Number *</label>
-                <input
-                  id="bkg-phone"
-                  type="tel"
-                  inputMode="tel"
-                  name="phone_number"
-                  value={formData.phone_number}
-                  onChange={handleChange}
-                  disabled={isView}
-                  required
-                  maxLength={20}
-                  autoComplete="tel"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Room Types *</label>
-                <div className="bkg-chip-tray" data-view={isView ? "true" : "false"}>
-                  {formData.room_type.length > 0 ? (
-                    formData.room_type.map((id) => {
-                      const room = roomTypes.find((r) => r.id === id);
-                      return (
-                        <span key={id} className="bkg-chip">
-                          {room?.room_type_name || `#${id}`}
-                          {!isView && (
-                            <button
-                              type="button"
-                              className="bkg-chip-remove"
-                              aria-label={`Remove room type ${room?.room_type_name || id}`}
-                              onClick={() =>
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  room_type: prev.room_type.filter((x) => x !== id),
-                                }))
-                              }
-                            >
-                              ×
-                            </button>
-                          )}
-                        </span>
-                      );
-                    })
-                  ) : (
-                    <span className="bkg-chip-placeholder">Select room types…</span>
-                  )}
-                </div>
-                {!isView && (
-                  <select
-                    className="bkg-chip-picker"
-                    aria-label="Add room type"
-                    onChange={(e) => {
-                      const id = Number(e.target.value);
-                      if (!id) return;
-                      if (formData.room_type.includes(id)) return;
-                      setFormData((prev) => ({
-                        ...prev,
-                        room_type: [...prev.room_type, id],
-                      }));
-                      e.target.value = "";
-                    }}
-                  >
-                    <option value="">+ Add Room Type</option>
-                    {roomTypes.map((room) => (
-                      <option key={room.id} value={room.id}>
-                        {room.room_type_name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-arrival">Arrival Date *</label>
-                <input
-                  id="bkg-arrival"
-                  type="date"
-                  name="arrival_date"
-                  value={formData.arrival_date}
-                  onChange={handleChange}
-                  disabled={isView}
-                  required
-                  min={isView ? undefined : isoDay(new Date().toISOString())}
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-departure">Departure Date *</label>
-                <input
-                  id="bkg-departure"
-                  type="date"
-                  name="departure_date"
-                  value={formData.departure_date}
-                  onChange={handleChange}
-                  disabled={isView}
-                  required
-                  min={formData.arrival_date || undefined}
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-nights">No. of Nights</label>
-                <input
-                  id="bkg-nights"
-                  type="number"
-                  value={totalNights}
-                  readOnly
-                  aria-readonly="true"
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-no-rooms">No. of Rooms *</label>
-                <input
-                  id="bkg-no-rooms"
-                  type="number"
-                  name="no_of_rooms"
-                  value={formData.no_of_rooms}
-                  onChange={handleChange}
-                  disabled={isView}
-                  min="1"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-no-adults">No. of Adults *</label>
-                <input
-                  id="bkg-no-adults"
-                  type="number"
-                  name="no_of_adults"
-                  value={formData.no_of_adults}
-                  onChange={handleChange}
-                  disabled={isView}
-                  min="1"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="bkg-no-children">No. of Children</label>
-                <input
-                  id="bkg-no-children"
-                  type="number"
-                  name="no_of_children"
-                  value={formData.no_of_children}
-                  onChange={handleChange}
-                  disabled={isView}
-                  min="0"
-                />
-              </div>
-            </div>
-
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={closeModal}
-                disabled={saving}
-              >
-                {isView ? "Close" : "Cancel"}
-              </button>
-              {!isView && (
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={handleSave}
-                  disabled={saving}
-                  aria-busy={saving}
-                >
-                  {saving ? "Saving…" : "Save"}
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <ConfirmDialog
-        open={Boolean(pendingDelete)}
-        title="Delete booking"
-        body={
-          pendingDelete
-            ? `Delete booking ${pendingDelete.room_booking_id || pendingDelete.id} for ${pendingDelete.first_name || "guest"}? This action cannot be undone.`
-            : ""
-        }
-        confirmLabel="Delete"
-        onConfirm={confirmDelete}
-        onCancel={() => setPendingDelete(null)}
-        loading={deleteLoading}
+            ),
+          },
+          {
+            key: "actions",
+            title: "Actions",
+            align: "center",
+            type: "custom",
+            excludeFromExport: true,
+            render: (row) => (
+              <RowActions
+                label={`booking ${row.room_booking_id || row.id}`}
+                onView={() => setViewRow(row)}
+                onEdit={() => openEdit(row)}
+                onDelete={() => setDeleteRow(row)}
+              />
+            ),
+          },
+        ]}
+        data={bookings}
       />
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
+      {/* ============================== VIEW ============================== */}
+      <Modal
+        isOpen={Boolean(viewRow)}
+        title={`Booking ${viewRow?.room_booking_id || ""}`}
+        onClose={() => setViewRow(null)}
+        // Large, not medium: at medium the Guest section auto-fitted to a
+        // single column (the email value sets the minimum track width) while
+        // Requested Stay beside it sat 2-up, so one modal showed two different
+        // grids.
+        size="large"
+        viewMode
+        showFooter
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewRow(null) },
+        ]}
+      >
+        <ViewSection title="Guest">
+          <DetailList columns={2}>
+            <DetailItem label="Name" value={guestName(viewRow)} />
+            <DetailItem label="Salutation" value={viewRow?.salutation} />
+            <DetailItem label="Phone" value={viewRow?.phone_number} />
+            <DetailItem label="Email" value={viewRow?.email} />
+          </DetailList>
+        </ViewSection>
+
+        <ViewSection title="Requested stay">
+          <DetailList columns={2}>
+            <DetailItem label="Arrival" value={isoDay(viewRow?.arrival_date)} />
+            <DetailItem label="Departure" value={isoDay(viewRow?.departure_date)} />
+            <DetailItem label="Nights" value={viewRow?.no_of_nights} />
+            <DetailItem label="Rooms" value={viewRow?.no_of_rooms} />
+            <DetailItem label="Adults" value={viewRow?.no_of_adults} />
+            <DetailItem label="Children" value={viewRow?.no_of_children ?? 0} />
+            <DetailItem
+              label="Room types"
+              value={roomTypeNames(viewRow?.room_type)}
+              span={2}
+            />
+          </DetailList>
+        </ViewSection>
+      </Modal>
+
+      {/* ============================ ADD / EDIT ============================ */}
+      <Modal
+        isOpen={showForm}
+        title={editId ? "Edit Booking" : "Add Booking"}
+        onClose={closeForm}
+        size="large"
+        showFooter
+        bodyLayout="grid"
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeForm, disabled: saving },
+          {
+            label: saving ? "Saving…" : "Save",
+            variant: "primary",
+            onClick: handleSave,
+            disabled: saving,
+          },
+        ]}
+      >
+        <ErrorAlert message={formError} />
+
+        <Select
+          label="Salutation"
+          value={form.salutation}
+          onChange={setField("salutation")}
+          options={SALUTATIONS}
+        />
+        <Input
+          label="First Name"
+          required
+          value={form.first_name}
+          onChange={setField("first_name")}
+          maxLength={100}
+          autoComplete="given-name"
+        />
+        <Input
+          label="Last Name"
+          required
+          value={form.last_name}
+          onChange={setField("last_name")}
+          maxLength={100}
+          autoComplete="family-name"
+        />
+        <Input
+          label="Phone Number"
+          required
+          type="tel"
+          inputMode="tel"
+          value={form.phone_number}
+          onChange={setField("phone_number")}
+          maxLength={20}
+          autoComplete="tel"
+        />
+        <Input
+          label="Email"
+          type="email"
+          inputMode="email"
+          value={form.email}
+          onChange={setField("email")}
+          maxLength={100}
+          autoComplete="email"
+        />
+        <Select
+          label="Room Types"
+          required
+          multiple
+          value={form.room_type}
+          onChange={(e) => setForm((prev) => ({ ...prev, room_type: e.target.value }))}
+          options={roomTypeOptions}
+          placeholder="Select room types…"
+          helperText="A request can name more than one type."
+        />
+        <Input
+          label="Arrival Date"
+          required
+          type="date"
+          value={form.arrival_date}
+          onChange={setField("arrival_date")}
+          min={isoDay(new Date().toISOString())}
+        />
+        <Input
+          label="Departure Date"
+          required
+          type="date"
+          value={form.departure_date}
+          onChange={setField("departure_date")}
+          min={form.arrival_date || undefined}
+        />
+        <Input
+          label="Nights"
+          type="number"
+          value={nights}
+          readOnly
+          helperText="Calculated from the dates"
+        />
+        <Input
+          label="No. of Rooms"
+          required
+          type="number"
+          min="1"
+          value={form.no_of_rooms}
+          onChange={setField("no_of_rooms")}
+        />
+        <Input
+          label="No. of Adults"
+          required
+          type="number"
+          min="1"
+          value={form.no_of_adults}
+          onChange={setField("no_of_adults")}
+        />
+        <Input
+          label="No. of Children"
+          type="number"
+          min="0"
+          value={form.no_of_children}
+          onChange={setField("no_of_children")}
+        />
+      </Modal>
+
+      {/* ============================== DELETE ============================== */}
+      <ConfirmModal
+        isOpen={Boolean(deleteRow)}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        title="Delete booking"
+        confirmText="Delete"
+        size="small"
+        destructive
+      >
+        Delete booking {deleteRow?.room_booking_id || deleteRow?.id} for{" "}
+        {guestName(deleteRow)}? This cannot be undone.
+      </ConfirmModal>
+
+      <Toast {...toast} />
     </>
   );
 };

@@ -86,6 +86,19 @@ const guestName = (r) =>
 const joinList = (values) =>
   Array.isArray(values) && values.length ? values.join(", ") : "—";
 
+// Common cancellation reasons, as one-tap presets. Free text on purpose:
+// there is no cancellation-reason master table, and inventing one would put a
+// Master Data change inside a Reservation change. If these settle into a fixed
+// vocabulary the property wants to manage, that is when they earn a table.
+const CANCELLATION_PRESETS = [
+  "Guest request",
+  "Guest did not confirm",
+  "Duplicate booking",
+  "Overbooking resolved",
+  "Payment not received",
+  "Room unavailable",
+];
+
 const PAYMENT_STATES = ["Unpaid", "Partly paid", "Paid"];
 const RESERVATION_TYPES = ["RESERVATION", "GROUP_RESERVATION", "CHECKIN"];
 const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
@@ -152,7 +165,13 @@ const Reservation = () => {
 
   const [deleteRow, setDeleteRow] = useState(null);
   const [cancelRow, setCancelRow] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelError, setCancelError] = useState(null);
+  const [cancelSaving, setCancelSaving] = useState(false);
   const [noShowRow, setNoShowRow] = useState(null);
+  const [checkoutModal, setCheckoutModal] = useState(null); // { row, position, adjust }
+  const [checkoutSaving, setCheckoutSaving] = useState(false);
+  const [checkoutError, setCheckoutError] = useState(null);
   const [rowBusy, setRowBusy] = useState({});
 
   const [payModal, setPayModal] = useState(null);
@@ -218,25 +237,83 @@ const Reservation = () => {
       `${guestName(row)} checked in.`,
     );
 
-  const handleCheckOut = (row) =>
-    runRowAction(
-      row,
-      "check-out",
-      () =>
-        APICall.postT(
-          `/hotel/room_reservation_checkout/${encodeURIComponent(row.token)}`,
-        ),
-      `${guestName(row)} checked out.`,
-    );
+  // Check-out asks the server what it would do before doing it. A guest
+  // leaving on their booked departure date goes straight through; one leaving
+  // early opens a dialog showing both bills, because which one applies is a
+  // policy this system has no rate-plan configuration to decide from.
+  const handleCheckOut = async (row) => {
+    if (rowBusy[row.id]) return;
+    lockRow(row.id, "check-out");
+    try {
+      const res = await APICall.getT(
+        `/hotel/room_reservation_checkout_preview/${encodeURIComponent(row.token)}`,
+      );
+      const position = res?.data || null;
+      if (position?.is_early && position?.repriced) {
+        setCheckoutModal({ row, position, adjust: false });
+        return;
+      }
+      await APICall.postT(
+        `/hotel/room_reservation_checkout/${encodeURIComponent(row.token)}`,
+        { adjust_stay: false },
+      );
+      showToast(`${guestName(row)} checked out.`, "success");
+      reload();
+    } catch (err) {
+      showToast(errMsg(err, "Check-out failed."), "error");
+    } finally {
+      unlockRow(row.id);
+    }
+  };
+
+  const submitCheckout = async () => {
+    if (!checkoutModal || checkoutSaving) return;
+    const { row, adjust } = checkoutModal;
+    setCheckoutSaving(true);
+    setCheckoutError(null);
+    try {
+      const res = await APICall.postT(
+        `/hotel/room_reservation_checkout/${encodeURIComponent(row.token)}`,
+        { adjust_stay: adjust },
+      );
+      const refund = num(res?.data?.extra_amount);
+      showToast(
+        refund > 0
+          ? `${guestName(row)} checked out. ${money(refund)} is refundable.`
+          : `${guestName(row)} checked out.`,
+        "success",
+      );
+      setCheckoutModal(null);
+      reload();
+    } catch (err) {
+      setCheckoutError(errMsg(err, "Check-out failed."));
+    } finally {
+      setCheckoutSaving(false);
+    }
+  };
+
+  const openCancel = (row) => {
+    setCancelReason("");
+    setCancelError(null);
+    setCancelRow(row);
+  };
 
   const confirmCancel = async () => {
     const row = cancelRow;
-    setCancelRow(null);
-    if (!row) return;
+    if (!row || cancelSaving) return;
+    const reason = cancelReason.trim();
+    if (!reason) {
+      setCancelError("Please say why this reservation is being cancelled.");
+      return;
+    }
+    setCancelSaving(true);
+    setCancelError(null);
     try {
       const res = await APICall.postT(
         `/hotel/room_reservation_cancel/${encodeURIComponent(row.token)}`,
+        { cancellation_reason: reason },
       );
+      setCancelRow(null);
       const paid = num(res?.data?.amount_already_paid);
       showToast(
         paid > 0
@@ -246,7 +323,9 @@ const Reservation = () => {
       );
       reload();
     } catch (err) {
-      showToast(errMsg(err, "Cancellation failed."), "error");
+      setCancelError(errMsg(err, "Cancellation failed."));
+    } finally {
+      setCancelSaving(false);
     }
   };
 
@@ -580,6 +659,7 @@ ${line(`Discount${row.discount_name ? ` (${row.discount_name} ${row.discount_per
 ${line("Paid", money(row.paid_amount))}
 ${line("Balance", money(row.balance_amount))}
 ${line("Payment method", row.payment_method || "—")}
+${row.cancellation_reason ? `<h3>Cancellation</h3>${line("Reason", row.cancellation_reason)}${line("Cancelled on", isoDay(row.cancelled_at))}` : ""}
 <scr` + `ipt>window.addEventListener("load",function(){window.print()});</scr` + `ipt>
 </body></html>`);
     win.document.close();
@@ -596,6 +676,7 @@ ${line("Payment method", row.payment_method || "—")}
       "Reservation ID", "Confirmation", "Type", "Guest", "Phone", "Email",
       "Arrival", "Departure", "Nights", "Rooms", "Room Types",
       "Adults", "Children", "Status", "Total", "Paid", "Balance", "Payment",
+      "Cancellation Reason", "Cancelled On",
     ];
     const rows = reservations.map((r) => [
       r.room_reservation_id, r.confirmation_code, r.reservation_type,
@@ -604,6 +685,7 @@ ${line("Payment method", row.payment_method || "—")}
       (r.room_nos || []).join(" / "), (r.room_type_names || []).join(" / "),
       r.no_of_adults, r.no_of_children, r.reservation_status,
       r.overall_amount, r.paid_amount, r.balance_amount, r.payment_state,
+      r.cancellation_reason ?? "", isoDay(r.cancelled_at),
     ]);
     const csv = [header, ...rows]
       .map((row) =>
@@ -892,11 +974,15 @@ ${line("Payment method", row.payment_method || "—")}
                 onClick: () => {
                   const row = viewRow;
                   setViewRow(null);
-                  setCancelRow(row);
+                  openCancel(row);
                 },
               }]
             : []),
-          { label: "Close", variant: "primary", onClick: () => setViewRow(null) },
+          // Secondary, not primary. When "Cancel reservation" is present the
+          // footer would otherwise hold two filled red buttons side by side —
+          // the destructive one and the dismissal — differing only in shade.
+          // Closing a read-only dialog is not the primary action anyway.
+          { label: "Close", variant: "secondary", onClick: () => setViewRow(null) },
         ]}
       >
         <ViewSection title="Reservation">
@@ -920,6 +1006,26 @@ ${line("Payment method", row.payment_method || "—")}
             <DetailItem label="Identity document" value={viewRow?.proof_document} span={3} />
           </DetailList>
         </ViewSection>
+
+        {viewRow?.is_terminal &&
+          String(viewRow?.reservation_status || "").toLowerCase().includes("cancel") && (
+            <ViewSection title="Cancellation">
+              <DetailList columns={3}>
+                {/* A booking cancelled before the reason was recorded shows
+                    "Not recorded" rather than an empty cell — the difference
+                    between "nobody wrote it down" and "there was no reason"
+                    matters when somebody is auditing a released room. */}
+                <DetailItem
+                  label="Reason"
+                  value={viewRow?.cancellation_reason || "Not recorded"}
+                  span={3}
+                />
+                <DetailItem label="Cancelled on" value={isoDay(viewRow?.cancelled_at)} />
+                <DetailItem label="Cancelled by" value={viewRow?.cancelled_by} />
+                <DetailItem label="Amount paid" value={money(viewRow?.paid_amount)} />
+              </DetailList>
+            </ViewSection>
+          )}
 
         <ViewSection title="Stay">
           <DetailList columns={3}>
@@ -1285,21 +1391,182 @@ ${line("Payment method", row.payment_method || "—")}
         it from the book entirely. To keep the record and free the room, cancel it instead.
       </ConfirmModal>
 
-      <ConfirmModal
-        isOpen={Boolean(cancelRow)}
-        onClose={() => setCancelRow(null)}
-        onConfirm={confirmCancel}
-        title="Cancel reservation"
-        confirmText="Cancel reservation"
-        cancelText="Keep it"
-        size="small"
-        destructive
+      {/* An early departure puts two bills on screen and makes the desk pick.
+          Defaulting to either would be this screen choosing a refund policy:
+          re-pricing silently gives away nights the property may be entitled
+          to charge for, and keeping the charge silently bills for nights
+          nobody slept. The pre-selected option is "no change", so a reduction
+          only ever happens because somebody asked for one. */}
+      <Modal
+        isOpen={Boolean(checkoutModal)}
+        title="Check out early"
+        onClose={() => !checkoutSaving && setCheckoutModal(null)}
+        size="medium"
+        showFooter
+        actions={[
+          {
+            label: "Cancel",
+            variant: "secondary",
+            onClick: () => setCheckoutModal(null),
+            disabled: checkoutSaving,
+          },
+          {
+            label: checkoutSaving ? "Checking out…" : "Check out",
+            variant: "primary",
+            onClick: submitCheckout,
+            disabled: checkoutSaving,
+          },
+        ]}
       >
-        Cancel {cancelRow?.room_reservation_id} for {guestName(cancelRow)}?{" "}
-        {joinList(cancelRow?.room_nos)} becomes available for those dates immediately.
-        {num(cancelRow?.paid_amount) > 0 &&
-          ` ${money(cancelRow?.paid_amount)} has already been paid and stays on the record.`}
-      </ConfirmModal>
+        <ErrorAlert message={checkoutError} />
+
+        <p className="res-cancel-summary">
+          <strong>{guestName(checkoutModal?.row)}</strong> is leaving{" "}
+          <strong>{checkoutModal?.position?.nights_unused}</strong> night
+          {checkoutModal?.position?.nights_unused === 1 ? "" : "s"} early —
+          booked {checkoutModal?.position?.booked_nights} night
+          {checkoutModal?.position?.booked_nights === 1 ? "" : "s"} to{" "}
+          {isoDay(checkoutModal?.position?.booked_departure_date)}, staying{" "}
+          {checkoutModal?.position?.actual_nights}.{" "}
+          {joinList(checkoutModal?.row?.room_nos)} is released either way.
+        </p>
+
+        <div className="res-checkout-options" role="radiogroup" aria-label="Billing">
+          {[
+            {
+              adjust: false,
+              title: "Keep the original charge",
+              amount: checkoutModal?.position?.current_total,
+              note: `Billed for all ${checkoutModal?.position?.booked_nights} booked nights.`,
+            },
+            {
+              adjust: true,
+              title: "Re-price to nights stayed",
+              amount: checkoutModal?.position?.repriced?.overall_amount,
+              note:
+                num(checkoutModal?.position?.repriced?.refund_due) > 0
+                  ? `${money(checkoutModal?.position?.repriced?.refund_due)} becomes refundable.`
+                  : `Billed for ${checkoutModal?.position?.actual_nights} night(s).`,
+            },
+          ].map((opt) => (
+            <button
+              key={String(opt.adjust)}
+              type="button"
+              role="radio"
+              aria-checked={checkoutModal?.adjust === opt.adjust}
+              className={
+                checkoutModal?.adjust === opt.adjust
+                  ? "res-checkout-option res-checkout-option--on"
+                  : "res-checkout-option"
+              }
+              onClick={() =>
+                setCheckoutModal((m) => ({ ...m, adjust: opt.adjust }))
+              }
+              disabled={checkoutSaving}
+            >
+              <span className="res-checkout-option-title">{opt.title}</span>
+              <span className="res-checkout-option-amount">{money(opt.amount)}</span>
+              <span className="res-checkout-option-note">{opt.note}</span>
+            </button>
+          ))}
+        </div>
+
+        <DetailList columns={3}>
+          <DetailItem label="Already paid" value={money(checkoutModal?.position?.paid_amount)} />
+          <DetailItem
+            label="Balance after"
+            value={money(
+              checkoutModal?.adjust
+                ? checkoutModal?.position?.repriced?.balance_amount
+                : checkoutModal?.position?.balance_amount,
+            )}
+          />
+          <DetailItem
+            label="Refundable after"
+            value={money(
+              checkoutModal?.adjust ? checkoutModal?.position?.repriced?.refund_due : 0,
+            )}
+          />
+        </DetailList>
+      </Modal>
+
+      {/* Cancelling asks WHY, because that is the only moment somebody knows.
+          A reason recorded here is what answers "why was 304 free that night?"
+          six weeks later; reconstructed afterwards it is a guess. The presets
+          cover the common cases in one tap and stay editable, so the required
+          field costs a click rather than a sentence. */}
+      <Modal
+        isOpen={Boolean(cancelRow)}
+        title="Cancel reservation"
+        onClose={() => !cancelSaving && setCancelRow(null)}
+        size="medium"
+        showFooter
+        actions={[
+          {
+            label: "Keep it",
+            variant: "secondary",
+            onClick: () => setCancelRow(null),
+            disabled: cancelSaving,
+          },
+          {
+            label: cancelSaving ? "Cancelling…" : "Cancel reservation",
+            variant: "error",
+            onClick: confirmCancel,
+            disabled: cancelSaving,
+          },
+        ]}
+      >
+        <ErrorAlert message={cancelError} />
+
+        <p className="res-cancel-summary">
+          Cancel <strong>{cancelRow?.room_reservation_id}</strong> for{" "}
+          <strong>{guestName(cancelRow)}</strong>?{" "}
+          {joinList(cancelRow?.room_nos)} becomes available for those dates
+          immediately.
+          {num(cancelRow?.paid_amount) > 0 && (
+            <>
+              {" "}
+              <strong>{money(cancelRow?.paid_amount)}</strong> has already been
+              paid and stays on the record.
+            </>
+          )}
+        </p>
+
+        <div className="res-reason-presets" role="group" aria-label="Common reasons">
+          {CANCELLATION_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              className={
+                cancelReason === preset
+                  ? "res-reason-chip res-reason-chip--on"
+                  : "res-reason-chip"
+              }
+              onClick={() => {
+                setCancelReason(preset);
+                setCancelError(null);
+              }}
+              disabled={cancelSaving}
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
+
+        <Input
+          label="Reason"
+          required
+          value={cancelReason}
+          onChange={(e) => {
+            setCancelReason(e.target.value);
+            if (cancelError) setCancelError(null);
+          }}
+          maxLength={500}
+          placeholder="Pick one above, or describe what happened"
+          helperText="Recorded against the booking and shown on the reservation."
+          disabled={cancelSaving}
+        />
+      </Modal>
 
       <ConfirmModal
         isOpen={Boolean(noShowRow)}

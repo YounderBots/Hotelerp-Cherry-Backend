@@ -92,6 +92,22 @@ class RoomReservation(Base):
 
     confirmation_code = Column(String(100), nullable=True, index=True)
 
+    # ---------------- Cancellation ----------------
+    # Why a booking was cancelled, when, and by whom.
+    #
+    # The status alone said a reservation had been cancelled and nothing about
+    # why, so a released room, a guest who changed their mind, an overbooking
+    # the desk resolved and a duplicate somebody tidied up were all the same
+    # record. That is the one question anyone asks about a cancellation
+    # afterwards, and it was the one thing not kept.
+    #
+    # All three are nullable: every reservation that already exists was
+    # cancelled -- or not -- before these columns did, and back-filling a
+    # reason nobody recorded would be inventing history.
+    cancellation_reason = Column(String(500), nullable=True)
+    cancelled_at = Column(DateTime, nullable=True)
+    cancelled_by = Column(String(100), nullable=True)
+
     # ---------------- System ----------------
     token = Column(String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))
 

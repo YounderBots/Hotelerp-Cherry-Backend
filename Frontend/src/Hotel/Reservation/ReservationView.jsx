@@ -1,14 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, RefreshCw, AlertCircle } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import APICall from "../../APICalls/APICalls";
+import { readList } from "../../functions/apiHelpers";
+import { useApiResource } from "../../hooks/useApiResource";
 import "./Reservation.css";
-
-const readList = (res) =>
-  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
-
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
 
 const numberFmt = new Intl.NumberFormat(undefined, {
   minimumFractionDigits: 2,
@@ -65,37 +61,21 @@ const BUCKET_CLASS = {
 
 const ReservationView = () => {
   const navigate = useNavigate();
-  const mounted = useRef(true);
-
-  const [reservations, setReservations] = useState(null); // null = loading
-  const [error, setError] = useState(null);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [activeTab, setActiveTab] = useState("all");
 
-  // `showLoading` is false on mount, where `reservations` already starts null,
-  // and true for the Refresh button, where the list must visibly reset. That
-  // keeps the mount effect free of a synchronous setState
-  // (react-hooks/set-state-in-effect).
-  const load = useCallback((showLoading = true) => {
-    if (showLoading) setReservations(null);
-    setError(null);
-    APICall.getT("/hotel/room_reservation")
-      .then((res) => {
-        if (!mounted.current) return;
-        setReservations(Array.isArray(res?.data) ? res.data : readList(res));
-      })
-      .catch((err) => {
-        if (!mounted.current) return;
-        setReservations([]);
-        setError(errMsg(err, "Failed to load reservations."));
-      });
-  }, []);
-
-  useEffect(() => {
-    mounted.current = true;
-    load(false);
-    return () => { mounted.current = false; };
-  }, [load, refreshTick]);
+  // `useApiResource` replaces a hand-written load/refresh pair that carried its
+  // own `mounted` ref, its own error mapping and a refresh counter. The hook
+  // owns all three, and its deferred start is what keeps this screen free of
+  // the extra render pass `react-hooks/set-state-in-effect` warns about.
+  const {
+    data: reservations,
+    loading,
+    error,
+    reload,
+  } = useApiResource(() => APICall.getT("/hotel/room_reservation"), {
+    select: readList,
+    fallback: "Failed to load reservations.",
+  });
 
   const counts = useMemo(() => {
     const list = reservations || [];
@@ -113,10 +93,10 @@ const ReservationView = () => {
     return list.filter((r) => bucketOf(r) === activeTab);
   }, [reservations, activeTab]);
 
-  const isLoading = reservations === null;
+  const isLoading = loading;
 
   const handleBack = () => navigate("/reservation");
-  const handleRefresh = () => setRefreshTick((n) => n + 1);
+  const handleRefresh = () => reload();
   const handleCardOpen = (r) =>
     navigate("/ReservationView", { state: { reservationId: r.id } });
 

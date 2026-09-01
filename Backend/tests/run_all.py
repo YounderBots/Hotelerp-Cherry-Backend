@@ -66,6 +66,8 @@ def main() -> int:
         (RBAC_SERVICE, "test_rbac.py"),
         (GATEWAY_SERVICE, "test_rbac_gateway.py"),
         (NIGHT_AUDIT_SERVICE, "test_night_audit.py"),
+        # Reservation's rules are pure functions in the same service.
+        (NIGHT_AUDIT_SERVICE, "test_reservation_rules.py"),
     ]
     # Billing exists only in these two, and both expose the same endpoint, so
     # the money guards run against each.

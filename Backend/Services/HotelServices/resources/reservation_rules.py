@@ -250,6 +250,49 @@ def can_transition(current: Optional[str], target: str) -> bool:
     return True
 
 
+def early_departure(
+    arrival: date, booked_departure: date, booked_nights: int, on_date: date
+) -> tuple[bool, int, int]:
+    """Nights actually used when a guest leaves on `on_date`.
+
+    Returns (is_early, actual_nights, nights_unused).
+
+    `on_date` is passed in rather than read from the clock so the caller owns
+    "today" -- the same reason the Night Audit module keeps a business date.
+    It also makes this testable without freezing time.
+
+    THE TWO EDGES THAT MATTER
+        Leaving on or after the booked departure is not an early departure at
+        all; it is an ordinary checkout and nothing is re-priced.
+
+        Leaving on the arrival date is a same-day departure, and it still bills
+        one night. A hotel does not sell a zero-night stay, and treating it as
+        one would price the room at nothing.
+    """
+    if on_date >= booked_departure or on_date <= arrival:
+        return False, booked_nights, 0
+
+    actual = max(1, nights_between(arrival, on_date))
+    return True, actual, max(0, booked_nights - actual)
+
+
+def can_offer(current: Optional[str], target: str) -> bool:
+    """Whether `target` is worth OFFERING as an action on a booking at `current`.
+
+    `can_transition` answers a different question -- "is this move legal" --
+    and it deliberately treats staying put as legal, because an edit that does
+    not change the status must not be refused.
+
+    That makes it the wrong test for a button. Asked directly, it said a
+    cancelled booking could be cancelled, so the UI offered "Cancel
+    reservation" on a reservation that was already cancelled. An action that
+    would change nothing reads as one that silently failed.
+    """
+    if normalise_status(current) == normalise_status(target):
+        return False
+    return can_transition(current, target)
+
+
 def assert_transition(current: Optional[str], target: str) -> None:
     if can_transition(current, target):
         return

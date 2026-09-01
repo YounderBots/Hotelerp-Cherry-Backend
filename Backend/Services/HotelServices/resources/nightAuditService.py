@@ -231,7 +231,15 @@ def ensure_business_date(db: Session, company_id: str, user_id: Any) -> models.H
 # Position for a night
 # ---------------------------------------------------------------------------
 
-def _active_reservations(db: Session, company_id: str):
+def active_reservations(db: Session, company_id: str):
+    """Base query for a property's live reservations.
+
+    Public because the exports in nightauditController read through it too.
+    Both of them previously wrote the filter by hand and both forgot
+    `status == ACTIVE`, so a soft-deleted booking was exported and counted as
+    revenue. Having exactly one definition of "a reservation that still
+    exists" is what stops that being re-forgotten.
+    """
     return db.query(models.RoomReservation).filter(
         models.RoomReservation.company_id == str(company_id),
         models.RoomReservation.status == ACTIVE,
@@ -300,7 +308,7 @@ def compute_position(db: Session, company_id: str, business_date: date) -> dict:
     operator approves on screen is byte-for-byte what gets recorded -- the
     frontend never recomputes a total of its own.
     """
-    reservations = _active_reservations(db, company_id).all()
+    reservations = active_reservations(db, company_id).all()
 
     occupying: list = []
     in_house: list = []

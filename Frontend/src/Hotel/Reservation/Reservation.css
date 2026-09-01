@@ -1,3 +1,38 @@
+/* ===================================================================
+   LEGACY SCOPE
+   ===================================================================
+   Everything below the marker in this file was written for the screens
+   that still hand-roll their markup: Add New Reservation, Booking's
+   modal, Reservation List Edit, Reservation Model View, Reservation View
+   and Room View. Those screens are unchanged and still need it.
+
+   The problem was that it was written as GLOBAL rules -- bare `label`,
+   `select` and `strong` element selectors, plus its own `.form-group`,
+   `.form-label` and `.btn` definitions. Reservation.jsx now renders the
+   shared Modal / Input / Button / TableTemplate components, and because
+   this stylesheet is imported after theirs it was silently overriding
+   them:
+
+     label { margin-top: 10px }        pushed a shared field 10px down,
+                                       so a <select> sat below the <Input>
+                                       beside it in the same row
+     .form-label { font-size:.875rem } rendered a shared label at 14.9px
+     .form-group label { 12px }        rendered the same label at 12px
+                                       depending on which element it was
+   `select` and `.btn` were the last two, and could not be scoped until
+   Booking.jsx was migrated. Booking hand-rolled its dialog with bare <select>
+   elements and its own `.btn secondary` / `.btn primary` buttons, and it was
+   the one screen with no page-root wrapper to scope to -- an earlier attempt
+   stripped its dropdown chrome and left its buttons as bare text. It now
+   renders through the shared Modal / Input / Select, which bring their own
+   styling (Modal.css defines the same `.btn` / `.btn.primary` set and loads
+   with the component), so these two are finally scoped like the rest.
+
+   The rules are unchanged; they are only scoped, so they apply to the
+   legacy screens that need them and stop reaching the shared components
+   that own their own styling.
+   =================================================================== */
+
 /* ================= ACTION BUTTONS ================= */
 .table-actions {
   display: flex;
@@ -112,13 +147,23 @@
   }
 }
 
-.form-group {
+.anr-page .form-group,
+.rle-page .form-group,
+.rmv-page .form-group,
+.rvv-page .form-group,
+.rvw-page .form-group,
+.modal-container .form-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.form-group label {
+.anr-page .form-group label,
+.rle-page .form-group label,
+.rmv-page .form-group label,
+.rvv-page .form-group label,
+.rvw-page .form-group label,
+.modal-container .form-group label {
   font-size: 12px;
   font-weight: 600;
   display: block;
@@ -127,7 +172,12 @@
   color: #4a5568;
 }
 
-label {
+.anr-page label,
+.rle-page label,
+.rmv-page label,
+.rvv-page label,
+.rvw-page label,
+.modal-container label {
   margin-top: 10px;
 }
 
@@ -153,7 +203,12 @@ label {
   border-top: 1px solid #e5e7eb;
 }
 
-.btn {
+.anr-page .btn,
+.rle-page .btn,
+.rmv-page .btn,
+.rvv-page .btn,
+.rvw-page .btn,
+.modal-container .btn {
   padding: 10px 18px;
   border-radius: 10px;
   font-weight: 600;
@@ -167,13 +222,23 @@ label {
    to the same values as Modal.css / Button.css so the leak is at least
    inert; the gradient primary and the #136ae3 blue secondary label were
    visibly different from the buttons on every other screen. */
-.btn.primary {
+.anr-page .btn.primary,
+.rle-page .btn.primary,
+.rmv-page .btn.primary,
+.rvv-page .btn.primary,
+.rvw-page .btn.primary,
+.modal-container .btn.primary {
   background: var(--primary-color);
   border-color: var(--primary-color);
   color: var(--text-white);
 }
 
-.btn.secondary {
+.anr-page .btn.secondary,
+.rle-page .btn.secondary,
+.rmv-page .btn.secondary,
+.rvv-page .btn.secondary,
+.rvw-page .btn.secondary,
+.modal-container .btn.secondary {
   background: var(--gray-100);
   border-color: var(--gray-300);
   color: var(--secondary-dark);
@@ -865,7 +930,12 @@ label {
 }
 
 input,
-select {
+.anr-page select,
+.rle-page select,
+.rmv-page select,
+.rvv-page select,
+.rvw-page select,
+.modal-container select {
   width: 100%;
 
   padding: 10px 12px;
@@ -874,7 +944,12 @@ select {
   font-size: 14px;
 }
 
-strong {
+.anr-page strong,
+.rle-page strong,
+.rmv-page strong,
+.rvv-page strong,
+.rvw-page strong,
+.modal-container strong {
   white-space: nowrap;
 }
 
@@ -1552,13 +1627,23 @@ input[type="number"] {
 }
 
 /* Form elements */
-.form-group {
+.anr-page .form-group,
+.rle-page .form-group,
+.rmv-page .form-group,
+.rvv-page .form-group,
+.rvw-page .form-group,
+.modal-container .form-group {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.form-label {
+.anr-page .form-label,
+.rle-page .form-label,
+.rmv-page .form-label,
+.rvv-page .form-label,
+.rvw-page .form-label,
+.modal-container .form-label {
   font-size: 0.875rem;
   color: #374151;
   font-weight: 500;
@@ -1631,7 +1716,12 @@ input[type="number"] {
     flex-wrap: wrap;
   }
   
-  .btn {
+  .anr-page .btn,
+  .rle-page .btn,
+  .rmv-page .btn,
+  .rvv-page .btn,
+  .rvw-page .btn,
+  .modal-container .btn {
     padding: 8px 16px;
     font-size: 0.875rem;
   }
@@ -1819,7 +1909,12 @@ input[type="number"] {
   gap: 12px;
 }
 
-.btn {
+.anr-page .btn,
+.rle-page .btn,
+.rmv-page .btn,
+.rvv-page .btn,
+.rvw-page .btn,
+.modal-container .btn {
   padding: 10px 20px;
   border-radius: 8px;
   border: none;
@@ -1898,7 +1993,12 @@ input[type="number"] {
     width: 100%;
   }
   
-  .btn {
+  .anr-page .btn,
+  .rle-page .btn,
+  .rmv-page .btn,
+  .rvv-page .btn,
+  .rvw-page .btn,
+  .modal-container .btn {
     flex: 1;
   }
 }
@@ -2643,19 +2743,28 @@ input[type="number"] {
 
 
 /* Sticky action bar replaces the modal footer; stays reachable while scrolling. */
+/* The step's action bar. It sticks to the bottom of the viewport, so the
+   form scrolls UNDER it — which means it has to be opaque. It used to be a
+   gradient fading to transparent, and the row passing beneath showed through
+   at half strength: the Rate Type and Total Adult fields appeared as ghosts
+   behind the buttons, which reads as a rendering fault rather than a toolbar.
+   A solid surface and a hairline above it say "this is a bar" instead. */
 .anr-details-actions {
   position: sticky;
   bottom: 0;
   z-index: 2;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 12px;
-  padding: 14px 2px;
-  background: linear-gradient(
-    to top,
-    var(--primary-lighter, #ffffff) 65%,
-    rgba(255, 255, 255, 0)
-  );
+  padding: 14px 16px;
+  /* Bleed to the card's edges so the bar spans it fully rather than floating
+     inside the content's own gutter. */
+  margin: 0 -16px -16px;
+  background: var(--surface-color, #ffffff);
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
 }
 
 @media (max-width: 768px) {
@@ -3434,4 +3543,104 @@ input[type="number"] {
     grid-template-columns: 1fr;
     gap: 14px;
   }
+}
+
+/* ---------- Cancellation reason dialog ---------- */
+.res-cancel-summary {
+  margin: 0 0 16px;
+  line-height: 1.5;
+  color: var(--text-secondary, #334155);
+}
+
+/* One-tap presets above the free-text field. They fill the input rather than
+   replacing it, so the common case is a click and the unusual one is still
+   sayable. */
+.res-reason-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.res-reason-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--surface-color, #fff);
+  color: var(--text-secondary, #334155);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.res-reason-chip:hover:not(:disabled) {
+  border-color: #b9410e;
+  color: #b9410e;
+}
+
+.res-reason-chip--on {
+  background: #fff7ed;
+  border-color: #b9410e;
+  color: #b9410e;
+  font-weight: 600;
+}
+
+.res-reason-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---------- Early-checkout billing choice ---------- */
+/* Two options, presented side by side with their totals, because the point of
+   the dialog is the comparison. A dropdown would hide the number that decides
+   it. */
+.res-checkout-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.res-checkout-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--surface-color, #fff);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.res-checkout-option:hover:not(:disabled) {
+  border-color: #b9410e;
+}
+
+.res-checkout-option--on {
+  border-color: #b9410e;
+  background: #fff7ed;
+}
+
+.res-checkout-option:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.res-checkout-option-title {
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
+}
+
+.res-checkout-option-amount {
+  font-size: 1.125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary, #0f172a);
+}
+
+.res-checkout-option-note {
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
 }

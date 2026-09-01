@@ -206,70 +206,27 @@ def keeper_info(request: Request,
         "data": formatted_keeper_info
     }
 
-#=====================================>>> Get Paid Amount
-
-@router.get("/paid_amount", status_code=status.HTTP_200_OK)
-def get_paid_amount(request: Request,
-    db: Session = Depends(get_db)):
-    # company_id now comes from the verified token. It used to be a
-    # caller-supplied parameter on an unauthenticated route.
-    user_id, role_id, company_id, token = verify_authentication(request)
-    today = date.today()
-
-    total_paid_amount = db.query(
-        func.coalesce(func.sum(models.RoomReservation.paid_amount), 0)
-    ).filter(
-        models.RoomReservation.company_id == company_id,
-        models.RoomReservation.arrival_date == today
-    ).scalar()
-
-    return {
-        "status": "success",
-        "date": today,
-        "total_paid_amount": float(total_paid_amount)
-    }
-
-#=====================================>>> Settlement Summary
-
-@router.get("/settlement_summary", status_code=status.HTTP_200_OK)
-def settlement_summary(request: Request,
-    db: Session = Depends(get_db)):
-    # company_id now comes from the verified token. It used to be a
-    # caller-supplied parameter on an unauthenticated route.
-    user_id, role_id, company_id, token = verify_authentication(request)
-    current_date = date.today()
-
-    # Room reservation list for today
-    room_data = db.query(models.RoomReservation).filter(
-        models.RoomReservation.company_id == company_id,
-        models.RoomReservation.arrival_date == current_date
-    ).all()
-
-    # Total paid amount
-    total_paid = db.query(
-        func.coalesce(func.sum(models.RoomReservation.paid_amount), 0)
-    ).filter(
-        models.RoomReservation.company_id == company_id,
-        models.RoomReservation.arrival_date == current_date
-    ).scalar()
-
-    # Total due amount
-    total_due = db.query(
-        func.coalesce(func.sum(models.RoomReservation.balance_amount), 0)
-    ).filter(
-        models.RoomReservation.company_id == company_id,
-        models.RoomReservation.arrival_date == current_date
-    ).scalar()
-
-    return {
-        "status": "success",
-        "date": current_date,
-        "summary": {
-            "total_paid": float(total_paid),
-            "total_due": float(total_due)
-        },
-        "data": jsonable_encoder(room_data)
-    }
+# REMOVED: /paid_amount and /settlement_summary
+#
+# Two endpoints that summed today's paid and outstanding amounts. Both were
+# superseded by /night_audit/preview, which answers the same question for a
+# whole night and is what the Settlement Summary screen actually calls. Neither
+# had a caller left anywhere in the app -- both sat in rbac_map's
+# UNCALLED_ENDPOINTS, so `enforce` already denied them.
+#
+# They are deleted rather than repaired, because both carried the same money
+# defect and repairing a dead duplicate only preserves the chance of the two
+# answers diverging later:
+#
+#   * neither filtered `status == ACTIVE`, so a soft-deleted reservation still
+#     contributed its paid and balance amounts -- revenue attributed to a
+#     booking that no longer exists;
+#   * both keyed off `date.today()` while the rest of this module keys off the
+#     hotel business date, so between midnight and the audit they reported a
+#     different day than the preview sitting beside them.
+#
+# /night_audit/preview has neither defect: it reads through
+# nightAuditService.active_reservations and takes the business date.
 
 #=====================================>>> Room Sales (REACT API)
 
@@ -442,10 +399,16 @@ def export_room_booked_details(request: Request,
     # -------------------------------
     # Fetch reservation data
     # -------------------------------
-    reservations = db.query(models.RoomReservation).filter(
-        models.RoomReservation.company_id == company_id,
-        models.RoomReservation.arrival_date.between(from_date, to_date)
-    ).order_by(models.RoomReservation.arrival_date.asc()).all()
+    # `active_reservations` carries the `status == ACTIVE` filter this query
+    # was missing: without it a soft-deleted booking was still exported, and
+    # still counted toward the totals below, as revenue on a reservation that
+    # no longer exists.
+    reservations = (
+        nas.active_reservations(db, company_id)
+        .filter(models.RoomReservation.arrival_date.between(from_date, to_date))
+        .order_by(models.RoomReservation.arrival_date.asc())
+        .all()
+    )
 
     # -------------------------------
     # Prepare export data
@@ -605,10 +568,13 @@ async def export_settlement_summary(request: Request,
         to_date = today
 
     # Fetch reservation data
-    settlement_data = db.query(models.RoomReservation).filter(
-        models.RoomReservation.company_id == company_id,
-        models.RoomReservation.arrival_date.between(from_date, to_date)
-    ).all()
+    # Same missing `status == ACTIVE` filter as the booked-details export --
+    # see the note there.
+    settlement_data = (
+        nas.active_reservations(db, company_id)
+        .filter(models.RoomReservation.arrival_date.between(from_date, to_date))
+        .all()
+    )
 
     data = []
     total_paid = 0

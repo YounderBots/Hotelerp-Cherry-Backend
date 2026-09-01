@@ -563,3 +563,64 @@ def test_business_date_is_seeded_once_and_reused(db):
     second = nas.ensure_business_date(db, TENANT, USER)
     assert first.id == second.id
     assert db.query(models.HotelBusinessDate).count() == 1
+
+
+# ---------------------------------------------------------------------------
+# active_reservations -- the single definition of "a booking that still exists"
+# ---------------------------------------------------------------------------
+# Every figure this module reports is derived from this query. It is pinned
+# here because the two spreadsheet exports in nightauditController, and the two
+# now-deleted /paid_amount and /settlement_summary endpoints, all wrote the
+# same filter by hand and all four forgot `status == ACTIVE` -- so a deleted
+# booking was still exported, and still counted toward the day's revenue, as
+# money against a reservation that no longer existed.
+
+def test_active_reservations_excludes_soft_deleted(db):
+    """A deleted reservation contributes nothing -- not a row, not a rupee."""
+    live = make_reservation(
+        db, date(2026, 8, 1), date(2026, 8, 2),
+        paid_amount=5000.0, balance_amount=1000.0,
+    )
+    make_reservation(
+        db, date(2026, 8, 1), date(2026, 8, 2),
+        paid_amount=9999.0, balance_amount=8888.0,
+        row_status="INACTIVE",
+    )
+
+    rows = nas.active_reservations(db, TENANT).all()
+
+    assert [r.id for r in rows] == [live.id]
+    assert sum(r.paid_amount for r in rows) == 5000.0
+    assert sum(r.balance_amount for r in rows) == 1000.0
+
+
+def test_active_reservations_is_scoped_to_one_property(db):
+    """A shared database must never leak another property's bookings."""
+    mine = make_reservation(db, date(2026, 8, 1), date(2026, 8, 2), paid_amount=100.0)
+    make_reservation(
+        db, date(2026, 8, 1), date(2026, 8, 2),
+        paid_amount=100.0, company_id=OTHER_TENANT,
+    )
+
+    rows = nas.active_reservations(db, TENANT).all()
+
+    assert [r.id for r in rows] == [mine.id]
+
+
+def test_deleted_reservation_is_absent_from_the_night_position(db):
+    """The end-to-end consequence: revenue and occupancy both ignore it."""
+    set_business_date(db, date(2026, 8, 1))
+    make_reservation(
+        db, date(2026, 8, 1), date(2026, 8, 2),
+        room_amount=4000.0, paid_amount=4000.0, rooms=(1,),
+    )
+    make_reservation(
+        db, date(2026, 8, 1), date(2026, 8, 2),
+        room_amount=7000.0, paid_amount=7000.0, rooms=(2,),
+        row_status="INACTIVE",
+    )
+
+    position = nas.compute_position(db, TENANT, date(2026, 8, 1))
+
+    assert position["revenue"]["room_revenue"] == 4000.0
+    assert position["occupancy"]["rooms_occupied"] == 1

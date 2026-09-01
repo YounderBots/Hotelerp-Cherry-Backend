@@ -585,6 +585,10 @@ MAX_ROOMS_PER_RESERVATION = 50
 # and a client that retried after a timeout.
 REPLAY_WINDOW_SECONDS = 900
 
+# Matches room_reservation.cancellation_reason's column width, so a reason that
+# the API accepts can always be stored whole rather than silently truncated.
+CANCELLATION_REASON_MAX = 500
+
 
 def _rule_http(exc: rules.RuleError) -> HTTPException:
     """Business-rule failures reach the client as themselves, not as a 500."""
@@ -1089,23 +1093,29 @@ def _serialise(reservation, maps: dict) -> dict:
         "identity_type": maps["identities"].get(reservation.identity_type_id),
         "proof_document": reservation.proof_document,
         "confirmation_code": reservation.confirmation_code,
+        # ---------------- Cancellation ----------------
+        # Null on a booking cancelled before the reason was recorded, and on
+        # every booking that was never cancelled. Readers distinguish the two
+        # by the status, not by this field.
+        "cancellation_reason": reservation.cancellation_reason,
+        "cancelled_at": reservation.cancelled_at,
+        "cancelled_by": reservation.cancelled_by,
         # ---------------- Lifecycle ----------------
         # What the UI is allowed to offer on this row. Derived from the same
         # transition table the API enforces, so a button can never appear for
         # an action the server would refuse.
-        "can_check_in": rules.can_transition(
-            reservation.reservation_status, rules.CHECKED_IN
-        )
-        and rules.normalise_status(reservation.reservation_status)
-        != rules.normalise_status(rules.CHECKED_IN),
+        # `can_transition` answers "is this move legal", and it treats staying
+        # put as legal -- an edit that does not change the status must not be
+        # refused. That makes it the wrong question on its own for a BUTTON:
+        # asked directly, it said a cancelled booking could be cancelled, so
+        # the View modal offered "Cancel reservation" on a reservation that
+        # was already cancelled. `_can_move_to` adds the missing half: the
+        # action is offered only when it would actually change something.
+        "can_check_in": rules.can_offer(reservation.reservation_status, rules.CHECKED_IN),
         "can_check_out": rules.normalise_status(reservation.reservation_status)
         == rules.normalise_status(rules.CHECKED_IN),
-        "can_cancel": rules.can_transition(
-            reservation.reservation_status, rules.CANCELLED
-        ),
-        "can_mark_no_show": rules.can_transition(
-            reservation.reservation_status, rules.NO_SHOW
-        ),
+        "can_cancel": rules.can_offer(reservation.reservation_status, rules.CANCELLED),
+        "can_mark_no_show": rules.can_offer(reservation.reservation_status, rules.NO_SHOW),
         "is_terminal": rules.normalise_status(reservation.reservation_status)
         in {rules.normalise_status(s) for s in rules.TERMINAL},
         # ---------------- System ----------------
@@ -2249,25 +2259,199 @@ def reservation_checkin(key: str, request: Request, db: Session = Depends(get_db
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+def _early_checkout_position(db: Session, company_id, reservation) -> dict:
+    """What the folio looks like if the guest leaves today.
+
+    An early departure is two separate facts, and conflating them is how a
+    system gets this wrong: the ROOM is free from today, and the BILL may or
+    may not shrink. Whether it shrinks is policy -- a flexible rate refunds the
+    unused nights, a non-refundable one does not -- and this module has no
+    rate-plan configuration to read that from.
+
+    So it computes both answers and decides neither. The desk is shown what
+    each costs and picks; `adjust_stay` on the checkout call carries the
+    choice. Nothing here writes.
+    """
+    today = date.today()
+    booked_nights = reservation.no_of_nights or rules.nights_between(
+        reservation.arrival_date, reservation.departure_date
+    )
+
+    is_early, actual_nights, nights_unused = rules.early_departure(
+        reservation.arrival_date, reservation.departure_date, booked_nights, today
+    )
+
+    position = {
+        "is_early": bool(is_early),
+        "today": today,
+        "arrival_date": reservation.arrival_date,
+        "booked_departure_date": reservation.departure_date,
+        "booked_nights": booked_nights,
+        "actual_nights": actual_nights,
+        "nights_unused": nights_unused,
+        "current_total": rules.money(reservation.overall_amount),
+        "paid_amount": rules.money(reservation.paid_amount),
+        "balance_amount": rules.money(reservation.balance_amount),
+    }
+
+    if not is_early:
+        position["repriced"] = None
+        return position
+
+    # Re-price the stay as if it had been booked for the nights actually used.
+    # Every other input is held constant, so the only thing that moves is the
+    # night count.
+    try:
+        priced = rules.quote(
+            db,
+            company_id,
+            room_ids=[int(r) for r in (reservation.room_ids or [])],
+            rate_types=list(reservation.rate_type or []),
+            nights=actual_nights,
+            tax_type_id=reservation.tax_type_id,
+            discount_type_id=reservation.discount_type_id,
+            extra_charges=reservation.extra_charges,
+            extra_bed_count=reservation.extra_bed_count,
+            paying_amount=rules.money(reservation.paid_amount),
+        )
+    except rules.RuleError:
+        # A room or rate that no longer resolves cannot be re-priced. The
+        # keep-the-charge path still works, so checkout is not blocked -- the
+        # desk simply is not offered the re-price.
+        position["repriced"] = None
+        return position
+
+    position["repriced"] = {
+        "room_amount": priced["room_amount"],
+        "tax_amount": priced["tax_amount"],
+        "discount_amount": priced["discount_amount"],
+        "overall_amount": priced["overall_amount"],
+        "balance_amount": priced["balance_amount"],
+        "refund_due": priced["extra_amount"],
+        "difference": rules.money(
+            priced["overall_amount"] - rules.money(reservation.overall_amount)
+        ),
+    }
+    return position
+
+
+@router.get("/room_reservation_checkout_preview/{key}", status_code=status.HTTP_200_OK)
+def reservation_checkout_preview(
+    key: str, request: Request, db: Session = Depends(get_db)
+):
+    """What checking this guest out now would do, before anything is done.
+
+    Read-only. The Check-out button opens this first, so the desk sees an early
+    departure and its two possible bills rather than discovering afterwards
+    that the guest was charged for nights they did not stay.
+    """
+    try:
+        user_id, role_id, company_id, _ = verify_authentication(request)
+        if not company_id:
+            raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+        reservation = _load_by_id_or_token(db, company_id, key)
+
+        if rules.normalise_status(
+            reservation.reservation_status
+        ) != rules.normalise_status(rules.CHECKED_IN):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This reservation is {reservation.reservation_status}; "
+                    "only a checked-in guest can be checked out."
+                ),
+            )
+
+        return {
+            "status": "success",
+            "data": _early_checkout_position(db, company_id, reservation),
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("checkout_preview_failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.post("/room_reservation_checkout/{key}")
-def reservation_checkout(key: str, request: Request, db: Session = Depends(get_db)):
+async def reservation_checkout(
+    key: str, request: Request, db: Session = Depends(get_db)
+):
     """Depart a guest, once the folio is settled.
+
+    `adjust_stay` (JSON body, default false) carries the early-departure
+    decision:
+
+        false  the guest is charged for the stay as booked, and the room is
+               released from today. What a non-refundable rate implies.
+        true   the departure date moves to today and the stay is re-priced to
+               the nights actually used. Any overpayment becomes refundable.
+
+    It is deliberately NOT defaulted to the guest-friendly option. Silently
+    reducing a bill is as wrong as silently keeping it -- either way the system
+    would be choosing a refund policy it has no configuration for. Defaulting
+    to "no change" means an ordinary checkout behaves exactly as it always did,
+    and a reduction only ever happens because somebody asked for one.
 
     Checking out with money still owed is refused rather than allowed and
     reported later: after checkout the reservation is terminal and can no
     longer be edited, so an unsettled balance at that point is a debt with
-    nothing left to attach it to. The message names the amount so the desk can
-    take it through Record Payment and try again.
+    nothing left to attach it to. The balance is judged AFTER any re-pricing,
+    so a guest who leaves early and drops below what they have already paid is
+    never asked for money they no longer owe.
     """
     try:
         user_id, role_id, company_id, _ = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        adjust_stay = bool((payload or {}).get("adjust_stay", False))
+
         reservation = _load_by_id_or_token(db, company_id, key)
+        position = _early_checkout_position(db, company_id, reservation)
+
+        if adjust_stay:
+            if not position["is_early"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="This stay is not ending early, so there is nothing to re-price.",
+                )
+            if not position["repriced"]:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "This stay cannot be re-priced -- its room or rate no longer "
+                        "resolves. Check out without adjusting, then correct the folio."
+                    ),
+                )
+
+            priced = rules.quote(
+                db,
+                company_id,
+                room_ids=[int(r) for r in (reservation.room_ids or [])],
+                rate_types=list(reservation.rate_type or []),
+                nights=position["actual_nights"],
+                tax_type_id=reservation.tax_type_id,
+                discount_type_id=reservation.discount_type_id,
+                extra_charges=reservation.extra_charges,
+                extra_bed_count=reservation.extra_bed_count,
+                paying_amount=rules.money(reservation.paid_amount),
+            )
+            reservation.departure_date = position["today"]
+            reservation.no_of_nights = position["actual_nights"]
+            rules.apply_quote(reservation, priced)
+            reservation.balance_amount = priced["balance_amount"]
+            reservation.extra_amount = priced["extra_amount"]
 
         outstanding = rules.money(reservation.balance_amount)
         if outstanding > 0:
+            db.rollback()
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -2289,6 +2473,14 @@ def reservation_checkout(key: str, request: Request, db: Session = Depends(get_d
             "data": {
                 "id": reservation.id,
                 "reservation_status": reservation.reservation_status,
+                "stay_adjusted": adjust_stay,
+                "departure_date": reservation.departure_date,
+                "no_of_nights": reservation.no_of_nights,
+                "overall_amount": reservation.overall_amount,
+                "paid_amount": reservation.paid_amount,
+                "balance_amount": reservation.balance_amount,
+                # Money the property now owes back, if re-pricing took the
+                # total below what the guest had already paid.
                 "extra_amount": reservation.extra_amount,
             },
         }
@@ -2305,20 +2497,56 @@ def reservation_checkout(key: str, request: Request, db: Session = Depends(get_d
 
 @router.post("/room_reservation_cancel/{key}", status_code=status.HTTP_200_OK)
 async def reservation_cancel(key: str, request: Request, db: Session = Depends(get_db)):
-    """Cancel a booking, releasing its rooms.
+    """Cancel a booking, releasing its rooms, and record why.
 
     Distinct from delete: the record stays, so the booking is still searchable,
     still shows what was paid, and still appears in the day's figures as a
     cancellation. The availability engine stops counting it the moment the
     status changes -- see `releases_inventory`.
+
+    THE REASON IS REQUIRED
+        A cancellation with no reason is the record nobody can use afterwards.
+        "Why is 304 free on the 5th?" has four different answers -- the guest
+        changed their mind, the desk resolved an overbooking, it was a
+        duplicate, the property closed the room -- and the status alone tells
+        none of them apart. Asking once, at the moment somebody knows, is the
+        only point at which the answer is free.
+
+        Reservations cancelled before this endpoint recorded reasons keep a
+        null one, and are reported as "not recorded" rather than back-filled
+        with a guess.
     """
     try:
         user_id, role_id, company_id, _ = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
 
+        # Body is optional on the wire so a malformed request fails on the
+        # reason check below with a useful message, not on JSON parsing.
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+
+        reason = str((payload or {}).get("cancellation_reason") or "").strip()
+        if not reason:
+            raise HTTPException(
+                status_code=400,
+                detail="A cancellation reason is required.",
+            )
+        if len(reason) > CANCELLATION_REASON_MAX:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cancellation reason must be {CANCELLATION_REASON_MAX} characters or fewer.",
+            )
+
         reservation = _load_by_id_or_token(db, company_id, key)
         _apply_status(db, reservation, company_id, user_id, rules.CANCELLED)
+
+        reservation.cancellation_reason = reason
+        reservation.cancelled_at = datetime.now()
+        reservation.cancelled_by = str(user_id)
+
         sync_room_booking_status(
             db, company_id, [int(r) for r in (reservation.room_ids or [])]
         )
@@ -2332,6 +2560,8 @@ async def reservation_cancel(key: str, request: Request, db: Session = Depends(g
             "data": {
                 "id": reservation.id,
                 "reservation_status": reservation.reservation_status,
+                "cancellation_reason": reservation.cancellation_reason,
+                "cancelled_at": reservation.cancelled_at,
                 # Surfaced rather than moved automatically: whether a
                 # cancellation is refundable is a policy decision, and this
                 # module has no cancellation-policy configuration to consult.
