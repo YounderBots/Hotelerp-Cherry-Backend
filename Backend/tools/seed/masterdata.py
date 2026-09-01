@@ -22,8 +22,65 @@ THE STATUS VOCABULARY IS FIXED BY THE TRANSITION TABLE
 
 from __future__ import annotations
 
+import os
+
 from . import images as im
+from . import photos
 from .common import audit, insert, upload_dir
+
+# Search terms per room type, specific first. Four photographs per type, shared
+# by every room of that type -- a hotel's Deluxe rooms genuinely do look alike,
+# so this is honest as well as cheaper than 100 separate downloads.
+ROOM_TYPE_QUERIES = {
+    "Standard Room": [
+        ["hotel standard room interior", "hotel room twin bed"],
+        ["hotel room bed interior", "hotel bedroom"],
+        ["hotel guest room interior", "hotel room desk chair"],
+        ["hotel bathroom interior", "hotel ensuite bathroom"],
+    ],
+    "Deluxe Room": [
+        ["hotel deluxe room interior", "hotel room double bed"],
+        ["hotel room king bed", "hotel bedroom interior"],
+        ["hotel room seating area", "hotel room armchair"],
+        ["hotel bathroom marble", "hotel bathroom interior"],
+    ],
+    "Super Deluxe": [
+        ["hotel superior room interior", "hotel room luxury bed"],
+        ["hotel room interior design", "hotel bedroom luxury"],
+        ["hotel suite room interior", "hotel room seating"],
+        ["hotel bathroom luxury", "hotel bathroom"],
+    ],
+    "Executive Room": [
+        ["hotel executive room", "hotel business room interior"],
+        ["hotel room writing desk", "hotel bedroom desk"],
+        ["hotel room king size bed", "hotel bedroom"],
+        ["hotel bathroom modern", "hotel bathroom"],
+    ],
+    "Family Suite": [
+        ["hotel family suite", "hotel suite living room"],
+        ["hotel suite bedroom", "hotel room two beds"],
+        ["hotel suite sofa", "hotel living room interior"],
+        ["hotel bathroom family", "hotel bathroom"],
+    ],
+    "VIP Suite": [
+        ["hotel luxury suite interior", "luxury hotel suite"],
+        ["hotel suite bedroom luxury", "luxury hotel bedroom"],
+        ["hotel suite lounge", "luxury hotel living room"],
+        ["luxury hotel bathroom", "hotel bathroom marble"],
+    ],
+    "Presidential Suite": [
+        ["presidential suite hotel", "luxury hotel penthouse suite"],
+        ["luxury hotel suite bedroom", "luxury hotel bedroom"],
+        ["luxury hotel suite dining", "hotel suite living room"],
+        ["luxury hotel bathroom suite", "luxury hotel bathroom"],
+    ],
+    "Dormitory": [
+        ["hostel dormitory bunk beds", "hostel dorm room"],
+        ["hostel room bunk bed", "dormitory beds"],
+        ["hostel dormitory room", "hostel bunk room"],
+        ["hostel bathroom shared", "hostel bathroom"],
+    ],
+}
 
 # ---------------------------------------------------------------------------
 # Rate plans
@@ -182,13 +239,34 @@ def seed(conn) -> dict:
     type_name = {i: n for i, n, *_ in ROOM_TYPES}
     photo_dir = upload_dir("hotelerp_masterdata", "upload_image")
 
+    # Four photographs per room TYPE, downloaded once and shared by every room
+    # of that type. A drawn fallback covers a query that finds nothing, so a
+    # room can never end up with a path to an image that was never written.
+    by_type: dict[int, list[str]] = {}
+    seen: set[str] = set()
+    for type_id, name, *_ in ROOM_TYPES:
+        shots = []
+        for variant, queries in enumerate(ROOM_TYPE_QUERIES.get(name, [])):
+            fname = im.hex_name("jpg")
+            got = photos.best_photo(queries, prefer="openverse", skip=seen)
+            if got:
+                img, meta = got
+                photos.cover(img, (1024, 683)).save(
+                    os.path.join(photo_dir, fname), "JPEG", quality=86, optimize=True)
+                photos.record(f"{name} (view {variant + 1})", meta, fname)
+            else:
+                im.save(im.room_image("", name, variant), photo_dir, fname)
+            shots.append(f"/templates/static/upload_image/{fname}")
+        while len(shots) < 4:                       # a type with no query set
+            fname = im.hex_name("jpg")
+            im.save(im.room_image("", name, len(shots)), photo_dir, fname)
+            shots.append(f"/templates/static/upload_image/{fname}")
+        by_type[type_id] = shots
+        print(f"      {name:<20} {len(shots)} photo(s)")
+
     rows = []
     for idx, (room_no, type_id, bed_id, adults, children) in enumerate(ROOMS, start=1):
-        shots = []
-        for variant in range(4):
-            fname = im.hex_name("jpg")
-            im.save(im.room_image(room_no, type_name[type_id], variant), photo_dir, fname)
-            shots.append(f"/templates/static/upload_image/{fname}")
+        shots = by_type[type_id]
         rows.append(dict(
             id=idx,
             Room_No=room_no,

@@ -70,3 +70,6 @@ Backend/Services/*/templates/static/uploads/
 # running Backend/tools/seed_demo_data.py --confirm; it contains the data the
 # rebuild replaced, so it must never be committed over the top of the release.
 backups/
+# Raw originals downloaded by the seed photo fetcher. Reproducible, large,
+# and not the cropped files that actually ship.
+Backend/tools/seed/_photo_cache/

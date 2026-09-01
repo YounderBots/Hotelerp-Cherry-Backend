@@ -33,13 +33,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import sqlalchemy as sa                                          # noqa: E402
 
-from seed import fnb, hotel, masterdata, users                   # noqa: E402
+from seed import fnb, hotel, masterdata, photos, users           # noqa: E402
 from seed.common import (                                        # noqa: E402
     SCHEMAS, TODAY, counts, engine_for, insert, report, upload_dir, wipe,
 )
 
 # Directories the seed owns. Cleared before writing so a rebuild cannot leave
 # yesterday's orphaned images behind to be shipped with the database.
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
 IMAGE_DIRS = [
     ("hotelerp_masterdata", ("upload_image",)),
     ("hotelerp_users", ("users",)),
@@ -188,6 +190,13 @@ def main() -> int:
         f = summary[schema]
         print(f"  {label:<18} : {f['menu_items']} menu items, {f['tables']} tables, "
               f"{f['bills']} settled bills ({f['revenue']:,.2f})")
+
+    # Attribution is a licence condition for the CC-BY photographs, so the
+    # credits file is written by the seed rather than maintained by hand.
+    credits_path = os.path.join(ROOT_DIR, "Backend", "db", "PHOTO-CREDITS.md")
+    os.makedirs(os.path.dirname(credits_path), exist_ok=True)
+    n_credits = photos.write_credits(credits_path)
+    print(f"\n  Photographs credited: {n_credits}  ->  Backend/db/PHOTO-CREDITS.md")
 
     print("\n  Images written:")
     for k, v in image_counts().items():

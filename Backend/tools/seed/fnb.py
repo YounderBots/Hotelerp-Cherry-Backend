@@ -19,12 +19,78 @@ WHAT IS AND IS NOT SEEDED HERE
 from __future__ import annotations
 
 import datetime as dt
+import os
 import uuid
 
 from . import images as im
+from . import photos
 from .common import COMPANY, RNG, SYSTEM, at, day, insert, money, upload_dir
 
 BRANCH = "1"
+
+# Photograph search terms per menu item, specific first and falling back to a
+# more general dish. Named explicitly rather than searched on the menu string
+# alone because a menu name carries portioning and marketing a photo index does
+# not index -- "Single Malt 12 Yr (30ml)" finds nothing; "single malt whisky"
+# finds the right glass.
+_PHOTO_QUERIES = {
+    # --- restaurant ---
+    "Paneer Tikka": ["Paneer tikka"],
+    "Chicken 65": ["Chicken 65", "fried chicken indian"],
+    "Gobi Manchurian": ["Gobi manchurian", "cauliflower manchurian"],
+    "Prawn Koliwada": ["Koliwada prawns", "fried prawn", "prawn fry"],
+    "Sweet Corn Soup": ["Sweetcorn soup", "corn soup bowl"],
+    "Mulligatawny Soup": ["Lentil soup bowl", "mulligatawny soup"],
+    "Garden Green Salad": ["Green salad lettuce", "garden salad", "salad bowl"],
+    "Butter Chicken": ["Butter chicken", "murgh makhani"],
+    "Paneer Butter Masala": ["Shahi paneer", "paneer curry bowl", "paneer makhani"],
+    "Chettinad Chicken Curry": ["Chettinad chicken", "chicken curry indian"],
+    "Dal Makhani": ["Dal makhani", "urad dal curry", "lentil curry bowl"],
+    "Kerala Fish Curry": ["Kerala fish curry", "fish curry indian"],
+    "Vegetable Biryani": ["Vegetable biryani", "veg biryani"],
+    "Hyderabadi Chicken Biryani": ["Chicken biryani plate", "hyderabadi biryani"],
+    "Tandoori Chicken (Half)": ["Tandoori chicken"],
+    "Seekh Kebab": ["Seekh kebab", "kebab skewer"],
+    "Tandoori Pomfret": ["Pomfret fish cooked", "tandoori fish", "grilled fish"],
+    "Grilled Vegetable Platter": ["Grilled vegetables", "roasted vegetables"],
+    "Butter Naan": ["Butter naan", "naan bread"],
+    "Garlic Naan": ["Garlic naan", "naan bread"],
+    "Laccha Paratha": ["Laccha paratha", "paratha"],
+    "Steamed Basmati Rice": ["Basmati rice", "steamed rice bowl"],
+    "Gulab Jamun": ["Gulab jamun"],
+    "Rasmalai": ["Rasmalai", "ras malai"],
+    "Chocolate Brownie": ["Brownie dessert plate", "chocolate brownie square"],
+    # --- bar ---
+    "Single Malt 12 Yr (30ml)": ["Single malt whisky glass", "whisky glass"],
+    "Blended Whisky (30ml)": ["Whisky glass", "whiskey glass"],
+    "Premium Vodka (30ml)": ["Vodka glass", "vodka shot"],
+    "London Dry Gin (30ml)": ["Gin and tonic", "gin glass"],
+    "Dark Rum (30ml)": ["Dark rum bottle", "rum bottle", "rum drink"],
+    "Lager Pint": ["Lager beer poured glass", "pint of lager", "beer glass"],
+    "Wheat Beer Pint": ["Hefeweizen beer", "wheat beer poured", "weissbier glass"],
+    "Craft IPA Pint": ["India pale ale poured", "pale ale beer glass"],
+    "House Red (Glass)": ["Red wine glass"],
+    "House White (Glass)": ["White wine poured glass", "white wine glass"],
+    "Sparkling Wine (Glass)": ["Sparkling wine glass", "champagne glass"],
+    "Old Fashioned": ["Old fashioned cocktail"],
+    "Negroni": ["Negroni cocktail"],
+    "Mojito": ["Mojito cocktail"],
+    "Margarita": ["Margarita cocktail"],
+    "Espresso Martini": ["Espresso martini", "martini cocktail"],
+    "Virgin Mojito": ["Virgin mojito", "mint lime drink"],
+    "Fresh Lime Soda": ["Lime soda", "lemonade glass"],
+}
+
+# One photograph is used once: the same picture on two menu rows reads as a
+# mistake even when both dishes are plausibly similar.
+_seen_photos: set = set()
+
+# Subjects where ranked search keeps returning something plausible but wrong,
+# pinned to a file a human looked at. Kept deliberately short: every entry is a
+# place the automatic matching was not good enough.
+_PINNED = {
+    "Dal Makhani": "Creamy Lentils (Dal Makhani) (2239000538).jpg",
+}
 
 
 def _audit(created=None, **extra):
@@ -187,8 +253,24 @@ def _menu_rows(items, image_dir, *, bar: bool):
             station = R_CATEGORIES[cat - 1][3]
             category_name = R_CATEGORIES[cat - 1][2]
 
+        # A real photograph of THIS dish, searched by its own name first.
+        # Wikimedia's titles are literal ("Butter Naan 2.jpg"), which is what
+        # makes the picture actually show what the menu says it is. The drawn
+        # tile is the fallback, so a dish whose name finds nothing still has an
+        # image rather than a dangling path.
         fname = im.hex_name("jpg")
-        im.save(im.menu_image(name, category_name, veg=veg), image_dir, fname)
+        queries = [q for q in _PHOTO_QUERIES.get(name, [])] or [name]
+        queries.append(category_name)
+        got = (photos.pin_commons(_PINNED[name]) if name in _PINNED
+               else None) or photos.best_photo(queries, prefer="commons",
+                                               skip=_seen_photos)
+        if got:
+            img, meta = got
+            photos.cover(img, (800, 600)).save(
+                os.path.join(image_dir, fname), "JPEG", quality=86, optimize=True)
+            photos.record(f"{'Bar' if bar else 'Restaurant'}: {name}", meta, fname)
+        else:
+            im.save(im.menu_image(name, category_name, veg=veg), image_dir, fname)
         image_path = f"/templates/static/upload_image/{fname}"
 
         base = dict(
@@ -269,7 +351,7 @@ def seed_restaurant(conn) -> dict:
     insert(conn, "guest", [
         dict(id=i, guest_code=f"RG-{i:04d}", first_name=f, last_name=l,
              mobile=f"98401{20000 + i * 7:05d}"[:10],
-             email=f"{f.lower()}.{l.lower()}@example.com",
+             email=f"{f.lower()}.{l.lower()}@gmail.com",
              guest_type=t, **_audit())
         for i, (f, l, t) in enumerate(GUEST_NAMES, start=1)])
 
@@ -335,7 +417,7 @@ def seed_bar(conn) -> dict:
     insert(conn, "bar_guest", [
         dict(id=i, guest_code=f"BG-{i:04d}", first_name=f, last_name=l,
              mobile=f"98402{30000 + i * 11:05d}"[:10],
-             email=f"{f.lower()}.{l.lower()}@example.com",
+             email=f"{f.lower()}.{l.lower()}@gmail.com",
              guest_type=t, **_audit())
         for i, (f, l, t) in enumerate(GUEST_NAMES[:6], start=1)])
 

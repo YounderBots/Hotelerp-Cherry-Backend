@@ -58,11 +58,11 @@ Every seeded account uses the same password: **`Hotel@2026`**
 
 | Email | Role | Can reach |
 |---|---|---|
-| `admin@cherryhotel.example` | Admin | everything |
-| `priya.menon@cherryhotel.example` | Front Office Manager | reservations, night audit, enquiry, master data (read) |
-| `rahul.nair@cherryhotel.example` | Front Desk | reservations and enquiry |
-| `imran.khan@cherryhotel.example` | Housekeeping | tasks, incidents, room status |
-| `vikram.singh@cherryhotel.example` | Food & Beverage | restaurant and bar |
+| `admin@cherryhotel.com` | Admin | everything |
+| `priya.menon@cherryhotel.com` | Front Office Manager | reservations, night audit, enquiry, master data (read) |
+| `rahul.nair@cherryhotel.com` | Front Desk | reservations and enquiry |
+| `imran.khan@cherryhotel.com` | Housekeeping | tasks, incidents, room status |
+| `vikram.singh@cherryhotel.com` | Food & Beverage | restaurant and bar |
 
 **Change these before the system is exposed to anyone.** They are shared,
 published credentials; treat the release as a starting point, not a
@@ -121,8 +121,28 @@ mysqldump -u root -p --databases hotelerp_users hotelerp_masterdata \
 
 ## A note on the images
 
-They are generated, not photographed: captioned room interiors, plated-dish
-tiles, initial avatars, and identity documents that are marked **SPECIMEN** in
-three places and carry no number that could be mistaken for a real one. They
-exist so nothing renders broken and so the layouts can be judged with content
-in them. Replace them with real photography before the property goes live.
+**75 of them are real photographs**, downloaded from Wikimedia Commons and
+Openverse — 32 hotel interiors (four per room type), 25 restaurant dishes and
+18 bar drinks, each matched to its own subject and checked by eye. Every file
+is listed in `PHOTO-CREDITS.md` with its title, licence, photographer and
+source URL.
+
+Not from Google Images: those results are copyrighted photographs on other
+people's sites, and shipping them inside a product database is infringement.
+Both sources used here state a licence per image, and only licences permitting
+commercial use *without* a NoDerivatives clause were accepted, because the
+images are cropped and resized. **Attribution is a licence condition for the
+CC-BY files — keep `PHOTO-CREDITS.md` with the data.**
+
+Three kinds stay drawn rather than photographed, on purpose:
+
+- **Staff avatars** — initials on a colour. Using a real person's face as a
+  fictional employee is a privacy problem whatever the photo's licence says.
+- **Identity documents** — marked SPECIMEN in three places, carrying no number
+  that could be mistaken for a real one. A seed file must never be usable as,
+  or mistakable for, a genuine identity document.
+- **Incident photographs** — a picture of real damage in a real hotel implies
+  an incident that did not happen here.
+
+Replace the stock photography with the property's own before going live; the
+rate cards and room numbers are already yours, the pictures are not.
