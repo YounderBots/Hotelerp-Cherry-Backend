@@ -1,7 +1,9 @@
 import logging
+import os
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -64,6 +66,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Static uploads live under templates/static, the same as the other services.
+# Menu photos are written here and served back through the gateway proxy.
+os.makedirs("templates/static", exist_ok=True)
+app.mount("/templates/static", StaticFiles(directory="templates/static"), name="static")
 
 
 @app.exception_handler(Exception)

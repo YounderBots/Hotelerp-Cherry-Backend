@@ -179,6 +179,18 @@ def list_stock(request: Request, station_id: Optional[int] = Query(None), db: Se
     items = db.query(models.BarInventoryItem).filter(models.BarInventoryItem.id.in_(item_ids)).all() if item_ids else []
     item_by_id = {i.id: i for i in items}
 
+    # Resolve the storage location's NAME alongside its id. station_id is a raw
+    # foreign key, and the stock screen was rendering it as "Station #3" -- a
+    # database row number shown to a storekeeper, who knows the place by its
+    # name. The item join above already sets the precedent.
+    station_ids = {s.station_id for s in stock_rows if s.station_id}
+    stations = (
+        db.query(models.BarStation).filter(models.BarStation.id.in_(station_ids)).all()
+        if station_ids
+        else []
+    )
+    station_name_by_id = {b.id: b.station_name for b in stations}
+
     data = []
     for s in stock_rows:
         item = item_by_id.get(s.inventory_item_id)
@@ -189,6 +201,9 @@ def list_stock(request: Request, station_id: Optional[int] = Query(None), db: Se
                 "unit": item.unit if item else None,
                 "min_stock_level": item.min_stock_level if item else None,
                 "below_minimum": bool(item and s.available_quantity < (item.min_stock_level or 0)),
+                # "Main Store" is what a null station_id means: stock held
+                # centrally rather than at a station.
+                "station_name": station_name_by_id.get(s.station_id) or "Main Store",
             }
         )
     return {"status": "success", "count": len(data), "data": data}

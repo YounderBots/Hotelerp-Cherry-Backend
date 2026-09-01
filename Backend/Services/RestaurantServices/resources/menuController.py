@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from models import get_db, models
 from resources.utils import verify_authentication
-from configs.base_config import BaseConfig, CommonWords, ServiceURL
+from configs.base_config import BaseConfig, CommonWords
 
 router = APIRouter()
 
@@ -40,19 +40,34 @@ def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
 
 
 def _write_upload(data: bytes, ext: str) -> str:
-    """Persist bytes under UPLOAD_PATH using a random filename; return an absolute URL.
+    """Persist bytes under UPLOAD_PATH using a random filename; return its path.
 
-    Returned as a full URL (not a path relative to this API) because the
-    gateway (LoginServices) only proxies the `/restaurant/{path}` JSON API —
-    it has no route for `/templates/static/...` and its proxy requires auth
-    that a plain <img> tag can't supply. This service's static mount itself
-    has no auth check, so pointing directly at it is what actually renders.
+    This used to return an ABSOLUTE url built from RESTAURANT_SERVICE_URL, on
+    the reasoning that the gateway has no route for /templates/static and a
+    plain <img> tag cannot send an Authorization header. Both halves were
+    wrong in practice:
+
+      * RestaurantServices binds to 127.0.0.1 (see its .env; only the gateway
+        is meant to be reachable from outside), so the URL that got written
+        into the database — http://127.0.0.1:8050/... — resolves to the
+        VIEWER'S own machine. Every menu photo was therefore broken for every
+        user except someone browsing on the server itself.
+      * The gateway proxies `/restaurant/{path:path}` to this service, and
+        /templates/static IS one of those paths. The client fetches it with the
+        session token and renders it from an object URL — see
+        Frontend/src/hooks/useAuthedMedia.js, which is how room photos,
+        employee photos and incident attachments already work.
+
+    So the stored value is now the site-relative path, matching what
+    MasterDataServices stores, and the client resolves it through the gateway.
+    Rows written before this change still hold an absolute URL; the frontend
+    passes those through untouched rather than rewriting stored data.
     """
     safe_name = f"{uuid.uuid4().hex}.{ext}"
     dest = os.path.join(UPLOAD_PATH, safe_name)
     with open(dest, "wb") as fh:
         fh.write(data)
-    return f"{ServiceURL.RESTAURANT_SERVICE_URL}/templates/static/upload_image/{safe_name}"
+    return f"/templates/static/upload_image/{safe_name}"
 
 
 def gen_code(prefix: str) -> str:

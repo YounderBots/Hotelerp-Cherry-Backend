@@ -118,6 +118,10 @@ def _kot_with_items(db: Session, kot: models.KitchenOrderTicket):
     order = db.query(models.RestaurantOrder).filter(models.RestaurantOrder.id == kot.order_id).first()
     return {
         **kot.__dict__,
+        # The kitchen display was showing the raw restaurant_order.id in a
+        # column headed "Order ID". order_number is the code printed on the
+        # ticket and the one the floor calls out.
+        "order_number": order.order_number if order else None,
         "table_code": order.table_code if order else None,
         "room_no": order.room_no if order else None,
         "no_of_guests": order.no_of_guests if order else None,

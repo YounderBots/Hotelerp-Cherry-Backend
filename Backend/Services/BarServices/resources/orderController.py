@@ -181,7 +181,35 @@ def list_orders(
     if order_date is not None:
         q = q.filter(models.BarOrder.order_date == order_date)
     rows = q.order_by(models.BarOrder.id.desc()).all()
-    return {"status": "success", "count": len(rows), "data": rows}
+
+    # Where the order is being served. The orders screen was resolving table_id
+    # against a separately-fetched table list, so a slow or failed second
+    # request left the column showing "-" for every at-table order.
+    table_ids = {r.table_id for r in rows if r.table_id}
+    tables = (
+        db.query(models.BarTable).filter(models.BarTable.id.in_(table_ids)).all()
+        if table_ids
+        else []
+    )
+    table_by_id = {t.id: t for t in tables}
+
+    data = []
+    for r in rows:
+        table = table_by_id.get(r.table_id)
+        data.append(
+            {
+                **r.__dict__,
+                "table_name": table.table_name if table else None,
+                "table_code": table.table_code if table else None,
+                # One label for the "where" column: the table when there is
+                # one, and the order type itself for counter and takeaway
+                # orders, which have none.
+                "service_location": (
+                    f"{table.table_name} ({table.table_code})" if table else r.order_type
+                ),
+            }
+        )
+    return {"status": "success", "count": len(data), "data": data}
 
 
 @router.get("/order/{order_id}", status_code=status.HTTP_200_OK)
@@ -191,7 +219,19 @@ def get_order(order_id: int, request: Request, db: Session = Depends(get_db)):
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     items = db.query(models.BarOrderItem).filter(models.BarOrderItem.order_id == order_id, models.BarOrderItem.status == STATUS).all()
-    return {"status": "success", "data": {**order.__dict__, "items": items}}
+
+    # The line item stores menu_id but snapshots only the variant name and the
+    # price, so the order screen was resolving the drink name against a
+    # separately-fetched menu list and printing "#42" whenever that missed.
+    menu_ids = {i.menu_id for i in items if i.menu_id}
+    menus = (
+        db.query(models.BarMenuItem).filter(models.BarMenuItem.id.in_(menu_ids)).all()
+        if menu_ids
+        else []
+    )
+    menu_name_by_id = {m.id: m.item_name for m in menus}
+    item_data = [{**i.__dict__, "item_name": menu_name_by_id.get(i.menu_id)} for i in items]
+    return {"status": "success", "data": {**order.__dict__, "items": item_data}}
 
 
 @router.post("/order/{order_id}/items", status_code=status.HTTP_201_CREATED)

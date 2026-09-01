@@ -183,6 +183,18 @@ def list_stock(request: Request, kitchen_id: Optional[int] = Query(None), db: Se
     items = db.query(models.InventoryItem).filter(models.InventoryItem.id.in_(item_ids)).all() if item_ids else []
     item_by_id = {i.id: i for i in items}
 
+    # Resolve the storage location's NAME alongside its id. kitchen_id is a raw
+    # foreign key, and the stock screen was rendering it as "Kitchen #3" -- a
+    # database row number shown to a storekeeper, who knows the place by its
+    # name. The item join above already sets the precedent.
+    kitchen_ids = {s.kitchen_id for s in stock_rows if s.kitchen_id}
+    kitchens = (
+        db.query(models.Kitchen).filter(models.Kitchen.id.in_(kitchen_ids)).all()
+        if kitchen_ids
+        else []
+    )
+    kitchen_name_by_id = {k.id: k.kitchen_name for k in kitchens}
+
     data = []
     for s in stock_rows:
         item = item_by_id.get(s.inventory_item_id)
@@ -193,6 +205,9 @@ def list_stock(request: Request, kitchen_id: Optional[int] = Query(None), db: Se
                 "unit": item.unit if item else None,
                 "min_stock_level": item.min_stock_level if item else None,
                 "below_minimum": bool(item and s.available_quantity < (item.min_stock_level or 0)),
+                # "Main Store" is what a null kitchen_id means: stock held
+                # centrally rather than at a station.
+                "kitchen_name": kitchen_name_by_id.get(s.kitchen_id) or "Main Store",
             }
         )
     return {"status": "success", "count": len(data), "data": data}

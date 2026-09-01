@@ -1,22 +1,66 @@
+import os
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from models import get_db, models
 from resources.utils import verify_authentication
-from configs.base_config import CommonWords
+from configs.base_config import BaseConfig, CommonWords
 
 router = APIRouter()
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
 
+# Menu photo uploads. The bar screen had no upload endpoint at all, so it asked
+# the user to paste a hosted image URL while the identical restaurant screen
+# offered a file picker -- the same job done two different ways, and one of them
+# depending on an image the property has to host somewhere else.
+UPLOAD_PATH = "./templates/static/upload_image"
+os.makedirs(UPLOAD_PATH, exist_ok=True)
+ALLOWED_UPLOAD_EXTS = BaseConfig.UPLOAD_ALLOWED_EXTENSIONS
+UPLOAD_MAX_BYTES = BaseConfig.UPLOAD_MAX_BYTES
+
+
+def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
+    """Validate and read an incoming UploadFile. Mirrors RestaurantServices."""
+    if not upload or not upload.filename:
+        raise HTTPException(status_code=400, detail="File is required")
+    ext = os.path.splitext(upload.filename)[1].lstrip(".").lower()
+    if not ext or ext not in ALLOWED_UPLOAD_EXTS:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    data = upload.file.read(UPLOAD_MAX_BYTES + 1)
+    if len(data) > UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds size limit")
+    return ext, data
+
+
+def _write_upload(data: bytes, ext: str) -> str:
+    """Persist bytes under UPLOAD_PATH; return the site-relative path.
+
+    Relative, not absolute: this service binds to 127.0.0.1, so a URL built
+    from its own address resolves to the VIEWER'S machine. The client fetches
+    the path through the gateway with the session token -- see
+    Frontend/src/hooks/useAuthedMedia.js.
+    """
+    safe_name = f"{uuid.uuid4().hex}.{ext}"
+    with open(os.path.join(UPLOAD_PATH, safe_name), "wb") as fh:
+        fh.write(data)
+    return f"/templates/static/upload_image/{safe_name}"
+
 
 def gen_code(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8].upper()}"
+
+
+@router.post("/upload_image", status_code=status.HTTP_201_CREATED)
+def upload_menu_image(request: Request, image: UploadFile = File(...)):
+    _auth(request)
+    ext, data = _sanitize_upload(image)
+    return {"status": "success", "data": {"url": _write_upload(data, ext)}}
 
 
 def _auth(request: Request):

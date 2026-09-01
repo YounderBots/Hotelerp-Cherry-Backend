@@ -39,6 +39,9 @@ class BaseConfig(object):
         o.strip() for o in _raw_origins.split(",") if o.strip() and o.strip() != "*"
     ]
 
+    UPLOAD_MAX_BYTES = int(os.getenv("UPLOAD_MAX_BYTES", str(5 * 1024 * 1024)))
+    UPLOAD_ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
+
 
 # ------- Common Using Names -------#
 class CommonWords():

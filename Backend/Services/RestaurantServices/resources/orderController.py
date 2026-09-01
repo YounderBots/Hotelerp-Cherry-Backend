@@ -182,6 +182,7 @@ def list_orders(
     order_status_filter: Optional[str] = Query(None, alias="order_status"),
     order_type: Optional[str] = Query(None),
     table_id: Optional[int] = Query(None),
+    floor_id: Optional[int] = Query(None),
     order_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
 ):
@@ -189,6 +190,23 @@ def list_orders(
     q = db.query(models.RestaurantOrder).filter(
         models.RestaurantOrder.company_id == company_id, models.RestaurantOrder.status == STATUS
     )
+    # Orders for one floor. The floor detail screen had no way to ask for this,
+    # so it fetched EVERY order in the company on each visit and filtered them
+    # in the browser against that floor's table ids -- a full table scan over
+    # the wire that grows with the order history.
+    if floor_id is not None:
+        floor_table_ids = [
+            t.id
+            for t in db.query(models.RestaurantTable.id)
+            .filter(
+                models.RestaurantTable.floor_id == floor_id,
+                models.RestaurantTable.company_id == company_id,
+            )
+            .all()
+        ]
+        if not floor_table_ids:
+            return {"status": "success", "count": 0, "data": []}
+        q = q.filter(models.RestaurantOrder.table_id.in_(floor_table_ids))
     if order_status_filter:
         q = q.filter(models.RestaurantOrder.order_status == order_status_filter)
     if order_type:
@@ -198,7 +216,38 @@ def list_orders(
     if order_date is not None:
         q = q.filter(models.RestaurantOrder.order_date == order_date)
     rows = q.order_by(models.RestaurantOrder.id.desc()).all()
-    return {"status": "success", "count": len(rows), "data": rows}
+
+    # Where the order is being served. The orders screen was resolving table_id
+    # against a separately-fetched table list, so a slow or failed second
+    # request left the column showing "-" for every dine-in order.
+    table_ids = {r.table_id for r in rows if r.table_id}
+    tables = (
+        db.query(models.RestaurantTable).filter(models.RestaurantTable.id.in_(table_ids)).all()
+        if table_ids
+        else []
+    )
+    table_by_id = {t.id: t for t in tables}
+
+    data = []
+    for r in rows:
+        table = table_by_id.get(r.table_id)
+        data.append(
+            {
+                **r.__dict__,
+                "table_name": table.table_name if table else None,
+                "table_code": table.table_code if table else None,
+                # One label for the "where" column, whichever kind of order it
+                # is: a table for dine-in, a room number for room service, and
+                # the order type itself for takeaway and delivery, which have
+                # neither.
+                "service_location": (
+                    r.room_no
+                    if r.order_type == "Room Service"
+                    else (f"{table.table_name} ({table.table_code})" if table else r.order_type)
+                ),
+            }
+        )
+    return {"status": "success", "count": len(data), "data": data}
 
 
 @router.get("/order/{order_id}", status_code=status.HTTP_200_OK)
@@ -216,7 +265,21 @@ def get_order(order_id: int, request: Request, db: Session = Depends(get_db)):
         .filter(models.RestaurantOrderItem.order_id == order_id, models.RestaurantOrderItem.status == STATUS)
         .all()
     )
-    return {"status": "success", "data": {**order.__dict__, "items": items}}
+
+    # The line item stores menu_id but snapshots only the variant name and the
+    # price, so the order screen was resolving the dish name against a
+    # separately-fetched menu list and printing "#42" whenever that missed.
+    menu_ids = {i.menu_id for i in items if i.menu_id}
+    menus = (
+        db.query(models.RestaurantMenu).filter(models.RestaurantMenu.id.in_(menu_ids)).all()
+        if menu_ids
+        else []
+    )
+    menu_name_by_id = {m.id: m.item_name for m in menus}
+    item_data = [
+        {**i.__dict__, "item_name": menu_name_by_id.get(i.menu_id)} for i in items
+    ]
+    return {"status": "success", "data": {**order.__dict__, "items": item_data}}
 
 
 @router.post("/order/{order_id}/items", status_code=status.HTTP_201_CREATED)

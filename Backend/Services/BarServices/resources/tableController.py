@@ -175,7 +175,36 @@ def list_tables(
     if table_status:
         q = q.filter(models.BarTable.table_status == table_status)
     rows = q.order_by(models.BarTable.table_number.asc()).all()
-    return {"status": "success", "count": len(rows), "data": rows}
+
+    # Resolve the two foreign keys the table screen shows to a human. The floor
+    # was being joined in the browser (so an unloaded floor list showed the raw
+    # id) and the current order was the raw bar_order.id -- a row number no
+    # bartender can act on. order_number is the code printed on the BOT.
+    floor_ids = {r.floor_id for r in rows if r.floor_id}
+    floors = (
+        db.query(models.BarFloor).filter(models.BarFloor.id.in_(floor_ids)).all()
+        if floor_ids
+        else []
+    )
+    floor_name_by_id = {f.id: f.floor_name for f in floors}
+
+    order_ids = {r.current_order_id for r in rows if r.current_order_id}
+    orders = (
+        db.query(models.BarOrder).filter(models.BarOrder.id.in_(order_ids)).all()
+        if order_ids
+        else []
+    )
+    order_number_by_id = {o.id: o.order_number for o in orders}
+
+    data = [
+        {
+            **r.__dict__,
+            "floor_name": floor_name_by_id.get(r.floor_id),
+            "current_order_number": order_number_by_id.get(r.current_order_id),
+        }
+        for r in rows
+    ]
+    return {"status": "success", "count": len(data), "data": data}
 
 
 @router.get("/table/{table_id}", status_code=status.HTTP_200_OK)

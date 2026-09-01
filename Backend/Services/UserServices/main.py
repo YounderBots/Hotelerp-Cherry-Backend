@@ -1,8 +1,10 @@
 import logging
+import os
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -64,6 +66,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Employee photos are written to templates/static/users by create_user /
+# update_user, and until now nothing served them: this service was the only one
+# that stored uploads without a static mount, so every employee photo the app
+# had ever saved answered 404. The other services mount the same path.
+os.makedirs("templates/static", exist_ok=True)
+app.mount("/templates/static", StaticFiles(directory="templates/static"), name="static")
 
 
 @app.exception_handler(Exception)

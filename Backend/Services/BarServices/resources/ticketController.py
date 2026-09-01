@@ -109,6 +109,9 @@ def _bot_with_items(db: Session, bot: models.BarOrderTicket):
     order = db.query(models.BarOrder).filter(models.BarOrder.id == bot.order_id).first()
     return {
         **bot.__dict__,
+        # The station display was showing the raw bar_order.id in a column
+        # headed "Order ID". order_number is the code printed on the ticket.
+        "order_number": order.order_number if order else None,
         "table_code": order.table_code if order else None,
         "no_of_guests": order.no_of_guests if order else None,
         "items": items,

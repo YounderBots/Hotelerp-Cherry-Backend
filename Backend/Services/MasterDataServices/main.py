@@ -1,4 +1,5 @@
 import logging
+import os
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,13 +67,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Static uploads live under templates/static; the directory is created lazily
-# by the controller. Mount it only if it already exists so first-time startup
-# doesn't fail before an upload has ever occurred.
-import os as _os  # noqa: E402
-
-if _os.path.isdir("templates/static"):
-    app.mount("/templates/static", StaticFiles(directory="templates/static"), name="static")
+# Static uploads live under templates/static.
+#
+# The mount used to be guarded by `if os.path.isdir(...)`, evaluated once at
+# import. The directory is created by the upload handler, so a service that
+# started before the first upload had no mount for the rest of its life and
+# answered 404 for every stored file until someone restarted it -- which is
+# exactly what a long-running production process does. Creating the directory
+# here and mounting unconditionally removes the ordering dependency: the mount
+# always exists, and an empty directory simply serves nothing.
+os.makedirs("templates/static", exist_ok=True)
+app.mount("/templates/static", StaticFiles(directory="templates/static"), name="static")
 
 
 @app.exception_handler(Exception)
