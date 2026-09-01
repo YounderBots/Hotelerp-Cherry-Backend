@@ -1,7 +1,7 @@
 import React from "react";
 import { RefreshCw } from "lucide-react";
+import { todayIso } from "../../../functions/formatters";
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const ReportTabHeader = ({ title, subtitle, reportDate, onDateChange, onRefresh, loading }) => (
   <div className="dashboard-header dashboard-header-inline">

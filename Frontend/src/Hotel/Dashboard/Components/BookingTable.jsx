@@ -1,4 +1,7 @@
 import React from "react";
+// Calendar dates, formatted without a timezone round trip -- `new Date("2026-08-01")`
+// parses as midnight UTC and renders as 31 July west of Greenwich.
+import { formatDate } from "../../../functions/formatters";
 
 const statusToBadge = (raw) => {
   const s = String(raw || "").toLowerCase();
@@ -9,17 +12,21 @@ const statusToBadge = (raw) => {
   return "";
 };
 
-const formatDate = (v) => {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-};
 
+
+// The dashboard summary sends one resolved `guest_name`; the reservation
+// payload sends the parts. Accept either.
 const fullName = (b) =>
-  [b?.salutation, b?.first_name, b?.last_name].filter(Boolean).join(" ").trim() || "—";
+  [b?.salutation, b?.first_name, b?.last_name].filter(Boolean).join(" ").trim() ||
+  b?.guest_name ||
+  "—";
 
 const rowRoomLabel = (b) => {
+  // Room NUMBERS where we have them -- "Room 207" means something to the desk,
+  // "Room 15" (an internal id) does not.
+  const nos = Array.isArray(b?.room_nos) ? b.room_nos.filter(Boolean) : [];
+  if (nos.length === 1) return `Room ${nos[0]}`;
+  if (nos.length > 1) return `${nos.length} rooms`;
   const ids = Array.isArray(b?.room_ids) ? b.room_ids : [];
   if (ids.length === 0) return b?.no_of_rooms ? `${b.no_of_rooms} room(s)` : "—";
   if (ids.length === 1) return `Room ${ids[0]}`;

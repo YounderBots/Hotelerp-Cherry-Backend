@@ -45,6 +45,9 @@ const BADGE_CONFIGS = {
     'on shift': { label: 'On Shift', class: 'badge-success' },
     'on break': { label: 'On Break', class: 'badge-warning' },
     closed: { label: 'Closed', class: 'badge-neutral' },
+    // Service state of a floor / station (`is_open`). 'closed' above is the
+    // other half, shared with the staff shift lifecycle.
+    open: { label: 'Open', class: 'badge-success' },
     'not scheduled': { label: 'Not Scheduled', class: 'badge-neutral' },
     unblocking: { label: 'Unblocked', class: 'badge-neutral' },
     blocking: { label: 'Blocked', class: 'badge-error' },
@@ -56,8 +59,17 @@ const BADGE_CONFIGS = {
     'in-progress': { label: 'In Progress', class: 'badge-warning' },
     'in progress': { label: 'In Progress', class: 'badge-warning' },
     available: { label: 'Available', class: 'badge-success' },
+    // Inventory levels (restaurant + bar Stock screens).
+    'in stock': { label: 'In Stock', class: 'badge-success' },
+    'low stock': { label: 'Low Stock', class: 'badge-warning' },
+    'out of stock': { label: 'Out of Stock', class: 'badge-error' },
     occupied: { label: 'Occupied', class: 'badge-warning' },
     maintenance: { label: 'Maintenance', class: 'badge-error' },
+    // The rest of restaurant_table.table_status / bar_table.table_status:
+    // 'available', 'occupied' and 'reserved' are already listed, while these
+    // two fell through to a grey chip carrying the raw string as its label.
+    cleaning: { label: 'Cleaning', class: 'badge-info' },
+    blocked: { label: 'Blocked', class: 'badge-error' },
     // Reservation lifecycle, exactly as masterdata.reservation_status spells
     // it (Confirmed / Checked-In / Checked-Out / Cancelled / No-Show /
     // Pending / On Hold). 'pending' and 'cancelled' above are shared with
@@ -69,6 +81,19 @@ const BADGE_CONFIGS = {
     'no-show': { label: 'No-Show', class: 'badge-warning' },
     'no show': { label: 'No-Show', class: 'badge-warning' },
     'on hold': { label: 'On Hold', class: 'badge-warning' },
+    // Restaurant / bar order lifecycle (order_status_enum) and its payment
+    // state (order_payment_status_enum). 'in progress', 'ready', 'completed'
+    // and 'cancelled' are already listed above and shared with other modules;
+    // 'new', 'served' and 'partial' fell through to a grey chip.
+    new: { label: 'New', class: 'badge-info' },
+    served: { label: 'Served', class: 'badge-success' },
+    partial: { label: 'Partial', class: 'badge-warning' },
+    // Kitchen / bar ticket lifecycle (kot_status_enum, bot_status_enum) and
+    // its per-item preparation state (kot_item_prep_status_enum). 'new',
+    // 'in progress', 'ready', 'completed', 'cancelled' and 'pending' are
+    // already listed; these two were the gap.
+    acknowledged: { label: 'Acknowledged', class: 'badge-info' },
+    preparing: { label: 'Preparing', class: 'badge-warning' },
     // Derived payment state on a reservation (API `payment_state`).
     unpaid: { label: 'Unpaid', class: 'badge-error' },
     'partly paid': { label: 'Partly Paid', class: 'badge-warning' },
@@ -81,6 +106,11 @@ const BADGE_CONFIGS = {
     high: { label: 'High', class: 'badge-error' },
     medium: { label: 'Medium', class: 'badge-warning' },
     low: { label: 'Low', class: 'badge-info' },
+    // kot_priority_enum / bot_priority_enum. The kitchen screens asked for a
+    // 'status' badge for this column, so ASAP and Normal both fell through to
+    // a grey chip and a rush ticket looked like an ordinary one.
+    asap: { label: 'ASAP', class: 'badge-error' },
+    normal: { label: 'Normal', class: 'badge-neutral' },
   },
 };
 
@@ -335,10 +365,12 @@ const TableTemplate = ({
       case "avatar":
         return value?.name || value?.email || "";
 
-      case "badge":
-        return typeof value === "string"
-          ? value.charAt(0).toUpperCase() + value.slice(1)
+      case "badge": {
+        const shown = column.render ? column.render(row) : value;
+        return typeof shown === "string"
+          ? shown.charAt(0).toUpperCase() + shown.slice(1)
           : "";
+      }
 
       case "custom":
         // Custom JSX cannot be exported → fallback
@@ -583,7 +615,13 @@ const TableTemplate = ({
       case 'avatar':
         return <AvatarCell {...value} />;
       case 'badge':
-        return <BadgeCell status={value} type={column.badgeType} />;
+        // `render` lets a column map a raw value into the badge vocabulary
+        // below — a boolean `below_minimum` into "Low Stock" / "In Stock",
+        // say. Without it a screen had to fall back to type:'custom' and
+        // hand-roll a <span className="badge">, which is how an unstyled chip
+        // that was the same colour for every state ended up on the Stock
+        // screens. Absent `render`, behaviour is unchanged.
+        return <BadgeCell status={column.render ? column.render(item) : value} type={column.badgeType} />;
       case 'custom':
         return column.render ? column.render(item) : value;
       default:

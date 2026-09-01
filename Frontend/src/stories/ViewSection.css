@@ -23,3 +23,11 @@
   letter-spacing: 0.05em;
   color: var(--text-muted);
 }
+
+/* "Nothing here yet" inside a section — a visit history with no visits, say.
+   Same muted treatment as an empty table, so the two read alike. */
+.view-section__empty {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}

@@ -1,307 +1,180 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, Printer, Pencil, AlertCircle, RefreshCw } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import APICall from "../../APICalls/APICalls";
+import { readList } from "../../functions/apiHelpers";
+import { printDocument, printHeading, printRow } from "../../functions/printDocument";
+import { useApiResource } from "../../hooks/useApiResource";
+import ViewSection from "../../stories/ViewSection";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import {
+  escapeHtml,
+  formatAmount,
+  formatDate,
+  formatDateTime,
+  guestName as buildGuestName,
+  isTerminal,
+  num,
+  parseArr,
+  readOne,
+  statusBadgeClass,
+} from "./reservationShared";
 import "./Reservation.css";
 
-// A terminal reservation cannot be amended. The API now reports this per row
-// as `is_terminal`, computed from the same transition table it enforces; the
-// local set is the fallback for a response that predates that field.
-//
-// Matching folds case, spaces and hyphens: the set previously spelled the
-// no-show status "No Show" while Master Data stores "No-Show", so a no-show
-// reservation was never recognised as locked and stayed editable.
-const TERMINAL_STATUSES = new Set(["checkedout", "cancelled", "noshow"]);
-const foldStatus = (v) => String(v || "").toLowerCase().replace(/[^a-z]/g, "");
-const isTerminal = (reservation) =>
-  Boolean(reservation) &&
-  (reservation.is_terminal === true ||
-    TERMINAL_STATUSES.has(foldStatus(reservation.reservation_status)));
-
-const escapeHtml = (v) =>
-  String(v ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-const parseArr = (v) => {
-  if (Array.isArray(v)) return v;
-  if (v === null || v === undefined || v === "") return [];
-  try {
-    const parsed = JSON.parse(v);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const num = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-
-const readList = (res) =>
-  Array.isArray(res?.data) ? res.data : Array.isArray(res?.data?.data) ? res.data.data : [];
-
-const readOne = (res) =>
-  (res?.data && !Array.isArray(res.data) && typeof res.data === "object") ? res.data : null;
-
-const errMsg = (err, fallback) =>
-  err instanceof ApiError && err.message ? err.message : fallback;
-
-const formatDate = (v) => {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-};
-
-const numberFmt = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const formatAmount = (v) => numberFmt.format(num(v));
-
-const getStatusBadgeClass = (status) => {
-  const s = String(status || "").toLowerCase();
-  if (s === "booked" || s === "pending") return "status-pending";
-  if (s === "confirmed") return "status-confirmed";
-  if (s === "checked-in" || s === "arrived") return "status-checked-in";
-  if (s === "checked-out" || s === "departures") return "status-checked-out";
-  if (s === "cancelled" || s === "canceled" || s === "no show" || s === "no-show") return "status-cancelled";
-  return "status-pending";
-};
-
 const ReservationModelView = () => {
+  const [printBlocked, setPrintBlocked] = useState(false);
   const { state } = useLocation();
   const navigate = useNavigate();
-  const mounted = useRef(true);
 
   const reservationId = state?.reservationId;
 
-  const [reservation, setReservation] = useState(null); // null = loading
-  const [error, setError] = useState(null);
-  const [refreshTick, setRefreshTick] = useState(0);
+  // WHAT THIS REPLACES
+  //   Seven useState hooks, two hand-written effects and a `mounted` ref
+  //   guarding against setState-after-unmount -- the exact shape
+  //   useApiResource exists to absorb, and which every other screen in the
+  //   module now uses.
+  //
+  //   It also replaces six /masterdata calls (room_types, room, payment_methods,
+  //   tax, discount, identity_proof) that existed only to turn ids into names.
+  //   The rewritten detail endpoint resolves every one of those itself and
+  //   returns `room_nos`, `room_type_names`, `payment_method`, `tax_name`,
+  //   `discount_name`, `identity_type` and a per-room `rate_breakdown`. Looking
+  //   them up again here meant six extra round trips to reach an answer the
+  //   server had already sent, and two chances to disagree with it.
+  const {
+    data: reservation,
+    loading,
+    error,
+    reload,
+  } = useApiResource(
+    () => APICall.getT(`/hotel/room_reservation/${encodeURIComponent(reservationId)}`),
+    {
+      select: readOne,
+      initial: null,
+      fallback: "Failed to load reservation.",
+      deps: [reservationId],
+      enabled: Boolean(reservationId),
+    },
+  );
 
-  const [roomTypes, setRoomTypes] = useState([]);
-  const [rooms, setRooms] = useState([]);
-  const [paymentMethods, setPaymentMethods] = useState([]);
-  const [taxTypes, setTaxTypes] = useState([]);
-  const [discountTypes, setDiscountTypes] = useState([]);
-  const [identityTypes, setIdentityTypes] = useState([]);
-  const [paymentHistory, setPaymentHistory] = useState([]);
+  // History is best-effort: the page is still correct without it.
+  const { data: paymentHistory } = useApiResource(
+    () =>
+      APICall.getT(
+        `/hotel/room_reservation_payments/${encodeURIComponent(reservation?.token)}`,
+      ),
+    {
+      select: readList,
+      initial: [],
+      deps: [reservation?.token],
+      enabled: Boolean(reservation?.token),
+    },
+  );
 
-  useEffect(() => {
-    mounted.current = true;
-    if (!reservationId) return undefined;
-
-    // Deferred to a microtask so this effect sets no state synchronously —
-    // the extra render pass react-hooks/set-state-in-effect warns about. The
-    // deferral is real, not a way to quiet the rule; hooks/useApiResource.js
-    // takes the same approach.
-    Promise.resolve().then(() => {
-      if (!mounted.current) return;
-      setReservation(null);
-      setError(null);
-    });
-
-    APICall.getT(`/hotel/room_reservation/${encodeURIComponent(reservationId)}`)
-      .then((res) => {
-        if (!mounted.current) return;
-        const one = readOne(res);
-        if (!one) {
-          setError("Reservation response was malformed.");
-          setReservation(null);
-        } else {
-          setReservation(one);
-        }
-      })
-      .catch((err) => {
-        if (!mounted.current) return;
-        setError(errMsg(err, "Failed to load reservation."));
-        setReservation(null);
-      });
-
-    Promise.allSettled([
-      APICall.getT("/masterdata/room_types"),
-      APICall.getT("/masterdata/room"),
-      APICall.getT("/masterdata/payment_methods"),
-      APICall.getT("/masterdata/tax"),
-      APICall.getT("/masterdata/discount"),
-      APICall.getT("/masterdata/identity_proof"),
-    ]).then((results) => {
-      if (!mounted.current) return;
-      const [rRT, rRoom, rPM, rTax, rDisc, rIdent] = results;
-      setRoomTypes(rRT.status === "fulfilled" ? readList(rRT.value) : []);
-      setRooms(rRoom.status === "fulfilled" ? readList(rRoom.value) : []);
-      setPaymentMethods(rPM.status === "fulfilled" ? readList(rPM.value) : []);
-      setTaxTypes(rTax.status === "fulfilled" ? readList(rTax.value) : []);
-      setDiscountTypes(rDisc.status === "fulfilled" ? readList(rDisc.value) : []);
-      setIdentityTypes(rIdent.status === "fulfilled" ? readList(rIdent.value) : []);
-    });
-
-    return () => { mounted.current = false; };
-  }, [reservationId, refreshTick]);
-
-  useEffect(() => {
-    if (!reservation?.token) {
-      Promise.resolve().then(() => {
-        if (mounted.current) setPaymentHistory([]);
-      });
-      return undefined;
-    }
-    APICall.getT(`/hotel/room_reservation_payments/${encodeURIComponent(reservation.token)}`)
-      .then((res) => { if (mounted.current) setPaymentHistory(readList(res)); })
-      .catch(() => { /* history is best-effort; page still works without it */ });
-    return undefined;
-  }, [reservation?.token]);
-
-  // Derived: rooms in this reservation with human labels.
+  /**
+   * One row per room on the booking.
+   *
+   * `rate_breakdown` is the server's own per-room list and is preferred. The
+   * zip below is the fallback for a response that predates it.
+   *
+   * NEITHER CARRIES A PER-ROOM AMOUNT, AND THIS DELIBERATELY NO LONGER SHOWS ONE.
+   * The previous version printed `total_amount / no_of_rooms` in a "Room Amount"
+   * column. That is only ever right when every room on the booking is the same
+   * type at the same rate; for a mixed booking it invented a number and put it
+   * on a receipt. Per-room amounts are not persisted -- only the aggregate
+   * `room_amount` is -- so there is nothing to show here that would be true.
+   * The real money is in the summary below, where it comes from stored columns.
+   */
   const roomRows = useMemo(() => {
     if (!reservation) return [];
-    const typeIds = parseArr(reservation.room_type_ids);
-    const roomIds = parseArr(reservation.room_ids);
-    const rateTypes = parseArr(reservation.rate_type);
-    const len = Math.max(typeIds.length, roomIds.length, rateTypes.length, 0);
-    if (len === 0) return [];
 
-    const perRoomTotal = num(reservation.total_amount) && (num(reservation.no_of_rooms) || len)
-      ? num(reservation.total_amount) / (num(reservation.no_of_rooms) || len)
-      : 0;
-
-    const list = [];
-    for (let i = 0; i < len; i += 1) {
-      const roomTypeId = typeIds[i];
-      const roomId = roomIds[i];
-      const rateType = rateTypes[i];
-      list.push({
+    const breakdown = parseArr(reservation.rate_breakdown);
+    if (breakdown.length) {
+      return breakdown.map((line, i) => ({
+        key: `${line.room_id ?? i}`,
         sno: i + 1,
-        roomType: roomTypes.find((rt) => rt.id === roomTypeId)?.room_type_name || (roomTypeId ? `#${roomTypeId}` : "—"),
-        roomNo: rooms.find((r) => r.id === roomId)?.room_no || (roomId ? `#${roomId}` : "—"),
-        rateType: rateType || "—",
-        checkIn: formatDate(reservation.arrival_date),
-        checkOut: formatDate(reservation.departure_date),
-        price: perRoomTotal,
-      });
+        roomType: line.room_type_name || "—",
+        roomNo: line.room_no || "—",
+        rateType: line.rate_type || "—",
+        nights: line.units ?? reservation.no_of_nights ?? "—",
+      }));
     }
-    return list;
-  }, [reservation, roomTypes, rooms]);
 
-  const paymentMethodLabel = useMemo(() => {
-    if (!reservation) return "—";
-    const pm = paymentMethods.find((p) => p.id === reservation.payment_method_id);
-    return pm?.payment_method || reservation.payment_method_id || "—";
-  }, [reservation, paymentMethods]);
+    const roomNos = parseArr(reservation.room_nos);
+    const typeNames = parseArr(reservation.room_type_names);
+    const rateTypes = parseArr(reservation.rate_type);
+    const len = Math.max(roomNos.length, typeNames.length, rateTypes.length);
+    return Array.from({ length: len }, (_, i) => ({
+      key: `fallback-${i}`,
+      sno: i + 1,
+      roomType: typeNames[i] || "—",
+      roomNo: roomNos[i] || "—",
+      rateType: rateTypes[i] || "—",
+      nights: reservation.no_of_nights ?? "—",
+    }));
+  }, [reservation]);
 
-  const identityTypeLabel = useMemo(() => {
-    if (!reservation) return "—";
-    return identityTypes.find((i) => i.id === reservation.identity_type_id)?.proof_name || "—";
-  }, [reservation, identityTypes]);
-
-  const taxTypeLabel = useMemo(() => {
-    if (!reservation) return "—";
-    return taxTypes.find((t) => t.id === reservation.tax_type_id)?.tax_name || "—";
-  }, [reservation, taxTypes]);
-
-  const discountTypeLabel = useMemo(() => {
-    if (!reservation) return "—";
-    return (
-      discountTypes.find((d) => d.id === reservation.discount_type_id)?.discount_name ||
-      discountTypes.find((d) => d.id === reservation.discount_type_id)?.name ||
-      "—"
-    );
-  }, [reservation, discountTypes]);
-
-  const guestName = reservation
-    ? [reservation.salutation, reservation.first_name, reservation.last_name].filter(Boolean).join(" ").trim() || "—"
-    : "—";
-
-  const isLoading = Boolean(reservationId) && reservation === null && !error;
+  const guestName = reservation ? buildGuestName(reservation) : "—";
   const isLocked = isTerminal(reservation);
 
   const handleBack = () => navigate("/reservation");
-  const handleRefresh = () => setRefreshTick((n) => n + 1);
   const handleEdit = () => {
-    // Reservation.jsx opens the edit modal via row action, not a route.
-    // Sending the user back to the list is the correct hand-off today.
+    // The list owns editing -- it opens a modal from a row action rather than
+    // routing to a screen. Handing the user back to it is the correct hand-off.
     navigate("/reservation");
   };
 
   const handlePrint = () => {
     if (!reservation) return;
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) return;
-    const roomRowsHtml = roomRows.map((r) => `
-      <tr>
-        <td>${escapeHtml(r.sno)}</td>
-        <td>${escapeHtml(r.roomType)}</td>
-        <td>${escapeHtml(r.roomNo)}</td>
-        <td>${escapeHtml(r.rateType)}</td>
-        <td>${escapeHtml(r.checkIn)}</td>
-        <td>${escapeHtml(r.checkOut)}</td>
-        <td>${escapeHtml(formatAmount(r.price))}</td>
-      </tr>
-    `).join("");
-    const content = `<!doctype html><html><head>
-      <meta charset="utf-8" />
-      <title>Reservation ${escapeHtml(reservation.room_reservation_id)}</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 40px; color: #111827; }
-        h1 { margin: 0 0 8px 0; }
-        h3 { border-bottom: 1px solid #000; padding-bottom: 4px; margin-top: 24px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 12px; }
-        th { background: #f5f5f5; }
-        .row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px; }
-        .label { font-weight: 700; color: #555; font-size: 12px; }
-        .value { font-size: 13px; }
-        .summary { margin-top: 12px; }
-        .summary div { display: flex; justify-content: space-between; padding: 4px 0; }
-        .summary .total { font-weight: 700; border-top: 1px solid #000; padding-top: 8px; }
-      </style>
-      </head><body>
-        <h1>Reservation Receipt</h1>
-        <p>ID: ${escapeHtml(reservation.room_reservation_id)}</p>
-        <p>Printed: ${escapeHtml(new Date().toLocaleString())}</p>
 
-        <h3>Guest</h3>
-        <div class="row">
-          <div><span class="label">Name:</span> <span class="value">${escapeHtml(guestName)}</span></div>
-          <div><span class="label">Phone:</span> <span class="value">${escapeHtml(reservation.phone_number || "—")}</span></div>
-          <div><span class="label">Email:</span> <span class="value">${escapeHtml(reservation.email || "—")}</span></div>
-          <div><span class="label">Status:</span> <span class="value">${escapeHtml(reservation.reservation_status || "—")}</span></div>
-        </div>
+    // Was a hand-written document with its own inline stylesheet — the third
+    // near-identical copy in the app — and a bare `if (!printWindow) return;`,
+    // so a blocked pop-up meant the Print button simply did nothing with no
+    // explanation. printDocument owns the boilerplate and reports the block.
+    const roomRowsHtml = roomRows
+      .map(
+        (r) =>
+          `<tr><td>${escapeHtml(r.sno)}</td><td>${escapeHtml(r.roomType)}</td>` +
+          `<td>${escapeHtml(r.roomNo)}</td><td>${escapeHtml(r.rateType)}</td>` +
+          `<td class="num">${escapeHtml(r.nights)}</td></tr>`,
+      )
+      .join("");
 
-        <h3>Stay</h3>
-        <div class="row">
-          <div><span class="label">Arrival:</span> <span class="value">${escapeHtml(formatDate(reservation.arrival_date))}</span></div>
-          <div><span class="label">Departure:</span> <span class="value">${escapeHtml(formatDate(reservation.departure_date))}</span></div>
-          <div><span class="label">Nights:</span> <span class="value">${escapeHtml(reservation.no_of_nights ?? "—")}</span></div>
-          <div><span class="label">Rooms:</span> <span class="value">${escapeHtml(reservation.no_of_rooms ?? "—")}</span></div>
-        </div>
+    const ok = printDocument({
+      title: `Reservation ${reservation.room_reservation_id}`,
+      heading: "Reservation Receipt",
+      subtitle: `${reservation.room_reservation_id} · ${new Date().toLocaleString()}`,
+      body:
+        printHeading("Guest") +
+        printRow("Name", guestName) +
+        printRow("Phone", reservation.phone_number || "—") +
+        printRow("Email", reservation.email || "—") +
+        printRow("Status", reservation.reservation_status || "—") +
+        printHeading("Stay") +
+        printRow("Arrival", formatDate(reservation.arrival_date)) +
+        printRow("Departure", formatDate(reservation.departure_date)) +
+        printRow("Nights", reservation.no_of_nights ?? "—") +
+        printRow("Rooms", reservation.no_of_rooms ?? "—") +
+        printHeading("Rooms") +
+        `<table><thead><tr><th>S.No</th><th>Type</th><th>Room</th>` +
+        `<th>Rate</th><th class="num">Nights</th></tr></thead>` +
+        `<tbody>${roomRowsHtml || '<tr><td colspan="5">No rooms</td></tr>'}</tbody></table>` +
+        printHeading("Summary") +
+        printRow("Room amount", formatAmount(reservation.room_amount)) +
+        printRow("Tax", formatAmount(reservation.tax_amount)) +
+        printRow(
+          "Discount",
+          num(reservation.discount_amount)
+            ? `-${formatAmount(reservation.discount_amount)}`
+            : formatAmount(0),
+        ) +
+        printRow("Extra charges", formatAmount(reservation.extra_charges)) +
+        printRow("Overall", formatAmount(reservation.overall_amount), { total: true }) +
+        printRow("Paid", formatAmount(reservation.paid_amount)) +
+        printRow("Balance", formatAmount(reservation.balance_amount)),
+    });
 
-        <h3>Rooms</h3>
-        <table>
-          <thead><tr>
-            <th>S.No</th><th>Type</th><th>Room</th><th>Rate</th><th>Check-in</th><th>Check-out</th><th>Amount</th>
-          </tr></thead>
-          <tbody>${roomRowsHtml}</tbody>
-        </table>
-
-        <h3>Summary</h3>
-        <div class="summary">
-          <div><span>Total</span><span>${escapeHtml(formatAmount(reservation.total_amount))}</span></div>
-          <div><span>Tax</span><span>${escapeHtml(formatAmount(reservation.tax_amount))}</span></div>
-          <div><span>Discount</span><span>${num(reservation.discount_amount) ? `-${escapeHtml(formatAmount(reservation.discount_amount))}` : escapeHtml(formatAmount(0))}</span></div>
-          <div><span>Extra charges</span><span>${escapeHtml(formatAmount(reservation.extra_charges))}</span></div>
-          <div class="total"><span>Overall</span><span>${escapeHtml(formatAmount(reservation.overall_amount))}</span></div>
-          <div><span>Paid</span><span>${escapeHtml(formatAmount(reservation.paid_amount))}</span></div>
-          <div><span>Balance</span><span>${escapeHtml(formatAmount(reservation.balance_amount))}</span></div>
-        </div>
-
-        <script>window.addEventListener("load", function(){ window.print(); });</script>
-      </body></html>`;
-    printWindow.document.write(content);
-    printWindow.document.close();
+    if (!ok) setPrintBlocked(true);
   };
 
   // -----------------------------------------------------------------------
@@ -311,7 +184,12 @@ const ReservationModelView = () => {
     return (
       <div className="rmv-page">
         <div className="rmv-toolbar">
-          <button type="button" className="rmv-back-btn" onClick={handleBack} aria-label="Back to reservations">
+          <button
+            type="button"
+            className="rmv-back-btn"
+            onClick={handleBack}
+            aria-label="Back to reservations"
+          >
             <ArrowLeft size={16} aria-hidden="true" />
             <span>Back to reservations</span>
           </button>
@@ -327,7 +205,12 @@ const ReservationModelView = () => {
   return (
     <div className="rmv-page">
       <div className="rmv-toolbar">
-        <button type="button" className="rmv-back-btn" onClick={handleBack} aria-label="Back to reservations">
+        <button
+          type="button"
+          className="rmv-back-btn"
+          onClick={handleBack}
+          aria-label="Back to reservations"
+        >
           <ArrowLeft size={16} aria-hidden="true" />
           <span>Back</span>
         </button>
@@ -336,9 +219,9 @@ const ReservationModelView = () => {
           <button
             type="button"
             className="rmv-toolbar-btn"
-            onClick={handleRefresh}
+            onClick={reload}
             aria-label="Refresh reservation"
-            disabled={isLoading}
+            disabled={loading}
           >
             <RefreshCw size={16} aria-hidden="true" />
             <span>Refresh</span>
@@ -370,11 +253,28 @@ const ReservationModelView = () => {
       {error && (
         <div className="rmv-alert" role="alert">
           <span>{error}</span>
-          <button type="button" className="rmv-alert-action" onClick={handleRefresh}>Retry</button>
+          <button type="button" className="rmv-alert-action" onClick={reload}>
+            Retry
+          </button>
         </div>
       )}
 
-      {isLoading && (
+      {/* A blocked pop-up used to make Print do nothing at all, with no clue
+          as to why. */}
+      {printBlocked && (
+        <div className="rmv-alert" role="alert">
+          <span>The print window was blocked. Please allow pop-ups for this site.</span>
+          <button
+            type="button"
+            className="rmv-alert-action"
+            onClick={() => setPrintBlocked(false)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {loading && (
         <div className="rmv-loading" role="status" aria-live="polite">
           Loading reservation…
         </div>
@@ -387,7 +287,9 @@ const ReservationModelView = () => {
               <span className="rmv-eyebrow">Reservation</span>
               <h1 className="rmv-title">
                 #{reservation.room_reservation_id}
-                <span className={`rmv-status-badge ${getStatusBadgeClass(reservation.reservation_status)}`}>
+                <span
+                  className={`rmv-status-badge ${statusBadgeClass(reservation.reservation_status)}`}
+                >
                   {reservation.reservation_status || "—"}
                 </span>
               </h1>
@@ -400,155 +302,137 @@ const ReservationModelView = () => {
             )}
           </div>
 
-          <div className="Reservation-form-card">
-            <section aria-labelledby="rmv-guest-heading">
-              <h2 id="rmv-guest-heading" className="rmv-section-heading">Guest & Stay</h2>
-              <div className="Reservation-form">
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-guest">Guest Name</label>
-                  <input id="rmv-guest" type="text" value={guestName} readOnly />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-email">Email</label>
-                  <input id="rmv-email" type="text" value={reservation.email || ""} readOnly />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-phone">Phone Number</label>
-                  <input id="rmv-phone" type="text" value={reservation.phone_number || ""} readOnly />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-arrival">Arrival Date</label>
-                  <input id="rmv-arrival" type="text" value={formatDate(reservation.arrival_date)} readOnly />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-departure">Departure Date</label>
-                  <input id="rmv-departure" type="text" value={formatDate(reservation.departure_date)} readOnly />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-nights">Number of Nights</label>
-                  <input id="rmv-nights" type="text" value={reservation.no_of_nights ?? ""} readOnly />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-rooms">Number of Rooms</label>
-                  <input id="rmv-rooms" type="text" value={reservation.no_of_rooms ?? ""} readOnly />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-adults">Adults / Children</label>
-                  <input
-                    id="rmv-adults"
-                    type="text"
-                    value={`${reservation.no_of_adults ?? 0} adult(s), ${reservation.no_of_children ?? 0} child(ren)`}
-                    readOnly
-                  />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-type">Reservation Type</label>
-                  <input id="rmv-type" type="text" value={reservation.reservation_type || ""} readOnly />
-                </div>
-                <div className="Reservation-form-group">
-                  <label htmlFor="rmv-identity">Identity Type</label>
-                  <input id="rmv-identity" type="text" value={identityTypeLabel} readOnly />
-                </div>
-              </div>
-            </section>
+          {/*
+            Rendered as label/value pairs, not `<input readOnly>`.
+            This screen used to lay its data out as ten read-only inputs: tab
+            stops the keyboard had to walk through, values clipped to one line,
+            and the whole record reading as a form somebody had switched off.
+            DetailList is what the rest of the app's View surfaces use.
+          */}
+          <ViewSection title="Guest">
+            <DetailList columns={3}>
+              <DetailItem label="Guest Name" value={guestName} />
+              <DetailItem label="Phone Number" value={reservation.phone_number} />
+              <DetailItem label="Email" value={reservation.email} span={2} />
+              <DetailItem label="Identity Type" value={reservation.identity_type} />
+              <DetailItem label="Reservation Type" value={reservation.reservation_type} />
+            </DetailList>
+          </ViewSection>
 
-            <section aria-labelledby="rmv-invoice-heading" className="invoice-card">
-              <h2 id="rmv-invoice-heading" className="rmv-section-heading">Rooms & Charges</h2>
+          <ViewSection title="Stay">
+            <DetailList columns={3}>
+              <DetailItem label="Arrival Date" value={formatDate(reservation.arrival_date)} />
+              <DetailItem label="Departure Date" value={formatDate(reservation.departure_date)} />
+              <DetailItem label="Nights" value={reservation.no_of_nights} />
+              <DetailItem label="Rooms" value={reservation.no_of_rooms} />
+              <DetailItem
+                label="Occupancy"
+                value={`${reservation.no_of_adults ?? 0} adult(s), ${reservation.no_of_children ?? 0} child(ren)`}
+              />
+              <DetailItem label="Booked On" value={formatDateTime(reservation.created_at)} />
+              {reservation.room_complementary && (
+                <DetailItem
+                  label="Room Complementary"
+                  value={reservation.room_complementary}
+                  span={3}
+                />
+              )}
+              {reservation.common_complementary && (
+                <DetailItem
+                  label="Common Complementary"
+                  value={reservation.common_complementary}
+                  span={3}
+                />
+              )}
+            </DetailList>
+          </ViewSection>
 
-              {roomRows.length > 0 ? (
+          {reservation.cancellation_reason && (
+            <ViewSection title="Cancellation">
+              <DetailList columns={3}>
+                <DetailItem label="Reason" value={reservation.cancellation_reason} span={2} />
+                <DetailItem label="Cancelled At" value={formatDateTime(reservation.cancelled_at)} />
+                <DetailItem label="Cancelled By" value={reservation.cancelled_by} />
+              </DetailList>
+            </ViewSection>
+          )}
+
+          <ViewSection title="Rooms">
+            {roomRows.length > 0 ? (
+              <div className="rmv-table-scroll">
                 <table className="room-table">
-                  <caption className="rmv-sr-only">Room breakdown for this reservation</caption>
+                  <caption className="rmv-sr-only">Rooms on this reservation</caption>
                   <thead>
                     <tr>
                       <th scope="col">S.No.</th>
                       <th scope="col">Room Type</th>
                       <th scope="col">Room No</th>
-                      <th scope="col">Rate</th>
-                      <th scope="col">Check In</th>
-                      <th scope="col">Check Out</th>
-                      <th scope="col">Room Amount</th>
+                      <th scope="col">Rate Type</th>
+                      <th scope="col">Nights</th>
                     </tr>
                   </thead>
                   <tbody>
                     {roomRows.map((room) => (
-                      <tr key={room.sno}>
+                      <tr key={room.key}>
                         <td>{room.sno}</td>
                         <td>{room.roomType}</td>
                         <td>{room.roomNo}</td>
                         <td>{room.rateType}</td>
-                        <td>{room.checkIn}</td>
-                        <td>{room.checkOut}</td>
-                        <td>{formatAmount(room.price)}</td>
+                        <td>{room.nights}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              ) : (
-                <div className="rmv-empty inline">
-                  No room detail on this reservation yet.
-                </div>
-              )}
-
-              <div className="summary-wrapper">
-                <div className="summary">
-                  <div>
-                    <span>Total Amount</span>
-                    <span>{formatAmount(reservation.total_amount)}</span>
-                  </div>
-                  <div>
-                    <span>Tax ({num(reservation.tax_percentage)}% · {taxTypeLabel})</span>
-                    <span>{formatAmount(reservation.tax_amount)}</span>
-                  </div>
-                  <div>
-                    <span>Discount ({num(reservation.discount_percentage)}% · {discountTypeLabel})</span>
-                    <span>{num(reservation.discount_amount) ? `-${formatAmount(reservation.discount_amount)}` : formatAmount(0)}</span>
-                  </div>
-                  <div>
-                    <span>Extra Charges</span>
-                    <span>{formatAmount(reservation.extra_charges)}</span>
-                  </div>
-                  <div className="total">
-                    <span>Overall Amount</span>
-                    <span>{formatAmount(reservation.overall_amount)}</span>
-                  </div>
-                </div>
               </div>
+            ) : (
+              <div className="rmv-empty inline">No room detail on this reservation yet.</div>
+            )}
+          </ViewSection>
 
-              <h3 className="paid-title">Payment Summary</h3>
-              <table className="paid-table">
-                <caption className="rmv-sr-only">Payment summary and balance</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Item</th>
-                    <th scope="col">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Payment Method</td>
-                    <td>{paymentMethodLabel}</td>
-                  </tr>
-                  <tr>
-                    <td>Paid Amount</td>
-                    <td>{formatAmount(reservation.paid_amount)}</td>
-                  </tr>
-                  <tr>
-                    <td>Balance Amount</td>
-                    <td>{formatAmount(reservation.balance_amount)}</td>
-                  </tr>
-                  <tr>
-                    <td>Extra Amount</td>
-                    <td>{formatAmount(reservation.extra_amount)}</td>
-                  </tr>
-                </tbody>
-              </table>
+          <ViewSection title="Charges">
+            <DetailList columns={3}>
+              <DetailItem label="Room Amount" value={formatAmount(reservation.room_amount)} />
+              <DetailItem
+                label={`Tax${reservation.tax_name ? ` · ${reservation.tax_name}` : ""} (${num(reservation.tax_percentage)}%)`}
+                value={formatAmount(reservation.tax_amount)}
+              />
+              <DetailItem
+                label={`Discount${reservation.discount_name ? ` · ${reservation.discount_name}` : ""} (${num(reservation.discount_percentage)}%)`}
+                value={
+                  num(reservation.discount_amount)
+                    ? `-${formatAmount(reservation.discount_amount)}`
+                    : formatAmount(0)
+                }
+              />
+              <DetailItem label="Extra Charges" value={formatAmount(reservation.extra_charges)} />
+              {num(reservation.extra_bed_count) > 0 && (
+                <DetailItem
+                  label={`Extra Beds (${num(reservation.extra_bed_count)})`}
+                  value={formatAmount(reservation.extra_bed_cost)}
+                />
+              )}
+              <DetailItem label="Overall Amount" value={formatAmount(reservation.overall_amount)} />
+            </DetailList>
+          </ViewSection>
 
-              <h3 className="paid-title">Payment History</h3>
-              {paymentHistory.length === 0 ? (
-                <div className="rmv-empty inline">No payments recorded yet.</div>
-              ) : (
+          <ViewSection title="Payment">
+            <DetailList columns={3}>
+              <DetailItem label="Payment Method" value={reservation.payment_method} />
+              <DetailItem label="Payment State" value={reservation.payment_state} />
+              <DetailItem label="Paid Amount" value={formatAmount(reservation.paid_amount)} />
+              <DetailItem label="Balance Amount" value={formatAmount(reservation.balance_amount)} />
+              <DetailItem label="Extra Amount" value={formatAmount(reservation.extra_amount)} />
+            </DetailList>
+
+            <h3 className="paid-title">Payment History</h3>
+            {paymentHistory.length === 0 ? (
+              <div className="rmv-empty inline">No payments recorded yet.</div>
+            ) : (
+              <div className="rmv-table-scroll">
                 <table className="paid-table">
-                  <caption className="rmv-sr-only">Individual payments recorded against this reservation</caption>
+                  <caption className="rmv-sr-only">
+                    Individual payments recorded against this reservation
+                  </caption>
                   <thead>
                     <tr>
                       <th scope="col">Date</th>
@@ -559,16 +443,16 @@ const ReservationModelView = () => {
                   <tbody>
                     {paymentHistory.map((p) => (
                       <tr key={p.id}>
-                        <td>{p.paid_date}</td>
-                        <td>{p.payment_method}</td>
+                        <td>{formatDate(p.paid_date)}</td>
+                        <td>{p.payment_method || "—"}</td>
                         <td>{formatAmount(p.amount)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              )}
-            </section>
-          </div>
+              </div>
+            )}
+          </ViewSection>
         </>
       )}
     </div>

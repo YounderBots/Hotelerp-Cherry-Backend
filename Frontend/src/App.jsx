@@ -8,6 +8,7 @@ import findMenuByPath from './functions/locationFunctions';
 import { ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
 import { useAuth } from './Context/AuthContext';
+import useIdleLock from './hooks/useIdleLock';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFound from './components/NotFound';
 import RequirePage from './components/RequirePage';
@@ -15,7 +16,6 @@ import RequirePage from './components/RequirePage';
 // These six were static imports, which pulled them into the entry bundle and
 // defeated the code splitting every other page gets.
 const ReservationModelView = lazy(() => import('./Hotel/Reservation/ReservationModelView'));
-const ReservationListEdit = lazy(() => import('./Hotel/Reservation/ReservationListEdit'));
 const Roles = lazy(() => import('./Hotel/HRM/Roles'));
 const Department = lazy(() => import('./Hotel/HRM/Department'));
 const Designation = lazy(() => import('./Hotel/HRM/Designation'));
@@ -35,6 +35,7 @@ const AddNewReservation = lazy(() => import('./Hotel/Reservation/AddNewReservati
 const Booking = lazy(() => import('./Hotel/Reservation/Booking'));
 const RoomView = lazy(() => import('./Hotel/Reservation/RoomView'));
 const ReservationView = lazy(() => import('./Hotel/Reservation/ReservationView'));
+const NightAuditDashboard = lazy(() => import('./Hotel/Night Audit/NightAuditDashboard'));
 const UserReserved = lazy(() => import('./Hotel/Night Audit/UserReserved'));
 const RoomBooked = lazy(() => import('./Hotel/Night Audit/RoomBooked'));
 const SettlementSummary = lazy(() => import('./Hotel/Night Audit/SettlementSummary'));
@@ -404,7 +405,19 @@ const AppLayout = () => {
   const [activeMenu, setActiveMenu] = useState(null);
   const [activePath, setActivePath] = useState([0]);
   const location = useLocation();
+  const navigate = useNavigate();
   const { menus } = useAuth();
+
+  // An unattended terminal goes to the lock screen rather than sitting on a
+  // signed-in application until the token expires an hour later. The lock
+  // screen has existed, complete, since it was written; nothing navigated to
+  // it. `next` brings the user back to where they were once they unlock.
+  useIdleLock(() => {
+    const here = `${location.pathname}${location.search}`;
+    navigate(`/authentication/lockscreen?next=${encodeURIComponent(here)}`, {
+      replace: true,
+    });
+  });
 
   // The sidebar is the RBAC menu payload when there is one, the static MENU
   // otherwise, so the shell always renders something usable. This was state
@@ -520,11 +533,15 @@ const App = () => {
                 <ReservationModelView />
               </Page>
             } />
-            <Route path="/ReservationEdit" element={
-              <Page>
-                <ReservationListEdit />
-              </Page>
-            } />
+            {/*
+              /ReservationEdit and its ReservationListEdit screen are gone.
+              Nothing in the app ever navigated there -- the route was its only
+              mention -- and the RBAC map generator had been reporting it as an
+              unreachable route for the same reason. Editing lives in the
+              Reservation list, which opens a modal from a row action and
+              prices the change through the server's quote; a second edit
+              surface would have been a second place for money to be computed.
+            */}
             <Route path="/add_new_reservation" element={
               <Page>
                 <AddNewReservation />
@@ -543,6 +560,15 @@ const App = () => {
             <Route path="/reservation_view" element={
               <Page>
                 <ReservationView />
+              </Page>
+            } />
+            {/* The night audit PROCESS screen — the only page in the module
+                that writes anything. It was built complete and then never
+                routed, so `POST /hotel/night_audit/run` and the four reads
+                beside it had no caller and the gateway denied them. */}
+            <Route path="/night_audit" element={
+              <Page>
+                <NightAuditDashboard />
               </Page>
             } />
             <Route path="/user_reserved_details" element={

@@ -133,3 +133,10 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* A single photo slot inside a form or View modal — an employee's photo, say.
+   Two screens carried `style={{maxWidth:180}}` and `style={{maxWidth:200}}`
+   inline for this, which is the same slot at two sizes. */
+.image-picker-slot--single {
+  max-width: 200px;
+}

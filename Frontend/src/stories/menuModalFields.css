@@ -109,3 +109,63 @@
   min-height: 40px;
   font-size: 14px;
 }
+
+/* A stored menu photo, shown through ImagePicker so it can be fetched with the
+   session token. Two sizes: a table cell and the View modal's header image.
+   Both were inline `style={{width,height,objectFit,borderRadius}}` on a raw
+   <img> that could never load. */
+.menu-thumb {
+  display: inline-block;
+}
+
+.menu-thumb .image-picker__slot {
+  min-height: 0;
+}
+
+.menu-thumb--cell {
+  width: 44px;
+}
+
+.menu-thumb--cell .image-picker__slot {
+  height: 44px;
+  border-radius: var(--border-radius-md);
+}
+
+.menu-thumb--cell .image-picker__placeholder span:last-child {
+  /* No room for "No image" in a 44px cell; the icon carries it. */
+  display: none;
+}
+
+.menu-view__hero {
+  margin-bottom: var(--spacing-md);
+}
+
+.menu-view__hero .menu-thumb--hero,
+.menu-view__hero .menu-thumb--hero .image-picker {
+  width: 100%;
+}
+
+.menu-view__hero .image-picker__slot {
+  height: 180px;
+}
+
+/* Name / price / type plus an Add button, under a repeatable row editor. */
+.menu-inline-add {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto;
+  gap: var(--spacing-sm);
+  align-items: end;
+  margin-top: var(--spacing-sm);
+}
+
+/* The modifier row carries a type select as well. */
+.menu-inline-add:has(> :nth-child(4)) {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+@media (max-width: 640px) {
+  .menu-inline-add,
+  .menu-inline-add:has(> :nth-child(4)) {
+    grid-template-columns: 1fr;
+  }
+}

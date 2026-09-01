@@ -10,7 +10,7 @@ import ViewSection from "../stories/ViewSection";
 import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
 import APICall from "../APICalls/APICalls";
-import { mediaUrl, readList } from "../functions/apiHelpers";
+import { readList } from "../functions/apiHelpers";
 import { useApiResources } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
 
@@ -140,14 +140,17 @@ const Rooms = () => {
       max_adult: row.max_adult ?? "",
       max_child: row.max_child ?? "",
       room_status: row.room_status || "",
-      // Stored paths are site-absolute ("/templates/static/..."), which the
-      // browser would resolve against the frontend origin. mediaUrl() points
-      // them at the API instead.
+      // Stored paths are kept as the API returns them ("/templates/static/
+      // ..."). ImagePicker fetches them through the gateway with the session
+      // token (authPrefix below); they used to be rewritten to an absolute URL
+      // and handed to a plain <img src>, which carries no Authorization header
+      // and was therefore answered 401 — every room photo rendered as an empty
+      // slot.
       images: [
-        mediaUrl(row.images?.image_1),
-        mediaUrl(row.images?.image_2),
-        mediaUrl(row.images?.image_3),
-        mediaUrl(row.images?.image_4),
+        row.images?.image_1 || null,
+        row.images?.image_2 || null,
+        row.images?.image_3 || null,
+        row.images?.image_4 || null,
       ],
     });
     setShowModal(true);
@@ -220,10 +223,10 @@ const Rooms = () => {
 
   const viewImages = viewData
     ? [
-        mediaUrl(viewData.images?.image_1),
-        mediaUrl(viewData.images?.image_2),
-        mediaUrl(viewData.images?.image_3),
-        mediaUrl(viewData.images?.image_4),
+        viewData.images?.image_1,
+        viewData.images?.image_2,
+        viewData.images?.image_3,
+        viewData.images?.image_4,
       ].filter(Boolean)
     : [];
 
@@ -326,7 +329,13 @@ const Rooms = () => {
           <ViewSection title="Images">
             <div className="image-picker-grid">
               {viewImages.map((img, i) => (
-                <ImagePicker key={img} label={`Image ${i + 1}`} value={img} readOnly />
+                <ImagePicker
+                  key={img}
+                  label={`Image ${i + 1}`}
+                  value={img}
+                  authPrefix="/masterdata"
+                  readOnly
+                />
               ))}
             </div>
           </ViewSection>
@@ -440,6 +449,7 @@ const Rooms = () => {
                 key={i}
                 label={`Image ${i + 1}`}
                 value={formData.images[i]}
+                authPrefix="/masterdata"
                 onChange={(file) => setImage(i, file)}
                 onClear={() => setImage(i, null)}
                 disabled={saving}

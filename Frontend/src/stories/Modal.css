@@ -231,6 +231,18 @@
   gap: 18px 20px;
 }
 
+/* One field that must occupy the whole row of a field grid — a notes textarea,
+   an address line, a form-level error. Twenty-six call sites wrote this as
+   `style={{gridColumn:'1 / -1'}}` on a wrapper div, which spanned correctly but
+   put the field's .form-group inside a plain div rather than the grid, so it
+   kept the margin-bottom the grid's gap is supposed to replace and every
+   full-width field sat on a taller row than the ones beside it. The class is
+   listed in FormField.css's margin reset, so it spans AND spaces correctly. */
+.field-full {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 /* A titled block inside a modal body — a group of fields that is not part of
    the main grid. */
 .modal-section {

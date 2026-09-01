@@ -1,0 +1,82 @@
+/* OrderDetail.css — the order-detail modal, shared by the restaurant and
+   bar order screens.
+   Both used per-element inline styles for these three blocks (a flex row of
+   min-widths, a 12px note in a hardcoded #64748b, a status line built from
+   <strong> and &nbsp;), which is why neither collapsed on a phone. */
+
+/* Status / payment / total, above the item list. */
+.order-detail__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-xl);
+  margin-bottom: var(--spacing-md);
+}
+
+.order-detail__summary > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.order-detail__summary b {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* A line item's special instructions, under its name. */
+.order-item__note {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* The add-an-item row. Three fields and a button on a wide screen; the fields
+   stack and the button goes full width on a phone. */
+.order-add-item {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: var(--spacing-md);
+  align-items: end;
+}
+
+/* With a variant select present the row carries four fields, so the item and
+   note columns give up some width rather than pushing the button off-screen. */
+.order-add-item:has(> :nth-child(5)) {
+  grid-template-columns:
+    minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 0.8fr)
+    minmax(0, 1.6fr) auto;
+}
+
+@media (max-width: 900px) {
+  .order-add-item,
+  .order-add-item:has(> :nth-child(5)) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .order-add-item,
+  .order-add-item:has(> :nth-child(5)) {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The Add button is the last child in every arrangement. */
+.order-add-item > button:last-child {
+  /* Sits on the same baseline as the inputs beside it rather than stretching
+     to the height of a field plus its label. */
+  align-self: end;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .order-add-item > button:last-child {
+    width: 100%;
+  }
+}

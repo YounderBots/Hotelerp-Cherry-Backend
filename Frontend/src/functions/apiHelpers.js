@@ -19,7 +19,7 @@
  * reader it already had.
  */
 
-import { ApiError, baseURL } from "../APICalls/APICalls";
+import { ApiError } from "../APICalls/APICalls";
 
 /** Message from an ApiError, else the caller's fallback. */
 export const errMsg = (err, fallback) =>
@@ -35,23 +35,15 @@ export const readNestedList = (res) => {
     return [];
 };
 
-/**
- * Absolute URL for a stored upload.
+/*
+ * `mediaUrl()` used to live here: it rewrote a stored upload path
+ * ("/templates/static/...") to an absolute URL on the API origin, for use as an
+ * <img src>. That could never work. Uploads sit behind the same authenticated
+ * gateway proxy as the JSON API, and a browser sends no Authorization header on
+ * a plain subresource request, so every room photo and employee photo it
+ * produced was answered 401 and rendered as an empty slot.
  *
- * The API returns image paths as site-absolute strings ("/templates/static/
- * upload_image/<file>.jpg"). Rendered straight into an <img src>, the browser
- * resolves those against the FRONTEND origin, where the Vite dev server
- * answers any unknown path with index.html — so every room photo silently
- * loaded an HTML document and rendered as a broken image.
- *
- * Resolving against the API origin is the correct target. Note that the
- * gateway does not currently expose /templates (only MasterDataServices does,
- * on its localhost-only port), so these still need a gateway route before they
- * will actually load; consumers should handle the failure rather than assume
- * an image appears.
+ * The working approach is to fetch the bytes with the session token and show
+ * them from an object URL — hooks/useAuthedMedia.js, used by ImagePicker's
+ * `authPrefix` prop and by stories/AttachmentPreview.jsx.
  */
-export const mediaUrl = (path) => {
-    if (!path || typeof path !== "string") return null;
-    if (/^(https?:|blob:|data:)/i.test(path)) return path;
-    return `${baseURL}${path.startsWith("/") ? "" : "/"}${path}`;
-};

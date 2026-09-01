@@ -53,7 +53,8 @@
   .modal__body--view,
   .form-row,
   .form-body,
-  .field-grid
+  .field-grid,
+  .field-full
 ) > .form-group {
   margin-bottom: 0;
 }

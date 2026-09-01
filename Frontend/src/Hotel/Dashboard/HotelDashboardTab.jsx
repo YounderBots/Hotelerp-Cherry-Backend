@@ -18,15 +18,19 @@ const HotelDashboardTab = () => {
   const navigate = useNavigate();
   const mounted = useRef(true);
 
-  const [reservations, setReservations] = useState(null); // null = loading
+  const [summary, setSummary] = useState(null); // null = loading
   const [rooms, setRooms] = useState(null);
+  const [dailyRevenue, setDailyRevenue] = useState(0);
   const [activity, setActivity] = useState(null);
   const [errors, setErrors] = useState({ reservations: null, rooms: null, activity: null });
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // One value for "today", used by both dated report calls below.
+  const today = isoDay(new Date().toISOString());
+
   useEffect(() => {
     mounted.current = true;
-    setReservations(null);
+    setSummary(null);
     setRooms(null);
     setActivity(null);
     setErrors({ reservations: null, rooms: null, activity: null });
@@ -37,15 +41,27 @@ const HotelDashboardTab = () => {
       : Promise.reject(new ApiError("Company context unavailable.", { status: 0, code: "no_company" }));
 
     Promise.allSettled([
-      APICall.getT("/hotel/room_reservation"),
+      // A SUMMARY, not the whole book.
+      //
+      // This used to be `getT("/hotel/room_reservation")` -- every reservation
+      // ever made, downloaded to derive three counts and a five-row panel. That
+      // also handed this screen every guest's phone number and email, neither of
+      // which it renders, so opening the Dashboard meant receiving a complete
+      // guest contact list. The summary returns the counts and the rows this
+      // page actually draws, and carries no contact details at all.
+      APICall.getT("/hotel/reports/reservation_summary", { report_date: today }),
       APICall.getT("/masterdata/room"),
       activityCall,
-    ]).then(([rRes, rRoom, rAct]) => {
+      // Same correction as OverviewTab: revenue for a DAY, from the dated
+      // report, rather than the sum of every reservation in the book.
+      APICall.getT("/hotel/reports/daily_sales", { report_date: today }),
+    ]).then(([rRes, rRoom, rAct, rSales]) => {
       if (!mounted.current) return;
 
-      setReservations(rRes.status === "fulfilled" ? Array.isArray(rRes.value?.data) ? rRes.value.data : [] : []);
+      setSummary(rRes.status === "fulfilled" ? rRes.value?.data || null : null);
       setRooms(rRoom.status === "fulfilled" ? Array.isArray(rRoom.value?.data) ? rRoom.value.data : [] : []);
       setActivity(rAct.status === "fulfilled" ? rAct.value?.data || { room_activity: [], housekeeping_activity: [] } : { room_activity: [], housekeeping_activity: [] });
+      setDailyRevenue(rSales.status === "fulfilled" ? Number(rSales.value?.data?.grand_total) || 0 : 0);
 
       setErrors({
         reservations: rRes.status === "rejected" ? (rRes.reason?.message || "Failed to load bookings.") : null,
@@ -55,12 +71,10 @@ const HotelDashboardTab = () => {
     });
 
     return () => { mounted.current = false; };
-  }, [user?.company_id, refreshTick]);
+  }, [user?.company_id, refreshTick, today]);
 
-  const today = isoDay(new Date().toISOString());
 
   const kpis = useMemo(() => {
-    const rList = reservations || [];
     const roomList = rooms || [];
 
     const availableRooms = roomList.filter((r) => {
@@ -68,16 +82,17 @@ const HotelDashboardTab = () => {
       return bs === "available" || bs === "";
     }).length;
 
-    const arrivingToday = rList.filter((r) => isoDay(r?.arrival_date) === today).length;
-    const departingToday = rList.filter((r) => isoDay(r?.departure_date) === today).length;
-    const newBookingsToday = rList.filter((r) => isoDay(r?.created_at) === today).length;
-    const totalRevenue = rList.reduce((sum, r) => {
-      const v = Number(r?.overall_amount);
-      return Number.isFinite(v) ? sum + v : sum;
-    }, 0);
+    // Counted by the server across the whole book, not by filtering whatever
+    // rows happened to be downloaded.
+    const arrivingToday = Number(summary?.arrivals_today) || 0;
+    const departingToday = Number(summary?.departures_today) || 0;
+    const newBookingsToday = Number(summary?.new_bookings_today) || 0;
+    // Revenue for TODAY, from the dated report -- not the sum of every
+    // reservation in the book, which is what this used to be.
+    const totalRevenue = dailyRevenue;
 
     return { availableRooms, arrivingToday, departingToday, newBookingsToday, totalRevenue };
-  }, [reservations, rooms, today]);
+  }, [summary, rooms, dailyRevenue]);
 
   const roomsByStatus = useMemo(() => {
     const roomList = rooms || [];
@@ -99,8 +114,8 @@ const HotelDashboardTab = () => {
   }, [rooms]);
 
   const recentBookings = useMemo(
-    () => (reservations || []).slice(0, 5),
-    [reservations],
+    () => summary?.recent_bookings || [],
+    [summary],
   );
 
   const recentActivityItems = useMemo(() => {
@@ -134,7 +149,7 @@ const HotelDashboardTab = () => {
   const handleRefresh = () => setRefreshTick((n) => n + 1);
   const handleAddBooking = () => navigate("/add_new_reservation");
 
-  const anyLoading = reservations === null || rooms === null || activity === null;
+  const anyLoading = summary === null || rooms === null || activity === null;
 
   return (
     <div className="dashboard-wrapper container-fluid" aria-busy={anyLoading}>
@@ -143,7 +158,7 @@ const HotelDashboardTab = () => {
           <KPISection
             displayName={displayName}
             kpis={kpis}
-            loading={reservations === null || rooms === null}
+            loading={summary === null || rooms === null}
             error={errors.reservations || errors.rooms}
             onAddBooking={handleAddBooking}
             onRefresh={handleRefresh}
@@ -173,7 +188,7 @@ const HotelDashboardTab = () => {
           <div className="booking-list-wrap full-height">
             <BookingTable
               bookings={recentBookings}
-              loading={reservations === null}
+              loading={summary === null}
               error={errors.reservations}
               onViewAll={() => navigate("/reservation")}
               onRowClick={(booking) =>

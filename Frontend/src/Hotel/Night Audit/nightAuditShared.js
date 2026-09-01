@@ -8,70 +8,24 @@
 // screen ended up with a different balance rounding rule from the table beside
 // it.
 
-/** Amount as the app formats money everywhere else: grouped, no decimals. */
-const currencyFmt = new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-});
-
-/** Amount with cents, for anything that has to reconcile to the paisa. */
-const preciseFmt = new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-});
-
-const countFmt = new Intl.NumberFormat(undefined);
-
-export const num = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-};
-
-export const formatCurrency = (v) =>
-    v === null || v === undefined ? "—" : currencyFmt.format(Math.round(num(v)));
-
-export const formatPrecise = (v) =>
-    v === null || v === undefined ? "—" : preciseFmt.format(num(v));
-
-export const formatCount = (v) =>
-    v === null || v === undefined ? "—" : countFmt.format(num(v));
-
-export const formatPercent = (v) =>
-    v === null || v === undefined ? "—" : `${preciseFmt.format(num(v))}%`;
-
-/**
- * A business date as text.
- *
- * Takes the 'YYYY-MM-DD' the API sends and formats it WITHOUT going through
- * `new Date(...)`. That matters: `new Date("2026-08-01")` parses as midnight
- * UTC, so west of Greenwich it renders as 31 July. A business date is a plain
- * calendar label, not an instant, and must never shift with the viewer's
- * timezone -- an audit for the 1st has to read as the 1st in every office.
- */
-export const formatDate = (value) => {
-    if (!value) return "—";
-    const text = String(value).slice(0, 10);
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-    if (!match) return String(value);
-    const [, y, m, d] = match;
-    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
-};
-
-/** A date-time stamp (started_at / completed_at). These ARE instants. */
-export const formatDateTime = (value) => {
-    if (!value) return "—";
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return String(value);
-    return `${formatDate(value)} · ${d.toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-    })}`;
-};
-
-/** 'YYYY-MM-DD' for a date input, without a timezone round trip. */
-export const isoDay = (value) => (value ? String(value).slice(0, 10) : "");
+// The formatters these screens use now live in functions/formatters.js, so the
+// Reservation screens share ONE implementation with Night Audit rather than
+// keeping their own drifting copies -- two of which formatted calendar dates
+// through `new Date(...)` and shifted them a day west of Greenwich.
+//
+// Re-exported rather than re-pointed at every import site: this file is the
+// Night Audit vocabulary, and `import { formatCurrency } from "./nightAuditShared"`
+// stays the right thing for these screens to say.
+export {
+    num,
+    formatCurrency,
+    formatPrecise,
+    formatCount,
+    formatPercent,
+    formatDate,
+    formatDateTime,
+    isoDay,
+} from "../../functions/formatters.js";
 
 /**
  * The reservation_status vocabulary, straight from the `reservation_status`

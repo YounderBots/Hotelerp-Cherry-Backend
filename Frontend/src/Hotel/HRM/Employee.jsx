@@ -12,7 +12,7 @@ import ViewSection from "../../stories/ViewSection";
 import ErrorAlert from "../../stories/ErrorAlert";
 import Toast from "../../stories/Toast";
 import APICall from "../../APICalls/APICalls";
-import { mediaUrl, readList } from "../../functions/apiHelpers";
+import { readList } from "../../functions/apiHelpers";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
 
@@ -208,7 +208,7 @@ const Employee = () => {
       emergency_contact: row.emergency_contact ?? "",
       emergency_relationship: row.emergency_relationship ?? "",
       acknowledgment_of_hotel_policies: Boolean(row.acknowledgment_of_hotel_policies),
-      photo: mediaUrl(row.photo),
+      photo: row.photo || null,
     });
     setEditId(row.id);
     setShowModal(true);
@@ -383,8 +383,13 @@ const Employee = () => {
             <DetailItem label="Full Name" value={viewData && fullName(viewData)} />
           </DetailList>
           {viewData?.photo && (
-            <div style={{ maxWidth: 180, marginTop: "var(--spacing-md)" }}>
-              <ImagePicker label="Photo" value={mediaUrl(viewData.photo)} readOnly />
+            <div className="image-picker-slot--single">
+              <ImagePicker
+                label="Photo"
+                value={viewData.photo}
+                authPrefix="/user"
+                readOnly
+              />
             </div>
           )}
         </ViewSection>
@@ -560,10 +565,11 @@ const Employee = () => {
               ? "The update endpoint does not accept a photo, so this can only be set when the employee is created."
               : `Optional. JPG or PNG, up to ${MAX_PHOTO_MB} MB.`}
           </p>
-          <div style={{ maxWidth: 200 }}>
+          <div className="image-picker-slot--single">
             <ImagePicker
               label="Employee Photo"
               value={formData.photo}
+              authPrefix="/user"
               readOnly={!!editId}
               disabled={saving}
               accept="image/jpeg,image/png"

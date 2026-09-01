@@ -1,0 +1,61 @@
+/* ReportPage.css — the shell the restaurant and bar reporting screens share:
+   a date control under the tab strip, and the day's summary above the table.
+
+   Both screens built these out of inline styles on a `page-card` div — a class
+   that is not defined anywhere in the app, so the "card" was a plain block with
+   no background, border or radius, and the summary was a row of <strong> tags
+   that wrapped raggedly on anything narrower than a laptop. */
+
+.report-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+}
+
+/* One field's worth of width, not the full row. */
+.report-controls .form-group {
+  max-width: 220px;
+}
+
+@media (max-width: 480px) {
+  .report-controls .form-group {
+    max-width: none;
+  }
+}
+
+/* The day's headline figures. */
+.report-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-lg);
+}
+
+.report-summary__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.report-summary__label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.report-summary__value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  /* A long total must shrink rather than push the grid wider than the page. */
+  overflow-wrap: anywhere;
+}

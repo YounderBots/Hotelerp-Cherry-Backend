@@ -50,6 +50,7 @@ export const MENU = [
         label: "Night Audit",
         icon: "night-auditing",
         children: [
+            { label: "Run Night Audit", path: "/night_audit" },
             { label: "User Reserved Details", path: "/user_reserved_details" },
             { label: "Room Booked Details", path: "/room_booked_details" },
             { label: "Settlement Summary", path: "/settlement_summary" },

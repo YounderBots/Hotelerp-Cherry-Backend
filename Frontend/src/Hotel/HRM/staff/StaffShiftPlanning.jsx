@@ -12,6 +12,7 @@ import Toast from "../../../stories/Toast";
 import { LogIn, LogOut } from "lucide-react";
 import { useApiResources } from "../../../hooks/useApiResource";
 import { useToast } from "../../../hooks/useToast";
+import { todayIso } from "../../../functions/formatters";
 
 /**
  * Shift scheduling + clock in/out, shared by the Restaurant and Bar screens.
@@ -26,7 +27,6 @@ import { useToast } from "../../../hooks/useToast";
  * imports. Putting both venues' literals in this shared file would grant the
  * Restaurant page the Bar endpoints and vice versa.
  */
-const todayIso = () => new Date().toISOString().slice(0, 10);
 
 /** "2026-08-06" -> "06 Aug 2026". The raw ISO string wrapped onto three lines
  *  in the Date column and read as machine output rather than a date. */

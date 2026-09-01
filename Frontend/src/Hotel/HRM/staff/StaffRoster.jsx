@@ -9,6 +9,7 @@ import ErrorAlert from "../../../stories/ErrorAlert";
 import Toast from "../../../stories/Toast";
 import { useApiResources } from "../../../hooks/useApiResource";
 import { useToast } from "../../../hooks/useToast";
+import { todayIso } from "../../../functions/formatters";
 
 /**
  * Today's floor roster, shared by the Restaurant and Bar screens.
@@ -20,7 +21,6 @@ import { useToast } from "../../../hooks/useToast";
  * API literals live in the per-venue wrapper — see the note in
  * StaffShiftPlanning.jsx for why.
  */
-const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, api }) => {
   const {

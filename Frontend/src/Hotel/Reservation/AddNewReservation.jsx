@@ -51,7 +51,9 @@ const readList = (res) =>
 const errMsg = (err, fallback) =>
   err instanceof ApiError && err.message ? err.message : fallback;
 
-const roomTypeLabel = (t) => t?.room_type_name || t?.room_type || `#${t?.id}`;
+// A room type with neither name reads as "Unnamed room type": showing its
+// row number in a picker the front desk chooses from helps nobody.
+const roomTypeLabel = (t) => t?.room_type_name || t?.room_type || "Unnamed room type";
 
 const nightsBetween = (start, end) => {
   if (!start || !end) return 0;

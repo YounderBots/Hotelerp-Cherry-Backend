@@ -243,7 +243,9 @@ const User = () => {
                 {menus.map((menu) => {
                   const row = matrix[menu.id] || EMPTY_ROW;
                   const allOn = PERMISSIONS.every((p) => row[p.matrix]);
-                  const name = menu.menu_name || `#${menu.id}`;
+                  // A module with no name is a data problem; "#12" as its label
+                  // just moves the confusion into the permissions matrix.
+                  const name = menu.menu_name || "Unnamed module";
                   return (
                     <tr key={menu.id}>
                       <td className="permission-table__module" data-label="Module">{name}</td>

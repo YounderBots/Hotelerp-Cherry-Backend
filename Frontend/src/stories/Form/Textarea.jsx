@@ -1,5 +1,5 @@
 // Textarea.jsx
-import React from 'react';
+import React, { useId } from 'react';
 import './FormField.css';
 import './Textarea.css';
 
@@ -41,14 +41,24 @@ const Textarea = ({
     className
   ].filter(Boolean).join(' ');
 
+  // Same fix as Input and Select: the label was a bare <label> with no
+  // `htmlFor`, and the textarea its sibling, so nothing tied them together.
+  // A caller-supplied `id` still wins.
+  const generatedId = useId();
+  const textareaId = props.id || `textarea-${generatedId}`;
+
   return (
     <div className="form-group" style={{ width: fullWidth ? '100%' : 'auto' }}>
       {label && (
-        <label className={`form-label ${required ? 'form-label--required' : ''}`}>
+        <label
+          htmlFor={textareaId}
+          className={`form-label ${required ? 'form-label--required' : ''}`}
+        >
           {label}
         </label>
       )}
       <textarea
+        id={textareaId}
         className={textareaClasses}
         placeholder={placeholder}
         value={value}
@@ -56,10 +66,16 @@ const Textarea = ({
         disabled={disabled}
         rows={rows}
         maxLength={maxLength}
+        aria-describedby={helperText ? `${textareaId}-helper` : undefined}
+        aria-invalid={error || undefined}
+        aria-required={required || undefined}
         {...props}
       />
       {helperText && (
-        <span className={`form-helper ${error ? 'form-helper--error' : ''}`}>
+        <span
+          id={`${textareaId}-helper`}
+          className={`form-helper ${error ? 'form-helper--error' : ''}`}
+        >
           {helperText}
         </span>
       )}

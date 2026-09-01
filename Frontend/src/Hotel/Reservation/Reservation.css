@@ -3160,14 +3160,30 @@ input[type="number"] {
   min-width: 0;
 }
 
+/*
+  The guest name is what identifies the card, so it wraps to a second line
+  rather than being clipped. It was `white-space: nowrap` with an ellipsis on a
+  single line, which -- once the status badge beside it took its share of the
+  row -- truncated names as short as "Ms. Pooja Bhatt" to "Ms. Pooja Bha...".
+  Two lines is the cap; beyond that a name is clamped rather than growing the
+  card and breaking the grid's alignment.
+*/
 .rvv-card-guest h4 {
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
   color: var(--secondary-dark, #111827);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* The badge keeps its own width so it never squeezes the name. */
+.rvv-card-top > .rmv-status-badge {
+  flex: 0 0 auto;
 }
 
 .rvv-card-id {
@@ -3198,7 +3214,12 @@ input[type="number"] {
   color: var(--text-primary, #111827);
 }
 
-.rvv-card-dates label {
+/*
+  `span`, not `label`. These caption the card's three stay figures; they label
+  no form control, and a <label> that points at nothing is a promise to
+  assistive tech that the markup cannot keep.
+*/
+.rvv-card-dates span {
   font-size: 0.7rem;
   color: var(--text-muted, #6b7280);
   font-weight: 600;
@@ -3643,4 +3664,40 @@ input[type="number"] {
 .res-checkout-option-note {
   font-size: 0.75rem;
   color: var(--text-muted, #64748b);
+}
+
+/* -------------------------------------------------------------------------
+   Reservation detail — table overflow
+
+   The room and payment tables are the only wide content on the detail screen.
+   They scroll inside their own container so the PAGE never scrolls sideways
+   on a narrow viewport, which is the rule the rest of the app follows.
+   ------------------------------------------------------------------------- */
+.rmv-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rmv-table-scroll > table {
+  min-width: 32rem;
+}
+
+/* -------------------------------------------------------------------------
+   List truncation notice
+
+   Shown only when the reservation list endpoint returned fewer rows than the
+   book holds. Informational rather than an error: nothing is wrong, but the
+   search box below covers only what is on screen and the user has to know it.
+   ------------------------------------------------------------------------- */
+.res-truncation-note {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border-light, #e5e7eb);
+  border-left: 3px solid var(--primary-color, #850126);
+  border-radius: var(--border-radius, 8px);
+  background: var(--surface-muted, #fafafa);
+  color: var(--text-muted, #4b5563);
+  font-size: 0.8rem;
+  line-height: 1.5;
 }

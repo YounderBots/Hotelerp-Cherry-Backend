@@ -75,6 +75,37 @@ export const AuthProvider = ({ children }) => {
         return () => setUnauthorizedHandler(null);
     }, []);
 
+    // Sign-out has to reach the other tabs.
+    //
+    // `logout()` clears localStorage, but each tab keeps its own React copy of
+    // the token, so a second tab went on believing it was signed in: its
+    // `isAuthenticated()` read the state, not storage, and it kept rendering
+    // the app until something happened to trigger a 401. Signing out on a
+    // shared front-desk machine therefore did not sign the machine out.
+    //
+    // The `storage` event only fires in the OTHER documents on the origin,
+    // which is exactly the ones that need telling.
+    useEffect(() => {
+        if (typeof window === "undefined") return undefined;
+        const onStorage = (e) => {
+            if (e.key !== null && e.key !== TOKEN_KEY) return;
+            const stored = readToken();
+            if (stored) {
+                // Signed in elsewhere (or the value changed): adopt it rather
+                // than leaving this tab on a token that is no longer current.
+                setToken(stored);
+                setUser(readJson(USER_KEY, null));
+                setMenus(readJson(MENUS_KEY, []));
+            } else {
+                setToken(null);
+                setUser(null);
+                setMenus([]);
+            }
+        };
+        window.addEventListener("storage", onStorage);
+        return () => window.removeEventListener("storage", onStorage);
+    }, []);
+
     const value = useMemo(
         () => ({ user, menus, token, login, logout, isAuthenticated }),
         [user, menus, token, login, logout, isAuthenticated],

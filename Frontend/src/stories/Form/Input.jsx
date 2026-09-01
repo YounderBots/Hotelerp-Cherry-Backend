@@ -1,5 +1,5 @@
 // Input.jsx
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 // Shared field metrics first, input-specific chrome second, so Input.css can
 // build on the tokens FormField.css defines.
 import './FormField.css';
@@ -30,6 +30,20 @@ const Input = ({
   ...props
 }) => {
   const [showPassword, setShowPassword] = useState(false);
+
+  // WHY THIS COMPONENT GENERATES AN ID
+  //
+  // The label was rendered as a bare <label> with no `htmlFor`, and the input
+  // as its SIBLING rather than nested inside it -- so nothing connected the
+  // two. Every Input in the product therefore had a visible label and no
+  // accessible one: a screen reader announced "edit text, blank", and clicking
+  // the label did not focus the field. Select next to it did this correctly,
+  // which is why the two behaved differently in the same form.
+  //
+  // A caller-supplied `id` still wins, so an existing `htmlFor` or a test
+  // selecting by id keeps working.
+  const generatedId = useId();
+  const inputId = props.id || `input-${generatedId}`;
 
   const getInputType = () => {
     if (type === 'password' && showPassword) return 'text';
@@ -62,12 +76,16 @@ const Input = ({
   const renderInput = () => {
     const baseInput = (
       <input
+        id={inputId}
         type={getInputType()}
         className={inputClasses}
         placeholder={placeholder}
         value={value}
         onChange={onChange}
         disabled={disabled}
+        aria-describedby={helperText ? `${inputId}-helper` : undefined}
+        aria-invalid={error || undefined}
+        aria-required={required || undefined}
         {...props}
       />
     );
@@ -114,13 +132,16 @@ const Input = ({
   return (
     <div className="form-group" style={{ width: fullWidth ? '100%' : 'auto' }}>
       {label && (
-        <label className={`form-label ${required ? 'form-label--required' : ''}`}>
+        <label
+          htmlFor={inputId}
+          className={`form-label ${required ? 'form-label--required' : ''}`}
+        >
           {label}
         </label>
       )}
       {renderWithGroup()}
       {helperText && (
-        <span className={`form-helper ${getHelperClass()}`}>
+        <span id={`${inputId}-helper`} className={`form-helper ${getHelperClass()}`}>
           {helperText}
         </span>
       )}

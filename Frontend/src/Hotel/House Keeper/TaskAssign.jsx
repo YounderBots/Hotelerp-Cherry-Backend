@@ -188,7 +188,10 @@ const TaskAssign = () => {
 
   const roomNumber = useMemo(() => {
     const byId = new Map(rooms.map((room) => [String(room.id), room.room_no]));
-    return (id) => byId.get(String(id)) || (id ? `#${id}` : "—");
+    // An unresolved id reads as "—" rather than "#42": a database row
+    // number is not a name, and a miss usually just means the reference
+    // list has not loaded yet.
+    return (id) => byId.get(String(id)) || "—";
   }, [rooms]);
 
   /** The colour Master Data assigns this task type, so the tag reads the same

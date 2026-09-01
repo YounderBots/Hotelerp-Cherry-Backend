@@ -72,7 +72,12 @@ const Select = ({
         return (
             <div className="form-group" style={{ width: fullWidth ? '100%' : 'auto' }}>
                 {label && (
+                    // htmlFor matches ReactSelect's inputId below. The single
+                    // branch already did this; the multi branch did not, so a
+                    // multi-select was the one field in a form with a visible
+                    // label and no accessible one.
                     <label
+                        htmlFor={selectId}
                         className={`form-label ${required ? 'form-label--required' : ''}`}
                     >
                         {label}

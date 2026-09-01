@@ -13,6 +13,8 @@ import ErrorAlert from "../../stories/ErrorAlert";
 import Toast from "../../stories/Toast";
 import APICall from "../../APICalls/APICalls";
 import { errMsg, readList } from "../../functions/apiHelpers";
+import { printDocument, printHeading, printRow } from "../../functions/printDocument";
+import { formatAmount, isoDay, num } from "./reservationShared";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
 import "./Reservation.css";
@@ -38,26 +40,11 @@ import "./Reservation.css";
  *   read-only.
  */
 
-const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
-
-const num = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-
-const amountFmt = new Intl.NumberFormat(undefined, {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const money = (v) => (Number.isFinite(Number(v)) ? amountFmt.format(Number(v)) : "—");
-
-const escapeHtml = (v) =>
-  String(v ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// `isoDay`, `num`, `money` and `escapeHtml` used to be declared here as well
+// as in reservationShared.js, which exists to hold exactly these. The local
+// `money` also disagreed with the shared `formatAmount` on a null: "—" here,
+// "0.00" there, on two screens showing the same folio.
+const money = formatAmount;
 
 const nightsBetween = (start, end) => {
   if (!start || !end) return 0;
@@ -100,7 +87,15 @@ const CANCELLATION_PRESETS = [
 ];
 
 const PAYMENT_STATES = ["Unpaid", "Partly paid", "Paid"];
-const RESERVATION_TYPES = ["RESERVATION", "GROUP_RESERVATION", "CHECKIN"];
+// GROUP_RESERVATION is deliberately NOT offered. The API accepts it and the
+// column stores it, but nothing behaves differently for a group: there is no
+// linked-booking concept, no shared folio, no group rate. Offering it in a
+// dropdown promises a feature that does not exist, and a booking saved with it
+// is indistinguishable from a normal one. It stays in the backend vocabulary
+// so any row already carrying it still reads back correctly -- see
+// reservation_rules.RESERVATION_TYPES -- and returns to this list when group
+// handling is actually built.
+const RESERVATION_TYPES = ["RESERVATION", "CHECKIN"];
 const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
 
 const EMPTY_FILTERS = {
@@ -127,7 +122,7 @@ const Reservation = () => {
   const queryKey = JSON.stringify(query);
 
   const {
-    data: [reservations, statuses, rooms, paymentMethods, taxTypes, discountTypes],
+    data: [reservationPage, statuses, rooms, paymentMethods, taxTypes, discountTypes],
     loading,
     error,
     reload,
@@ -135,7 +130,12 @@ const Reservation = () => {
     [
       {
         fetch: () => APICall.getT("/hotel/room_reservation", query),
-        select: readList,
+        // The whole envelope: the response is capped, and `total` is the only
+        // way this screen can tell that what it is showing is a page rather
+        // than the book. Rows are unwrapped immediately below, so everything
+        // downstream sees exactly what it saw before.
+        select: (res) => res || null,
+        initial: null,
         fallback: "Failed to load reservations.",
       },
       { fetch: () => APICall.getT("/masterdata/reservation_status"), select: readList },
@@ -149,6 +149,13 @@ const Reservation = () => {
     ],
     { deps: [queryKey] },
   );
+
+  // Rows for the table, plus an honest signal when the book is larger than the
+  // page. The list endpoint caps what it returns; showing 200 of 5,000 rows and
+  // letting the user search only those 200 would be a quietly wrong answer.
+  const reservations = useMemo(() => readList(reservationPage), [reservationPage]);
+  const totalReservations = Number(reservationPage?.total) || reservations.length;
+  const listTruncated = totalReservations > reservations.length;
 
   const { toast, showToast } = useToast();
 
@@ -397,7 +404,13 @@ const Reservation = () => {
       extra_charges: row.extra_charges ?? 0,
       extra_bed_count: row.extra_bed_count ?? 0,
       room_amount: "",
-      reservation_type: row.reservation_type || "RESERVATION",
+      // Upper-cased to match the canonical vocabulary the options are built
+      // from. The API normalises this on write, but rows created before it did
+      // still hold title-case "Reservation", and a controlled <select> whose
+      // value matches no <option> shows the first one while state holds
+      // something else -- so editing a legacy booking looked like it had
+      // silently changed type.
+      reservation_type: (row.reservation_type || "RESERVATION").toUpperCase(),
       reservation_status: row.reservation_status || "",
       room_complementary: row.room_complementary || "",
       common_complementary: row.common_complementary || "",
@@ -618,51 +631,54 @@ const Reservation = () => {
   /* ============================== Print ============================== */
 
   const handlePrint = (row) => {
-    const win = window.open("", "_blank", "noopener,noreferrer");
-    if (!win) {
-      showToast("The print window was blocked. Please allow pop-ups for this site.", "error");
-      return;
-    }
-    const line = (label, value) =>
-      `<div class="row"><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`;
+    // Was a hand-written document with its own inline stylesheet, one of three
+    // near-identical copies in the app. printDocument owns the boilerplate.
+    const ok = printDocument({
+      title: `Reservation ${row.room_reservation_id}`,
+      heading: "Reservation Receipt",
+      subtitle: `${row.room_reservation_id} · ${new Date().toLocaleDateString()}`,
+      body:
+        printHeading("Guest") +
+        printRow("Name", guestName(row)) +
+        printRow("Phone", row.phone_number || "—") +
+        printRow("Email", row.email || "—") +
+        printRow("Confirmation code", row.confirmation_code || "—") +
+        printRow("Status", row.reservation_status || "—") +
+        printHeading("Stay") +
+        printRow("Arrival", isoDay(row.arrival_date)) +
+        printRow("Departure", isoDay(row.departure_date)) +
+        printRow("Nights", row.no_of_nights ?? "—") +
+        printRow("Rooms", joinList(row.room_nos)) +
+        printRow("Room types", joinList(row.room_type_names)) +
+        printRow(
+          "Guests",
+          `${row.no_of_adults ?? 0} adult(s), ${row.no_of_children ?? 0} child(ren)`,
+        ) +
+        printHeading("Charges") +
+        printRow("Room amount", money(row.room_amount)) +
+        printRow("Extra charges", money(row.extra_charges)) +
+        printRow(
+          `Tax${row.tax_name ? ` (${row.tax_name} ${row.tax_percentage}%)` : ""}`,
+          money(row.tax_amount),
+        ) +
+        printRow(
+          `Discount${row.discount_name ? ` (${row.discount_name} ${row.discount_percentage}%)` : ""}`,
+          `-${money(row.discount_amount)}`,
+        ) +
+        printRow("Total", money(row.overall_amount), { total: true }) +
+        printRow("Paid", money(row.paid_amount)) +
+        printRow("Balance", money(row.balance_amount)) +
+        printRow("Payment method", row.payment_method || "—") +
+        (row.cancellation_reason
+          ? printHeading("Cancellation") +
+            printRow("Reason", row.cancellation_reason) +
+            printRow("Cancelled on", isoDay(row.cancelled_at))
+          : ""),
+    });
 
-    win.document.write(`<!doctype html><html><head><meta charset="utf-8" />
-<title>Reservation ${escapeHtml(row.room_reservation_id)}</title>
-<style>
- body{font-family:Arial,Helvetica,sans-serif;margin:40px;color:#111827}
- h1{margin:0 0 4px;font-size:22px} .sub{color:#6b7280;margin-bottom:24px}
- h3{border-bottom:2px solid #111827;padding-bottom:6px;margin:24px 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:.04em}
- .row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f3f4f6}
- .row span{color:#6b7280} .total{font-size:18px;font-weight:700;border-top:2px solid #111827;padding-top:10px;margin-top:10px}
-</style></head><body>
-<h1>Reservation Receipt</h1>
-<div class="sub">${escapeHtml(row.room_reservation_id)} &middot; ${escapeHtml(new Date().toLocaleDateString())}</div>
-<h3>Guest</h3>
-${line("Name", guestName(row))}
-${line("Phone", row.phone_number || "—")}
-${line("Email", row.email || "—")}
-${line("Confirmation code", row.confirmation_code || "—")}
-${line("Status", row.reservation_status || "—")}
-<h3>Stay</h3>
-${line("Arrival", isoDay(row.arrival_date))}
-${line("Departure", isoDay(row.departure_date))}
-${line("Nights", row.no_of_nights ?? "—")}
-${line("Rooms", joinList(row.room_nos))}
-${line("Room types", joinList(row.room_type_names))}
-${line("Guests", `${row.no_of_adults ?? 0} adult(s), ${row.no_of_children ?? 0} child(ren)`)}
-<h3>Charges</h3>
-${line("Room amount", money(row.room_amount))}
-${line("Extra charges", money(row.extra_charges))}
-${line(`Tax${row.tax_name ? ` (${row.tax_name} ${row.tax_percentage}%)` : ""}`, money(row.tax_amount))}
-${line(`Discount${row.discount_name ? ` (${row.discount_name} ${row.discount_percentage}%)` : ""}`, `-${money(row.discount_amount)}`)}
-<div class="row total"><span>Total</span><b>${escapeHtml(money(row.overall_amount))}</b></div>
-${line("Paid", money(row.paid_amount))}
-${line("Balance", money(row.balance_amount))}
-${line("Payment method", row.payment_method || "—")}
-${row.cancellation_reason ? `<h3>Cancellation</h3>${line("Reason", row.cancellation_reason)}${line("Cancelled on", isoDay(row.cancelled_at))}` : ""}
-<scr` + `ipt>window.addEventListener("load",function(){window.print()});</scr` + `ipt>
-</body></html>`);
-    win.document.close();
+    if (!ok) {
+      showToast("The print window was blocked. Please allow pop-ups for this site.", "error");
+    }
   };
 
   /* ============================== Export ============================== */
@@ -713,6 +729,22 @@ ${row.cancellation_reason ? `<h3>Cancellation</h3>${line("Reason", row.cancellat
   return (
     <>
       <ErrorAlert message={error} />
+
+      {/*
+        Search and paging inside the table are client-side, over the rows that
+        came back. That is the whole book until a property outgrows one page --
+        past that, saying so is the only honest option, because a search box
+        that silently covers 200 of 5,000 reservations reports "not found" for
+        bookings that exist. Narrowing with the filters above re-queries the
+        server, so they still reach the whole book.
+      */}
+      {listTruncated && (
+        <div className="res-truncation-note" role="status">
+          Showing {reservations.length} of {totalReservations} reservations. Search
+          and sort below cover these {reservations.length}; use the filters above to
+          narrow the whole book.
+        </div>
+      )}
 
       <TableTemplate
         title="Reservations"

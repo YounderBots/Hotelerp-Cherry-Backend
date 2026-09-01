@@ -2,6 +2,7 @@ import React from "react";
 import StaffRoster from "./staff/StaffRoster";
 import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
+import { todayIso } from "../../functions/formatters";
 
 // Bar staff roster for today. Lives under HRM (not Bar) because staffing is an HR
 // concern; the bar module only contributes the day-to-day shift data.
@@ -12,7 +13,7 @@ import { readList } from "../../functions/apiHelpers";
 // generator as permissions this page needs.
 const api = {
   readList,
-  listShifts: () => APICall.getT("/bar/staff_assignment", { shift_date: new Date().toISOString().slice(0, 10) }),
+  listShifts: () => APICall.getT("/bar/staff_assignment", { shift_date: todayIso() }),
   listEmployees: () => APICall.getT("/user/users"),
   listFloors: () => APICall.getT("/bar/floor"),
   createShift: (body) => APICall.postT("/bar/staff_assignment", body),

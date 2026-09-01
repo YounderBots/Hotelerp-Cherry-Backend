@@ -70,14 +70,24 @@ const OverviewTab = ({ onNavigate }) => {
     setError(null);
 
     Promise.allSettled([
-      APICall.getT("/hotel/room_reservation"),
+      // A SUMMARY, not the whole book -- see the note in HotelDashboardTab.
+      // This screen shows two counts and a list of today's arrivals and
+      // departures by NAME. Fetching every reservation to derive that also
+      // delivered every guest's phone number and email to a page that renders
+      // neither.
+      APICall.getT("/hotel/reports/reservation_summary", { report_date: today }),
       APICall.getT("/masterdata/room"),
       APICall.getT("/restaurant/reports/daily_sales", { report_date: today }),
       APICall.getT("/bar/reports/daily_sales", { report_date: today }),
-    ]).then(([rRes, rRoom, rRestaurant, rBar]) => {
+      // Hotel revenue comes from a DATED report, like the other two
+      // departments. It used to be summed from the reservation list below,
+      // which made the "today" in this card's headline untrue -- see the note
+      // on hotelRevenue.
+      APICall.getT("/hotel/reports/daily_sales", { report_date: today }),
+    ]).then(([rRes, rRoom, rRestaurant, rBar, rHotelSales]) => {
       if (!mounted.current) return;
 
-      const reservations = rRes.status === "fulfilled" && Array.isArray(rRes.value?.data) ? rRes.value.data : [];
+      const summary = rRes.status === "fulfilled" ? rRes.value?.data || null : null;
       const rooms = rRoom.status === "fulfilled" && Array.isArray(rRoom.value?.data) ? rRoom.value.data : [];
 
       const statusCounts = { Occupied: 0, Reserved: 0, Available: 0, "Not Ready": 0 };
@@ -95,12 +105,21 @@ const OverviewTab = ({ onNavigate }) => {
         }
       }
 
-      const arrivingToday = reservations.filter((r) => isoDay(r?.arrival_date) === today).length;
-      const departingToday = reservations.filter((r) => isoDay(r?.departure_date) === today).length;
-      const hotelRevenue = reservations.reduce((sum, r) => {
-        const v = Number(r?.overall_amount);
-        return Number.isFinite(v) ? sum + v : sum;
-      }, 0);
+      // Counted by the server over the whole book.
+      const arrivingToday = Number(summary?.arrivals_today) || 0;
+      const departingToday = Number(summary?.departures_today) || 0;
+      // WHAT THIS REPLACES
+      //   `reservations.reduce((sum, r) => sum + r.overall_amount, 0)` -- the
+      //   total of EVERY reservation ever booked, added to two figures that
+      //   really were today's and displayed as "Revenue Today". It counted
+      //   past and future stays alike, counted a whole stay against a single
+      //   day, and counted cancelled bookings as earned. On this property it
+      //   read 508,550 for a day whose arrivals were worth nothing, 11,760 of
+      //   it from a booking that had been cancelled.
+      const hotelRevenue =
+        rHotelSales.status === "fulfilled"
+          ? Number(rHotelSales.value?.data?.grand_total) || 0
+          : 0;
 
       setHotel({
         revenue: hotelRevenue,
@@ -112,13 +131,20 @@ const OverviewTab = ({ onNavigate }) => {
         statusCounts,
       });
 
-      const guestName = (r) => `${r?.first_name || ""} ${r?.last_name || ""}`.trim() || "Guest";
-      const arrivals = reservations
-        .filter((r) => isoDay(r?.arrival_date) === today)
-        .map((r) => ({ key: `arr-${r.id}`, name: guestName(r), type: "Arrival", status: r?.reservation_status || "—" }));
-      const departures = reservations
-        .filter((r) => isoDay(r?.departure_date) === today)
-        .map((r) => ({ key: `dep-${r.id}`, name: guestName(r), type: "Departure", status: r?.reservation_status || "—" }));
+      // The server already selected today's arrivals and departures and
+      // resolved each guest's display name, so there is nothing to filter here.
+      const arrivals = (summary?.arrivals || []).map((r) => ({
+        key: `arr-${r.id}`,
+        name: r.guest_name || "Guest",
+        type: "Arrival",
+        status: r.reservation_status || "—",
+      }));
+      const departures = (summary?.departures || []).map((r) => ({
+        key: `dep-${r.id}`,
+        name: r.guest_name || "Guest",
+        type: "Departure",
+        status: r.reservation_status || "—",
+      }));
       setTodayGuests([...arrivals, ...departures]);
 
       setRestaurant(

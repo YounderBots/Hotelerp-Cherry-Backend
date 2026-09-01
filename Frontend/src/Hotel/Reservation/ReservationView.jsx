@@ -4,23 +4,13 @@ import { ArrowLeft, RefreshCw, AlertCircle } from "lucide-react";
 import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
 import { useApiResource } from "../../hooks/useApiResource";
+import {
+  foldStatus as fold,
+  formatAmount,
+  formatDate,
+  guestName,
+} from "./reservationShared";
 import "./Reservation.css";
-
-const numberFmt = new Intl.NumberFormat(undefined, {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const formatAmount = (v) => (Number.isFinite(Number(v)) ? numberFmt.format(Number(v)) : "—");
-
-const formatDate = (v) => {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-};
-
-const guestName = (r) =>
-  [r?.salutation, r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "Guest";
 
 // Bucket by the property's real status vocabulary, which is Master Data:
 // Confirmed / Checked-In / Checked-Out / Cancelled / No-Show / Pending /
@@ -30,8 +20,6 @@ const guestName = (r) =>
 // Comparison folds case, spaces and hyphens so a property that retypes
 // "No Show" or "NO-SHOW" still lands in the right bucket -- the label is free
 // text an operator can edit under Master Data.
-const fold = (v) => String(v || "").toLowerCase().replace(/[^a-z]/g, "");
-
 const bucketOf = (r) => {
   const s = fold(r?.reservation_status);
   if (s === "checkedin" || s === "arrived") return "checked_in";
@@ -67,25 +55,41 @@ const ReservationView = () => {
   // own `mounted` ref, its own error mapping and a refresh counter. The hook
   // owns all three, and its deferred start is what keeps this screen free of
   // the extra render pass `react-hooks/set-state-in-effect` warns about.
+  // The whole envelope, not just the rows: the list response is capped, and
+  // `total` and `status_counts` describe the WHOLE book rather than the page
+  // that came back. Counting the rows on screen would make these tabs quietly
+  // disagree with the book the moment a property outgrows one page.
   const {
-    data: reservations,
+    data: envelope,
     loading,
     error,
     reload,
   } = useApiResource(() => APICall.getT("/hotel/room_reservation"), {
-    select: readList,
+    select: (res) => res || null,
+    initial: null,
     fallback: "Failed to load reservations.",
   });
 
+  const reservations = useMemo(() => readList(envelope), [envelope]);
+  const total = Number(envelope?.total) || reservations.length;
+  const truncated = total > reservations.length;
+
   const counts = useMemo(() => {
-    const list = reservations || [];
-    const c = { all: list.length, upcoming: 0, checked_in: 0, checked_out: 0, cancelled: 0, no_show: 0 };
-    for (const r of list) {
-      const b = bucketOf(r);
-      c[b] = (c[b] || 0) + 1;
+    const c = { all: total, upcoming: 0, checked_in: 0, checked_out: 0, cancelled: 0, no_show: 0 };
+    // Bucket the server's per-status totals through the same fold the cards
+    // use, so a tab count covers the book even when the rows are a page of it.
+    const byStatus = envelope?.status_counts;
+    if (byStatus && typeof byStatus === "object") {
+      for (const [label, n] of Object.entries(byStatus)) {
+        c[bucketOf({ reservation_status: label })] += Number(n) || 0;
+      }
+      return c;
     }
+    // Fallback for a response without the field.
+    c.all = reservations.length;
+    for (const r of reservations) c[bucketOf(r)] += 1;
     return c;
-  }, [reservations]);
+  }, [envelope, reservations, total]);
 
   const filtered = useMemo(() => {
     const list = reservations || [];
@@ -134,6 +138,13 @@ const ReservationView = () => {
         <div className="rmv-alert" role="alert">
           <span>{error}</span>
           <button type="button" className="rmv-alert-action" onClick={handleRefresh}>Retry</button>
+        </div>
+      )}
+
+      {truncated && (
+        <div className="rmv-empty inline" role="status">
+          Showing the {reservations.length} most recent of {total} reservations. Use
+          the Reservation list to search the whole book.
         </div>
       )}
 
@@ -203,18 +214,22 @@ const ReservationView = () => {
                   </span>
                 </div>
 
+                {/*
+                  Captions are <span>, not <label>: they label no form control,
+                  and a <label> pointing at nothing misleads assistive tech.
+                */}
                 <div className="rvv-card-dates">
                   <div>
                     <p>{formatDate(r.arrival_date)}</p>
-                    <label>Check In</label>
+                    <span>Check In</span>
                   </div>
                   <div>
                     <p>{formatDate(r.departure_date)}</p>
-                    <label>Check Out</label>
+                    <span>Check Out</span>
                   </div>
                   <div>
                     <p>{r.no_of_nights ?? "—"}</p>
-                    <label>Nights</label>
+                    <span>Nights</span>
                   </div>
                 </div>
 

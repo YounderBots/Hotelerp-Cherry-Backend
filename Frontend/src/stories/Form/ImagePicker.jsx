@@ -10,6 +10,7 @@
 // object URL per render that was never revoked.
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ImagePlus, Trash2 } from 'lucide-react';
+import useAuthedMedia from '../../hooks/useAuthedMedia';
 import './ImagePicker.css';
 
 const ImagePicker = ({
@@ -22,32 +23,67 @@ const ImagePicker = ({
   disabled = false,
   /** Read-only display, used by View modals. */
   readOnly = false,
+  /**
+   * Gateway service prefix that fronts the static mount for a STORED path
+   * ("/masterdata", "/user", "/hotel"). Supply this whenever `value` can be a
+   * server path: uploads sit behind the authenticated proxy, and a plain
+   * <img src> carries no Authorization header, so without it the browser is
+   * answered 401 and the slot renders empty. With it, the bytes are fetched
+   * with the session token and shown from an object URL.
+   */
+  authPrefix = '',
 }) => {
   const inputRef = useRef(null);
   const inputId = useId();
 
-  // A File needs an object URL to preview; an already-stored image is just a
-  // URL. Derived once per value and revoked when the value changes or the
-  // component unmounts — calling URL.createObjectURL(file) inline in the JSX,
-  // as the Rooms screen used to, leaked one blob per render.
-  const preview = useMemo(
-    () => (value instanceof File ? URL.createObjectURL(value) : value || null),
-    [value],
+  const isFile = value instanceof File;
+
+  // A File needs an object URL to preview. Derived once per value and revoked
+  // when the value changes or the component unmounts — calling
+  // URL.createObjectURL(file) inline in the JSX, as the Rooms screen used to,
+  // leaked one blob per render.
+  const filePreview = useMemo(
+    () => (isFile ? URL.createObjectURL(value) : null),
+    [isFile, value],
   );
 
   useEffect(() => {
-    if (!(value instanceof File) || !preview) return undefined;
-    return () => URL.revokeObjectURL(preview);
-  }, [value, preview]);
+    if (!filePreview) return undefined;
+    return () => URL.revokeObjectURL(filePreview);
+  }, [filePreview]);
 
-  // A stored path can fail to load (the uploads directory is not currently
-  // exposed through the API gateway). Fall back to the empty-slot treatment
-  // rather than leaving the browser's broken-image glyph in the layout.
-  // Recording WHICH src failed means a new value clears the state on its own,
-  // with no effect needed to reset it.
+  // A stored path is fetched with the session token when the caller says which
+  // service fronts it; otherwise it is used as-is (an absolute URL, or a slot
+  // whose caller has already resolved it).
+  const storedPath = !isFile && typeof value === 'string' && value ? value : null;
+  const media = useAuthedMedia(authPrefix ? storedPath : null, authPrefix);
+
+  const preview = isFile
+    ? filePreview
+    : authPrefix
+      ? media.url
+      : storedPath;
+
+  // A stored path can still fail to load. Fall back to the empty-slot
+  // treatment rather than leaving the browser's broken-image glyph in the
+  // layout. Recording WHICH src failed means a new value clears the state on
+  // its own, with no effect needed to reset it.
   const [failedSrc, setFailedSrc] = useState(null);
-  const failed = !!preview && preview === failedSrc;
+  const failed =
+    (!!preview && preview === failedSrc) || (!!authPrefix && media.status === 'error');
+  const loading = !!authPrefix && media.status === 'loading';
   const shown = failed ? null : preview;
+
+  // What the empty slot says. "Choose image" is only right when there is
+  // nothing stored; a record that HAS a photo the viewer cannot load must not
+  // read as a record with no photo.
+  const placeholder = loading
+    ? 'Loading…'
+    : failed
+      ? 'Image unavailable'
+      : readOnly
+        ? 'No image'
+        : 'Choose image';
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
@@ -59,6 +95,11 @@ const ImagePicker = ({
   const openPicker = () => {
     if (!disabled && !readOnly) inputRef.current?.click();
   };
+
+  // "Replace" rather than "Upload" depends on whether a value EXISTS, not on
+  // whether it could be displayed — a photo that failed to load is still there
+  // and picking a new file still replaces it.
+  const hasValue = isFile || !!storedPath;
 
   return (
     <div className="image-picker">
@@ -87,9 +128,7 @@ const ImagePicker = ({
         ) : (
           <span className="image-picker__placeholder">
             <ImagePlus size={20} aria-hidden="true" />
-            <span>
-              {failed ? 'Image unavailable' : readOnly ? 'No image' : 'Choose image'}
-            </span>
+            <span>{placeholder}</span>
           </span>
         )}
 
@@ -101,9 +140,9 @@ const ImagePicker = ({
               onClick={openPicker}
               disabled={disabled}
             >
-              {preview ? 'Replace' : 'Upload'}
+              {hasValue ? 'Replace' : 'Upload'}
             </button>
-            {preview && onClear && (
+            {hasValue && onClear && (
               <button
                 type="button"
                 className="image-picker__btn image-picker__btn--danger"
