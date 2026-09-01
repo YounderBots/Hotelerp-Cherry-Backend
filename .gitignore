@@ -65,3 +65,8 @@ Backend/Services/*/templates/static/uploads/
 
 # Standalone nested repo, not part of this project
 /hotelerp.in/
+
+# Pre-reseed database backups. A local safety net written by hand before
+# running Backend/tools/seed_demo_data.py --confirm; it contains the data the
+# rebuild replaced, so it must never be committed over the top of the release.
+backups/
