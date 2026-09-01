@@ -1,0 +1,22 @@
+/* KitchenDisplay.css — the station screens' toolbar controls.
+   Shared with the bar's station display, which is the same screen for BOTs. */
+
+.kds-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+/* The switch sits inside a toolbar rather than a form, so it must not claim a
+   form field's bottom margin. */
+.kds-controls .switch-group {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .kds-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

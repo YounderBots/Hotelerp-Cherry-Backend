@@ -1,58 +1,31 @@
-.table-action-btn.status {
-  background: linear-gradient(135deg, #fee2e2, #fecaca);
-  color: #111827;
-}
+/* FloorTable.css — the floor detail screen.
+ *
+ * WHAT THIS FILE USED TO DO
+ * It declared bare, unscoped `.form-group`, `.form-group label` and
+ * `.form-group input` rules with hardcoded colours (#7c7ca1, #dcdcdc, #555).
+ * `.form-group` is the design system's field wrapper — every <Input>, <Select>
+ * and <Textarea> in the application renders inside one — and a CSS file
+ * imported by any module is global for the whole bundle. So opening Floor
+ * Layout once restyled the labels and controls of every form in the app for
+ * the rest of the session, at a specificity (0,1,1) that beat `.form-control`
+ * (0,1,0). This is the same trap FormField.css documents Modal.css falling
+ * into, and the reason its own fallback rule is wrapped in `:where()`.
+ *
+ * It also carried `.table-action-btn.status` and `.table-action-btn.assign`,
+ * two modifiers of a class that belongs to Reservation.css and that no JSX in
+ * the project uses. Both are gone.
+ *
+ * What is left is scoped to this screen and uses design tokens.
+ */
 
-.table-action-btn.assign {
-  background: linear-gradient(135deg, #f0e7e6, #f0e7e6);
-  color: #f58442;
-}
-
-.form-card {
-  background: #ffffff;
-  padding: 24px;
-  border-radius: 14px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-}
-
-.floor-form {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 22px;
-}
-
-.form-group {
+.floor-view {
   display: flex;
   flex-direction: column;
+  gap: var(--spacing-lg);
 }
 
-.form-group label {
-  font-size: 14px;
-  color: #7c7ca1;
-  margin-bottom: 6px;
-}
-
-.form-group input {
-  padding: 12px 14px;
-  border: 1px solid #dcdcdc;
-  border-radius: 10px;
-  font-size: 15px;
-  background: #ffffff;
-  color: #555;
-}
-
-.form-group input:read-only {
-  background-color: #fff;
-}
-
-@media (max-width: 900px) {
-  .floor-form {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 550px) {
-  .floor-form {
-    grid-template-columns: 1fr;
-  }
+/* The back link sits on its own row above the detail block, and must not
+   stretch to the width of the flex column. */
+.floor-view > button {
+  align-self: flex-start;
 }

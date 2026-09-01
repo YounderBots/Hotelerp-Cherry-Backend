@@ -1,15 +1,20 @@
 import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import Modal from "../../stories/Modal";
-import IconButton from "../../stories/IconButton";
+import Modal, { ConfirmModal } from "../../stories/Modal";
+import RowActions from "../../stories/RowActions";
 import Input from "../../stories/Form/Input";
+import Textarea from "../../stories/Form/Textarea";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import Toast from "../../stories/Toast";
 import ErrorAlert from "../../stories/ErrorAlert";
 import { ChipGroup } from "../../stories/Chip";
 import RepeatableRowEditor from "../../stories/RepeatableRowEditor";
-import { Eye, Pencil, Trash2 } from "lucide-react";
 import APICall from "../../APICalls/APICalls";
 import { errMsg, readList } from "../../functions/apiHelpers";
+import { formatDate, formatPrecise } from "../../functions/formatters";
 import { useApiResources } from "../../hooks/useApiResource";
+import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 
 const emptyItem = () => ({ menu_id: "", quantity: 1 });
 
@@ -22,11 +27,14 @@ const initialForm = {
 };
 
 const ComboDeals = () => {
+  const perms = usePagePermissions("/combo_deals");
+  const { toast, showToast } = useToast();
+  const [deleteRow, setDeleteRow] = useState(null);
+
   const {
     data: [combos, menuItems],
     loading,
     error,
-    setError,
     reload: load,
   } = useApiResources([
     { fetch: () => APICall.getT("/restaurant/combo"), select: readList,
@@ -44,7 +52,9 @@ const ComboDeals = () => {
   const [formData, setFormData] = useState(initialForm);
   const [items, setItems] = useState([emptyItem()]);
 
-  const menuItemName = (id) => menuItems.find((m) => m.id === id)?.item_name || `#${id}`;
+  // An unknown id reads as "—" rather than "#42": a row number tells the
+  // user nothing.
+  const menuItemName = (id) => menuItems.find((m) => m.id === id)?.item_name || "—";
 
   const openAddModal = () => {
     setEditId(null);
@@ -75,12 +85,17 @@ const ComboDeals = () => {
     setShowModal(false);
   };
 
-  const handleDelete = async (row) => {
+  // Was wired straight to the trash icon: one click deleted a combo with no
+  // confirmation and no feedback.
+  const confirmDelete = async () => {
+    const row = deleteRow;
+    setDeleteRow(null);
     try {
       await APICall.deleteT(`/restaurant/combo/${row.id}`);
+      showToast("Combo deal deleted successfully", "delete");
       load();
     } catch (err) {
-      setError(errMsg(err, "Failed to delete combo deal."));
+      showToast(errMsg(err, "Failed to delete combo deal."), "error");
     }
   };
 
@@ -144,7 +159,9 @@ const ComboDeals = () => {
 
       <TableTemplate
         title="Combo / Package Deals"
-        hasActionButton
+        emptyMessage='No combo deals yet. Use "Add Combo" to bundle two or more menu items at a package price.'
+        hasActionButton={perms.add}
+        exportable
         searchable
         pagination
         loading={loading}
@@ -152,20 +169,31 @@ const ComboDeals = () => {
         columns={[
           { key: "combo_code", title: "Combo Code", align: "center" },
           { key: "combo_name", title: "Combo Name" },
-          { key: "combo_price", title: "Price", align: "center" },
+          {
+            key: "combo_price",
+            title: "Price",
+            align: "right",
+            type: "custom",
+            render: (row) => formatPrecise(row.combo_price),
+            exportValue: (row) => formatPrecise(row.combo_price),
+          },
           {
             key: "items",
             title: "Items",
-            align: "center",
+            align: "right",
             type: "custom",
-            render: (row) => (row.items?.length ? `${row.items.length} item${row.items.length > 1 ? "s" : ""}` : "—"),
+            render: (row) => row.items?.length || 0,
+            exportValue: (row) => String(row.items?.length || 0),
           },
           {
             key: "valid_to",
             title: "Valid Until",
             align: "center",
             type: "custom",
-            render: (row) => (row.valid_to ? new Date(row.valid_to).toLocaleDateString() : "No expiry"),
+            // `new Date(...)` on a plain calendar date shifts it a day west of
+            // Greenwich; formatDate reads the string as the date it is.
+            render: (row) => (row.valid_to ? formatDate(row.valid_to) : "No expiry"),
+            exportValue: (row) => (row.valid_to ? formatDate(row.valid_to) : "No expiry"),
           },
           {
             key: "actions",
@@ -173,48 +201,51 @@ const ComboDeals = () => {
             align: "center",
             type: "custom",
             render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openViewModal(row)} />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} ariaLabel="Edit" onClick={() => openEditModal(row)} />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} ariaLabel="Delete" onClick={() => handleDelete(row)} />
-              </div>
+              <RowActions
+                label={row.combo_name || "combo"}
+                canEdit={perms.edit}
+                canDelete={perms.delete}
+                onView={() => openViewModal(row)}
+                onEdit={() => openEditModal(row)}
+                onDelete={() => setDeleteRow(row)}
+              />
             ),
           },
         ]}
         data={combos}
       />
 
-      {!loading && combos.length === 0 && !error && (
-        <p style={{ color: "#64748b", marginTop: "12px" }}>
-          No combo deals yet. Use "Add Combo" to bundle two or more menu items at a package price.
-        </p>
-      )}
-
       {showViewModal && viewData && (
         <Modal
           isOpen
           title={viewData.combo_name}
           onClose={closeViewModal}
-          size="small"
+          size="medium"
           bodyLayout="single"
           viewMode
           showFooter
           actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
         >
-          <Input label="Combo Code" value={viewData.combo_code || "-"} disabled />
-          <Input label="Description" value={viewData.description || "—"} disabled />
-          <Input label="Combo Price" value={viewData.combo_price ?? "-"} disabled />
-          <Input label="Valid From" value={viewData.valid_from ? new Date(viewData.valid_from).toLocaleDateString() : "—"} disabled />
-          <Input label="Valid To" value={viewData.valid_to ? new Date(viewData.valid_to).toLocaleDateString() : "No expiry"} disabled />
-          <div className="form-group">
-            <label>Included Items</label>
-            <ChipGroup
-              items={(viewData.items || []).map((it) => ({
-                key: it.id || `${it.menu_id}-${it.quantity}`,
-                label: `${menuItemName(it.menu_id)} × ${it.quantity}`,
-              }))}
+          {/* Every field here used to be an `<Input ... disabled />` — a form
+              control the user could tab into, with a "switched off" border. */}
+          <DetailList columns={2}>
+            <DetailItem label="Combo Code" value={viewData.combo_code} />
+            <DetailItem label="Combo Price" value={formatPrecise(viewData.combo_price)} />
+            <DetailItem label="Valid From" value={formatDate(viewData.valid_from)} />
+            <DetailItem
+              label="Valid To"
+              value={viewData.valid_to ? formatDate(viewData.valid_to) : "No expiry"}
             />
-          </div>
+            <DetailItem label="Description" value={viewData.description} span={2} />
+            <DetailItem label="Included Items" span={2}>
+              <ChipGroup
+                items={(viewData.items || []).map((it) => ({
+                  key: it.id || `${it.menu_id}-${it.quantity}`,
+                  label: `${menuItemName(it.menu_id)} × ${it.quantity}`,
+                }))}
+              />
+            </DetailItem>
+          </DetailList>
         </Modal>
       )}
 
@@ -231,7 +262,7 @@ const ComboDeals = () => {
             { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving },
           ]}
         >
-          <ErrorAlert message={formError} />
+          <ErrorAlert message={formError} className="field-full" />
 
           <Input label="Combo Name" required name="combo_name" value={formData.combo_name} onChange={handleChange} />
 
@@ -241,12 +272,18 @@ const ComboDeals = () => {
 
           <Input label="Valid To" type="date" name="valid_to" value={formData.valid_to} onChange={handleChange} min={formData.valid_from || undefined} />
 
-          <div style={{ gridColumn: "1 / -1" }}>
-            <Input label="Description" name="description" value={formData.description} onChange={handleChange} />
+          <div className="field-full">
+            <Textarea
+              label="Description"
+              name="description"
+              rows={3}
+              value={formData.description}
+              onChange={handleChange}
+            />
           </div>
 
-          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-            <label>Included Items <span className="required">*</span></label>
+          <div className="field-full">
+            <label className="form-label form-label--required">Included Items</label>
             <RepeatableRowEditor
               rows={items}
               fields={[
@@ -267,6 +304,21 @@ const ComboDeals = () => {
           </div>
         </Modal>
       )}
+
+      {/* ================= DELETE ================= */}
+      <ConfirmModal
+        isOpen={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        title="Delete Combo Deal"
+        confirmText="Delete"
+        size="small"
+        destructive
+      >
+        {`Delete ${deleteRow?.combo_name || "this combo"}? This cannot be undone.`}
+      </ConfirmModal>
+
+      <Toast {...toast} />
     </>
   );
 };

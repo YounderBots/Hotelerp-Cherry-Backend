@@ -1,20 +1,26 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import Modal from "../../stories/Modal";
+import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
 import Select from "../../stories/Form/Select";
-import IconButton from "../../stories/IconButton";
 import Button from "../../stories/Button";
 import ErrorAlert from "../../stories/ErrorAlert";
+import RowActions from "../../stories/RowActions";
+import Textarea from "../../stories/Form/Textarea";
+import ImagePicker from "../../stories/Form/ImagePicker";
+import Toast from "../../stories/Toast";
+import DetailList, { DetailItem } from "../../stories/DetailList";
 import { ChipGroup } from "../../stories/Chip";
 import ViewSection from "../../stories/ViewSection";
 import RepeatableRowEditor from "../../stories/RepeatableRowEditor";
-import { Eye, Pencil, Trash2 } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { formatPrecise } from "../../functions/formatters";
+import { useApiResources } from "../../hooks/useApiResource";
+import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 import "../../stories/menuModalFields.css";
 
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
 const readOne = (res) => (res?.data && typeof res.data === "object" && !Array.isArray(res.data) ? res.data : null);
 
 const MODIFIER_TYPES = ["Add-on", "Remove"];
@@ -40,13 +46,46 @@ const initialForm = {
   item_image: "",
 };
 
+/**
+ * A stored menu photo, fetched with the session token.
+ *
+ * Uploads sit behind the authenticated gateway proxy, so a plain <img src> is
+ * answered 401. ImagePicker already knows how to fetch one (`authPrefix`), so
+ * the thumbnail is that component in read-only mode rather than a second
+ * implementation. Items saved before this screen had an uploader hold an
+ * external absolute URL; useAuthedMedia passes those through untouched.
+ */
+const MenuThumb = ({ path, alt, size = "cell" }) => {
+  if (!path) return "—";
+  return (
+    <span className={`menu-thumb menu-thumb--${size}`}>
+      <ImagePicker value={path} authPrefix="/bar" label={alt} readOnly />
+    </span>
+  );
+};
+
 const MenuManagement = () => {
-  const [data, setData] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [subCategories, setSubCategories] = useState([]);
-  const [stations, setStations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const perms = usePagePermissions("/bar_menus");
+  const { toast, showToast } = useToast();
+  const [deleteRow, setDeleteRow] = useState(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  // Was four setStates driven by a hand-rolled Promise.allSettled inside a
+  // useCallback + useEffect pair — the shape useApiResources owns.
+  const {
+    data: [data, categories, subCategories, stations],
+    loading,
+    error,
+    reload: load,
+  } = useApiResources([
+    {
+      fetch: () => APICall.getT("/bar/menu"),
+      select: readList,
+      fallback: "Failed to load menu items.",
+    },
+    { fetch: () => APICall.getT("/bar/menu_category"), select: readList },
+    { fetch: () => APICall.getT("/bar/menu_sub_category"), select: readList },
+    { fetch: () => APICall.getT("/bar/station"), select: readList },
+  ]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -63,31 +102,11 @@ const MenuManagement = () => {
   const [newVariant, setNewVariant] = useState(emptyVariant());
   const [newModifier, setNewModifier] = useState(emptyModifier());
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.allSettled([
-      APICall.getT("/bar/menu"),
-      APICall.getT("/bar/menu_category"),
-      APICall.getT("/bar/menu_sub_category"),
-      APICall.getT("/bar/station"),
-    ]).then(([mRes, cRes, scRes, stRes]) => {
-      setData(mRes.status === "fulfilled" ? readList(mRes.value) : []);
-      setCategories(cRes.status === "fulfilled" ? readList(cRes.value) : []);
-      setSubCategories(scRes.status === "fulfilled" ? readList(scRes.value) : []);
-      setStations(stRes.status === "fulfilled" ? readList(stRes.value) : []);
-      if (mRes.status === "rejected") setError(errMsg(mRes.reason, "Failed to load menu items."));
-      setLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const categoryName = (id) => categories.find((c) => c.id === id)?.category_name || (id ? `#${id}` : "—");
+  // An unknown id reads as "—": a row number tells the user nothing, and
+  // usually just means the reference list has not loaded.
+  const categoryName = (id) => categories.find((c) => c.id === id)?.category_name || "—";
   const subCategoryName = (id) => subCategories.find((s) => s.id === id)?.sub_category_name || null;
-  const stationName = (id) => stations.find((s) => s.id === id)?.station_name || (id ? `#${id}` : "—");
+  const stationName = (id) => stations.find((s) => s.id === id)?.station_name || "—";
   const subCategoryOptions = formData.category_id
     ? subCategories.filter((s) => Number(s.category_id) === Number(formData.category_id))
     : [];
@@ -329,12 +348,37 @@ const MenuManagement = () => {
     }
   };
 
-  const handleDelete = async (id) => {
+  // Was wired straight to the trash icon: one click took an item off the menu
+  // with no confirmation and no feedback.
+  const confirmDelete = async () => {
+    const row = deleteRow;
+    setDeleteRow(null);
     try {
-      await APICall.deleteT(`/bar/menu/${id}`);
+      await APICall.deleteT(`/bar/menu/${row.id}`);
+      showToast("Menu item deactivated successfully", "delete");
       load();
     } catch (err) {
-      setError(errMsg(err, "Failed to deactivate menu item."));
+      showToast(errMsg(err, "Failed to deactivate menu item."), "error");
+    }
+  };
+
+  // The bar had no upload endpoint, so this screen asked the user to paste a
+  // hosted image URL while the identical restaurant screen offered a picker.
+  // BarServices now has POST /bar/upload_image.
+  const handleImageFile = async (file) => {
+    if (!file) return;
+    setImageUploading(true);
+    setFormError(null);
+    try {
+      const body = new FormData();
+      body.append("image", file);
+      const res = await APICall.postT("/bar/upload_image", body);
+      const url = res?.data?.url;
+      if (url) setFormData((p) => ({ ...p, item_image: url }));
+    } catch (err) {
+      setFormError(errMsg(err, "Failed to upload image."));
+    } finally {
+      setImageUploading(false);
     }
   };
 
@@ -344,7 +388,8 @@ const MenuManagement = () => {
 
       <TableTemplate
         title="Bar Menu Management"
-        hasActionButton
+        emptyMessage="No menu items yet. Add the first one to get started."
+        hasActionButton={perms.add}
         searchable
         pagination
         exportable
@@ -357,24 +402,20 @@ const MenuManagement = () => {
             title: "Item",
             align: "center",
             type: "custom",
-            render: (row) =>
-              row.item_image ? (
-                <img
-                  src={row.item_image}
-                  alt="item"
-                  style={{ width: "40px", height: "40px", objectFit: "cover", borderRadius: "6px" }}
-                  onError={(e) => {
-                    e.currentTarget.style.display = "none";
-                  }}
-                />
-              ) : (
-                <span style={{ color: "#9ca3af" }}>—</span>
-              ),
+            excludeFromExport: true,
+            render: (row) => <MenuThumb path={row.item_image} alt={row.item_name} />,
           },
           { key: "item_name", title: "Item Name" },
           { key: "category_id", title: "Category", type: "custom", render: (row) => categoryName(row.category_id) },
           { key: "station_id", title: "Station", type: "custom", render: (row) => stationName(row.station_id) },
-          { key: "price", title: "Price", align: "center" },
+          {
+            key: "price",
+            title: "Price",
+            align: "right",
+            type: "custom",
+            render: (row) => formatPrecise(row.price),
+            exportValue: (row) => formatPrecise(row.price),
+          },
           {
             key: "variants",
             title: "Variants",
@@ -389,11 +430,14 @@ const MenuManagement = () => {
             align: "center",
             type: "custom",
             render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openViewModal(row)} />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} ariaLabel="Edit" onClick={() => handleEdit(row)} />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} ariaLabel="Delete" onClick={() => handleDelete(row.id)} />
-              </div>
+              <RowActions
+                label={row.item_name || "menu item"}
+                canEdit={perms.edit}
+                canDelete={perms.delete}
+                onView={() => openViewModal(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteRow(row)}
+              />
             ),
           },
         ]}
@@ -413,62 +457,70 @@ const MenuManagement = () => {
           actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
         >
           {viewData.item_image && (
-            <img
-              src={viewData.item_image}
-              alt={viewData.item_name}
-              style={{ width: "100%", height: "160px", objectFit: "cover", borderRadius: "8px" }}
-              onError={(e) => {
-                e.currentTarget.style.display = "none";
-              }}
-            />
+            <div className="menu-view__hero">
+              <MenuThumb path={viewData.item_image} alt={viewData.item_name} size="hero" />
+            </div>
           )}
 
           <ViewSection title="Basic Information">
-            <Input label="Item Code" value={viewData.item_code || "-"} disabled />
-            <Input label="Category" value={categoryName(viewData.category_id)} disabled />
-            <Input label="Sub-Category" value={subCategoryName(viewData.sub_category_id) || "—"} disabled />
-            <Input label="Station" value={stationName(viewData.station_id)} disabled />
-            <Input label="Description" value={viewData.description || "—"} disabled />
+            {/* Every field here used to be an `<Input ... disabled />` — a form
+                control the user could tab into, with a "switched off" border,
+                which is exactly what DetailList was written to replace. */}
+            <DetailList columns={2}>
+              <DetailItem label="Item Code" value={viewData.item_code} />
+              <DetailItem label="Category" value={categoryName(viewData.category_id)} />
+              <DetailItem label="Sub-Category" value={subCategoryName(viewData.sub_category_id)} />
+              <DetailItem label="Station" value={stationName(viewData.station_id)} />
+              <DetailItem label="Description" value={viewData.description} span={2} />
+            </DetailList>
           </ViewSection>
 
           <ViewSection title="Pricing">
-            <Input label="Price" value={viewData.price ?? "-"} disabled />
-            <Input label="Cost Price" value={viewData.cost_price ?? "—"} disabled />
-            <Input label="Tax %" value={viewData.tax_percentage ?? "0"} disabled />
-            <Input label="Service Charge Applicable" value={viewData.service_charge_applicable ? "Yes" : "No"} disabled />
+            <DetailList columns={2}>
+              <DetailItem label="Price" value={formatPrecise(viewData.price)} />
+              <DetailItem label="Cost Price" value={formatPrecise(viewData.cost_price)} />
+              <DetailItem label="Tax %" value={viewData.tax_percentage ?? 0} />
+              <DetailItem
+                label="Service Charge Applicable"
+                value={viewData.service_charge_applicable ? "Yes" : "No"}
+              />
+            </DetailList>
           </ViewSection>
 
           <ViewSection title="Attributes">
-            <Input label="Availability" value={viewData.availability_status || "-"} disabled />
-            <Input label="Happy Hour Eligible" value={viewData.happy_hour_eligible ? "Yes" : "No"} disabled />
-            <Input label="Preparation Time" value={viewData.preparation_time ?? "—"} disabled />
-            <div className="form-group">
-              <label className="form-label">Dietary Tags</label>
-              {(viewData.dietary_tags || []).length === 0 ? (
-                <span style={{ color: "#9ca3af" }}>—</span>
-              ) : (
-                <ChipGroup items={viewData.dietary_tags} />
+            <DetailList columns={2}>
+              <DetailItem label="Availability" value={viewData.availability_status} />
+              <DetailItem
+                label="Happy Hour Eligible"
+                value={viewData.happy_hour_eligible ? "Yes" : "No"}
+              />
+              <DetailItem
+                label="Preparation Time"
+                value={viewData.preparation_time ? `${viewData.preparation_time} min` : null}
+              />
+              {(viewData.dietary_tags || []).length > 0 && (
+                <DetailItem label="Dietary Tags" span={2}>
+                  <ChipGroup items={viewData.dietary_tags} />
+                </DetailItem>
               )}
-            </div>
+            </DetailList>
           </ViewSection>
 
           {(viewData.variants?.length > 0 || viewData.modifiers?.length > 0) && (
             <ViewSection title="Variants & Modifiers">
               <ChipGroup
                 items={[
-                  ...(viewData.variants || []).map((v) => ({ key: `v-${v.id}`, label: `${v.variant_name} — ${v.price}` })),
+                  ...(viewData.variants || []).map((v) => ({ key: `v-${v.id}`, label: `${v.variant_name} — ${formatPrecise(v.price)}` })),
                   ...(viewData.modifiers || []).map((m) => ({
                     key: `m-${m.id}`,
-                    label: `${m.modifier_name} (${m.modifier_type})${m.price ? ` — ${m.price}` : ""}`,
+                    label: `${m.modifier_name} (${m.modifier_type})${m.price ? ` — ${formatPrecise(m.price)}` : ""}`,
                   })),
                 ]}
               />
             </ViewSection>
           )}
 
-          {viewLoading && (
-            <p style={{ fontSize: "13px", color: "#94a3b8", fontStyle: "italic" }}>Loading full details…</p>
-          )}
+          {viewLoading && <p className="repeatable-empty">Loading full details…</p>}
         </Modal>
       )}
 
@@ -487,7 +539,7 @@ const MenuManagement = () => {
           ]}
         >
           {formError && (
-            <div style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <ErrorAlert message={formError} />
             </div>
           )}
@@ -555,11 +607,11 @@ const MenuManagement = () => {
             options={[{ value: "false", label: "No" }, { value: "true", label: "Yes" }]}
           />
 
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="field-full">
             <Input label="Description" name="description" value={formData.description} onChange={handleChange} />
           </div>
 
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="field-full">
             <Input
               label="Dietary Tags (comma-separated, e.g. Alcoholic, Non-Alcoholic)"
               name="dietary_tags"
@@ -569,24 +621,21 @@ const MenuManagement = () => {
             />
           </div>
 
-          <div style={{ gridColumn: "1 / -1" }}>
-            <label className="form-label">Item Image URL</label>
-            {formData.item_image && (
-              <img
-                src={formData.item_image}
-                alt="preview"
-                style={{ width: "120px", height: "120px", objectFit: "cover", borderRadius: "8px", marginBottom: "8px", display: "block" }}
-                onError={(e) => {
-                  e.currentTarget.style.display = "none";
-                }}
-              />
-            )}
-            <Input name="item_image" value={formData.item_image} onChange={handleChange} placeholder="https://example.com/drink.jpg" />
-            <p style={{ fontSize: "12px", color: "#94a3b8", margin: "4px 0 0" }}>Paste a hosted image URL.</p>
+          <div className="field-full">
+            {/* Was "paste a hosted image URL" into a text box, while the
+                identical restaurant screen offered a file picker. */}
+            <ImagePicker
+              label={imageUploading ? "Item Image — uploading…" : "Item Image"}
+              value={formData.item_image}
+              authPrefix="/bar"
+              disabled={imageUploading}
+              onChange={handleImageFile}
+              onClear={() => setFormData((p) => ({ ...p, item_image: "" }))}
+            />
           </div>
 
           {!editId && (
-            <div style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <label className="form-label">Variants (e.g. 30ml / 60ml / 90ml pricing)</label>
               <RepeatableRowEditor
                 rows={variants}
@@ -609,7 +658,7 @@ const MenuManagement = () => {
           )}
 
           {!editId && (
-            <div style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <label className="form-label">Modifiers (add-ons or removable ingredients)</label>
               <RepeatableRowEditor
                 rows={modifiers}
@@ -628,7 +677,7 @@ const MenuManagement = () => {
           )}
 
           {editId && existingDetail && (
-            <div style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <label className="form-label">Variants (e.g. 30ml / 60ml / 90ml pricing)</label>
               <RepeatableRowEditor
                 rows={existingDetail.variants || []}
@@ -639,30 +688,24 @@ const MenuManagement = () => {
                 onFieldChange={(index, key, value, row) => updateExistingVariantField(row.id, key, value)}
                 onRemove={(index, row) => deleteExistingVariant(row.id)}
                 renderRowExtra={(row) => (
-                  <button
-                    type="button"
-                    onClick={() => saveExistingVariant(row)}
-                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #d1d5db", background: "#f1f5f9", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}
-                  >
+                  <Button variant="secondary" size="small" onClick={() => saveExistingVariant(row)}>
                     Save
-                  </button>
+                  </Button>
                 )}
                 emptyLabel="No variants — this item uses the single price above."
                 rowKey={(row) => row.id}
               />
-              <div style={{ display: "flex", gap: "10px", alignItems: "center", marginTop: "10px" }}>
+              <div className="menu-inline-add">
                 <Input
                   placeholder="Variant name (e.g. Large)"
                   value={newVariant.variant_name}
                   onChange={(e) => setNewVariant((p) => ({ ...p, variant_name: e.target.value }))}
-                  style={{ flex: 1 }}
                 />
                 <Input
                   placeholder="Price"
                   type="number"
                   value={newVariant.price}
                   onChange={(e) => setNewVariant((p) => ({ ...p, price: e.target.value }))}
-                  style={{ flex: 1 }}
                 />
                 <Button variant="secondary" onClick={addExistingVariant}>+ Add Variant</Button>
               </div>
@@ -670,7 +713,7 @@ const MenuManagement = () => {
           )}
 
           {editId && existingDetail && (
-            <div style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <label className="form-label">Modifiers (add-ons or removable ingredients)</label>
               <RepeatableRowEditor
                 rows={existingDetail.modifiers || []}
@@ -682,30 +725,24 @@ const MenuManagement = () => {
                 onFieldChange={(index, key, value, row) => updateExistingModifierField(row.id, key, value)}
                 onRemove={(index, row) => deleteExistingModifier(row.id)}
                 renderRowExtra={(row) => (
-                  <button
-                    type="button"
-                    onClick={() => saveExistingModifier(row)}
-                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #d1d5db", background: "#f1f5f9", cursor: "pointer", fontSize: "12px", fontWeight: 600 }}
-                  >
+                  <Button variant="secondary" size="small" onClick={() => saveExistingModifier(row)}>
                     Save
-                  </button>
+                  </Button>
                 )}
                 emptyLabel="No modifiers for this item."
                 rowKey={(row) => row.id}
               />
-              <div style={{ display: "flex", gap: "10px", alignItems: "center", marginTop: "10px", flexWrap: "wrap" }}>
+              <div className="menu-inline-add">
                 <Input
                   placeholder="Modifier name (e.g. Extra Shot)"
                   value={newModifier.modifier_name}
                   onChange={(e) => setNewModifier((p) => ({ ...p, modifier_name: e.target.value }))}
-                  style={{ flex: 1 }}
                 />
                 <Input
                   placeholder="Price"
                   type="number"
                   value={newModifier.price}
                   onChange={(e) => setNewModifier((p) => ({ ...p, price: e.target.value }))}
-                  style={{ flex: 1 }}
                 />
                 <Select
                   value={newModifier.modifier_type}
@@ -719,6 +756,21 @@ const MenuManagement = () => {
           )}
         </Modal>
       )}
+
+      {/* ================= DELETE ================= */}
+      <ConfirmModal
+        isOpen={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        title="Deactivate Menu Item"
+        confirmText="Deactivate"
+        size="small"
+        destructive
+      >
+        {`Deactivate ${deleteRow?.item_name || "this item"}? It will no longer be orderable.`}
+      </ConfirmModal>
+
+      <Toast {...toast} />
     </>
   );
 };

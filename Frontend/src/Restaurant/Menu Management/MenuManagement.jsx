@@ -1,20 +1,48 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
-import Modal from "../../stories/Modal";
-import IconButton from "../../stories/IconButton";
+import Modal, { ConfirmModal } from "../../stories/Modal";
 import Button from "../../stories/Button";
+import RowActions from "../../stories/RowActions";
 import Input from "../../stories/Form/Input";
 import Select from "../../stories/Form/Select";
+import Textarea from "../../stories/Form/Textarea";
+import ImagePicker from "../../stories/Form/ImagePicker";
 import ErrorAlert from "../../stories/ErrorAlert";
+import Toast from "../../stories/Toast";
 import ViewSection from "../../stories/ViewSection";
+import DetailList, { DetailItem } from "../../stories/DetailList";
 import { ChipGroup } from "../../stories/Chip";
 import RepeatableRowEditor from "../../stories/RepeatableRowEditor";
-import { Eye, Pencil, Trash2 } from "lucide-react";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import APICall from "../../APICalls/APICalls";
+import { errMsg, readList } from "../../functions/apiHelpers";
+import { formatPrecise } from "../../functions/formatters";
+import { useApiResources } from "../../hooks/useApiResource";
+import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 import "../../stories/menuModalFields.css";
 
-const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
-const readList = (res) => (Array.isArray(res?.data) ? res.data : []);
+/**
+ * A stored menu photo.
+ *
+ * Uploads are served through the authenticated gateway proxy, so a plain
+ * <img src> is answered 401 and renders as nothing. ImagePicker already knows
+ * how to fetch one with the session token (`authPrefix`), so the thumbnail is
+ * that component in read-only mode rather than a second implementation.
+ *
+ * Rows created before the upload handler was fixed hold an absolute
+ * http://127.0.0.1:8050/... URL. useAuthedMedia passes those through
+ * untouched; they will not load (the address is the viewer's own machine),
+ * and the slot says "Image unavailable" instead of pretending otherwise.
+ */
+const MenuThumb = ({ path, alt, size = "cell" }) => {
+  if (!path) return "—";
+  return (
+    <span className={`menu-thumb menu-thumb--${size}`}>
+      <ImagePicker value={path} authPrefix="/restaurant" label={alt} readOnly />
+    </span>
+  );
+};
+
 const readOne = (res) => (res?.data && typeof res.data === "object" && !Array.isArray(res.data) ? res.data : null);
 
 const MODIFIER_TYPES = ["Add-on", "Remove"];
@@ -42,12 +70,28 @@ const initialForm = {
 };
 
 const MenuManagement = () => {
-  const [data, setData] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [subCategories, setSubCategories] = useState([]); // full list, filtered client-side per category
-  const [kitchens, setKitchens] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const perms = usePagePermissions("/menus");
+  const { toast, showToast } = useToast();
+  const [deleteRow, setDeleteRow] = useState(null);
+  // Was four setStates driven by a hand-rolled Promise.allSettled inside a
+  // useCallback + useEffect pair — the exact shape useApiResources owns, and
+  // the source of the app's remaining "setState inside an effect" warning.
+  const {
+    data: [data, categories, subCategories, kitchens],
+    loading,
+    error,
+    reload: load,
+  } = useApiResources([
+    {
+      fetch: () => APICall.getT("/restaurant/menu"),
+      select: readList,
+      fallback: "Failed to load menu items.",
+    },
+    { fetch: () => APICall.getT("/restaurant/menu_category"), select: readList },
+    // Full list, filtered per category in the browser.
+    { fetch: () => APICall.getT("/restaurant/menu_sub_category"), select: readList },
+    { fetch: () => APICall.getT("/restaurant/kitchen"), select: readList },
+  ]);
 
   const [showModal, setShowModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -65,31 +109,11 @@ const MenuManagement = () => {
   const [newModifier, setNewModifier] = useState(emptyModifier());
   const [imageUploading, setImageUploading] = useState(false);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    Promise.allSettled([
-      APICall.getT("/restaurant/menu"),
-      APICall.getT("/restaurant/menu_category"),
-      APICall.getT("/restaurant/menu_sub_category"),
-      APICall.getT("/restaurant/kitchen"),
-    ]).then(([mRes, cRes, scRes, kRes]) => {
-      setData(mRes.status === "fulfilled" ? readList(mRes.value) : []);
-      setCategories(cRes.status === "fulfilled" ? readList(cRes.value) : []);
-      setSubCategories(scRes.status === "fulfilled" ? readList(scRes.value) : []);
-      setKitchens(kRes.status === "fulfilled" ? readList(kRes.value) : []);
-      if (mRes.status === "rejected") setError(errMsg(mRes.reason, "Failed to load menu items."));
-      setLoading(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const categoryName = (id) => categories.find((c) => c.id === id)?.category_name || (id ? `#${id}` : "—");
+  // An unknown id reads as "—": a row number tells the user nothing, and
+  // usually means the reference list simply has not loaded.
+  const categoryName = (id) => categories.find((c) => c.id === id)?.category_name || "—";
   const subCategoryName = (id) => subCategories.find((s) => s.id === id)?.sub_category_name || null;
-  const kitchenName = (id) => kitchens.find((k) => k.id === id)?.kitchen_name || (id ? `#${id}` : "—");
+  const kitchenName = (id) => kitchens.find((k) => k.id === id)?.kitchen_name || "—";
   const subCategoryOptions = formData.category_id
     ? subCategories.filter((s) => Number(s.category_id) === Number(formData.category_id))
     : [];
@@ -106,9 +130,7 @@ const MenuManagement = () => {
     setShowModal(true);
   };
 
-  const handleImageFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
+  const handleImageFile = async (file) => {
     if (!file) return;
     setImageUploading(true);
     setFormError(null);
@@ -355,12 +377,17 @@ const MenuManagement = () => {
     }
   };
 
-  const handleDelete = async (id) => {
+  // Was wired straight to the trash icon: one click took an item off the menu
+  // with no confirmation and no feedback.
+  const confirmDelete = async () => {
+    const row = deleteRow;
+    setDeleteRow(null);
     try {
-      await APICall.deleteT(`/restaurant/menu/${id}`);
+      await APICall.deleteT(`/restaurant/menu/${row.id}`);
+      showToast("Menu item deactivated successfully", "delete");
       load();
     } catch (err) {
-      setError(errMsg(err, "Failed to deactivate menu item."));
+      showToast(errMsg(err, "Failed to deactivate menu item."), "error");
     }
   };
 
@@ -370,7 +397,8 @@ const MenuManagement = () => {
 
       <TableTemplate
         title="Menu Management"
-        hasActionButton
+        emptyMessage="No menu items yet. Add the first one to get started."
+        hasActionButton={perms.add}
         searchable
         pagination
         exportable
@@ -383,24 +411,23 @@ const MenuManagement = () => {
             title: "Item",
             align: "center",
             type: "custom",
-            render: (row) =>
-              row.item_image ? (
-                <img
-                  src={row.item_image}
-                  alt="item"
-                  style={{ width: "40px", height: "40px", objectFit: "cover", borderRadius: "6px" }}
-                  onError={(e) => {
-                    e.currentTarget.style.display = "none";
-                  }}
-                />
-              ) : (
-                <span style={{ color: "#9ca3af" }}>—</span>
-              ),
+            excludeFromExport: true,
+            // Stored images sit behind the authenticated gateway proxy, so
+            // they cannot be an <img src>. MenuThumb fetches the bytes with the
+            // session token, exactly as the room and employee photos do.
+            render: (row) => <MenuThumb path={row.item_image} alt={row.item_name} />,
           },
           { key: "item_name", title: "Item Name" },
           { key: "category_id", title: "Category", type: "custom", render: (row) => categoryName(row.category_id) },
           { key: "kitchen_id", title: "Kitchen", type: "custom", render: (row) => kitchenName(row.kitchen_id) },
-          { key: "price", title: "Price", align: "center" },
+          {
+            key: "price",
+            title: "Price",
+            align: "right",
+            type: "custom",
+            render: (row) => formatPrecise(row.price),
+            exportValue: (row) => formatPrecise(row.price),
+          },
           {
             key: "variants",
             title: "Variants",
@@ -415,12 +442,16 @@ const MenuManagement = () => {
             title: "Actions",
             align: "center",
             type: "custom",
+            excludeFromExport: true,
             render: (row) => (
-              <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
-                <IconButton variant="ghost" size="small" icon={<Eye size={16} />} ariaLabel="View" onClick={() => openViewModal(row)} />
-                <IconButton variant="subtle" size="small" icon={<Pencil size={16} />} ariaLabel="Edit" onClick={() => handleEdit(row)} />
-                <IconButton variant="danger-ghost" size="small" icon={<Trash2 size={16} />} ariaLabel="Delete" onClick={() => handleDelete(row.id)} />
-              </div>
+              <RowActions
+                label={row.item_name || "menu item"}
+                canEdit={perms.edit}
+                canDelete={perms.delete}
+                onView={() => openViewModal(row)}
+                onEdit={() => handleEdit(row)}
+                onDelete={() => setDeleteRow(row)}
+              />
             ),
           },
         ]}
@@ -440,48 +471,60 @@ const MenuManagement = () => {
           actions={[{ label: "Close", variant: "secondary", onClick: closeViewModal }]}
         >
           {viewData.item_image && (
-            <img
-              src={viewData.item_image}
-              alt={viewData.item_name}
-              style={{ width: "100%", height: "160px", objectFit: "cover", borderRadius: "8px" }}
-              onError={(e) => {
-                e.currentTarget.style.display = "none";
-              }}
-            />
+            <div className="menu-view__hero">
+              <MenuThumb path={viewData.item_image} alt={viewData.item_name} size="hero" />
+            </div>
           )}
 
+          {/* Every field here used to be an `<Input ... disabled />` — a form
+              control the user could tab into, with a "switched off" border,
+              which is exactly what DetailList was written to replace. */}
           <ViewSection title="Basic Information">
-            <Input label="Item Code" value={viewData.item_code || "-"} disabled />
-            <Input label="Category" value={categoryName(viewData.category_id)} disabled />
-            <Input label="Sub-Category" value={subCategoryName(viewData.sub_category_id) || "—"} disabled />
-            <Input label="Kitchen Section" value={kitchenName(viewData.kitchen_id)} disabled />
-            <Input label="Description" value={viewData.description || "—"} disabled />
+            <DetailList columns={2}>
+              <DetailItem label="Item Code" value={viewData.item_code} />
+              <DetailItem label="Category" value={categoryName(viewData.category_id)} />
+              <DetailItem label="Sub-Category" value={subCategoryName(viewData.sub_category_id)} />
+              <DetailItem label="Kitchen Section" value={kitchenName(viewData.kitchen_id)} />
+              <DetailItem label="Description" value={viewData.description} span={2} />
+            </DetailList>
           </ViewSection>
 
           <ViewSection title="Pricing">
-            <Input label="Price" value={viewData.price ?? "-"} disabled />
-            <Input label="Cost Price" value={viewData.cost_price ?? "—"} disabled />
-            <Input label="Tax %" value={viewData.tax_percentage ?? "0"} disabled />
-            <Input label="Service Charge Applicable" value={viewData.service_charge_applicable ? "Yes" : "No"} disabled />
+            <DetailList columns={2}>
+              <DetailItem label="Price" value={formatPrecise(viewData.price)} />
+              <DetailItem label="Cost Price" value={formatPrecise(viewData.cost_price)} />
+              <DetailItem label="Tax %" value={viewData.tax_percentage ?? 0} />
+              <DetailItem
+                label="Service Charge Applicable"
+                value={viewData.service_charge_applicable ? "Yes" : "No"}
+              />
+            </DetailList>
           </ViewSection>
 
           <ViewSection title="Attributes">
-            <Input label="Veg / Non-Veg" value={viewData.is_veg ? "Veg" : "Non-Veg"} disabled />
-            <Input label="Availability" value={viewData.availability_status || "-"} disabled />
-            <Input label="Happy Hour Eligible" value={viewData.happy_hour_eligible ? "Yes" : "No"} disabled />
-            <Input label="Preparation Time" value={viewData.preparation_time ? `${viewData.preparation_time} min` : "—"} disabled />
-            {Array.isArray(viewData.dietary_tags) && viewData.dietary_tags.length > 0 && (
-              <div className="form-group">
-                <label>Dietary Tags</label>
-                <ChipGroup items={viewData.dietary_tags} />
-              </div>
-            )}
+            <DetailList columns={2}>
+              <DetailItem label="Veg / Non-Veg" value={viewData.is_veg ? "Veg" : "Non-Veg"} />
+              <DetailItem label="Availability" value={viewData.availability_status} />
+              <DetailItem
+                label="Happy Hour Eligible"
+                value={viewData.happy_hour_eligible ? "Yes" : "No"}
+              />
+              <DetailItem
+                label="Preparation Time"
+                value={viewData.preparation_time ? `${viewData.preparation_time} min` : null}
+              />
+              {Array.isArray(viewData.dietary_tags) && viewData.dietary_tags.length > 0 && (
+                <DetailItem label="Dietary Tags" span={2}>
+                  <ChipGroup items={viewData.dietary_tags} />
+                </DetailItem>
+              )}
+            </DetailList>
           </ViewSection>
 
           {Array.isArray(viewData.variants) && viewData.variants.length > 0 && (
             <ViewSection title="Variants">
               <ChipGroup
-                items={viewData.variants.map((v) => ({ key: v.id || v.variant_name, label: `${v.variant_name} — ${v.price}` }))}
+                items={viewData.variants.map((v) => ({ key: v.id || v.variant_name, label: `${v.variant_name} — ${formatPrecise(v.price)}` }))}
               />
             </ViewSection>
           )}
@@ -491,7 +534,7 @@ const MenuManagement = () => {
               <ChipGroup
                 items={viewData.modifiers.map((m) => ({
                   key: m.id || m.modifier_name,
-                  label: `${m.modifier_name} (${m.modifier_type})${m.price ? ` — ${m.price}` : ""}`,
+                  label: `${m.modifier_name} (${m.modifier_type})${m.price ? ` — ${formatPrecise(m.price)}` : ""}`,
                 }))}
               />
             </ViewSection>
@@ -516,7 +559,7 @@ const MenuManagement = () => {
           ]}
         >
           {formError && (
-            <div style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <ErrorAlert message={formError} />
             </div>
           )}
@@ -603,11 +646,17 @@ const MenuManagement = () => {
             ]}
           />
 
-          <div style={{ gridColumn: "1 / -1" }}>
-            <Input label="Description" name="description" value={formData.description} onChange={handleChange} />
+          <div className="field-full">
+            <Textarea
+              label="Description"
+              name="description"
+              rows={3}
+              value={formData.description}
+              onChange={handleChange}
+            />
           </div>
 
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="field-full">
             <Input
               label="Dietary Tags (comma-separated, e.g. Vegan, Gluten-Free, Spicy)"
               name="dietary_tags"
@@ -617,26 +666,21 @@ const MenuManagement = () => {
             />
           </div>
 
-          <div className="form-group" style={{ gridColumn: "1 / -1" }}>
-            <label>Item Image</label>
-            {formData.item_image && (
-              <img
-                src={formData.item_image}
-                alt="preview"
-                style={{ width: "120px", height: "120px", objectFit: "cover", borderRadius: "8px", marginBottom: "8px" }}
-                onError={(e) => {
-                  e.currentTarget.style.display = "none";
-                }}
-              />
-            )}
-            <input type="file" accept="image/*" onChange={handleImageFileChange} disabled={imageUploading} />
-            {imageUploading && (
-              <p style={{ fontSize: "12px", color: "#94a3b8", margin: "4px 0 0" }}>Uploading…</p>
-            )}
+          <div className="field-full">
+            {/* Was a bare <input type="file"> beside a hand-sized <img>, the
+                only unstyled browser control left in the form. */}
+            <ImagePicker
+              label={imageUploading ? "Item Image — uploading…" : "Item Image"}
+              value={formData.item_image}
+              authPrefix="/restaurant"
+              disabled={imageUploading}
+              onChange={handleImageFile}
+              onClear={() => setFormData((p) => ({ ...p, item_image: "" }))}
+            />
           </div>
 
           {!editId && (
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <label>Variants (e.g. Small / Medium / Large pricing)</label>
               <RepeatableRowEditor
                 rows={variants}
@@ -659,7 +703,7 @@ const MenuManagement = () => {
           )}
 
           {!editId && (
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <label>Modifiers (add-ons or removable ingredients)</label>
               <RepeatableRowEditor
                 rows={modifiers}
@@ -678,7 +722,7 @@ const MenuManagement = () => {
           )}
 
           {editId && existingDetail && (
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <label>Variants (e.g. Small / Medium / Large pricing)</label>
               <RepeatableRowEditor
                 rows={existingDetail.variants || []}
@@ -690,14 +734,14 @@ const MenuManagement = () => {
                 onFieldChange={(index, key, value, row) => updateExistingVariantField(row.id, key, value)}
                 onRemove={(index, row) => deleteExistingVariant(row.id)}
                 renderRowExtra={(row) => (
-                  <button type="button" className="btn secondary" onClick={() => saveExistingVariant(row)}>
+                  <Button variant="secondary" size="small" onClick={() => saveExistingVariant(row)}>
                     Save
-                  </button>
+                  </Button>
                 )}
                 emptyLabel="No variants — this item uses the single price above."
               />
 
-              <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+              <div className="menu-inline-add">
                 <Input
                   placeholder="Variant name (e.g. Large)"
                   value={newVariant.variant_name}
@@ -717,7 +761,7 @@ const MenuManagement = () => {
           )}
 
           {editId && existingDetail && (
-            <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+            <div className="field-full">
               <label>Modifiers (add-ons or removable ingredients)</label>
               <RepeatableRowEditor
                 rows={existingDetail.modifiers || []}
@@ -730,14 +774,14 @@ const MenuManagement = () => {
                 onFieldChange={(index, key, value, row) => updateExistingModifierField(row.id, key, value)}
                 onRemove={(index, row) => deleteExistingModifier(row.id)}
                 renderRowExtra={(row) => (
-                  <button type="button" className="btn secondary" onClick={() => saveExistingModifier(row)}>
+                  <Button variant="secondary" size="small" onClick={() => saveExistingModifier(row)}>
                     Save
-                  </button>
+                  </Button>
                 )}
                 emptyLabel="No modifiers for this item."
               />
 
-              <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
+              <div className="menu-inline-add">
                 <Input
                   placeholder="Modifier name (e.g. Extra Cheese)"
                   value={newModifier.modifier_name}
@@ -762,6 +806,21 @@ const MenuManagement = () => {
           )}
         </Modal>
       )}
+
+      {/* ================= DELETE ================= */}
+      <ConfirmModal
+        isOpen={!!deleteRow}
+        onClose={() => setDeleteRow(null)}
+        onConfirm={confirmDelete}
+        title="Deactivate Menu Item"
+        confirmText="Deactivate"
+        size="small"
+        destructive
+      >
+        {`Deactivate ${deleteRow?.item_name || "this item"}? It will no longer be orderable.`}
+      </ConfirmModal>
+
+      <Toast {...toast} />
     </>
   );
 };

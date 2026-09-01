@@ -6,8 +6,8 @@ import DonutChart from "../../Hotel/Dashboard/Components/DonutChart";
 import BarListStat from "../../Hotel/Dashboard/Components/BarListStat";
 import MiniTableCard from "../../Hotel/Dashboard/Components/MiniTableCard";
 import ReportTabHeader from "../../Hotel/Dashboard/Components/ReportTabHeader";
+import { todayIso } from "../../functions/formatters";
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 
 const numberFmt = new Intl.NumberFormat(undefined);
