@@ -1,0 +1,236 @@
+/* Profile and Settings — the two screens reached from the avatar menu.
+   They share a layout, so they share one stylesheet rather than each growing
+   its own copy of the same toolbar and header. */
+
+.account-page {
+  padding: 1.25rem 1.5rem 2.5rem;
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+/* ---------------------------------------------------------------- toolbar */
+.account-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.account-toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.account-back,
+.account-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--border-radius, 8px);
+  border: 1px solid var(--border-light, #e5e7eb);
+  background: #fff;
+  color: var(--text-primary, #111827);
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.account-back:hover,
+.account-btn:hover:not(:disabled) {
+  background: var(--primary-lightest, #fff1f4);
+  border-color: var(--primary-color, #850126);
+}
+
+.account-btn.primary {
+  background: var(--primary-color, #850126);
+  border-color: var(--primary-color, #850126);
+  color: #fff;
+}
+
+.account-btn.primary:hover:not(:disabled) {
+  background: var(--primary-dark, #6b0120);
+}
+
+.account-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ----------------------------------------------------------------- header */
+.account-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  background: #fff;
+  border: 1px solid var(--border-light, #e5e7eb);
+  border-radius: var(--border-radius, 10px);
+}
+
+.account-header.compact {
+  padding: 1rem 1.25rem;
+}
+
+.account-avatar {
+  flex: 0 0 auto;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--primary-color, #850126);
+  color: #fff;
+}
+
+.account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-avatar-initials {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.account-identity {
+  min-width: 0;
+}
+
+.account-identity h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--secondary-dark, #111827);
+  overflow-wrap: anywhere;
+}
+
+.account-identity p {
+  margin: 0.15rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-muted, #6b7280);
+}
+
+.account-code {
+  display: inline-block;
+  margin-top: 0.4rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: var(--primary-lightest, #fff1f4);
+  color: var(--primary-color, #850126);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+/* ------------------------------------------------------------ status text */
+.account-loading {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-muted, #6b7280);
+}
+
+.account-note {
+  margin: 1.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.6;
+}
+
+.account-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--primary-color, #850126);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------- form */
+/* Capped rather than full width: a password field stretched across a 1920px
+   monitor is harder to read back, not easier. */
+.account-form {
+  max-width: 26rem;
+}
+
+.account-field {
+  margin-bottom: 1rem;
+}
+
+.account-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary, #374151);
+}
+
+.account-input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-light, #d1d5db);
+  border-radius: var(--border-radius, 8px);
+  font: inherit;
+  font-size: 0.9rem;
+  background: #fff;
+  color: var(--text-primary, #111827);
+}
+
+.account-input:focus {
+  outline: 2px solid var(--primary-color, #850126);
+  outline-offset: 1px;
+  border-color: var(--primary-color, #850126);
+}
+
+.account-input[aria-invalid="true"] {
+  border-color: var(--danger, #dc2626);
+}
+
+.account-hint {
+  margin: 0.3rem 0 0;
+  font-size: 0.76rem;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.5;
+}
+
+.account-hint.error {
+  color: var(--danger, #dc2626);
+}
+
+.account-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+}
+
+/* ------------------------------------------------------------- responsive */
+@media (max-width: 640px) {
+  .account-page {
+    padding: 1rem 0.85rem 2rem;
+  }
+
+  .account-header {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .account-form,
+  .account-form-actions button {
+    max-width: none;
+  }
+
+  .account-form-actions button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}

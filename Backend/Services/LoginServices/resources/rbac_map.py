@@ -286,10 +286,8 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("user", "designations", "POST"): ("/designation",),
     ("user", "designations", "PUT"): ("/designation",),
     ("user", "designations/{id}", "DELETE"): ("/designation",),
-    ("user", "menus", "GET"): ("/user",),
     ("user", "role_permissions", "POST"): ("/user",),
     ("user", "role_permissions", "PUT"): ("/user",),
-    ("user", "role_permissions/{id}", "GET"): ("/user",),
     ("user", "roles", "GET"): ("/employee", "/roles", "/user",),
     ("user", "roles", "POST"): ("/roles",),
     ("user", "roles", "PUT"): ("/roles",),
@@ -420,7 +418,6 @@ UNCALLED_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("user", "role_permissions/{id}", "DELETE"),
     ("user", "roles/{id}", "GET"),
     ("user", "shifts/{id}", "GET"),
-    ("user", "submenus", "GET"),
     ("user", "submenus", "POST"),
     ("user", "submenus", "PUT"),
     ("user", "submenus/by-menu/{id}", "GET"),
@@ -443,6 +440,8 @@ PAGE_PARENTS: dict[str, tuple[str, ...]] = {
     "/ReservationView": ("/dashboard", "/reservation_view",),
     "/authentication/forgotpassword": ("/", "/authentication/lockscreen",),
     "/authentication/register": ("/",),
+    "/profile": ("/settings",),
+    "/settings": ("/profile",),
     "/view": ("/floor_layout",),
 }
 
@@ -451,3 +450,23 @@ PAGE_PARENTS: dict[str, tuple[str, ...]] = {
 # rather than being mistaken for a permission bug.
 UNREACHABLE_ROUTES: tuple[str, ...] = (
 )
+
+# Endpoints allowed for any authenticated caller, checked BEFORE this map is
+# consulted -- so they deliberately have no row above.
+#
+# Each one is incapable of reaching another user's data however the request is
+# shaped. `menus`/`submenus`/`role_permissions/{id}` are what the SPA reads to
+# draw its own navigation, and gating the menu behind a menu permission is
+# circular. `me` and `me/password` take no user id at all: the row comes from
+# the JWT, so there is no colleague to reach.
+#
+# They are reached from the avatar menu, which has no menu row, so mapping them
+# the ordinary way would produce rows nothing can grant -- denying every role,
+# an owner holding every permission included.
+ALWAYS_ALLOW: set[tuple[str, str, str]] = {
+    ("user", "me", "GET"),  # the caller's own record
+    ("user", "me/password", "PUT"),  # the caller's own password
+    ("user", "menus", "GET"),  # the SPA's own navigation
+    ("user", "role_permissions/{id}", "GET"),  # the SPA's own navigation
+    ("user", "submenus", "GET"),  # the SPA's own navigation
+}

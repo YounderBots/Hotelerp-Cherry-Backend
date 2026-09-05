@@ -562,6 +562,214 @@ def verify_credentials(payload: dict, db: Session = Depends(get_db)):
 
 
 # =====================================================
+# THE SIGNED-IN USER'S OWN RECORD
+# =====================================================
+# WHY THESE ARE SEPARATE FROM /users AND /users/{id}
+#     Those two are HRM: they read and write ANY employee, and the gateway
+#     rightly gates them behind the /user and /employee pages. But a Front Desk
+#     clerk has no HRM permission and still has to be able to see their own
+#     profile and change their own password -- gating self-service behind an
+#     admin page would deny it to almost everyone who needs it.
+#
+#     These take no user id. The row is chosen from the JWT alone, so the
+#     endpoint cannot be pointed at a colleague however the request is shaped,
+#     and no page permission is required because there is nothing here to
+#     escalate to. That is what lets them sit in the gateway's ALWAYS_ALLOW set
+#     beside the menu reads.
+# =====================================================
+@router.get("/me", status_code=status.HTTP_200_OK)
+def get_my_profile(request: Request, db: Session = Depends(get_db)):
+    """The caller's own employee record, resolved from the token."""
+    try:
+        auth_user_id, auth_role, company_id, token = verify_authentication(request)
+        if not auth_user_id or not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+            )
+
+        user = (
+            db.query(models.Users)
+            .filter(
+                models.Users.id == auth_user_id,
+                models.Users.company_id == company_id,
+                models.Users.status == CommonWords.STATUS,
+            )
+            .first()
+        )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Your user record could not be found",
+            )
+
+        # Resolved names, not bare ids: this is read by a profile screen, and
+        # a screen that shows "Department 3" has told the reader nothing.
+        department = (
+            db.query(models.Department)
+            .filter(models.Department.id == user.Department_ID)
+            .first()
+        )
+        designation = (
+            db.query(models.Designation)
+            .filter(models.Designation.id == user.Designation_ID)
+            .first()
+        )
+        role = db.query(models.Roles).filter(models.Roles.id == user.Role_ID).first()
+        shift = db.query(models.Shift).filter(models.Shift.id == user.Shift_ID).first()
+
+        return {
+            "status": "success",
+            "data": {
+                "id": user.id,
+                "user_code": user.User_Code,
+                "photo": user.Photo,
+                "username": user.username,
+                "first_name": user.First_Name,
+                "last_name": user.Last_Name,
+                "personal_email": user.Personal_Email,
+                "company_email": user.Company_Email,
+                "mobile": user.Mobile,
+                "alternative_mobile": user.Alternative_Mobile,
+                "dob": user.D_O_B,
+                "gender": user.Gender,
+                "marital_status": user.Marital_Status,
+                "address": user.Address,
+                "city": user.City,
+                "state": user.State,
+                "postal_code": user.Postal_Code,
+                "country": user.Country,
+                "department_id": user.Department_ID,
+                "department_name": getattr(department, "Department_Name", None),
+                "designation_id": user.Designation_ID,
+                "designation_name": getattr(designation, "Designation_Name", None),
+                "role_id": user.Role_ID,
+                "role_name": getattr(role, "role_name", None),
+                "shift_id": user.Shift_ID,
+                "shift_name": getattr(shift, "Shift_Name", None),
+                "shift_start": getattr(shift, "Start_Time", None),
+                "shift_end": getattr(shift, "End_Time", None),
+                "date_of_joining": user.Date_Of_Joining,
+                "experience": user.Experience,
+                "emergency_name": user.Emergency_Name,
+                "emergency_contact": user.Emergency_Contact,
+                "emergency_relationship": user.Emergency_Relationship,
+                "created_at": user.created_at,
+                # Salary is deliberately NOT here. It is on the HRM record for
+                # the people who administer pay; a profile screen reachable by
+                # everyone is not the place to publish it, and this endpoint
+                # bypasses page permissions precisely so it must carry nothing
+                # that page permissions were protecting.
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("get_my_profile_failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
+
+
+# Long enough to resist a guess, short enough that people will not write it on
+# a note by the terminal. Matched by the same rule in the UI so the two cannot
+# disagree about what is acceptable.
+PASSWORD_MIN_LENGTH = 8
+
+
+@router.put("/me/password", status_code=status.HTTP_200_OK)
+def change_my_password(payload: dict, request: Request, db: Session = Depends(get_db)):
+    """Change the caller's own password.
+
+    The current password is required even though the caller is already
+    authenticated: a token can be an unattended terminal someone walked up to,
+    and re-entering the password is what distinguishes the account's owner from
+    whoever is standing at their screen.
+    """
+    try:
+        auth_user_id, auth_role, company_id, token = verify_authentication(request)
+        if not auth_user_id or not company_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+            )
+
+        current_password = (payload or {}).get("current_password") or ""
+        new_password = (payload or {}).get("new_password") or ""
+
+        if not current_password or not new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Both the current and the new password are required",
+            )
+
+        if len(new_password) < PASSWORD_MIN_LENGTH:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"The new password must be at least {PASSWORD_MIN_LENGTH} characters",
+            )
+
+        if new_password == current_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The new password must be different from the current one",
+            )
+
+        user = (
+            db.query(models.Users)
+            .filter(
+                models.Users.id == auth_user_id,
+                models.Users.company_id == company_id,
+                models.Users.status == CommonWords.STATUS,
+            )
+            .first()
+        )
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Your user record could not be found",
+            )
+
+        ok = False
+        if user.Password:
+            try:
+                ok = bcrypt.checkpw(
+                    current_password.encode("utf-8"), user.Password.encode("utf-8")
+                )
+            except (ValueError, TypeError):
+                ok = False
+
+        if not ok:
+            # 403 rather than 401: the token is fine, the re-authentication is
+            # what failed. A 401 would make the SPA log the user out.
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The current password is not correct",
+            )
+
+        user.Password = bcrypt.hashpw(
+            new_password.encode("utf-8"), bcrypt.gensalt()
+        ).decode("utf-8")
+        user.updated_by = str(auth_user_id)
+        db.commit()
+
+        logger.info("password_changed user=%s", auth_user_id)
+        return {"status": "success", "message": "Your password has been changed"}
+
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception("change_my_password_failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
+
+
+# =====================================================
 # UPDATE USER
 # =====================================================
 @router.put("/users", status_code=status.HTTP_200_OK)

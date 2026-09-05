@@ -1,5 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo, Suspense, lazy } from 'react';
-import { Menu, ChevronDown, ChevronRight } from 'lucide-react';
+// `Settings` is aliased: the lazy-loaded Settings PAGE is declared below under
+// that name, and the two would collide.
+import {
+  Menu, ChevronDown, ChevronRight,
+  UserRound, Settings as SettingsIcon, LogOut,
+} from 'lucide-react';
 import './App.css'
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, Outlet, Navigate } from 'react-router-dom';
 import paLogo from './assets/layout/Cherry.png';
@@ -35,6 +40,14 @@ const AddNewReservation = lazy(() => import('./Hotel/Reservation/AddNewReservati
 const Booking = lazy(() => import('./Hotel/Reservation/Booking'));
 const RoomView = lazy(() => import('./Hotel/Reservation/RoomView'));
 const ReservationView = lazy(() => import('./Hotel/Reservation/ReservationView'));
+
+// Reached from the avatar menu rather than the sidebar, so these two have no
+// menu row. The endpoints behind them (/user/me, /user/me/password) take no
+// user id and are in the gateway's ALWAYS_ALLOW set for that reason -- every
+// role can read its own record and change its own password, whatever page
+// permissions it holds.
+const Profile = lazy(() => import('./Account/Profile'));
+const Settings = lazy(() => import('./Account/Settings'));
 const NightAuditDashboard = lazy(() => import('./Hotel/Night Audit/NightAuditDashboard'));
 const UserReserved = lazy(() => import('./Hotel/Night Audit/UserReserved'));
 const RoomBooked = lazy(() => import('./Hotel/Night Audit/RoomBooked'));
@@ -166,6 +179,13 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
     return () => document.removeEventListener("keydown", onKey);
   }, [profileOpen]);
 
+  // Every item closes the menu first. Leaving it open behind the new page
+  // means it is still hanging there when the user navigates back.
+  const go = (path) => {
+    setProfileOpen(false);
+    navigate(path);
+  };
+
   const handleLogout = () => {
     setProfileOpen(false);
     logout();
@@ -207,11 +227,35 @@ const Navbar = ({ isMobileMenuOpen, setIsMobileMenuOpen }) => {
             <div className="profile-dropdown" role="menu" aria-label="Account menu">
               <button
                 type="button"
+                className="dropdown-item"
+                role="menuitem"
+                onClick={() => go("/profile")}
+              >
+                <UserRound size={16} aria-hidden="true" />
+                <span>Profile</span>
+              </button>
+              <button
+                type="button"
+                className="dropdown-item"
+                role="menuitem"
+                onClick={() => go("/settings")}
+              >
+                <SettingsIcon size={16} aria-hidden="true" />
+                <span>Settings</span>
+              </button>
+
+              {/* Separated because logging out is destructive of the session
+                  and sits next to two navigations that are not. */}
+              <div className="dropdown-separator" role="separator" />
+
+              <button
+                type="button"
                 className="dropdown-item logout"
                 role="menuitem"
                 onClick={handleLogout}
               >
-                Log out
+                <LogOut size={16} aria-hidden="true" />
+                <span>Log out</span>
               </button>
             </div>
           )}
@@ -560,6 +604,20 @@ const App = () => {
             <Route path="/reservation_view" element={
               <Page>
                 <ReservationView />
+              </Page>
+            } />
+
+            {/* Account, reached from the avatar menu. Both are in
+                RequirePage's UNGATED set: they have no menu row, so gating
+                them on the menu tree would deny them to every role. */}
+            <Route path="/profile" element={
+              <Page>
+                <Profile />
+              </Page>
+            } />
+            <Route path="/settings" element={
+              <Page>
+                <Settings />
               </Page>
             } />
             {/* The night audit PROCESS screen — the only page in the module

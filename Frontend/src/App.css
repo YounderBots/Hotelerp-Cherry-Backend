@@ -774,16 +774,21 @@ main {
   position: absolute;
   top: 48px;
   right: 0;
-  width: 160px;
+  /* Was a fixed 160px, which is narrower than "Change password" and clipped
+     any label longer than one short word. min-width lets the widest item set
+     the width instead. */
+  min-width: 190px;
+  padding: 6px;
   background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-  overflow: hidden;
+  border: 1px solid var(--border-light, #e5e7eb);
+  border-radius: 10px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.16);
   z-index: 2000;
 }
 
 .dropdown-item {
-  padding: 12px;
+  padding: 9px 10px;
+  border-radius: 7px;
   cursor: pointer;
   font-size: 14px;
   background: transparent;
@@ -792,8 +797,27 @@ main {
   font: inherit;
   text-align: left;
   width: 100%;
-  display: block;
-  transition: background 0.15s ease;
+  /* Flex, not block: each item is now an icon beside a label. */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.dropdown-item svg {
+  flex: 0 0 auto;
+  color: var(--text-muted, #6b7280);
+}
+
+.dropdown-item:hover svg,
+.dropdown-item:focus-visible svg {
+  color: inherit;
+}
+
+.dropdown-separator {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border-light, #e5e7eb);
 }
 
 .dropdown-item:hover,

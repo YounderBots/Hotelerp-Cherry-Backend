@@ -14,6 +14,25 @@ import "./ErrorBoundary.css";
  * a user from walking into a screen full of 403s.
  */
 
+/**
+ * Routes that are never gated by the menu tree.
+ *
+ * These have no menu row on purpose -- they are reached from the avatar menu,
+ * not the sidebar -- so gating on the menu tree would deny them to everyone,
+ * an owner holding every permission included.
+ *
+ *   /dashboard  the post-login landing page and the target of every "go back"
+ *               affordance
+ *   /profile    the signed-in user's own record
+ *   /settings   their own password
+ *
+ * The last two mirror the gateway's ALWAYS_ALLOW set, and for the same reason:
+ * `/user/me` and `/user/me/password` take no user id, so they can only ever
+ * reach the caller's own row and there is nothing here a page permission would
+ * be protecting.
+ */
+const UNGATED = new Set(["/dashboard", "/profile", "/settings"]);
+
 const collectPaths = (nodes, into = new Set()) => {
     if (!Array.isArray(nodes)) return into;
     for (const node of nodes) {
@@ -52,9 +71,7 @@ const RequirePage = ({ children }) => {
 
     const allowed = collectPaths(menus);
 
-    // The dashboard is the post-login landing page and the target of every
-    // "go back" affordance, so it must never be gated.
-    if (location.pathname === "/dashboard") return children;
+    if (UNGATED.has(location.pathname)) return children;
 
     return allowed.has(location.pathname) ? children : <Denied />;
 };

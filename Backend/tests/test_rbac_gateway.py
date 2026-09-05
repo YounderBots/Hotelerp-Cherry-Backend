@@ -508,3 +508,56 @@ def test_a_dashboard_only_role_can_read_the_summary_it_needs(enforce):
 def test_the_reservation_screens_still_read_the_list(enforce):
     for page in ("/reservation", "/reservation_view"):
         assert check({page: VIEW}, "hotel", "room_reservation", "GET") is None
+
+
+# ---------------------------------------------------------------------------
+# Self-service endpoints
+#
+# /user/me and /user/me/password are reached from the avatar menu, which has no
+# menu row, so no permission claim can ever contain /profile or /settings. If
+# these were mapped the ordinary way they would deny every role -- an owner
+# holding every permission included. They are exempt because neither takes a
+# user id: the row comes from the JWT, so no request shape reaches a colleague.
+# ---------------------------------------------------------------------------
+
+def test_a_user_with_no_permissions_at_all_can_read_their_own_profile(enforce):
+    assert check({}, "user", "me", "GET") is None
+
+
+def test_a_user_with_no_permissions_at_all_can_change_their_own_password(enforce):
+    assert check({}, "user", "me/password", "PUT") is None
+
+
+def test_front_desk_reaches_self_service_without_any_hrm_permission(enforce):
+    """The case that motivated the exemption: a Front Desk claim holds nothing
+    on /user or /employee, and must still reach both."""
+    claim = {"/reservation": VIEW | CREATE | EDIT, "/dashboard": VIEW}
+    assert check(claim, "user", "me", "GET") is None
+    assert check(claim, "user", "me/password", "PUT") is None
+
+
+def test_self_service_is_not_mapped_as_an_ordinary_row():
+    """The generator drops these from ROUTE_PERMISSIONS on purpose. A row here
+    would be one nothing can grant, which is the signal reserved for a real
+    mapping failure."""
+    assert ("user", "me", "GET") not in ROUTE_PERMISSIONS
+    assert ("user", "me/password", "PUT") not in ROUTE_PERMISSIONS
+
+
+def test_the_exempt_set_stays_small_and_self_scoped():
+    """A guard on the blast radius. Everything exempt here bypasses page
+    permissions entirely, so the set must not quietly grow: each entry has to
+    be incapable of reaching another user's data however the request is shaped.
+    """
+    from resources.rbac import ALWAYS_ALLOW
+
+    assert ALWAYS_ALLOW == {
+        ("user", "role_permissions/{id}", "GET"),
+        ("user", "menus", "GET"),
+        ("user", "submenus", "GET"),
+        ("user", "me", "GET"),
+        ("user", "me/password", "PUT"),
+    }
+    # Nothing exempt may carry a path parameter that names a user.
+    for prefix, path, method in ALWAYS_ALLOW:
+        assert not path.startswith("users/"), f"{path} can address another user"

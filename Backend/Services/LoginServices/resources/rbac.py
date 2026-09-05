@@ -37,6 +37,7 @@ from typing import Iterable, Optional
 
 from resources.rbac_map import (
     ACTION_OVERRIDES,
+    ALWAYS_ALLOW,
     METHOD_ACTION,
     PAGE_PARENTS,
     ROUTE_PERMISSIONS,
@@ -50,13 +51,15 @@ ACTION_BIT = {"view": VIEW, "create": CREATE, "edit": EDIT, "delete": DELETE}
 
 MODE = os.getenv("RBAC_GATEWAY_MODE", "audit").strip().lower()
 
-# Endpoints that must stay reachable regardless of page permissions: they are
-# what the SPA needs to render its own navigation and identity.
-ALWAYS_ALLOW = {
-    ("user", "role_permissions/{id}", "GET"),
-    ("user", "menus", "GET"),
-    ("user", "submenus", "GET"),
-}
+# ALWAYS_ALLOW now comes from rbac_map (imported below, beside the rest of the
+# generated table) rather than being kept here.
+#
+# It used to be a second hand-maintained list, which is a drift risk with teeth:
+# the generator has to know which endpoints are exempt so it does not emit map
+# rows for them -- rows whose pages have no menu entry, and which therefore
+# report as "nothing can grant", the signal reserved for a real mapping
+# failure. One definition, in the file the generator writes, keeps the gateway
+# and the generator from disagreeing about what is exempt.
 
 
 def build_permission_claim(menus: Iterable[dict]) -> dict[str, int]:

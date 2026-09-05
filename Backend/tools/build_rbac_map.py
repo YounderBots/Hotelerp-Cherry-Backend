@@ -100,6 +100,36 @@ PREFIXES = ("masterdata", "hotel", "user", "restaurant", "bar")
 #       and all three are now fetched with the session token by ImagePicker /
 #       AttachmentPreview. Without these rows every stored photo in the app
 #       403s the moment the gateway is switched to enforce.
+# ---------------------------------------------------------------------------
+# SELF-SERVICE ENDPOINTS
+# ---------------------------------------------------------------------------
+# Endpoints the gateway allows for any authenticated caller, checked BEFORE the
+# permission map is consulted. Emitted into rbac_map.py as ALWAYS_ALLOW so the
+# gateway and this generator cannot drift apart about which they are.
+#
+# The bar for adding one is that the endpoint must be incapable of reaching
+# another user's data no matter how the request is shaped -- not merely
+# "everyone happens to need it".
+#
+#   user/menus, user/submenus, user/role_permissions/{id}
+#       What the SPA reads to draw its own navigation. Gating the menu behind a
+#       menu permission is circular.
+#
+#   user/me, user/me/password
+#       The signed-in user's own record and their own password. Neither takes a
+#       user id: the row comes from the JWT, so there is no colleague to reach
+#       and nothing a page permission would be protecting. They are reached
+#       from the avatar menu, which has no menu row -- so mapping them the
+#       normal way would produce rows nothing can grant, denying every role
+#       including an owner holding every permission.
+SELF_SERVICE: dict[tuple[str, str, str], str] = {
+    ("user", "role_permissions/{id}", "GET"): "the SPA's own navigation",
+    ("user", "menus", "GET"): "the SPA's own navigation",
+    ("user", "submenus", "GET"): "the SPA's own navigation",
+    ("user", "me", "GET"): "the caller's own record",
+    ("user", "me/password", "PUT"): "the caller's own password",
+}
+
 CURATED_ROWS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("hotel", "templates/static/room_incidents/{id}", "GET"): ("/room_incident_log",),
     ("masterdata", "templates/static/upload_image/{id}", "GET"): ("/rooms",),
@@ -517,8 +547,17 @@ def collect():
         table[key].update(pages)
         stats["curated"] += 1
 
+    # Self-service endpoints never reach the map: the gateway short-circuits
+    # them before consulting it. Leaving them in would put rows in the table
+    # that nothing can grant -- their pages have no menu row -- which is a
+    # signal reserved for a genuine mapping failure, and one this tool reports
+    # on. See SELF_SERVICE for why they are exempt at all.
+    for key in SELF_SERVICE:
+        table.pop(key, None)
+
     result = {k: tuple(sorted(v)) for k, v in table.items()}
-    uncalled = sorted(r for r in set(upstream) if r not in result)
+    uncalled = sorted(
+        r for r in set(upstream) if r not in result and r not in SELF_SERVICE)
     parents, unreachable = page_parents(entries)
     stats["upstream"] = len(set(upstream))
     stats["rows"] = len(result)
@@ -615,6 +654,22 @@ UNCALLED_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
 
 FOOTER_TAIL = ")\n"
 
+SELF_SERVICE_HEAD = '''
+# Endpoints allowed for any authenticated caller, checked BEFORE this map is
+# consulted -- so they deliberately have no row above.
+#
+# Each one is incapable of reaching another user's data however the request is
+# shaped. `menus`/`submenus`/`role_permissions/{id}` are what the SPA reads to
+# draw its own navigation, and gating the menu behind a menu permission is
+# circular. `me` and `me/password` take no user id at all: the row comes from
+# the JWT, so there is no colleague to reach.
+#
+# They are reached from the avatar menu, which has no menu row, so mapping them
+# the ordinary way would produce rows nothing can grant -- denying every role,
+# an owner holding every permission included.
+ALWAYS_ALLOW: set[tuple[str, str, str]] = {
+'''
+
 PARENTS_HEAD = '''
 # Detail routes -> the menu pages you reach them from.
 #
@@ -663,6 +718,14 @@ def render(table, uncalled, parents, unreachable) -> str:
     for route in sorted(unreachable):
         lines.append(f'    "{route}",\n')
     lines.append(FOOTER_TAIL)
+
+    lines.append(SELF_SERVICE_HEAD)
+    for key in sorted(SELF_SERVICE):
+        prefix, pattern, method = key
+        lines.append(
+            f'    ("{prefix}", "{pattern}", "{method}"),'
+            f'  # {SELF_SERVICE[key]}\n')
+    lines.append(FOOTER_TAIL.replace(")", "}"))
     return "".join(lines)
 
 
