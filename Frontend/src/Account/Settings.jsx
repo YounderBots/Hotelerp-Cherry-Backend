@@ -1,11 +1,10 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Eye, EyeOff, User as UserIcon } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, KeyRound, User as UserIcon } from "lucide-react";
 
 import APICall from "../APICalls/APICalls";
 import { errMsg } from "../functions/apiHelpers";
 import { useToast } from "../hooks/useToast";
-import ViewSection from "../stories/ViewSection";
 import ErrorAlert from "../stories/ErrorAlert";
 import Toast from "../stories/Toast";
 import "./Account.css";
@@ -112,14 +111,16 @@ const Settings = () => {
         </div>
       </div>
 
-      <header className="account-header compact">
-        <div className="account-identity">
-          <h1>Settings</h1>
-          <p>Your account, on this device and everywhere you sign in.</p>
-        </div>
+      <header className="account-header">
+        <h1>Settings</h1>
+        <p>Your account, on this device and everywhere you sign in.</p>
       </header>
 
-      <ViewSection title="Change Password">
+      <section className="acct-card acct-card--narrow">
+        <h2 className="acct-card__title">
+          <KeyRound size={15} aria-hidden="true" />
+          <span>Change Password</span>
+        </h2>
         <form className="account-form" onSubmit={submit} noValidate>
           <ErrorAlert message={error} />
 
@@ -206,7 +207,7 @@ const Settings = () => {
             </button>
           </div>
         </form>
-      </ViewSection>
+      </section>
 
       <Toast {...toast} />
     </div>

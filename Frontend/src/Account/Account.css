@@ -1,11 +1,25 @@
 /* Profile and Settings — the two screens reached from the avatar menu.
-   They share a layout, so they share one stylesheet rather than each growing
-   its own copy of the same toolbar and header. */
+   They share a shell, so they share one stylesheet rather than each growing
+   its own copy of the same toolbar, card and field treatment. */
 
 .account-page {
-  padding: 1.25rem 1.5rem 2.5rem;
-  max-width: 72rem;
+  padding: 1.25rem 1.5rem 3rem;
+  /* Wide enough for a three-column record on a large monitor, capped so the
+     lines do not run the full 1920px and become hard to scan back. */
+  max-width: 84rem;
   margin: 0 auto;
+}
+
+.account-page .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ---------------------------------------------------------------- toolbar */
@@ -30,20 +44,21 @@
   align-items: center;
   gap: 0.4rem;
   padding: 0.5rem 0.9rem;
-  border-radius: var(--border-radius, 8px);
+  border-radius: 8px;
   border: 1px solid var(--border-light, #e5e7eb);
   background: #fff;
   color: var(--text-primary, #111827);
   font: inherit;
   font-size: 0.86rem;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .account-back:hover,
 .account-btn:hover:not(:disabled) {
   background: var(--primary-lightest, #fff1f4);
   border-color: var(--primary-color, #850126);
+  color: var(--primary-color, #850126);
 }
 
 .account-btn.primary {
@@ -54,92 +69,253 @@
 
 .account-btn.primary:hover:not(:disabled) {
   background: var(--primary-dark, #6b0120);
+  border-color: var(--primary-dark, #6b0120);
+  color: #fff;
 }
 
 .account-btn:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* ----------------------------------------------------------------- header */
-.account-header {
+.account-back:focus-visible,
+.account-btn:focus-visible {
+  outline: 2px solid var(--primary-color, #850126);
+  outline-offset: 2px;
+}
+
+/* ----------------------------------------------------------------- layout */
+/* Identity beside the detail rather than stacked above it. Stacked, the
+   identity card is a short block with a wide band of empty space to its
+   right on anything above ~1100px. */
+.account-layout {
+  display: grid;
+  grid-template-columns: 19rem minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.account-main {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 1rem;
-  padding: 1.25rem;
-  margin-bottom: 1.25rem;
+  min-width: 0;
+}
+
+/* --------------------------------------------------------------- identity */
+.acct-identity {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 1.25rem;
   background: #fff;
   border: 1px solid var(--border-light, #e5e7eb);
-  border-radius: var(--border-radius, 10px);
+  border-radius: 12px;
 }
 
-.account-header.compact {
-  padding: 1rem 1.25rem;
-}
-
-.account-avatar {
-  flex: 0 0 auto;
-  width: 4.5rem;
-  height: 4.5rem;
+.acct-avatar {
+  width: 5.5rem;
+  height: 5.5rem;
   border-radius: 50%;
   overflow: hidden;
   display: grid;
   place-items: center;
   background: var(--primary-color, #850126);
   color: #fff;
+  /* A ring rather than a border, so the photo is not visually cropped by it. */
+  box-shadow: 0 0 0 4px var(--primary-lightest, #fff1f4);
 }
 
-.account-avatar img {
+.acct-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.account-avatar-initials {
-  font-size: 1.5rem;
+.acct-avatar__initials {
+  font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: 0.5px;
 }
 
-.account-identity {
-  min-width: 0;
-}
-
-.account-identity h1 {
-  margin: 0;
-  font-size: 1.35rem;
+.acct-name {
+  margin: 0.9rem 0 0;
+  font-size: 1.2rem;
   font-weight: 700;
+  line-height: 1.3;
   color: var(--secondary-dark, #111827);
   overflow-wrap: anywhere;
 }
 
-.account-identity p {
-  margin: 0.15rem 0 0;
-  font-size: 0.9rem;
+.acct-title {
+  margin: 0.2rem 0 0;
+  font-size: 0.88rem;
+  color: var(--text-primary, #374151);
+}
+
+.acct-dept {
+  margin: 0.1rem 0 0;
+  font-size: 0.8rem;
   color: var(--text-muted, #6b7280);
 }
 
-.account-code {
-  display: inline-block;
-  margin-top: 0.4rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 4px;
+.acct-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 0.8rem;
+}
+
+.acct-tag {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.acct-tag.is-role {
   background: var(--primary-lightest, #fff1f4);
   color: var(--primary-color, #850126);
+}
+
+.acct-tag.is-code {
+  background: var(--bg-secondary, #f5f5f4);
+  color: var(--text-muted, #6b7280);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* The four facts most often wanted at a glance, repeated from the cards on
+   purpose: on a narrow screen the cards are a long scroll below this. */
+.acct-quick {
+  width: 100%;
+  margin: 1.1rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-light, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  text-align: left;
+}
+
+.acct-quick > div {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.acct-quick svg {
+  flex: 0 0 auto;
+  color: var(--text-muted, #9ca3af);
+}
+
+.acct-quick dd {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-primary, #374151);
+  min-width: 0;
+}
+
+.acct-quick .is-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ cards */
+.acct-card {
+  padding: 1.1rem 1.25rem 1.25rem;
+  background: #fff;
+  border: 1px solid var(--border-light, #e5e7eb);
+  border-radius: 12px;
+}
+
+/* A card holding one narrow form rather than a record grid. Capping the CARD,
+   not just the form inside it, is the difference between a form and a form
+   sitting in an acre of empty white -- which is what a full-width card looks
+   like around a 26rem field stack on a large monitor. */
+.acct-card--narrow {
+  max-width: 34rem;
+}
+
+.acct-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--border-light, #f1f1f0);
   font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted, #6b7280);
+}
+
+.acct-card__title svg {
+  color: var(--primary-color, #850126);
+}
+
+/* ONE grid for every card, so the columns are a single rhythm down the page.
+   Fixed tracks rather than auto-fit: auto-fit derives the column count from
+   each section's own item count, which is why a four-field section and a
+   five-field section did not line up with each other. */
+.acct-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem 1.5rem;
+  margin: 0;
+}
+
+.acct-field {
+  min-width: 0;
+}
+
+.acct-field--wide {
+  grid-column: 1 / -1;
+}
+
+.acct-field dt {
+  margin: 0 0 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #9ca3af);
+}
+
+/* No box around the value. Bordered, tinted fields read as a form that has
+   been switched off -- the exact impression DetailList was introduced to get
+   away from. A record is a label above a value. */
+.acct-field dd {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--text-primary, #111827);
+  overflow-wrap: anywhere;
+}
+
+.acct-field dd.is-empty {
+  color: var(--text-muted, #9ca3af);
+  font-weight: 400;
 }
 
 /* ------------------------------------------------------------ status text */
 .account-loading {
-  padding: 1.5rem;
+  padding: 2.5rem;
   text-align: center;
   color: var(--text-muted, #6b7280);
 }
 
 .account-note {
-  margin: 1.25rem 0 0;
-  font-size: 0.82rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
   color: var(--text-muted, #6b7280);
   line-height: 1.6;
 }
@@ -154,7 +330,33 @@
   cursor: pointer;
 }
 
-/* ------------------------------------------------------------------- form */
+/* ------------------------------------------------------- settings: header */
+/* Matches .acct-card--narrow below it, so the header and the form it
+   introduces share one left AND right edge instead of the header running on
+   past the card. */
+.account-header {
+  max-width: 34rem;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1rem;
+  background: #fff;
+  border: 1px solid var(--border-light, #e5e7eb);
+  border-radius: 12px;
+}
+
+.account-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--secondary-dark, #111827);
+}
+
+.account-header p {
+  margin: 0.2rem 0 0;
+  font-size: 0.86rem;
+  color: var(--text-muted, #6b7280);
+}
+
+/* --------------------------------------------------------- settings: form */
 /* Capped rather than full width: a password field stretched across a 1920px
    monitor is harder to read back, not easier. */
 .account-form {
@@ -177,7 +379,7 @@
   width: 100%;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border-light, #d1d5db);
-  border-radius: var(--border-radius, 8px);
+  border-radius: 8px;
   font: inherit;
   font-size: 0.9rem;
   background: #fff;
@@ -213,20 +415,103 @@
 }
 
 /* ------------------------------------------------------------- responsive */
-@media (max-width: 640px) {
-  .account-page {
-    padding: 1rem 0.85rem 2rem;
+
+/* Below the two-column threshold the identity card stops being a column and
+   becomes a banner: avatar beside the name rather than above it, so it does
+   not eat a screen's height before the record starts. */
+@media (max-width: 1099px) {
+  .account-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .account-header {
-    flex-direction: column;
-    align-items: flex-start;
+  .acct-identity {
+    position: static;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "avatar name"
+      "avatar quick";
+    align-items: center;
+    justify-items: start;
     text-align: left;
+    gap: 0 1.1rem;
+    padding: 1.1rem 1.25rem;
   }
 
-  .account-form,
-  .account-form-actions button {
-    max-width: none;
+  .acct-avatar {
+    grid-area: avatar;
+    width: 4.25rem;
+    height: 4.25rem;
+  }
+
+  .acct-name,
+  .acct-title,
+  .acct-dept,
+  .acct-tags {
+    grid-area: name;
+  }
+
+  /* Stacked inside the name area rather than each on its own row. */
+  .acct-identity > .acct-name {
+    align-self: end;
+  }
+
+  .acct-name { margin: 0; }
+
+  .acct-title,
+  .acct-dept,
+  .acct-tags {
+    display: none;
+  }
+
+  .acct-quick {
+    grid-area: quick;
+    margin: 0.35rem 0 0;
+    padding-top: 0;
+    border-top: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.1rem;
+  }
+}
+
+@media (max-width: 860px) {
+  .acct-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .account-page {
+    padding: 1rem 0.85rem 2.5rem;
+  }
+
+  .acct-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.85rem;
+  }
+
+  .acct-identity {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "avatar" "name" "quick";
+    justify-items: center;
+    text-align: center;
+    gap: 0.6rem 0;
+  }
+
+  .acct-quick {
+    flex-direction: column;
+    gap: 0.45rem;
+    width: 100%;
+  }
+
+  .account-toolbar-actions {
+    width: 100%;
+  }
+
+  .account-toolbar-actions .account-btn {
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .account-form-actions button {
