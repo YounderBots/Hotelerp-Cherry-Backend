@@ -4,8 +4,8 @@
 
 .account-page {
   padding: 1.25rem 1.5rem 3rem;
-  /* Wide enough for a three-column record on a large monitor, capped so the
-     lines do not run the full 1920px and become hard to scan back. */
+  /* Capped so a line does not run the full 1920px and become hard to scan
+     back to the start of. */
   max-width: 84rem;
   margin: 0 auto;
 }
@@ -95,11 +95,21 @@
   align-items: start;
 }
 
+/* Cards two-up once there is room for it. One column of cards down a 1344px
+   page left the right two-thirds of every row empty and made the page twice
+   as tall as it needed to be; `align-items: start` keeps a short card short
+   instead of stretching it to match its neighbour. */
 .account-main {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 1rem;
   min-width: 0;
+}
+
+/* The closing note is not a card and belongs under both columns. */
+.account-main > .account-note {
+  grid-column: 1 / -1;
 }
 
 /* --------------------------------------------------------------- identity */
@@ -261,27 +271,36 @@
   color: var(--primary-color, #850126);
 }
 
-/* ONE grid for every card, so the columns are a single rhythm down the page.
-   Fixed tracks rather than auto-fit: auto-fit derives the column count from
-   each section's own item count, which is why a four-field section and a
-   five-field section did not line up with each other. */
+/* Rows, not a grid of cells.
+   A three-across grid of short values leaves a hole at the end of every
+   section -- five fields in three columns is one full row and a two-thirds
+   empty one -- and gives "admin" a 340px column it does not need. Each field
+   is now one row: label left, value right. There is no trailing cell to leave
+   blank, so a card is dense whatever number of fields it holds. */
 .acct-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem 1.5rem;
   margin: 0;
 }
 
 .acct-field {
-  min-width: 0;
+  display: grid;
+  grid-template-columns: 10.5rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-light, #f3f3f2);
 }
 
-.acct-field--wide {
-  grid-column: 1 / -1;
+.acct-field:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.acct-field:first-child {
+  padding-top: 0;
 }
 
 .acct-field dt {
-  margin: 0 0 0.2rem;
+  margin: 0;
   font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -291,7 +310,7 @@
 
 /* No box around the value. Bordered, tinted fields read as a form that has
    been switched off -- the exact impression DetailList was introduced to get
-   away from. A record is a label above a value. */
+   away from. */
 .acct-field dd {
   margin: 0;
   font-size: 0.9rem;
@@ -475,9 +494,11 @@
   }
 }
 
-@media (max-width: 860px) {
-  .acct-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* Below this the two card columns are too narrow to hold a label beside its
+   value without the value wrapping every time. */
+@media (max-width: 1180px) {
+  .account-main {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -486,9 +507,11 @@
     padding: 1rem 0.85rem 2.5rem;
   }
 
-  .acct-grid {
+  /* Label above value: at this width a fixed label column leaves too little
+     for the value, and an email starts breaking mid-word. */
+  .acct-field {
     grid-template-columns: minmax(0, 1fr);
-    gap: 0.85rem;
+    gap: 0.15rem;
   }
 
   .acct-identity {

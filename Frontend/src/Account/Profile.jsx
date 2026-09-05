@@ -24,11 +24,15 @@ import "./Account.css";
  * WHY IT DOES NOT USE DetailList
  *   DetailList lays out on `auto-fit, minmax(190px, 1fr)`, which is right for
  *   a modal: the column count follows the modal's width. On a full-width page
- *   it means every section computes a DIFFERENT column count from its own item
- *   count -- four fields here, five there -- so no two sections lined up and a
- *   lone fourth field stretched across half the row. This page uses one fixed
- *   grid for every section instead, so the columns are a single rhythm down
- *   the page.
+ *   every section computed a DIFFERENT column count from its own item count --
+ *   four fields here, five there -- so no two sections lined up.
+ *
+ *   Replacing it with a fixed three-column grid fixed the alignment and left a
+ *   new problem: five fields across three columns is one full row and a
+ *   two-thirds empty one, in every card, and "admin" does not need a 340px
+ *   column. So each field is a ROW -- label left, value right. A card has no
+ *   trailing cell to leave blank, and the cards sit two-up so the page uses
+ *   its width instead of running one narrow column down a wide screen.
  */
 
 const initials = (name) => {
@@ -38,11 +42,12 @@ const initials = (name) => {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
-/** One label/value pair. `wide` spans the full row for long free text. */
-const Field = ({ label, value, wide = false }) => {
+/** One label/value row. Every field is a row, so a card never ends on a
+ *  half-empty grid line however many fields it holds. */
+const Field = ({ label, value }) => {
   const empty = value === null || value === undefined || value === "";
   return (
-    <div className={`acct-field${wide ? " acct-field--wide" : ""}`}>
+    <div className="acct-field">
       <dt>{label}</dt>
       <dd className={empty ? "is-empty" : undefined}>{empty ? "—" : value}</dd>
     </div>
@@ -210,7 +215,7 @@ const Profile = () => {
               <Field label="Mobile" value={me.mobile} />
               <Field label="Alternative Mobile" value={me.alternative_mobile} />
               <Field label="Date of Birth" value={me.dob} />
-              <Field label="Address" value={address} wide />
+              <Field label="Address" value={address} />
             </Card>
 
             <Card title="In an Emergency" icon={ShieldAlert}>
