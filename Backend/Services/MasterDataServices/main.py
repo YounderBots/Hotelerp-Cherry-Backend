@@ -8,6 +8,30 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+# Guard BEFORE any other project import: a service must never run on a
+# sibling's configuration. Every service ships a top-level package named
+# `configs`, and Python caches modules by NAME rather than path, so in a
+# process where two service directories are on sys.path the first `configs`
+# imported serves them both.
+#
+# Placed above `from routes import ...` deliberately -- that import pulls in
+# the controllers, and one of them reads BaseConfig at module level. This is
+# where BarServices died with
+#   AttributeError: 'BaseConfig' has no attribute 'UPLOAD_ALLOWED_EXTENSIONS'
+# after being handed LoginServices' BaseConfig, which has no upload settings.
+# The crash was the lucky outcome: a key present in BOTH with different values
+# -- DB_URI, say -- would have been read wrong in silence.
+import configs as _configs
+
+if _configs.SERVICE_NAME != "MasterDataServices":
+    raise RuntimeError(
+        f"MasterDataServices loaded {_configs.SERVICE_NAME}'s configs package. Start "
+        f"this service with its own directory as the working directory "
+        f"(run.sh does that), and keep sibling service directories off "
+        f"sys.path."
+    )
+
+
 from configs.base_config import BaseConfig
 from routes import router
 

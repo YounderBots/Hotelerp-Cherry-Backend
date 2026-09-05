@@ -347,3 +347,52 @@ def test_a_stay_departing_in_the_past_has_ended():
 def test_a_future_stay_has_not_ended():
     """An early arrival is legitimate; the booking is still ahead of them."""
     assert rules.stay_has_ended(date(2026, 9, 5), date(2026, 9, 1)) is False
+
+
+# ---------------------------------------------------------------------------
+# Deletion guard messages
+#
+# Found live: the delete endpoint gave a Checked-In and a Checked-Out
+# reservation the SAME message -- "cannot be deleted, check the guest out
+# first" -- which is actionable advice for the first and nonsense for the
+# second, since a Checked-Out guest has already been checked out. The block
+# itself was correct in both cases; only the wording lied about there being a
+# next step for a stay that is actually terminal.
+# ---------------------------------------------------------------------------
+
+def test_a_checked_in_guest_gets_actionable_advice():
+    reason = rules.deletion_block_reason("Checked-In", 0)
+    assert reason is not None
+    assert "check the guest out" in reason.lower()
+
+
+def test_a_checked_out_stay_is_not_told_to_check_out_again():
+    """The bug this guards: telling an already-departed guest's record to
+    'check the guest out first' describes an action that cannot be taken."""
+    reason = rules.deletion_block_reason("Checked-Out", 0)
+    assert reason is not None
+    assert "check the guest out" not in reason.lower()
+    assert "complete" in reason.lower() or "history" in reason.lower()
+
+
+def test_a_checked_out_stay_is_blocked_even_with_no_balance():
+    """The historical record is protected regardless of what is still owed --
+    it is the STATUS that makes it terminal, not the money."""
+    assert rules.deletion_block_reason("Checked-Out", 0) is not None
+
+
+def test_an_unpaid_unarrived_reservation_may_be_deleted():
+    assert rules.deletion_block_reason("Confirmed", 0) is None
+
+
+def test_a_paid_but_not_yet_arrived_reservation_must_be_cancelled_not_deleted():
+    reason = rules.deletion_block_reason("Confirmed", 1500)
+    assert reason is not None
+    assert "cancel" in reason.lower()
+
+
+def test_cancelled_and_no_show_reservations_may_be_deleted():
+    """Terminal statuses that carry no money owed are not protected the way
+    Checked-Out is -- there was never a completed stay to preserve."""
+    assert rules.deletion_block_reason("Cancelled", 0) is None
+    assert rules.deletion_block_reason("No-Show", 0) is None

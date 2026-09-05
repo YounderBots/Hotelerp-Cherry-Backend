@@ -2361,26 +2361,11 @@ def delete_room_reservation(
         if not reservation:
             raise HTTPException(status_code=404, detail="Room reservation not found")
 
-        if rules.normalise_status(reservation.reservation_status) in {
-            rules.normalise_status(rules.CHECKED_IN),
-            rules.normalise_status(rules.CHECKED_OUT),
-        }:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"This guest is {reservation.reservation_status}, so the "
-                    "reservation cannot be deleted. Check the guest out first."
-                ),
-            )
-
-        if rules.money(reservation.paid_amount) > 0:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"{rules.money(reservation.paid_amount)} has been paid against this "
-                    "reservation. Cancel it instead so the payment stays on record."
-                ),
-            )
+        block_reason = rules.deletion_block_reason(
+            reservation.reservation_status, reservation.paid_amount
+        )
+        if block_reason:
+            raise HTTPException(status_code=409, detail=block_reason)
 
         room_ids = [int(r) for r in (reservation.room_ids or [])]
 

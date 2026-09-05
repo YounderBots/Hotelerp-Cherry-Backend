@@ -308,6 +308,47 @@ def can_offer(current: Optional[str], target: str) -> bool:
     return can_transition(current, target)
 
 
+def deletion_block_reason(current_status: Optional[str], paid_amount) -> Optional[str]:
+    """Why a reservation may not be permanently removed, or None if it may.
+
+    A reservation that has been acted on -- someone arrived, someone paid --
+    leaves a mark on the property's history that a delete must not erase.
+    Cancelling preserves that mark; deleting does not, so past a certain point
+    the two stop being interchangeable.
+
+    Checked-In and Checked-Out are not the same blocker. Checked-In has a real
+    next step -- check the guest out, and the flow above (paid amount) then
+    decides whether it can go further -- so the message says so. Checked-Out
+    is terminal (`ALLOWED_TRANSITIONS[CHECKED_OUT] == ()`): there is no next
+    step, not even cancelling, because the stay already happened. The
+    controller used to give both cases the same "check the guest out first"
+    message, which told a guest who was ALREADY checked out to do the one
+    thing they had already done -- correct refusal, message describing an
+    action that does not exist.
+    """
+    status = normalise_status(current_status)
+
+    if status == normalise_status(CHECKED_IN):
+        return (
+            f"This guest is {current_status}, so the reservation cannot be "
+            "deleted. Check the guest out first."
+        )
+
+    if status == normalise_status(CHECKED_OUT):
+        return (
+            "This stay is complete, so the reservation cannot be deleted -- "
+            "the record is part of the property's history."
+        )
+
+    if money(paid_amount) > 0:
+        return (
+            f"{money(paid_amount)} has been paid against this reservation. "
+            "Cancel it instead so the payment stays on record."
+        )
+
+    return None
+
+
 def assert_transition(current: Optional[str], target: str) -> None:
     if can_transition(current, target):
         return
