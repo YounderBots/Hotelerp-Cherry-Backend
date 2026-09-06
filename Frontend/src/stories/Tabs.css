@@ -274,35 +274,87 @@
   position: relative;
 }
 
+/* A fade with a chevron on it, not a panel laid over the strip.
+   A flat 40px block of --gray-100 sat on top of whichever tab reached the
+   edge, so "Standard Room" read as "Stan" followed by a grey rectangle --
+   indistinguishable from a rendering fault. Fading the strip out says the
+   same thing the block was trying to say (there is more this way) without
+   hiding the word it lands on. */
 .tabs-scroll-btn {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 40px;
-  background: var(--gray-100);
+  width: 56px;
   border: none;
-  color: var(--text-muted);
+  padding: 0;
+  color: var(--text-primary);
   cursor: pointer;
   z-index: 2;
   display: none;
   align-items: center;
-  justify-content: center;
-  transition: all var(--transition);
+  transition: opacity var(--transition);
 }
 
-.tabs-scroll-btn:hover {
-  background: var(--gray-200);
-  color: var(--text-primary);
+/* The chevron rides in a chip so it stays legible over whatever tab text it
+   happens to sit above, and reads as something to press. */
+.tabs-scroll-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tabs-scroll-btn > span,
+.tabs-scroll-btn {
+  font-size: 18px;
+  line-height: 1;
 }
 
 .tabs-scroll-btn.prev {
   left: 0;
-  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+  justify-content: flex-start;
+  padding-left: 6px;
+  background: linear-gradient(to right,
+      var(--bg-primary) 45%,
+      color-mix(in srgb, var(--bg-primary) 60%, transparent) 75%,
+      transparent);
 }
 
 .tabs-scroll-btn.next {
   right: 0;
-  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.1);
+  justify-content: flex-end;
+  padding-right: 6px;
+  background: linear-gradient(to left,
+      var(--bg-primary) 45%,
+      color-mix(in srgb, var(--bg-primary) 60%, transparent) 75%,
+      transparent);
+}
+
+/* The pressable part: a small round chip, not the whole 56px fade. */
+.tabs-scroll-btn::after {
+  content: attr(data-glyph);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--white);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.12));
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.tabs-scroll-btn:hover::after {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--white);
+}
+
+.tabs-scroll-btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
 }
 
 .tabs-scrollable.scrollable .tabs-scroll-btn {

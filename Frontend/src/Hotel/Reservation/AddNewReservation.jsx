@@ -712,20 +712,32 @@ const AddNewReservation = () => {
         </div>
       ) : roomTypes.length > 0 ? (
         <Tabs variant="default">
-          {roomTypes.map((type) => (
-            <Tab key={type.id} label={roomTypeLabel(type)}>
-              <h3 className="rle-tab-title">{roomTypeLabel(type)} Rooms</h3>
-              <RoomGrid
-                rooms={roomsData.filter(
-                  (room) => Number(room.room_type_id) === type.id,
-                )}
-                isSelected={isRoomSelected}
-                onSelect={handleSelectRoom}
-                isUnavailable={isRoomUnavailable}
-                unavailableReason={unavailableReasonFor}
-              />
-            </Tab>
-          ))}
+          {roomTypes.map((type) => {
+            const typeRooms = roomsData.filter(
+              (room) => Number(room.room_type_id) === type.id,
+            );
+            const freeCount = typeRooms.filter((r) => !isRoomUnavailable(r)).length;
+            return (
+              <Tab key={type.id} label={roomTypeLabel(type)}>
+                {/* The tab already names the type, so the heading carries the
+                    count instead of repeating the label -- which also read
+                    badly for a type whose own name ends in "Room". */}
+                <h3 className="rle-tab-title">
+                  {roomTypeLabel(type)}
+                  <span className="rle-tab-count">
+                    {freeCount} of {typeRooms.length} free for these dates
+                  </span>
+                </h3>
+                <RoomGrid
+                  rooms={typeRooms}
+                  isSelected={isRoomSelected}
+                  onSelect={handleSelectRoom}
+                  isUnavailable={isRoomUnavailable}
+                  unavailableReason={unavailableReasonFor}
+                />
+              </Tab>
+            );
+          })}
         </Tabs>
       ) : null}
 

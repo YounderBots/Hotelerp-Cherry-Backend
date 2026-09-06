@@ -12,12 +12,17 @@ const RoomCard = ({ room, isSelected, onSelect, unavailable = false, unavailable
       title={unavailable ? unavailableReason || "Unavailable" : undefined}
     >
       <div className="room-card-header">
-        <span>Room No: {room.room_no}</span>
-        <span className="room-status">{unavailable ? (unavailableReason || "Unavailable") : room.booking_status}</span>
-      </div>
-
-      <div className="room-icon">
-        <Building2 size={18} />
+        <span className="room-card-no">
+          <Building2 size={16} aria-hidden="true" />
+          Room No: {room.room_no}
+        </span>
+        {/* Not room.booking_status: that column is today's occupancy, and this
+            screen books a date range. A room whose guest leaves tomorrow is
+            free for next month, and labelling its card "Reserved" contradicts
+            the availability the page just worked out for these dates. */}
+        <span className={`room-status${unavailable ? "" : " is-free"}`}>
+          {unavailable ? (unavailableReason || "Unavailable") : "Available"}
+        </span>
       </div>
 
       <div className="room-card-footer">

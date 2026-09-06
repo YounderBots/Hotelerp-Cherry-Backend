@@ -56,6 +56,8 @@ const Tabs = ({
   const tabsHeaderRef = useRef(null);
   const tabsListRef = useRef(null);
   const [showScrollButtons, setShowScrollButtons] = useState(false);
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(false);
 
   // Sync with controlled value
   useEffect(() => {
@@ -71,19 +73,34 @@ const Tabs = ({
     setTabs(React.Children.toArray(children));
   }, [children]);
 
-  // Check if scroll buttons are needed
+  // Whether the tab strip overflows, and which way it can still be scrolled.
+  //
+  // The overflow test was always here and always correct. What was missing is
+  // that the BUTTONS only rendered if the page had opted in with
+  // `scrollable`, so a page with more tabs than fit -- Add Reservation, with
+  // one tab per room type -- clipped the last label mid-word and offered
+  // nothing to click. The header scrolls by wheel and touch, but
+  // `scrollbar-width: none` hides even the scrollbar that would hint at it.
+  //
+  // Overflow is a fact about the rendered strip, not a decision for the
+  // caller, so the buttons now follow the measurement.
   useEffect(() => {
+    const header = tabsHeaderRef.current;
     const checkScroll = () => {
-      if (tabsHeaderRef.current && tabsListRef.current) {
-        const headerWidth = tabsHeaderRef.current.offsetWidth;
-        const listWidth = tabsListRef.current.scrollWidth;
-        setShowScrollButtons(listWidth > headerWidth);
-      }
+      if (!header || !tabsListRef.current) return;
+      const overflowing = tabsListRef.current.scrollWidth > header.offsetWidth + 1;
+      setShowScrollButtons(overflowing);
+      setAtStart(header.scrollLeft <= 1);
+      setAtEnd(header.scrollLeft + header.offsetWidth >= header.scrollWidth - 1);
     };
 
     checkScroll();
     window.addEventListener('resize', checkScroll);
-    return () => window.removeEventListener('resize', checkScroll);
+    header?.addEventListener('scroll', checkScroll, { passive: true });
+    return () => {
+      window.removeEventListener('resize', checkScroll);
+      header?.removeEventListener('scroll', checkScroll);
+    };
   }, [tabs]);
 
   const handleTabChange = (index) => {
@@ -143,21 +160,22 @@ const Tabs = ({
     ${variant !== 'default' ? `tabs-${variant}` : ''}
     ${size !== 'default' ? `tabs-${size}` : ''}
     ${orientation === 'vertical' ? 'tabs-vertical' : ''}
-    ${scrollable ? 'tabs-scrollable' : ''}
-    ${scrollable && showScrollButtons ? 'scrollable' : ''}
+    ${scrollable || showScrollButtons ? 'tabs-scrollable' : ''}
+    ${showScrollButtons ? 'scrollable' : ''}
     ${className}
   `.trim();
 
   return (
     <div className={tabsClass} {...props}>
       <div className="tabs-header" ref={tabsHeaderRef}>
-        {scrollable && showScrollButtons && (
-          <button 
+        {showScrollButtons && !atStart && (
+          <button
+            type="button"
             className="tabs-scroll-btn prev"
             onClick={() => scrollTabs('prev')}
-          >
-            ‹
-          </button>
+            aria-label="Scroll tabs left"
+            data-glyph="‹"
+          />
         )}
         
         <div className={`tabs-list ${orientation}`} ref={tabsListRef}>
@@ -193,13 +211,14 @@ const Tabs = ({
           ))}
         </div>
 
-        {scrollable && showScrollButtons && (
-          <button 
+        {showScrollButtons && !atEnd && (
+          <button
+            type="button"
             className="tabs-scroll-btn next"
             onClick={() => scrollTabs('next')}
-          >
-            ›
-          </button>
+            aria-label="Scroll tabs right"
+            data-glyph="›"
+          />
         )}
 
         {addable && (
