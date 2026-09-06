@@ -115,9 +115,73 @@ def root_api():
     return RedirectResponse("../login", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
+def _dependency_checks() -> dict:
+    """Every dependency this service cannot do its job without."""
+    from models import SessionLocal
+    from models.masterdata import probe as masterdata_probe
+
+    db = SessionLocal()
+    try:
+        ok, detail = masterdata_probe(db)
+    finally:
+        db.close()
+    return {"masterdata": {"ok": ok, "detail": detail}}
+
+
+# Liveness. Stays 200 whenever the process is serving, so a dependency being
+# down does not send a supervisor into a restart loop over something restarting
+# cannot fix.
+#
+# It no longer answers a flat "ok" though. It used to, unconditionally, which
+# is how a deployment whose reservation module was answering 500 on every
+# request looked perfectly healthy: the list, the detail and the availability
+# check were down, and the only thing that said so was a 500 the operator had
+# to go looking for.
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok"}
+    checks = _dependency_checks()
+    degraded = [name for name, c in checks.items() if not c["ok"]]
+    if degraded:
+        logger.error("healthz_degraded failing=%s detail=%s",
+                     degraded, checks[degraded[0]]["detail"])
+    return {
+        "status": "degraded" if degraded else "ok",
+        "degraded": degraded,
+        "checks": checks,
+    }
+
+
+# Readiness. 503 while a required dependency is unreachable, so a probe that
+# gates traffic can actually tell the difference -- which /healthz deliberately
+# will not, being a liveness check.
+@app.get("/readyz")
+def readyz():
+    checks = _dependency_checks()
+    degraded = [name for name, c in checks.items() if not c["ok"]]
+    body = {"status": "degraded" if degraded else "ready",
+            "degraded": degraded, "checks": checks}
+    return JSONResponse(status_code=503 if degraded else 200, content=body)
+
+
+@app.on_event("startup")
+def _check_dependencies_on_boot():
+    """Say it once, loudly, at boot rather than 500 per request afterwards.
+
+    The cross-schema Master Data mapping is a deployment coupling: all schemas
+    on one MySQL server, and this service's DB user able to SELECT from the
+    Master Data schema. Nothing enforced it and nothing said so, so a
+    deployment that got it wrong started cleanly and broke only the reservation
+    module.
+    """
+    for name, c in _dependency_checks().items():
+        if c["ok"]:
+            logger.info("dependency_ok name=%s detail=%s", name, c["detail"])
+        else:
+            logger.critical(
+                "DEPENDENCY UNAVAILABLE name=%s -- %s "
+                "Reservation availability, the reservation list and the "
+                "reservation detail will answer 500 until this is fixed.",
+                name, c["detail"])
 
 
 app.include_router(router, prefix="")

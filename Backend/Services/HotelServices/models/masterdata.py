@@ -195,3 +195,45 @@ class MasterReservationStatus(MasterBase):
 
     status = Column(String(100), nullable=False, index=True)
     company_id = Column(String(100), nullable=False, index=True)
+
+
+# ---------------------------------------------------------------------------
+# Deployment probe
+# ---------------------------------------------------------------------------
+def probe(db) -> tuple[bool, str]:
+    """Can this service actually read the Master Data schema?
+
+    WHY THIS EXISTS
+        These mappings are cross-schema: HotelServices reads Master Data's
+        tables directly, on its own connection, so that an availability check
+        and the booking that depends on it commit in ONE transaction. A read
+        over HTTP could not hold the row locks that make double-booking
+        impossible.
+
+        The price is a deployment coupling that nothing enforced and nothing
+        documented: every schema must live on the SAME MySQL server, and the
+        user in this service's DB_URI must be able to SELECT from the Master
+        Data schema.
+
+        Break either half and the service still starts, /healthz still says
+        "ok", housekeeping and the night audit still work -- and every
+        reservation screen answers 500. That is exactly how it reached
+        production: the reservation list, the reservation detail and the
+        availability check were the only three endpoints down, and the
+        deployment looked healthy.
+
+    Returns (ok, detail). Cheap enough for a readiness probe: one indexed
+    read, no scan.
+    """
+    try:
+        db.query(MasterRoom.id).limit(1).all()
+        return True, f"{MASTERDATA_SCHEMA} readable"
+    except Exception as exc:                                   # noqa: BLE001
+        reason = str(getattr(exc, "orig", exc))[:200]
+        return False, (
+            f"cannot read schema {MASTERDATA_SCHEMA!r}: {reason}. "
+            "Every schema must be on the same MySQL server as this service's, "
+            "and this service's DB user needs SELECT on it. Set "
+            "MASTERDATA_DB_SCHEMA if the schema is not named "
+            "<own-prefix>_masterdata."
+        )
