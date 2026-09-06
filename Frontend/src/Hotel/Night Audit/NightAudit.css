@@ -302,6 +302,20 @@
     padding-right: 0.625rem;
 }
 
+/* ...but the outer edges still belong to the card. Tightening every cell put
+   the first column 23px inside the title above it. Only the two outer cells go
+   back to the card inset, so the width this rule was reclaiming is kept across
+   the seven inner gutters, and .table-wrapper absorbs the difference. */
+.na-page .table-template .table th:first-child,
+.na-page .table-template .table td:first-child {
+    padding-left: var(--table-inset);
+}
+
+.na-page .table-template .table th:last-child,
+.na-page .table-template .table td:last-child {
+    padding-right: var(--table-inset);
+}
+
 /* TableTemplate prepends its own S.No column and gives it no width, so the
    browser handed it 82px to hold a single digit -- more than the Room column.
    It has no `width` prop to pass, hence the rule. */

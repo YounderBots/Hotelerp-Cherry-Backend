@@ -3404,6 +3404,19 @@ input[type="number"] {
     padding-right: 12px;
   }
 
+  /* ...except the outer edges, which belong to the card. Tightening every
+     column put "S.No" 22px inside the title above it. The reclaimed width is
+     kept across the inner gutters, which is where the 400px came from. */
+  .reservation-table .table thead th:first-child,
+  .reservation-table .table tbody td:first-child {
+    padding-left: var(--table-inset);
+  }
+
+  .reservation-table .table thead th:last-child,
+  .reservation-table .table tbody td:last-child {
+    padding-right: var(--table-inset);
+  }
+
   .reservation-table .table thead th:nth-child(2),
   .reservation-table .table tbody td:nth-child(2) { min-width: 150px; }
   .reservation-table .table thead th:nth-child(3),

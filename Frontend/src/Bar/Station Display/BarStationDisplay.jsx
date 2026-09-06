@@ -164,6 +164,7 @@ const BarStationDisplay = () => {
             {/* Was a bare <div style={{maxWidth:260}}> above the table, outside
                 the toolbar, so it did not line up with anything. */}
             <Select
+              size="small"
               label="Station"
               value={stationId}
               onChange={(e) => setPickedStationId(e.target.value)}
@@ -171,6 +172,7 @@ const BarStationDisplay = () => {
               placeholder="— select —"
             />
             <Switch
+              size="small"
               label={`Auto-refresh (${REFRESH_MS / 1000}s)`}
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}

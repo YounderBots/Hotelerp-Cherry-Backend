@@ -3,9 +3,33 @@
 
 .kds-controls {
   display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
+  /* flex-end, not center: the Station select carries a label and the switch and
+     button do not, so centring staggered them. This is what .table-filters does
+     with the same mix. */
+  align-items: flex-end;
+  gap: var(--spacing-sm) var(--spacing-md);
   flex-wrap: wrap;
+}
+
+/* Sized to its content like a table filter. Left to fill the toolbar the select
+   grew to 456px, which pushed the switch and the Refresh button onto a second
+   row and made the toolbar 141px tall. */
+.kds-controls .form-group {
+  margin: 0;
+  /* A fixed track, not a flex-grown one: .select-control is width:100%, so as a
+     growing flex item the station picker took 514px and pushed the switch and
+     the Refresh button onto a second row. The basis is stated outright rather
+     than left as `auto`, which would send it back to .form-group's width:100%. */
+  flex: 0 0 200px;
+  max-width: 200px;
+}
+
+/* .toolbar-filters already grows, but .toolbar-left holds its 320px cap, which
+   left the three station controls 80px short of one row -- so the Refresh
+   button dangled alone underneath. A 200px search box still reads fine and
+   gives the group the room it needs. */
+.table-toolbar:has(.kds-controls) .toolbar-left {
+  max-width: 200px;
 }
 
 /* The switch sits inside a toolbar rather than a form, so it must not claim a

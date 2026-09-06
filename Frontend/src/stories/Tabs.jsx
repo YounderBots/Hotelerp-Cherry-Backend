@@ -55,6 +55,10 @@ const Tabs = ({
   const [tabs, setTabs] = useState(React.Children.toArray(children));
   const tabsHeaderRef = useRef(null);
   const tabsListRef = useRef(null);
+  const hasPanelContent = tabs.some(
+    (tab) => tab.props.children !== undefined && tab.props.children !== null,
+  );
+
   const [showScrollButtons, setShowScrollButtons] = useState(false);
   const [atStart, setAtStart] = useState(true);
   const [atEnd, setAtEnd] = useState(false);
@@ -228,7 +232,11 @@ const Tabs = ({
         )}
       </div>
 
-      <div className="tabs-content">
+      {/* Screens that only want the strip -- Report & Analytics drives its own
+          body from the selected index -- pass <Tab label="..."/> with no
+          children. Painting the panel anyway left an empty 68px white card
+          between the tabs and the content that actually belongs to them. */}
+      <div className="tabs-content" hidden={!hasPanelContent}>
         {tabs.map((tab, index) => (
           <div
             key={index}

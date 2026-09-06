@@ -59,6 +59,22 @@
   margin-bottom: 0;
 }
 
+/* A Switch labels itself inline, so unlike every field beside it in a grid row
+   it has no label above the control. Left alone it sat on the labels' line
+   while each control beside it sat a row lower -- "Mergeable" floating above
+   "Status". Give it the same phantom label row, then centre it on the control
+   line, so it reads as part of the row rather than above it. */
+:is(.modal__body--grid, .field-grid, .form-row) > .switch-group {
+  display: flex;
+  align-items: center;
+  align-self: start;
+  margin: 0;
+  padding-top: calc(var(--field-label-size) * 1.3 + var(--field-label-gap));
+  min-height: calc(
+    var(--field-label-size) * 1.3 + var(--field-label-gap) + var(--field-height)
+  );
+}
+
 /* ---------- Label ---------- */
 .form-label {
   display: block;
@@ -111,7 +127,12 @@
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.form-group :where(input, select):not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']):not(.react-select__input) {
+/* The size variants below are (0,1,0) while this rule is (0,5,0), so without
+   these two exclusions it silently overrode them: every size="small" Input or
+   Select still rendered at the medium 44px, because both components wrap their
+   control in a .form-group. Only controls that do NOT declare a size fall back
+   to the default height. */
+.form-group :where(input, select):not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']):not(.react-select__input):not([class*='--small']):not([class*='--large']) {
   height: var(--field-height);
   min-height: var(--field-height);
   padding: 0 var(--field-padding-x);

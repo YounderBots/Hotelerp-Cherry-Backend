@@ -162,6 +162,7 @@ const KitchenDisplay = ({ title, kitchenType }) => {
         filters={
           <div className="kds-controls">
             <Switch
+              size="small"
               label={`Auto-refresh (${REFRESH_MS / 1000}s)`}
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}

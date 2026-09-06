@@ -15,6 +15,11 @@
 // filter input is the same object as a form input, one size down.
 import React from 'react';
 import { FilterX } from 'lucide-react';
+// This component renders .form-control / .select-control markup directly, so it
+// owns that dependency rather than assuming some other component on the page
+// pulled the stylesheet in. Where nothing else did, the filter row rendered as
+// unstyled native inputs -- 19-21px tall next to a 36px search box.
+import './Form/FormField.css';
 import './TableFilters.css';
 
 /** Label + control pair. Use directly when a filter needs a custom control. */
