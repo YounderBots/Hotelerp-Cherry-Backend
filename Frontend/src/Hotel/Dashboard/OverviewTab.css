@@ -19,7 +19,11 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  padding: 0.25rem 0.25rem 0.5rem;
+  /* No horizontal padding: the tab panel already sets the inset, and this
+     added 4px on top of it -- just enough to stop the cards lining up with
+     the tab that labels them. Bottom padding stays: the cards animate in on
+     a rise, and without it the last one clips against the panel edge. */
+  padding: 0 0 0.5rem;
   color: var(--ov-ink);
 }
 

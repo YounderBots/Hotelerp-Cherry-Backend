@@ -31,14 +31,16 @@
 ========================================================= */
 .admin-dashboard {
   padding: 1.5rem;
+
+  /* One inset for the whole tab block. A token rather than padding on
+     `.tabs-content` alone, because the pills above the panel have to honour
+     the same value -- otherwise the tab and the card it labels start at
+     different x, which is what they used to do. */
+  --tabs-inset: 1.5rem;
 }
 
 .admin-dashboard .dashboard-wrapper {
   padding: 0;
-}
-
-.admin-dashboard .tabs-content {
-  padding: 1.5rem;
 }
 
 @media (max-width: 768px) {

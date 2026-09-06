@@ -117,7 +117,7 @@
 
 /* Tab Content */
 .tabs-content {
-  padding: var(--spacing-xl);
+  padding: var(--tabs-inset, var(--spacing-xl));
   background: var(--white);
   border-radius: 0 0 var(--border-radius-lg) var(--border-radius-lg);
   box-shadow: inset 0 1px 0 var(--border-color);
@@ -164,6 +164,16 @@
   border-radius: var(--border-radius-lg);
   margin: var(--spacing-sm);
   border-bottom: none;
+}
+
+/* A tab labels the block underneath it, so the first pill has to start where
+   that block's content starts. The pill's own 8px margin was the only inset it
+   had, against the panel's own padding -- leaving the "Overview" pill 21px to
+   the left of the card it labels, with the panel edge a third value again.
+   The pill margin is kept for the gaps BETWEEN pills and subtracted here, so
+   the first pill's visible edge lands exactly on the content inset. */
+.tabs-pills .tabs-list {
+  padding-inline: calc(var(--tabs-inset, var(--spacing-xl)) - var(--spacing-sm));
 }
 
 .tabs-pills .tab-trigger.active {
