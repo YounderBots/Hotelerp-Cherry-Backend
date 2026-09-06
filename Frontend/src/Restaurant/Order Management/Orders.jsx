@@ -275,12 +275,37 @@ const Orders = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "order_number", title: "Order No", align: "left" },
-          { key: "order_type", title: "Type", align: "left" },
+          // Atomic values: "RO-20260830-008" broke across three lines and
+          // "Dine-In" across two, which made an eight-row table read as
+          // twenty-four. The table wrapper scrolls, so width is the cheaper
+          // cost -- the same trade Night Audit makes.
+          {
+            key: "order_number",
+            title: "Order No",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => row.order_number || "",
+            render: (row) => <span className="nowrap">{row.order_number}</span>,
+          },
+          {
+            key: "order_type",
+            title: "Type",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => row.order_type || "",
+            render: (row) => <span className="nowrap">{row.order_type}</span>,
+          },
           // service_location is resolved by the API. This was joined against a
           // separately-fetched table list, so a failed second request left "-"
           // on every dine-in row.
-          { key: "service_location", title: "Table / Room", align: "left" },
+          {
+            key: "service_location",
+            title: "Table / Room",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => row.service_location || "",
+            render: (row) => <span className="nowrap">{row.service_location}</span>,
+          },
           { key: "guest_name", title: "Guest Name", align: "left" },
           { key: "no_of_guests", title: "Guests", align: "right" },
           {

@@ -249,8 +249,13 @@
    not just the form inside it, is the difference between a form and a form
    sitting in an acre of empty white -- which is what a full-width card looks
    like around a 26rem field stack on a large monitor. */
+/* Settings is a single column of form, capped for readability. Left-aligned in
+   an 84rem page it sat against the left edge with two-thirds of the page empty
+   beside it; centred, the narrowness reads as deliberate. Used only by
+   Settings -- Profile fills the page with .account-layout. */
 .acct-card--narrow {
   max-width: 34rem;
+  margin-inline: auto;
 }
 
 .acct-card__title {
@@ -354,6 +359,8 @@
    introduces share one left AND right edge instead of the header running on
    past the card. */
 .account-header {
+  margin-inline: auto;
+  max-width: 34rem;
   max-width: 34rem;
   padding: 1.1rem 1.25rem;
   margin-bottom: 1rem;

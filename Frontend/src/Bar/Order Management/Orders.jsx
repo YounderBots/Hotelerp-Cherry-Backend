@@ -269,12 +269,36 @@ const Orders = () => {
           variant: "primary",
         }}
         columns={[
-          { key: "order_number", title: "Order No", align: "left" },
-          { key: "order_type", title: "Type", align: "left" },
+          // Atomic values: "BO-20260830-008" broke across three lines and
+          // "Dine-In" across two. The wrapper scrolls, so width is the
+          // cheaper cost -- same trade as the restaurant Orders screen.
+          {
+            key: "order_number",
+            title: "Order No",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => row.order_number || "",
+            render: (row) => <span className="nowrap">{row.order_number}</span>,
+          },
+          {
+            key: "order_type",
+            title: "Type",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => row.order_type || "",
+            render: (row) => <span className="nowrap">{row.order_type}</span>,
+          },
           // service_location is resolved by the API. This was joined against a
           // separately-fetched table list, so a failed second request left "-"
           // on every at-table row.
-          { key: "service_location", title: "Table", align: "left" },
+          {
+            key: "service_location",
+            title: "Table",
+            align: "left",
+            type: "custom",
+            exportValue: (row) => row.service_location || "",
+            render: (row) => <span className="nowrap">{row.service_location}</span>,
+          },
           { key: "guest_name", title: "Guest Name", align: "left" },
           { key: "no_of_guests", title: "Guests", align: "right" },
           {
