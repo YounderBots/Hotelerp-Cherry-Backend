@@ -158,7 +158,12 @@ const TableToolbar = ({
   filters = null,
 }) => {
   return (
-    <div className="table-toolbar">
+    // The modifier tells the stylesheet whether the filter block is present.
+    // It matters because the filters are label-over-control while the search
+    // box and the action buttons are bare controls: with filters, the bare
+    // ones need offsetting by one label row to land on the same control line.
+    // Without filters there is no label row to offset against.
+    <div className={`table-toolbar${filters ? " table-toolbar--with-filters" : ""}`}>
       <div className="toolbar-left">
         {searchable && (
           <InputField

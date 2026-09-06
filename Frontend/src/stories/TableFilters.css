@@ -23,6 +23,10 @@
 .table-filter__label {
   font-size: 11px;
   font-weight: 700;
+  /* Pinned, not `normal`: the toolbar offsets its unlabelled controls by
+     exactly this height to line them up with the first row of filter
+     controls, so the value has to be knowable rather than font-dependent. */
+  line-height: var(--filter-label-height, 13px);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);

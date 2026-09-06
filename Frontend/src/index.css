@@ -133,6 +133,14 @@ body {
   --shadow-lg: 0 2px 4px rgba(26, 21, 35, 0.05), 0 20px 44px -18px rgba(26, 21, 35, 0.20);
   --shadow-xl: 0 4px 8px rgba(26, 21, 35, 0.06), 0 30px 60px -24px rgba(26, 21, 35, 0.26);
 
+  /* Height of the small uppercase label that sits above a filter control.
+     Published as a token because two components have to agree on it: the
+     filters draw the label, and the table toolbar offsets its unlabelled
+     controls -- the search box, the export buttons -- by exactly one label row
+     so all three sit on the same control line. Fixed rather than `normal` so
+     the number does not drift with the font. */
+  --filter-label-height: 13px;
+
   /* ================= SPACING ================= */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;

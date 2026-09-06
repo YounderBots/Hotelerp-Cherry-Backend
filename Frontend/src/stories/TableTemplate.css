@@ -50,8 +50,30 @@
 .table-toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--spacing-md);
+}
+
+/* Line the bare controls up with the FIRST ROW OF FILTER CONTROLS.
+
+   The filters are label-over-control pairs; the search box and the export
+   buttons are bare controls with no label. `align-items: center` used to
+   centre all three against each other, which looked right only while the
+   filters fitted on one line. As soon as they wrapped to two rows -- five
+   filters do, on Reservation -- the block grew to 115px and the search box and
+   the buttons floated to its vertical middle, 20px below the first row of
+   selects and 20px above the second. Nothing in the toolbar shared an edge.
+
+   One label row is the label's own height plus the gap `.table-filter` puts
+   between label and control. Declared here, next to the rule it corrects,
+   rather than as a number nobody can trace back. */
+.table-toolbar--with-filters {
+  --filter-label-row: calc(var(--filter-label-height, 13px) + var(--spacing-xs, 4px));
+}
+
+.table-toolbar--with-filters > .toolbar-left,
+.table-toolbar--with-filters > .toolbar-right {
+  padding-top: var(--filter-label-row);
 }
 
 .toolbar-left {
@@ -72,6 +94,22 @@
 .toolbar-left .InputField {
   width: 100%;
   min-width: 0;
+}
+
+/* The search box stands beside the filter selects, so it has to be the same
+   height as them. It rendered taller, which left a visible step in the row
+   even once the two were aligned at the top.
+
+   The height goes on `.InputField` -- the bordered box that IS the control --
+   not on the inner `input`. Sizing the inner one just adds to the box's own
+   padding and makes the visible control taller still. */
+.toolbar-left .InputField {
+  height: var(--field-height-sm, 36px);
+  padding-block: 0;
+}
+
+.toolbar-left .InputField__input {
+  height: 100%;
 }
 
 /* Business filters sit between the search box and the export actions. The
