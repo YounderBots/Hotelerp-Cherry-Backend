@@ -149,7 +149,16 @@ const Booking = () => {
       // rather than a dangling id, so the record stays readable.
       return String(v);
     });
-    return parts.join(", ") || "—";
+    // The list holds one entry per room requested, so a two-room booking read
+    // "Deluxe Room, Deluxe Room". Count the repeats instead: it says the same
+    // thing, and stays right when the types are mixed.
+    const counts = new Map();
+    for (const part of parts) counts.set(part, (counts.get(part) || 0) + 1);
+    return (
+      [...counts]
+        .map(([name, n]) => (n > 1 ? `${name} × ${n}` : name))
+        .join(", ") || "—"
+    );
   };
 
   const nights = nightsBetween(form.arrival_date, form.departure_date);

@@ -7,6 +7,11 @@
      tablet. A container query reacts to the space the table actually has. */
   container-type: inline-size;
   container-name: tabletpl;
+  /* One inset for the whole card. The title, the toolbar and the table's outer
+     columns all key off it, so the left edge of "S.NO" lines up with the left
+     edge of the title above it at every breakpoint instead of sitting 8px
+     inside it. */
+  --table-inset: var(--spacing-xl);
   border-radius: var(--border-radius-lg);
   box-shadow: var(--shadow-md);
   overflow: hidden;
@@ -17,7 +22,7 @@
 
 /* Title Section */
 .table-title-section {
-  padding: var(--spacing-lg) var(--spacing-xl);
+  padding: var(--spacing-lg) var(--table-inset);
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -44,7 +49,7 @@
 
 /* Toolbar Section */
 .table-toolbar-section {
-  padding: var(--spacing-md) var(--spacing-xl);
+  padding: var(--spacing-md) var(--table-inset);
 }
 
 .table-toolbar {
@@ -233,6 +238,18 @@
   border-bottom: 1px solid var(--border-light);
   color: var(--text-primary);
   transition: background-color var(--transition-fast);
+}
+
+/* Only the outer columns take the card inset; the inner ones stay on
+   --spacing-lg so the grid does not turn gappy. */
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--table-inset);
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--table-inset);
 }
 
 .table tbody tr {
@@ -554,12 +571,16 @@
     justify-content: center;
   }
   
+  .table-template {
+    --table-inset: var(--spacing-md);
+  }
+
   .table-title-section {
-    padding: var(--spacing-md);
+    padding: var(--spacing-md) var(--table-inset);
   }
 
   .table-toolbar-section {
-    padding: var(--spacing-md);
+    padding: var(--spacing-md) var(--table-inset);
   }
 
   .table-title {
@@ -570,7 +591,7 @@
 @media (max-width: 480px) {
   .table-title-section,
   .table-toolbar-section {
-    padding: var(--spacing-sm) var(--spacing-md);
+    padding: var(--spacing-sm) var(--table-inset);
   }
 
   .table-title {
@@ -842,7 +863,10 @@ body.dark .filter-checkbox:hover {
        100% width overflows its parent by exactly the margins — which pushed
        every card 32px past the right edge and clipped the values. */
     width: auto;
-    margin: 0 var(--spacing-md) var(--spacing-md);
+    /* Same inset as the title and toolbar: the container query can stack the
+       rows while the viewport is still wide enough for the card's full
+       padding, and a 17px card under a 34px title reads as a misalignment. */
+    margin: 0 var(--table-inset) var(--spacing-md);
     padding: var(--spacing-xs) var(--spacing-md);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius);

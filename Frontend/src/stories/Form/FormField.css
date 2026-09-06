@@ -87,8 +87,16 @@
    Wrapping the element list in :where() keeps this at (0,1,0): the same as
    .form-control and .select-control, and declared before them, so a real
    component always wins while a hand-rolled control still gets the right box.
-   Checkboxes, radios and buttons keep their native rendering. */
-.form-group :where(input, select, textarea):not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']) {
+   Checkboxes, radios and buttons keep their native rendering.
+
+   .react-select__input is excluded because react-select draws its own control
+   and puts a real <input> inside it purely for typing. Sizing that input like
+   a field stretched it to a full field height and pushed the control to 58px,
+   so every multi-select sat 14px taller than the plain inputs beside it. Note
+   the four :not()s make these rules (0,5,0), not the (0,1,0) the :where()
+   suggests -- an override from outside would have had to out-specify that, so
+   the exclusion belongs here. */
+.form-group :where(input, select, textarea):not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']):not(.react-select__input) {
   width: 100%;
   max-width: 100%;
   font-family: inherit;
@@ -103,7 +111,7 @@
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.form-group :where(input, select):not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']) {
+.form-group :where(input, select):not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']):not(.react-select__input) {
   height: var(--field-height);
   min-height: var(--field-height);
   padding: 0 var(--field-padding-x);
