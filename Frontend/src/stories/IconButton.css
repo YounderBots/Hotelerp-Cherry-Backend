@@ -292,17 +292,23 @@
   color: var(--primary-dark);
 }
 
-/* Edit — neutral slate, so it never competes with View or Delete for
-   attention while still sitting on the same chip. */
+/* Edit — amber. The neutral slate this used to be read as a dead grey chip
+   between two coloured ones, so the row looked like one control had failed to
+   load. Amber is the third warm hue in the palette: it belongs beside the
+   cherry View and the red Delete on a cream page, stays clearly distinct from
+   both, and is the conventional "modify" colour.
+   The dark step, not --warning-color: #f59e0b on its own tint is about 2:1
+   against the glyph, well under a readable contrast, while --warning-dark
+   matches the contrast View and Delete already carry. */
 .icon-btn--action-edit {
-  background-color: var(--gray-100);
-  color: var(--text-secondary);
+  background-color: var(--warning-light);
+  color: var(--warning-dark);
 }
 
 .icon-btn--action-edit:hover:not(:disabled) {
-  background-color: var(--gray-200);
-  border-color: var(--gray-300);
-  color: var(--text-primary);
+  background-color: var(--warning-lighter);
+  border-color: var(--warning-color);
+  color: var(--warning-dark);
 }
 
 /* Delete — the only destructive hue in the row */
