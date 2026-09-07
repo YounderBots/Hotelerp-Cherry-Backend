@@ -1,15 +1,7 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Send an idle session to the lock screen.
- *
- * WHY THIS EXISTS
- * Authentication/Pages/LockScreen.jsx was written, styled and wired to
- * re-authenticate against /login_post with the signed-in user's stored email —
- * and then nothing ever navigated to it. The RBAC map generator had been
- * reporting /authentication/lockscreen as an unreachable route for that
- * reason. A terminal left open at a front desk stayed signed in until the JWT
- * expired an hour later, with every screen the role can reach one click away.
+ * Sign an idle session out.
  *
  * WHAT COUNTS AS ACTIVITY
  * Pointer, keyboard, scroll and touch. The timer is reset on a trailing edge
@@ -19,30 +11,46 @@ import { useEffect, useRef } from "react";
  * inside the app cannot make the session look idle.
  *
  * THE INTERVAL
- * VITE_IDLE_LOCK_MINUTES, defaulting to 5. Set it to 0 to switch the lock off
- * entirely — worth doing for a screen that is deliberately left displaying
- * something, such as a kitchen station.
+ * VITE_IDLE_TIMEOUT_MINUTES, defaulting to 60. Set it to 0 to switch the
+ * timeout off entirely — worth doing for a screen that is deliberately left
+ * displaying something, such as a kitchen station.
+ *
+ * VITE_IDLE_LOCK_MINUTES is still read as a fallback: it is the name this
+ * setting had while idling sent the user to the lock screen instead of signing
+ * them out, so a deployment that already sets it keeps working.
+ *
+ * NOTE ON THE CEILING
+ * The access token is issued for ACCESS_TOKEN_EXPIRE_MINUTES (60) from LOGIN,
+ * and there is no refresh endpoint, so a session cannot outlive that however
+ * active the user is. An idle window at or above 60 minutes will therefore
+ * rarely be what ends the session — token expiry gets there first. Raise the
+ * token TTL if this window is meant to be the thing that governs.
  *
  * @param {() => void} onIdle  called once when the idle period elapses
  * @param {boolean}    active  false while signed out, so no timer runs
  */
 const ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart", "scroll"];
 
-export const IDLE_LOCK_MINUTES = (() => {
-    const raw = Number(import.meta.env?.VITE_IDLE_LOCK_MINUTES ?? 5);
-    return Number.isFinite(raw) && raw >= 0 ? raw : 5;
+const DEFAULT_IDLE_MINUTES = 60;
+
+export const IDLE_TIMEOUT_MINUTES = (() => {
+    const env = import.meta.env ?? {};
+    const raw = Number(
+        env.VITE_IDLE_TIMEOUT_MINUTES ?? env.VITE_IDLE_LOCK_MINUTES ?? DEFAULT_IDLE_MINUTES,
+    );
+    return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_IDLE_MINUTES;
 })();
 
-export function useIdleLock(onIdle, active = true) {
+export function useIdleTimeout(onIdle, active = true) {
     const onIdleRef = useRef(onIdle);
     useEffect(() => {
         onIdleRef.current = onIdle;
     }, [onIdle]);
 
     useEffect(() => {
-        if (!active || IDLE_LOCK_MINUTES <= 0) return undefined;
+        if (!active || IDLE_TIMEOUT_MINUTES <= 0) return undefined;
 
-        const limitMs = IDLE_LOCK_MINUTES * 60 * 1000;
+        const limitMs = IDLE_TIMEOUT_MINUTES * 60 * 1000;
         let timer = null;
         // Throttle the resets: one per second is plenty for a minutes-long
         // timeout and keeps a mousemove storm from doing any real work.
@@ -74,4 +82,4 @@ export function useIdleLock(onIdle, active = true) {
     }, [active]);
 }
 
-export default useIdleLock;
+export default useIdleTimeout;

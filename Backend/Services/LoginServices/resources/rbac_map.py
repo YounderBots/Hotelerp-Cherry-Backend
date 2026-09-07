@@ -449,6 +449,7 @@ PAGE_PARENTS: dict[str, tuple[str, ...]] = {
 # open these, so their rows grant nothing; listed so a dead route stays visible
 # rather than being mistaken for a permission bug.
 UNREACHABLE_ROUTES: tuple[str, ...] = (
+    "/authentication/lockscreen",
 )
 
 # Endpoints allowed for any authenticated caller, checked BEFORE this map is

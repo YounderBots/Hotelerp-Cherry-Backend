@@ -13,7 +13,7 @@ import findMenuByPath from './functions/locationFunctions';
 import { ICON_MAP, MENU } from './Sidemenu';
 import LogoLoaderComponent from './Authentication/Pages/LogoLoaderComponent';
 import { useAuth } from './Context/AuthContext';
-import useIdleLock from './hooks/useIdleLock';
+import useIdleTimeout from './hooks/useIdleTimeout';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotFound from './components/NotFound';
 import RequirePage from './components/RequirePage';
@@ -450,17 +450,17 @@ const AppLayout = () => {
   const [activePath, setActivePath] = useState([0]);
   const location = useLocation();
   const navigate = useNavigate();
-  const { menus } = useAuth();
+  const { menus, logout } = useAuth();
 
-  // An unattended terminal goes to the lock screen rather than sitting on a
-  // signed-in application until the token expires an hour later. The lock
-  // screen has existed, complete, since it was written; nothing navigated to
-  // it. `next` brings the user back to where they were once they unlock.
-  useIdleLock(() => {
-    const here = `${location.pathname}${location.search}`;
-    navigate(`/authentication/lockscreen?next=${encodeURIComponent(here)}`, {
-      replace: true,
-    });
+  // An unattended terminal is signed out rather than left sitting on a
+  // signed-in application. This used to send the session to the lock screen
+  // after five minutes; it is now a full sign-out after an hour of no pointer,
+  // keyboard, scroll or touch, so the terminal is left in the same state as an
+  // explicit Log out -- storage cleared, and every other tab on this origin
+  // signed out with it (see the storage listener in AuthContext).
+  useIdleTimeout(() => {
+    logout();
+    navigate("/", { replace: true });
   });
 
   // The sidebar is the RBAC menu payload when there is one, the static MENU
