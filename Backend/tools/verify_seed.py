@@ -124,8 +124,6 @@ def main() -> int:
     print()
     print("=== 3. room state matches the bookings ===")
     occupied_rooms = set()
-    for ref, room_json, arrival, departure in live:
-        pass
     in_house = rows("hotelerp_hotel", """
         SELECT room_no FROM room_reservation
         WHERE reservation_status = 'Checked-In' AND status = 'ACTIVE'
@@ -202,6 +200,53 @@ def main() -> int:
     bad_sub = [r[1] for r in rows("hotelerp_users", "SELECT id, submenu_name, menu_id FROM submenus")
                if int(r[2]) not in menu_ids]
     check("every submenu hangs off a real menu", not bad_sub, ", ".join(bad_sub[:4]))
+
+    # `housekeeper_task.room_no` and `hsk_room_incident.room_no` are room IDS
+    # despite the column name -- the Task Assign picker sends String(room.id)
+    # and HotelServices validates against masterdata.room.id. The seed wrote
+    # room NUMBERS, so every one of these rows pointed at a room that does not
+    # exist: Task Assign showed "Room #402" (its unresolved-id fallback) and the
+    # Room Incident Log's Room column read "—" on every row. Nothing here
+    # noticed, because the reference check above only covered reservations.
+    bad_task_rooms = [str(r[0]) for r in rows(
+        "hotelerp_hotel", "SELECT id, room_no FROM housekeeper_task")
+        if r[1] is None or int(r[1]) not in room_ids]
+    check("every housekeeping task points at a real room", not bad_task_rooms,
+          ("task ids " + ", ".join(bad_task_rooms[:6])) if bad_task_rooms else "")
+
+    bad_incident_rooms = [str(r[0]) for r in rows(
+        "hotelerp_hotel", "SELECT id, room_no FROM hsk_room_incident")
+        if r[1] is None or int(r[1]) not in room_ids]
+    check("every incident points at a real room", not bad_incident_rooms,
+          ("incident ids " + ", ".join(bad_incident_rooms[:6])) if bad_incident_rooms else "")
+
+    # The vocabulary HotelServices enforces (TASK_STATUSES / ROOM_STATUSES in
+    # housekeepingController) and the Task Assign screen offers. The seed wrote
+    # "In Progress" with a space, which matched neither the screen's filter nor
+    # OPEN_TASK_STATUSES, and put room READINESS into room_status, which is
+    # whether the room is held out of service.
+    TASK_STATUSES = {"Pending", "In-Progress", "Completed"}
+    ROOM_STATUSES = {"Blocking", "Unblocking"}
+    bad_status = [f"{r[0]}={r[1]!r}" for r in rows(
+        "hotelerp_hotel", "SELECT id, task_status FROM housekeeper_task")
+        if r[1] not in TASK_STATUSES]
+    check("every task status is one the application accepts", not bad_status,
+          ", ".join(bad_status[:4]))
+    bad_room_status = [f"{r[0]}={r[1]!r}" for r in rows(
+        "hotelerp_hotel", "SELECT id, room_status FROM housekeeper_task")
+        if r[1] not in ROOM_STATUSES]
+    check("every task room status is one the application accepts", not bad_room_status,
+          ", ".join(bad_room_status[:4]))
+
+    # An attachment is stored as the URL path the static mount serves, which is
+    # what the create endpoint writes and what AttachmentPreview appends to the
+    # "/hotel" prefix. A bare filename resolved to /hotel/<file> and was refused,
+    # so not one seeded incident photograph could be opened.
+    bad_attach = [f"{r[0]}={r[1]!r}" for r in rows(
+        "hotelerp_hotel", "SELECT id, attachment_file FROM hsk_room_incident")
+        if r[1] and not str(r[1]).startswith("/templates/static/room_incidents/")]
+    check("every incident attachment is stored as a servable path", not bad_attach,
+          ", ".join(bad_attach[:4]))
 
     print()
     print("=== 5. EVERY stored image has a file behind it ===")

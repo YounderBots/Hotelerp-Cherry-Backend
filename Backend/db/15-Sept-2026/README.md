@@ -1,19 +1,19 @@
 # HotelERP database release
 
 A complete, internally consistent database for the Cherry HotelERP system:
-five schemas, the staff who can log into them, and **180 image files** that
+five schemas, the staff who can log into them, and **112 image files** that
 every image column in the data actually points at.
 
-Exported **1 September 2026** from a database freshly built by
+Exported **15 September 2026** from a database freshly built by
 `Backend/tools/seed_demo_data.py`.
 
 ## What is in the box
 
 ```
-Backend/db/01-Sept-2026/
+Backend/db/15-Sept-2026/
   README.md  this file
   sql/       five schema dumps, each with DROP DATABASE / CREATE DATABASE
-  uploads/   180 image files, laid out exactly as the services expect
+  uploads/   112 image files, laid out exactly as the services expect
 ```
 
 Restore commands below are written to be run **from this directory**.
@@ -46,10 +46,12 @@ cp -r uploads/BarServices/.        ../../Services/BarServices/
 ```
 
 Then regenerate the gateway permission map, which is derived from the live
-`menus` table:
+`menus` table, and change the passwords:
 
 ```bash
 python Backend/tools/build_rbac_map.py
+python Backend/tools/rotate_passwords.py --confirm
+python Backend/tools/preflight.py            # should now report READY
 ```
 
 ## Signing in
@@ -65,13 +67,24 @@ Every seeded account uses the same password: **`Hotel@2026`**
 | `vikram.singh@cherryhotel.com` | Food & Beverage | restaurant and bar |
 
 **Change these before the system is exposed to anyone.** They are shared,
-published credentials; treat the release as a starting point, not a
-production security posture. No role except Admin can delete, which is
-deliberate — the gateway authorises against these permissions.
+published credentials — they are in this file, in the seed source and in this
+repository's history. There is a tool for it, so nobody has to hand-write ten
+bcrypt hashes:
+
+```bash
+python Backend/tools/rotate_passwords.py --list      # who would change
+python Backend/tools/rotate_passwords.py --confirm   # strong, unique, printed once
+```
+
+`Backend/tools/preflight.py` fails while the published password still works, and
+keeps failing until this is done.
+
+No role except Admin can delete, which is deliberate — the gateway authorises
+against these permissions.
 
 ## What "consistent" means here
 
-`Backend/tools/verify_seed.py` asserts 29 invariants that span schemas and
+`Backend/tools/verify_seed.py` asserts 34 invariants that span schemas and
 therefore cannot be expressed as database constraints. All 29 pass on this
 release:
 
@@ -85,8 +98,16 @@ release:
   without a guest in it. Departed rooms are queued for housekeeping.
 - **References.** Every reservation points at real rooms, rate plans, taxes,
   discounts, payment methods and a status that exists in the master vocabulary.
-  Every permission points at a real menu.
-- **Images.** Every one of the 180 stored paths resolves to a file, and no
+  Every permission points at a real menu. Every housekeeping task and every room
+  incident points at a real room, and uses the task/room-status vocabulary the
+  application actually accepts — the previous release wrote room *numbers* into
+  columns the application reads as room *ids*, so the Room column was blank on
+  every one of those rows, and wrote task statuses the Task Assign filter could
+  not match.
+- **Attachments.** Every incident attachment is stored as the path the static
+  mount serves. The previous release stored a bare filename, so not one incident
+  photograph could be opened.
+- **Images.** Every one of the 112 stored paths resolves to a file, and no
   unreferenced file is shipped.
 - **Navigation.** Every menu and submenu link matches a route in `App.jsx`.
 

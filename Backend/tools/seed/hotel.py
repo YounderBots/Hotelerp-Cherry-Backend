@@ -44,6 +44,17 @@ RATE_BY_TYPE = {i: dict(daily=d, weekly=w, bed_only=bo, bed_breakfast=bb,
 TYPE_NAME = {i: n for i, n, *_ in ROOM_TYPES}
 ROOM_BY_NO = {no: (idx, tid) for idx, (no, tid, *_r) in enumerate(ROOMS, start=1)}
 
+
+def room_id(room_no) -> int:
+    """The primary key of a room, given its number.
+
+    `housekeeper_task.room_no` and `hsk_room_incident.room_no` are room IDS
+    despite the column name -- the Task Assign picker sends `String(room.id)`
+    and HotelServices validates against `masterdata.room.id`. Writing
+    `int("402")` here produced rows pointing at a room that does not exist.
+    """
+    return ROOM_BY_NO[str(room_no)][0]
+
 # Master Data ids seeded by masterdata.py, referenced by name for readability.
 TAX_GST12, TAX_GST18, TAX_NONE = 3, 4, 6
 DISC_EARLY, DISC_CORP, DISC_LOYAL, DISC_FESTIVE, DISC_LONG, DISC_NONE = 1, 2, 3, 4, 5, 6
@@ -406,9 +417,12 @@ def seed_operations(conn, business_date, occupied_today, dirty_rooms, incident_d
         tasks.append(dict(
             id=tid, employee_id=emp_id, first_name=first, last_name=last,
             schedule_date=business_date, schedule_time=dt.time(9 + i % 4, 0),
-            room_no=int(room_no), task_type="Deep Cleaning",
-            assign_staff=f"{first} {last}", task_status="Pending",
-            room_status="Not Ready", lost_found=None,
+            room_no=room_id(room_no), task_type="Deep Cleaning",
+            assign_staff=str(emp_id), task_status="Pending",
+            # Unblocking, not "Not Ready": this column is whether the room is
+            # held OUT OF SERVICE, not whether it is clean. Readiness is
+            # room.Room_Working_status, which reconcile_room_states sets.
+            room_status="Unblocking", lost_found=None,
             special_instructions="Departure clean before the room is re-sold.",
             status="ACTIVE", created_by=1, created_at=at(business_date, 8, 30),
             updated_at=None, updated_by=None, company_id=int(COMPANY)))
@@ -419,10 +433,12 @@ def seed_operations(conn, business_date, occupied_today, dirty_rooms, incident_d
         tasks.append(dict(
             id=tid, employee_id=emp_id, first_name=first, last_name=last,
             schedule_date=business_date, schedule_time=dt.time(10 + i % 5, 30),
-            room_no=int(room_no), task_type="Daily Cleaning",
-            assign_staff=f"{first} {last}",
-            task_status="Completed" if i % 2 == 0 else "In Progress",
-            room_status="Occupied", lost_found=None,
+            room_no=room_id(room_no), task_type="Daily Cleaning",
+            assign_staff=str(emp_id),
+            # "In-Progress" with the hyphen, as TASK_STATUSES spells it. With a
+            # space it matched neither the screen's filter nor OPEN_TASK_STATUSES.
+            task_status="Completed" if i % 2 == 0 else "In-Progress",
+            room_status="Unblocking", lost_found=None,
             special_instructions="Guest in house — service while the room is vacant.",
             status="ACTIVE", created_by=1, created_at=at(business_date, 8, 30),
             updated_at=None, updated_by=None, company_id=int(COMPANY)))
@@ -437,12 +453,16 @@ def seed_operations(conn, business_date, occupied_today, dirty_rooms, incident_d
         im.save(im.incident_photo(room_no, desc), incident_dir, fname)
         hh, mm = map(int, time_s.split(":"))
         incidents.append(dict(
-            id=i, room_no=int(room_no), incident_date=day(off),
+            id=i, room_no=room_id(room_no), incident_date=day(off),
             incident_time=dt.time(hh, mm), incident_description=desc,
             involved_staff=staff, severity=severity,
             witnesses="Duty Manager", actions_taken=action,
             reported_by=staff, report_date=day(off),
-            attachment_file=fname,
+            # The URL path the static mount serves, which is what the
+            # create endpoint writes and what AttachmentPreview appends to the
+            # "/hotel" prefix. A bare filename resolved to /hotel/<file>, which
+            # the gateway refuses.
+            attachment_file=f"/templates/static/room_incidents/{fname}",
             **audit(created=at(day(off), hh, mm))))
     insert(conn, "hsk_room_incident", incidents)
 
