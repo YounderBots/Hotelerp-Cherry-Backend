@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date, datetime, time
 from typing import List, Optional
@@ -10,7 +11,23 @@ from models import get_db, models
 from resources.utils import verify_authentication
 from configs.base_config import CommonWords
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+def _server_error(exc: Exception) -> HTTPException:
+    """Log the detail, return a generic message.
+
+    `detail=str(e)` leaked Python exception text -- driver errors and whole SQL
+    statements -- to the browser on every unexpected failure, which is both a
+    poor error message and an information disclosure.
+    """
+    logger.exception("unhandled_exception")
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Internal server error",
+    )
+
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
@@ -149,7 +166,7 @@ def create_floor(payload: FloorIn, request: Request, db: Session = Depends(get_d
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.get("/floor", status_code=status.HTTP_200_OK)
@@ -226,7 +243,7 @@ def create_table(payload: TableIn, request: Request, db: Session = Depends(get_d
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.get("/table", status_code=status.HTTP_200_OK)
@@ -370,7 +387,7 @@ def merge_tables(payload: TableMergeIn, request: Request, db: Session = Depends(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.post("/table/unmerge/{merge_id}", status_code=status.HTTP_200_OK)
@@ -432,7 +449,7 @@ def create_reservation(payload: ReservationIn, request: Request, db: Session = D
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.get("/table_reservation", status_code=status.HTTP_200_OK)
@@ -541,7 +558,7 @@ def add_to_waitlist(payload: WaitlistIn, request: Request, db: Session = Depends
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.get("/waitlist", status_code=status.HTTP_200_OK)

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date, datetime
 from typing import List, Optional
@@ -11,7 +12,23 @@ from models import get_db, models
 from resources.utils import verify_authentication
 from configs.base_config import CommonWords
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+def _server_error(exc: Exception) -> HTTPException:
+    """Log the detail, return a generic message.
+
+    `detail=str(e)` leaked Python exception text -- driver errors and whole SQL
+    statements -- to the browser on every unexpected failure, which is both a
+    poor error message and an information disclosure.
+    """
+    logger.exception("unhandled_exception")
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Internal server error",
+    )
+
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
@@ -275,7 +292,7 @@ def adjust_stock(payload: StockAdjustIn, request: Request, db: Session = Depends
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.post("/inventory_purchase", status_code=status.HTTP_201_CREATED)
@@ -324,7 +341,7 @@ def record_purchase(payload: PurchaseIn, request: Request, db: Session = Depends
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 # =====================================================
@@ -347,7 +364,7 @@ def set_recipe(menu_id: int, payload: RecipeIn, request: Request, db: Session = 
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.get("/menu/{menu_id}/recipe", status_code=status.HTTP_200_OK)

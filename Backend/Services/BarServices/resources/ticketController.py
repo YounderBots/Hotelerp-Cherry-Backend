@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -11,7 +12,23 @@ from resources.utils import verify_authentication
 from resources.inventoryController import deduct_stock_for_menu_item
 from configs.base_config import CommonWords
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+def _server_error(exc: Exception) -> HTTPException:
+    """Log the detail, return a generic message.
+
+    `detail=str(e)` leaked Python exception text -- driver errors and whole SQL
+    statements -- to the browser on every unexpected failure, which is both a
+    poor error message and an information disclosure.
+    """
+    logger.exception("unhandled_exception")
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Internal server error",
+    )
+
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
@@ -197,7 +214,7 @@ def update_bot_status(bot_id: int, payload: BotStatusIn, request: Request, db: S
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.put("/bot/item/{bot_item_id}/status", status_code=status.HTTP_200_OK)

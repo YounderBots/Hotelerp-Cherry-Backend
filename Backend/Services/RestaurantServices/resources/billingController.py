@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -10,7 +11,23 @@ from models import get_db, models
 from resources.utils import verify_authentication
 from configs.base_config import CommonWords
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+def _server_error(exc: Exception) -> HTTPException:
+    """Log the detail, return a generic message.
+
+    `detail=str(e)` leaked Python exception text -- driver errors and whole SQL
+    statements -- to the browser on every unexpected failure, which is both a
+    poor error message and an information disclosure.
+    """
+    logger.exception("unhandled_exception")
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Internal server error",
+    )
+
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
@@ -29,6 +46,56 @@ def _auth(request: Request):
 
 def _round(value: float) -> float:
     return round(value, 2)
+
+
+
+# Money has to come out of this endpoint the right way round. See the note on
+# generate_bill: none of these figures was checked, and a flat discount larger
+# than the order produced a bill with a negative grand total.
+MAX_PERCENT = 100.0
+
+# An order that was never confirmed has not reached the kitchen, and a cancelled
+# one is not owed. The Billing screen already offers only Served / Ready /
+# In Progress orders; this is the same rule on the server, where it binds.
+BILLABLE_ORDER_STATUSES = ("In Progress", "Ready", "Served", "Completed")
+
+
+def _assert_billable_charges(payload, sub_total: float) -> float:
+    """Validate the charge inputs and return the discount they imply."""
+    for field in ("cgst_percentage", "sgst_percentage", "service_charge_percentage"):
+        value = getattr(payload, field, 0) or 0
+        if value < 0 or value > MAX_PERCENT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{field} must be between 0 and {MAX_PERCENT:.0f}",
+            )
+
+    discount_value = payload.discount_value or 0
+    if discount_value < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="discount_value cannot be negative",
+        )
+
+    if payload.discount_type == "Percentage":
+        if discount_value > MAX_PERCENT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"A percentage discount cannot exceed {MAX_PERCENT:.0f}%",
+            )
+        discount_amount = _round(sub_total * discount_value / 100)
+    else:
+        discount_amount = _round(discount_value)
+
+    if discount_amount > sub_total:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"A discount of {discount_amount:.2f} is more than the order total "
+                f"of {sub_total:.2f}"
+            ),
+        )
+    return discount_amount
 
 
 # =====================================================
@@ -116,6 +183,15 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
     if not order_items:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Order has no billable items")
 
+    if order.order_status not in BILLABLE_ORDER_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"An order that is {order.order_status} cannot be billed. "
+                "Send it to the kitchen first."
+            ),
+        )
+
     try:
         sub_total = sum((i.price or 0) * (i.quantity or 0) for i in order_items)
 
@@ -123,10 +199,7 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
         sgst_amount = _round(sub_total * (payload.sgst_percentage or 0) / 100)
         service_charge_amount = _round(sub_total * (payload.service_charge_percentage or 0) / 100)
 
-        if payload.discount_type == "Percentage":
-            discount_amount = _round(sub_total * (payload.discount_value or 0) / 100)
-        else:
-            discount_amount = _round(payload.discount_value or 0)
+        discount_amount = _assert_billable_charges(payload, sub_total)
 
         raw_total = sub_total + cgst_amount + sgst_amount + service_charge_amount - discount_amount
         grand_total = round(raw_total)
@@ -191,7 +264,7 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.get("/bill", status_code=status.HTTP_200_OK)
@@ -347,7 +420,7 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.put("/bill/{bill_id}/cancel", status_code=status.HTTP_200_OK)
@@ -442,4 +515,4 @@ def split_bill_by_person(bill_id: int, payload: SplitByPersonIn, request: Reques
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)

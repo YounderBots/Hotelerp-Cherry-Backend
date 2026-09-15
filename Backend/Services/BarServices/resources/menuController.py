@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from typing import List, Optional
@@ -10,7 +11,23 @@ from models import get_db, models
 from resources.utils import verify_authentication
 from configs.base_config import BaseConfig, CommonWords
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+def _server_error(exc: Exception) -> HTTPException:
+    """Log the detail, return a generic message.
+
+    `detail=str(e)` leaked Python exception text -- driver errors and whole SQL
+    statements -- to the browser on every unexpected failure, which is both a
+    poor error message and an information disclosure.
+    """
+    logger.exception("unhandled_exception")
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Internal server error",
+    )
+
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
@@ -235,7 +252,7 @@ def create_menu_item(payload: MenuItemIn, request: Request, db: Session = Depend
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.get("/menu", status_code=status.HTTP_200_OK)

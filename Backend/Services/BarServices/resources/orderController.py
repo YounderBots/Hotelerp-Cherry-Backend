@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import date, datetime
 from typing import List, Optional
@@ -10,7 +11,23 @@ from models import get_db, models
 from resources.utils import verify_authentication
 from configs.base_config import CommonWords
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+def _server_error(exc: Exception) -> HTTPException:
+    """Log the detail, return a generic message.
+
+    `detail=str(e)` leaked Python exception text -- driver errors and whole SQL
+    statements -- to the browser on every unexpected failure, which is both a
+    poor error message and an information disclosure.
+    """
+    logger.exception("unhandled_exception")
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Internal server error",
+    )
+
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
@@ -25,6 +42,22 @@ def _auth(request: Request):
     if not company_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication token")
     return user_id, role_id, company_id
+
+
+# The column's own vocabulary, copied from the SAEnum declarations in
+# models.py. Anything outside these sets used to travel all the way to MySQL
+# and come back as "Data truncated for column ..." -- a 500 for what is a bad
+# request, with the failing SQL attached.
+ORDER_TYPES = ("At Table", "At Counter", "Takeaway")
+ORDER_STATUSES = ("New", "In Progress", "Ready", "Served", "Completed", "Cancelled")
+
+
+def _assert_in(value, allowed, field):
+    if value not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field} must be one of: {', '.join(allowed)}",
+        )
 
 
 # =====================================================
@@ -108,6 +141,8 @@ def _recalculate_totals(db: Session, order: models.BarOrder):
 def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
 
+    _assert_in(payload.order_type, ORDER_TYPES, "order_type")
+
     if payload.order_type == "At Table" and not payload.table_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="table_id is required for At Table orders")
 
@@ -158,7 +193,7 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.get("/order", status_code=status.HTTP_200_OK)
@@ -286,7 +321,7 @@ def add_order_items(order_id: int, payload: OrderItemsIn, request: Request, db: 
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.put("/order/item/{order_item_id}", status_code=status.HTTP_200_OK)
@@ -391,7 +426,7 @@ def confirm_order(order_id: int, payload: OrderConfirmIn, request: Request, db: 
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        raise _server_error(e)
 
 
 @router.put("/order/{order_id}/status", status_code=status.HTTP_200_OK)
@@ -400,6 +435,8 @@ def update_order_status(order_id: int, payload: OrderStatusIn, request: Request,
     order = db.query(models.BarOrder).filter(models.BarOrder.id == order_id, models.BarOrder.company_id == company_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    _assert_in(payload.order_status, ORDER_STATUSES, "order_status")
 
     order.order_status = payload.order_status
     order.updated_by = user_id
