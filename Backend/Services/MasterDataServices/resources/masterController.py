@@ -2595,7 +2595,13 @@ async def create_discount(
         # -------------------------------------------------
         # REQUEST BODY
         # -------------------------------------------------
-        payload = await request.json()
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid JSON body"
+            )
 
         country_id = payload.get("country_id")
         discount_name = payload.get("discount_name")
@@ -2604,15 +2610,40 @@ async def create_discount(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not country_id or not discount_name or discount_percentage is None:
+        # country_id arrives as a NUMBER from the picker on the Discount Type
+        # screen. This used to accept anything truthy and then call
+        # country_id.lower() in the duplicate check, so every Add from the UI
+        # raised AttributeError and answered 500 -- the screen could not create
+        # a row at all. Validated the way /tax does, which is the shape this
+        # endpoint should have had all along.
+        if not isinstance(country_id, int) or isinstance(country_id, bool) or country_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="country_id, discount_name and discount_percentage are required"
+                detail="Valid country_id is required"
+            )
+
+        if not isinstance(discount_name, str) or not discount_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_name is required"
+            )
+
+        discount_name = discount_name.strip()
+        if len(discount_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_name must not exceed 100 characters"
+            )
+
+        if discount_percentage is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_percentage is required"
             )
 
         try:
             discount_percentage = float(discount_percentage)
-        except ValueError:
+        except (TypeError, ValueError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="discount_percentage must be a number"
@@ -2625,12 +2656,31 @@ async def create_discount(
             )
 
         # -------------------------------------------------
+        # FETCH COUNTRY (MANDATORY)
+        # -------------------------------------------------
+        country = (
+            db.query(models.Country_Currency)
+            .filter(
+                models.Country_Currency.id == country_id,
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if not country:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Country not found or inactive"
+            )
+
+        # -------------------------------------------------
         # DUPLICATE CHECK
         # -------------------------------------------------
         exists = (
             db.query(models.Discount_Data)
             .filter(
-                func.lower(models.Discount_Data.Country_ID) == country_id.lower(),
+                models.Discount_Data.Country_ID == str(country.id),
                 func.lower(models.Discount_Data.Discount_Name) == discount_name.lower(),
                 models.Discount_Data.company_id == company_id,
                 models.Discount_Data.status == CommonWords.STATUS
@@ -2648,7 +2698,7 @@ async def create_discount(
         # CREATE DISCOUNT
         # -------------------------------------------------
         discount = models.Discount_Data(
-            Country_ID=country_id,
+            Country_ID=str(country.id),
             Discount_Name=discount_name,
             Discount_Percentage=str(discount_percentage),
             status=CommonWords.STATUS,
@@ -2808,16 +2858,27 @@ async def update_discount(
                 detail="Valid discount id is required"
             )
 
-        if not isinstance(country_id, str) or not country_id.strip():
+        # Numeric, like the create above and like /tax: the picker on the
+        # Discount Type screen sends Number(countryId), and this used to demand
+        # a string, so every Edit from the UI was refused with
+        # "country_id is required" for an id that was right there in the body.
+        if not isinstance(country_id, int) or isinstance(country_id, bool) or country_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="country_id is required"
+                detail="Valid country_id is required"
             )
 
         if not isinstance(discount_name, str) or not discount_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="discount_name is required"
+            )
+
+        discount_name = discount_name.strip()
+        if len(discount_name) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="discount_name must not exceed 100 characters"
             )
 
         if discount_percentage is None:
@@ -2841,29 +2902,11 @@ async def update_discount(
             )
 
         # -------------------------------------------------
-        # DUPLICATE CHECK
-        # -------------------------------------------------
-        duplicate = (
-            db.query(models.Discount_Data)
-            .filter(
-                models.Discount_Data.id != discount_id,
-                func.lower(models.Discount_Data.Country_ID) == country_id.lower(),
-                func.lower(models.Discount_Data.Discount_Name) == discount_name.lower(),
-                models.Discount_Data.company_id == company_id,
-                models.Discount_Data.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if duplicate:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Discount already exists for this country"
-            )
-
-        # -------------------------------------------------
         # FETCH DISCOUNT
         # -------------------------------------------------
+        # Ahead of the duplicate check: a PUT to an id that does not exist is a
+        # 404, and answering "already exists" for a row that is not there sends
+        # the caller looking for the wrong problem.
         discount = (
             db.query(models.Discount_Data)
             .filter(
@@ -2881,10 +2924,50 @@ async def update_discount(
             )
 
         # -------------------------------------------------
+        # FETCH COUNTRY (MANDATORY)
+        # -------------------------------------------------
+        country = (
+            db.query(models.Country_Currency)
+            .filter(
+                models.Country_Currency.id == country_id,
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if not country:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Country not found or inactive"
+            )
+
+        # -------------------------------------------------
+        # DUPLICATE CHECK
+        # -------------------------------------------------
+        duplicate = (
+            db.query(models.Discount_Data)
+            .filter(
+                models.Discount_Data.id != discount_id,
+                models.Discount_Data.Country_ID == str(country.id),
+                func.lower(models.Discount_Data.Discount_Name) == discount_name.lower(),
+                models.Discount_Data.company_id == company_id,
+                models.Discount_Data.status == CommonWords.STATUS
+            )
+            .first()
+        )
+
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Discount already exists for this country"
+            )
+
+        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
-        discount.Country_ID = country_id.strip()
-        discount.Discount_Name = discount_name.strip()
+        discount.Country_ID = str(country.id)
+        discount.Discount_Name = discount_name
         discount.Discount_Percentage = str(discount_percentage)
         discount.updated_by = user_id
 
@@ -3120,10 +3203,16 @@ async def create_tax(
                 detail="Valid country_id is required"
             )
 
-        if not tax_name or not tax_name.strip():
+        if not tax_name or not isinstance(tax_name, str) or not tax_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="tax_name is required"
+            )
+
+        if len(tax_name.strip()) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_name must not exceed 100 characters"
             )
 
         if tax_percentage is None:
@@ -3371,10 +3460,16 @@ async def update_tax(
                 detail="Valid country_id is required"
             )
 
-        if not tax_name or not isinstance(tax_name, str):
+        if not tax_name or not isinstance(tax_name, str) or not tax_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="tax_name is required"
+            )
+
+        if len(tax_name.strip()) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="tax_name must not exceed 100 characters"
             )
 
         if tax_percentage is None:
@@ -3671,13 +3766,19 @@ async def create_payment_method(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not payment_method or not payment_method.strip():
+        if not payment_method or not isinstance(payment_method, str) or not payment_method.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="payment_method is required"
             )
 
         payment_method = payment_method.strip()
+
+        if len(payment_method) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="payment_method must not exceed 100 characters"
+            )
 
         # -------------------------------------------------
         # DUPLICATE CHECK
@@ -3855,13 +3956,19 @@ async def update_payment_method(
                 detail="Valid payment id is required"
             )
 
-        if not payment_method or not payment_method.strip():
+        if not payment_method or not isinstance(payment_method, str) or not payment_method.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="payment_method is required"
             )
 
         payment_method = payment_method.strip()
+
+        if len(payment_method) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="payment_method must not exceed 100 characters"
+            )
 
         # -------------------------------------------------
         # DUPLICATE CHECK
@@ -4582,22 +4689,40 @@ async def create_country_currency(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not country_name or not isinstance(country_name, str):
+        if not country_name or not isinstance(country_name, str) or not country_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="country_name is required"
             )
 
-        if not currency_name or not isinstance(currency_name, str):
+        if len(country_name.strip()) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="country_name must not exceed 100 characters"
+            )
+
+        if not currency_name or not isinstance(currency_name, str) or not currency_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="currency_name is required"
             )
 
-        if not symbol or not isinstance(symbol, str):
+        if len(currency_name.strip()) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="currency_name must not exceed 100 characters"
+            )
+
+        if not symbol or not isinstance(symbol, str) or not symbol.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="symbol is required"
+            )
+
+        if len(symbol.strip()) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="symbol must not exceed 100 characters"
             )
 
         country_name = country_name.strip()
@@ -4788,22 +4913,40 @@ async def update_country_currency(
                 detail="Valid country id is required"
             )
 
-        if not country_name or not country_name.strip():
+        if not country_name or not isinstance(country_name, str) or not country_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="country_name is required"
             )
 
-        if not currency_name or not currency_name.strip():
+        if len(country_name.strip()) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="country_name must not exceed 100 characters"
+            )
+
+        if not currency_name or not isinstance(currency_name, str) or not currency_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="currency_name is required"
             )
 
-        if not symbol or not symbol.strip():
+        if len(currency_name.strip()) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="currency_name must not exceed 100 characters"
+            )
+
+        if not symbol or not isinstance(symbol, str) or not symbol.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="symbol is required"
+            )
+
+        if len(symbol.strip()) > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="symbol must not exceed 100 characters"
             )
 
         country_name = country_name.strip()
@@ -5555,16 +5698,28 @@ async def create_room_complementry(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not complementry_name or not complementry_name.strip():
+        if not complementry_name or not isinstance(complementry_name, str) or not complementry_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="complementry_name is required"
             )
 
-        if not description or not description.strip():
+        if len(complementry_name.strip()) > 255:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="complementry_name must not exceed 255 characters"
+            )
+
+        if not description or not isinstance(description, str) or not description.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="description is required"
+            )
+
+        if len(description.strip()) > 255:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="description must not exceed 255 characters"
             )
 
         # -------------------------------------------------
@@ -5751,16 +5906,28 @@ async def update_room_complementry(
                 detail="Valid complementry id is required"
             )
 
-        if not complementry_name or not complementry_name.strip():
+        if not complementry_name or not isinstance(complementry_name, str) or not complementry_name.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="complementry_name is required"
             )
 
-        if not description or not description.strip():
+        if len(complementry_name.strip()) > 255:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="complementry_name must not exceed 255 characters"
+            )
+
+        if not description or not isinstance(description, str) or not description.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="description is required"
+            )
+
+        if len(description.strip()) > 255:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="description must not exceed 255 characters"
             )
 
         # -------------------------------------------------
