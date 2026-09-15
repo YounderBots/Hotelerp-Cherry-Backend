@@ -43,7 +43,7 @@ from sqlalchemy.orm import Session
 
 from configs.base_config import BaseConfig, CommonWords
 from models import get_db, models
-from models.masterdata import MasterRoom
+from models.masterdata import MasterRoom, StaffUser
 from resources.utils import verify_authentication
 
 logger = logging.getLogger("hotelservice.housekeeping")
@@ -267,6 +267,48 @@ def _load_room(db: Session, company_id, room_id: int):
         )
         .first()
     )
+
+
+def _validate_employee(db: Session, company_id, employee_id) -> None:
+    """Reject an assignee who is not a member of this property's staff.
+
+    The room on the same request has been checked since `_validate_room` was
+    written; the person it is assigned to was not, so `employee_id: "999999"`
+    was accepted and stored. Every screen that reads the assignee then shows a
+    blank where the housekeeper should be.
+
+    A failure to reach the users schema is logged and allowed through, exactly
+    as the room check does: this is a referential check on an id the staff
+    picker already constrains, not the thing standing between a supervisor and
+    their work.
+    """
+    try:
+        employee_pk = int(str(employee_id).strip())
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assigned employee must be a staff member's id",
+        )
+
+    try:
+        person = (
+            db.query(StaffUser)
+            .filter(
+                StaffUser.id == employee_pk,
+                StaffUser.company_id == str(company_id),
+                StaffUser.status == CommonWords.STATUS,
+            )
+            .first()
+        )
+    except Exception:
+        logger.exception("users_lookup_failed employee_id=%s", employee_id)
+        return
+
+    if not person:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The assigned employee is not an active member of staff",
+        )
 
 
 def _validate_room(db: Session, company_id, room_id: int) -> None:
@@ -517,6 +559,7 @@ async def create_housekeeper_task(request: Request, db: Session = Depends(get_db
         # a single staff picker.
         employee_id = _required_text(payload, "employee_id", "Assigned employee", max_len=NAME_MAX)
         assign_staff = _text(payload, "assign_staff", max_len=NAME_MAX) or employee_id
+        _validate_employee(db, company_id, employee_id)
         room_id = _int(payload, "room_no", "Room", required=True)
         _validate_room(db, company_id, room_id)
 
@@ -616,6 +659,7 @@ async def update_housekeeper_task(request: Request, db: Session = Depends(get_db
             )
 
         employee_id = _required_text(payload, "employee_id", "Assigned employee", max_len=NAME_MAX)
+        _validate_employee(db, company_id, employee_id)
         room_id = _int(payload, "room_no", "Room", required=True)
         _validate_room(db, company_id, room_id)
 

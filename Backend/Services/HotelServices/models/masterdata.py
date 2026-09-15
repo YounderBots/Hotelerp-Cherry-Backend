@@ -73,7 +73,33 @@ def _resolve_schema() -> str:
     return "hotelerp_masterdata"
 
 
+def _resolve_users_schema() -> str:
+    """Name of the Users schema on this service's database server.
+
+    Same derivation as the Master Data schema above, and the same reason: the
+    databases are deployed as `<prefix>_hotel`, `<prefix>_masterdata` and
+    `<prefix>_users` on one server. `USERS_DB_SCHEMA` overrides it.
+    """
+    explicit = os.getenv("USERS_DB_SCHEMA")
+    if explicit:
+        return explicit.strip()
+
+    uri = str(getattr(Configuration, "DB_URI", "") or "")
+    own = uri.rsplit("/", 1)[-1].split("?", 1)[0].strip()
+
+    if own.endswith("_hotel"):
+        return own[: -len("_hotel")] + "_users"
+
+    logger.warning(
+        "users_schema_fallback own_schema=%r using=hotelerp_users "
+        "(set USERS_DB_SCHEMA to override)",
+        own,
+    )
+    return "hotelerp_users"
+
+
 MASTERDATA_SCHEMA = _resolve_schema()
+USERS_SCHEMA = _resolve_users_schema()
 
 
 class MasterRoom(MasterBase):
@@ -193,6 +219,27 @@ class MasterReservationStatus(MasterBase):
     Reservation_Status = Column(String(100), nullable=False, index=True)
     Color = Column(String(100), nullable=False)
 
+    status = Column(String(100), nullable=False, index=True)
+    company_id = Column(String(100), nullable=False, index=True)
+
+
+class StaffUser(MasterBase):
+    """`users` — only enough to confirm a person exists and name them.
+
+    Housekeeping assigns a task to a member of staff, and that assignment was
+    never checked: `employee_id` only had to be non-empty, so a task could be
+    raised against a user id that is not a user. Deliberately partial, and
+    deliberately without the password or salary columns -- nothing here needs
+    them, and a read-only view onto another service's table should carry the
+    least it can.
+    """
+
+    __tablename__ = "users"
+    __table_args__ = {"schema": USERS_SCHEMA}
+
+    id = Column(Integer, primary_key=True, index=True)
+    First_Name = Column(String(100))
+    Last_Name = Column(String(100))
     status = Column(String(100), nullable=False, index=True)
     company_id = Column(String(100), nullable=False, index=True)
 

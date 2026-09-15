@@ -1,8 +1,10 @@
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import date, datetime, timedelta
+from typing import Optional
 
 from fastapi import (
     APIRouter,
@@ -15,7 +17,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -37,6 +39,20 @@ from resources.utils import verify_authentication
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+def _server_error(exc: Exception) -> HTTPException:
+    """Log the detail, return a generic message.
+
+    `detail=str(e)` leaked Python exception text -- driver errors and whole SQL
+    statements -- to the browser on every unexpected failure, which is both a
+    poor error message and an information disclosure.
+    """
+    logger.exception("unhandled_exception")
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Internal server error",
+    )
+
 
 # =====================================================
 # COMMON CONSTANTS & CONFIG
@@ -181,9 +197,7 @@ async def create_room_booking(request: Request, db: Session = Depends(get_db)):
         raise
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+        raise _server_error(e)
 
 
 # =====================================================
@@ -252,9 +266,7 @@ def get_all_room_bookings(request: Request, db: Session = Depends(get_db)):
         raise
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+        raise _server_error(e)
 
 
 # =====================================================
@@ -333,9 +345,7 @@ def get_room_booking_by_id(
         raise
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+        raise _server_error(e)
 
 
 # =====================================================
@@ -479,9 +489,7 @@ async def update_room_booking(request: Request, db: Session = Depends(get_db)):
         raise
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+        raise _server_error(e)
 
 
 # =====================================================
@@ -546,9 +554,7 @@ def delete_room_booking(
         raise
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
-        )
+        raise _server_error(e)
 
 
 
@@ -1650,7 +1656,7 @@ async def create_room_reservation(
     reservation.first_name = (first_name or "").strip()
     reservation.last_name = (last_name or "").strip() or None
     reservation.phone_number = phone_number
-    reservation.email = (email or "").strip().lower() or None
+    reservation.email = _clean_email(email)
 
     reservation.arrival_date = arrival_date
     reservation.departure_date = departure_date
@@ -1743,6 +1749,63 @@ async def create_room_reservation(
             "balance_amount": reservation.balance_amount,
         },
     }
+
+
+# A guest email has to be somewhere a message can actually be sent. Deliberately
+# the same shape the SPA's forms use (Add New Reservation, Edit), so the two
+# cannot disagree about what they accept -- not a full RFC 5322 parser, which
+# would accept addresses no mail system here would.
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+EMAIL_MAX_LENGTH = 100
+
+
+def _clean_email(value) -> Optional[str]:
+    """Normalise a submitted guest email, or refuse it.
+
+    Empty is allowed -- a walk-in guest may not have one -- but anything
+    present has to be a usable address. This was `(email or "").strip().lower()`
+    with no check at all, so "not-an-email" was stored and confirmed.
+    """
+    email = (value or "").strip().lower()
+    if not email:
+        return None
+    if len(email) > EMAIL_MAX_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Email must not exceed {EMAIL_MAX_LENGTH} characters",
+        )
+    if not EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Enter a valid email address")
+    return email
+
+
+def _resolve_method_name(db: Session, company_id, name: str, label: str) -> str:
+    """Match a submitted method against the property's configured list.
+
+    Returns the name as the master row spells it, so the folio and the
+    Settlement Summary group by one canonical value rather than by whatever
+    casing the caller happened to send. Without this a payment could be
+    recorded against a method that exists nowhere else in the system, and the
+    settlement report would grow a column for it.
+    """
+    row = (
+        db.query(MasterPaymentMethod)
+        .filter(
+            func.lower(MasterPaymentMethod.payment_method) == name.lower(),
+            MasterPaymentMethod.company_id == str(company_id),
+            MasterPaymentMethod.status == STATUS,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{label} '{name}' is not one of this property's configured "
+                "payment methods"
+            ),
+        )
+    return row.payment_method
 
 
 def _payment_method_name(db: Session, company_id, payment_method_id) -> str:
@@ -2251,7 +2314,7 @@ async def update_room_reservation(
     reservation.first_name = (first_name or "").strip()
     reservation.last_name = (last_name or "").strip() or None
     reservation.phone_number = phone_number
-    reservation.email = (email or "").strip().lower() or None
+    reservation.email = _clean_email(email)
 
     reservation.arrival_date = arrival_date
     reservation.departure_date = departure_date
@@ -2911,6 +2974,9 @@ async def reservation_pay_due_amount(
         payment_method = (payload.get("payment_method") or "").strip()
         if not payment_method:
             raise HTTPException(status_code=400, detail="Payment method is required")
+        payment_method = _resolve_method_name(
+            db, company_id, payment_method, "Payment method"
+        )
 
         try:
             paying_amount = rules.money(float(payload.get("paying_amount")))
@@ -3005,6 +3071,9 @@ async def reservation_refund_extra_amount(
         refund_method = (payload.get("refund_method") or "").strip()
         if not refund_method:
             raise HTTPException(status_code=400, detail="Refund method is required")
+        refund_method = _resolve_method_name(
+            db, company_id, refund_method, "Refund method"
+        )
 
         try:
             refund_amount = rules.money(float(payload.get("refund_amount")))

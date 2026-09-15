@@ -32,7 +32,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import models.models as models
-from models.masterdata import MASTERDATA_SCHEMA, MasterBase, MasterRoom
+from models.masterdata import MASTERDATA_SCHEMA, USERS_SCHEMA, MasterBase, MasterRoom
 from resources import reservationController as rc
 
 TENANT = "1"
@@ -54,6 +54,10 @@ def db():
     )
     with engine.connect() as conn:
         conn.exec_driver_sql(f"ATTACH DATABASE ':memory:' AS {MASTERDATA_SCHEMA}")
+        # MasterBase also carries the read-only `users` view housekeeping
+        # validates an assignee against, so its schema has to exist here too or
+        # create_all fails on the whole metadata.
+        conn.exec_driver_sql(f"ATTACH DATABASE ':memory:' AS {USERS_SCHEMA}")
         conn.commit()
     models.Base.metadata.create_all(bind=engine)
     MasterBase.metadata.create_all(bind=engine)
