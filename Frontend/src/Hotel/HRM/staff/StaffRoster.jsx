@@ -9,6 +9,7 @@ import ErrorAlert from "../../../stories/ErrorAlert";
 import Toast from "../../../stories/Toast";
 import { useApiResources } from "../../../hooks/useApiResource";
 import { useToast } from "../../../hooks/useToast";
+import { usePagePermissions } from "../../../hooks/usePagePermissions";
 import { todayIso } from "../../../functions/formatters";
 
 /**
@@ -22,7 +23,7 @@ import { todayIso } from "../../../functions/formatters";
  * StaffShiftPlanning.jsx for why.
  */
 
-const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, api }) => {
+const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, api }) => {
   const {
     data: [employees, shifts, floors],
     loading,
@@ -34,6 +35,7 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, api }) => {
     { fetch: api.listFloors, select: api.readList },
   ]);
 
+  const permissions = usePagePermissions(pagePath);
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -141,7 +143,7 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, api }) => {
         title={`${venueLabel} Roster — Today`}
         loading={loading}
         emptyMessage="No employees in the directory yet."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable

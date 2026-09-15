@@ -15,6 +15,7 @@ import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 
 // Gender and marital status have no master-data table in this system, and
 // they are not business reference data an operator maintains — they stay
@@ -110,6 +111,7 @@ const Employee = () => {
     { fetch: () => APICall.getT("/masterdata/country_currency"), select: readList },
   ]);
 
+  const permissions = usePagePermissions("/employee");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -298,7 +300,7 @@ const Employee = () => {
         title="Employees"
         loading={loading}
         emptyMessage="No employees yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -359,6 +361,8 @@ const Employee = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteRow(row)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

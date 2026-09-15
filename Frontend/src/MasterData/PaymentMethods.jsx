@@ -10,6 +10,7 @@ import APICall from "../APICalls/APICalls";
 import { readList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const PaymentMethods = () => {
   const { data, loading, error, reload } = useApiResource(
@@ -17,6 +18,7 @@ const PaymentMethods = () => {
     { select: readList, fallback: "Failed to load payment methods." },
   );
 
+  const permissions = usePagePermissions("/payment_methods");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -113,7 +115,7 @@ const PaymentMethods = () => {
         title="Payment Methods"
         loading={loading}
         emptyMessage="No payment methods yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -137,6 +139,8 @@ const PaymentMethods = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

@@ -10,6 +10,7 @@ import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
 import { useApiResource } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 
 const Designation = () => {
   const { data, loading, error, reload } = useApiResource(
@@ -17,6 +18,7 @@ const Designation = () => {
     { select: readList, fallback: "Failed to load designations." },
   );
 
+  const permissions = usePagePermissions("/designation");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -115,7 +117,7 @@ const Designation = () => {
         title="Designations"
         loading={loading}
         emptyMessage="No designations yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -139,6 +141,8 @@ const Designation = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

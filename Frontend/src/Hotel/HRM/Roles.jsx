@@ -11,6 +11,7 @@ import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
 import { useApiResource } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 
 const Roles = () => {
   const { data, loading, error, reload } = useApiResource(
@@ -18,6 +19,7 @@ const Roles = () => {
     { select: readList, fallback: "Failed to load roles." },
   );
 
+  const permissions = usePagePermissions("/roles");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -133,7 +135,7 @@ const Roles = () => {
         title="Roles"
         loading={loading}
         emptyMessage="No roles yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -169,6 +171,8 @@ const Roles = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

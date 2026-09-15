@@ -10,6 +10,7 @@ import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
 import { useApiResource } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 
 /** "22:00" + "06:00" reads as an overnight shift, not a negative duration. */
 const shiftLength = (start, end) => {
@@ -30,6 +31,7 @@ const Shift = () => {
     { select: readList, fallback: "Failed to load shifts." },
   );
 
+  const permissions = usePagePermissions("/shift");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -154,7 +156,7 @@ const Shift = () => {
         title="Shifts"
         loading={loading}
         emptyMessage="No shifts yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -188,6 +190,8 @@ const Shift = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

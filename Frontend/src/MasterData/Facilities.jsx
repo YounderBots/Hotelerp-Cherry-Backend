@@ -10,6 +10,7 @@ import APICall from "../APICalls/APICalls";
 import { readList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const Facilities = () => {
   const { data, loading, error, reload } = useApiResource(
@@ -17,6 +18,7 @@ const Facilities = () => {
     { select: readList, fallback: "Failed to load facilities." },
   );
 
+  const permissions = usePagePermissions("/facilities");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -112,7 +114,7 @@ const Facilities = () => {
         title="Facilities"
         loading={loading}
         emptyMessage="No facilities yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -136,6 +138,8 @@ const Facilities = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

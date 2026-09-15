@@ -11,6 +11,7 @@ import APICall from "../APICalls/APICalls";
 import { readList, readNestedList } from "../functions/apiHelpers";
 import { useApiResources } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const ENDPOINT = "/masterdata/room_types";
 
@@ -43,6 +44,7 @@ const RoomType = () => {
     { fetch: () => APICall.getT("/masterdata/complementry"), select: readList },
   ]);
 
+  const permissions = usePagePermissions("/room_type");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -176,7 +178,7 @@ const RoomType = () => {
         title="Room Types"
         loading={loading}
         emptyMessage="No room types yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -241,6 +243,8 @@ const RoomType = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

@@ -13,6 +13,7 @@ import APICall from "../APICalls/APICalls";
 import { readList } from "../functions/apiHelpers";
 import { useApiResources } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const ENDPOINT = "/masterdata/room";
 
@@ -30,6 +31,7 @@ const Rooms = () => {
     { fetch: () => APICall.getT("/masterdata/bed_types"), select: readList },
   ]);
 
+  const permissions = usePagePermissions("/rooms");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -240,7 +242,7 @@ const Rooms = () => {
         title="Rooms"
         loading={loading}
         emptyMessage="No rooms yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -283,6 +285,8 @@ const Rooms = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

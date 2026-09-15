@@ -30,6 +30,7 @@ const RestaurantShiftPlanning = () => (
     venueLabel="Restaurant"
     roleOptions={ROLE_OPTIONS}
     hasSection={true}
+    pagePath="/restaurant_shift_planning"
     api={api}
   />
 );

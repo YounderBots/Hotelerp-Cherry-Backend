@@ -30,6 +30,7 @@ const BarShiftPlanning = () => (
     venueLabel="Bar"
     roleOptions={ROLE_OPTIONS}
     hasSection={false}
+    pagePath="/bar_shift_planning"
     api={api}
   />
 );

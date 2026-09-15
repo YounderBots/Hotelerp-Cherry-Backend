@@ -8,6 +8,7 @@ import APICall, { ApiError } from "../../APICalls/APICalls";
 import { errMsg, readList } from "../../functions/apiHelpers";
 import { useApiResource, useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 import "./HRM.css";
 
 // Role permissions matrix: one row per menu, four permission flags per row.
@@ -48,6 +49,11 @@ const User = () => {
     { fetch: () => APICall.getT("/user/menus"), select: readList, fallback: "Failed to load menus." },
   ]);
 
+  // Saving a row POSTs (create) and falls back to PUT (edit), so a role
+  // needs one of the two to change anything; without either the matrix is
+  // read-only rather than a screen of controls the gateway would refuse.
+  const permissions = usePagePermissions("/user");
+  const canWrite = permissions.add || permissions.edit;
   const { toast, showToast } = useToast();
 
   const [selectedRoleId, setSelectedRoleId] = useState("");
@@ -180,21 +186,25 @@ const User = () => {
           <div>
             <h2 className="perm-panel__title">Role Permissions</h2>
             <p className="perm-panel__subtitle">
-              Choose a role, then grant it access to each module.
+              {canWrite
+                ? "Choose a role, then grant it access to each module."
+                : "Choose a role to review the modules it can reach. Your role cannot change permissions."}
             </p>
           </div>
-          <div className="perm-panel__actions">
-            <Button variant="secondary" onClick={handleReset} disabled={saving || dirty.length === 0}>
-              Reset
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSave}
-              disabled={saving || !selectedRoleId || dirty.length === 0}
-            >
-              {saving ? "Saving…" : dirty.length ? `Save (${dirty.length})` : "Save"}
-            </Button>
-          </div>
+          {canWrite && (
+            <div className="perm-panel__actions">
+              <Button variant="secondary" onClick={handleReset} disabled={saving || dirty.length === 0}>
+                Reset
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSave}
+                disabled={saving || !selectedRoleId || dirty.length === 0}
+              >
+                {saving ? "Saving…" : dirty.length ? `Save (${dirty.length})` : "Save"}
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="perm-panel__picker">
@@ -254,7 +264,7 @@ const User = () => {
                           <Checkbox
                             checked={Boolean(row[p.matrix])}
                             onChange={() => togglePermission(menu.id, p.matrix)}
-                            disabled={saving}
+                            disabled={saving || !canWrite}
                             label={`${p.label} — ${name}`}
                             className="permission-table__box"
                           />
@@ -264,7 +274,7 @@ const User = () => {
                         <Checkbox
                           checked={allOn}
                           onChange={(e) => toggleAll(menu.id, e.target.checked)}
-                          disabled={saving}
+                          disabled={saving || !canWrite}
                           label={`All permissions — ${name}`}
                           className="permission-table__box"
                         />

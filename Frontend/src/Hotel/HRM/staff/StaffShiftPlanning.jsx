@@ -12,6 +12,7 @@ import Toast from "../../../stories/Toast";
 import { LogIn, LogOut } from "lucide-react";
 import { useApiResources } from "../../../hooks/useApiResource";
 import { useToast } from "../../../hooks/useToast";
+import { usePagePermissions } from "../../../hooks/usePagePermissions";
 import { todayIso } from "../../../functions/formatters";
 
 /**
@@ -47,6 +48,10 @@ const StaffShiftPlanning = ({
   roleOptions,
   /** Venue has a free `section` column alongside floor_id (Restaurant only). */
   hasSection = false,
+  /** The SPA route this screen is mounted at, so the role's add/edit/delete
+      rights for it decide which controls are drawn. Passed in by the per-venue
+      wrapper because the shared component serves two routes. */
+  pagePath,
   api,
 }) => {
   const {
@@ -60,6 +65,7 @@ const StaffShiftPlanning = ({
     { fetch: api.listFloors, select: api.readList },
   ]);
 
+  const permissions = usePagePermissions(pagePath);
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -303,10 +309,12 @@ const StaffShiftPlanning = ({
           onView={() => setViewData(row)}
           onEdit={() => handleEdit(row)}
           onDelete={() => setDeleteId(row.id)}
+          canEdit={permissions.edit}
+          canDelete={permissions.delete}
         >
           {/* Clock in/out is a state transition on the row, not a CRUD verb, so
               it sits after the standard trio rather than replacing one. */}
-          {!row.clock_in_at && (
+          {permissions.edit && !row.clock_in_at && (
             <IconButton
               variant="action-edit"
               size="action"
@@ -319,7 +327,7 @@ const StaffShiftPlanning = ({
               ariaLabel={`Clock in ${employeeName(row)}`}
             />
           )}
-          {row.clock_in_at && !row.clock_out_at && (
+          {permissions.edit && row.clock_in_at && !row.clock_out_at && (
             <IconButton
               variant="action-edit"
               size="action"
@@ -347,7 +355,7 @@ const StaffShiftPlanning = ({
         title={`${venueLabel} Shift Planning`}
         loading={loading}
         emptyMessage={`No ${venueLabel.toLowerCase()} shifts scheduled yet.`}
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable

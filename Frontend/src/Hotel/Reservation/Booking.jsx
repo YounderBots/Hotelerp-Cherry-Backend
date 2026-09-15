@@ -13,6 +13,7 @@ import APICall from "../../APICalls/APICalls";
 import { errMsg, readList } from "../../functions/apiHelpers";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 import "./Reservation.css";
 
 /**
@@ -97,6 +98,7 @@ const Booking = () => {
     { fetch: () => APICall.getT("/masterdata/room_types"), select: readList },
   ]);
 
+  const permissions = usePagePermissions("/booking");
   const { toast, showToast } = useToast();
 
   const [form, setForm] = useState(emptyForm);
@@ -284,7 +286,7 @@ const Booking = () => {
         title="Booking Requests"
         loading={loading}
         emptyMessage="No booking requests yet. Use Add Booking to create the first one."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         // TableTemplate's own toolbar already offers CSV, Excel, print and
@@ -367,6 +369,8 @@ const Booking = () => {
                 onView={() => setViewRow(row)}
                 onEdit={() => openEdit(row)}
                 onDelete={() => setDeleteRow(row)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

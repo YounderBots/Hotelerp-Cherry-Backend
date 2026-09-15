@@ -10,6 +10,7 @@ import APICall from "../APICalls/APICalls";
 import { readList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const ENDPOINT = "/masterdata/country_currency";
 
@@ -19,6 +20,7 @@ const CurrencyCountry = () => {
     { select: readList, fallback: "Failed to load countries and currencies." },
   );
 
+  const permissions = usePagePermissions("/currency_country");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -138,7 +140,7 @@ const CurrencyCountry = () => {
         title="Countries & Currencies"
         loading={loading}
         emptyMessage="No countries yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -164,6 +166,8 @@ const CurrencyCountry = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

@@ -29,6 +29,7 @@ const RestaurantRoster = () => (
     venueLabel="Restaurant"
     roleOptions={ROLE_OPTIONS}
     hasSection={true}
+    pagePath="/restaurant_roster"
     api={api}
   />
 );

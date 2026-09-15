@@ -10,6 +10,7 @@ import APICall from "../APICalls/APICalls";
 import { readNestedList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const IdentificationProof = () => {
   const { data, loading, error, reload } = useApiResource(
@@ -17,6 +18,7 @@ const IdentificationProof = () => {
     { select: readNestedList, fallback: "Failed to load identification proofs." },
   );
 
+  const permissions = usePagePermissions("/identification_proof");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -113,7 +115,7 @@ const IdentificationProof = () => {
         title="Identification Proofs"
         loading={loading}
         emptyMessage="No identification proofs yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -137,6 +139,8 @@ const IdentificationProof = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

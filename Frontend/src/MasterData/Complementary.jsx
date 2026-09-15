@@ -11,6 +11,7 @@ import APICall from "../APICalls/APICalls";
 import { readList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 // The backend spells this resource "complementry"; the UI spells it correctly.
 // Keep the two apart rather than propagating the typo into user-facing copy.
@@ -22,6 +23,7 @@ const Complementary = () => {
     { select: readList, fallback: "Failed to load complementary items." },
   );
 
+  const permissions = usePagePermissions("/complementary");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -129,7 +131,7 @@ const Complementary = () => {
         title="Complementary Items"
         loading={loading}
         emptyMessage="No complementary items yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -167,6 +169,8 @@ const Complementary = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

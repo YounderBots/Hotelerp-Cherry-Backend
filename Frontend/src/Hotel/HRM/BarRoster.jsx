@@ -29,6 +29,7 @@ const BarRoster = () => (
     venueLabel="Bar"
     roleOptions={ROLE_OPTIONS}
     hasSection={false}
+    pagePath="/bar_roster"
     api={api}
   />
 );

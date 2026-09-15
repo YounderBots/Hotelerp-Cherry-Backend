@@ -10,6 +10,7 @@ import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
 import { useApiResource } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 
 const Department = () => {
   const { data, loading, error, reload } = useApiResource(
@@ -17,6 +18,7 @@ const Department = () => {
     { select: readList, fallback: "Failed to load departments." },
   );
 
+  const permissions = usePagePermissions("/department");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -115,7 +117,7 @@ const Department = () => {
         title="Departments"
         loading={loading}
         emptyMessage="No departments yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -139,6 +141,8 @@ const Department = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

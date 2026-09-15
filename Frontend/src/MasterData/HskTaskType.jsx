@@ -10,6 +10,7 @@ import APICall from "../APICalls/APICalls";
 import { readList } from "../functions/apiHelpers";
 import { useApiResource } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const DEFAULT_COLOR = "#22c55e";
 
@@ -19,6 +20,7 @@ const HskTaskType = () => {
     { select: readList, fallback: "Failed to load task types." },
   );
 
+  const permissions = usePagePermissions("/hsk_task_type");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -127,7 +129,7 @@ const HskTaskType = () => {
         title="Housekeeping Task Types"
         loading={loading}
         emptyMessage="No task types yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -159,6 +161,8 @@ const HskTaskType = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

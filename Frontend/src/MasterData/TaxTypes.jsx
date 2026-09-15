@@ -11,6 +11,7 @@ import APICall from "../APICalls/APICalls";
 import { readList, readNestedList } from "../functions/apiHelpers";
 import { useApiResources } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const TaxTypes = () => {
   // Both lookups in one parallel load. The countries list only feeds the
@@ -26,6 +27,7 @@ const TaxTypes = () => {
     { fetch: () => APICall.getT("/masterdata/country_currency"), select: readList },
   ]);
 
+  const permissions = usePagePermissions("/tax_types");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -150,7 +152,7 @@ const TaxTypes = () => {
         title="Tax Types"
         loading={loading}
         emptyMessage="No tax types yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -194,6 +196,8 @@ const TaxTypes = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },

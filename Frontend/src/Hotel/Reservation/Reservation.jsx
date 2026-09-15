@@ -17,6 +17,7 @@ import { printDocument, printHeading, printRow } from "../../functions/printDocu
 import { formatAmount, isoDay, num } from "./reservationShared";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 import "./Reservation.css";
 
 /**
@@ -157,6 +158,11 @@ const Reservation = () => {
   const totalReservations = Number(reservationPage?.total) || reservations.length;
   const listTruncated = totalReservations > reservations.length;
 
+  // Every write on this screen -- edit, check in, check out, take payment,
+  // refund, cancel, no-show -- is an `edit` on /reservation at the gateway.
+  // Drawing them for a role that holds only `view` produces a row of
+  // controls that all answer 403.
+  const permissions = usePagePermissions("/reservation");
   const { toast, showToast } = useToast();
 
   const [viewRow, setViewRow] = useState(null);
@@ -915,10 +921,12 @@ const Reservation = () => {
                   onView={() => openView(row)}
                   onEdit={() => openEdit(row)}
                   onDelete={() => setDeleteRow(row)}
-                  canEdit={!row.is_terminal}
-                  canDelete={!row.is_terminal && num(row.paid_amount) === 0}
+                  canEdit={permissions.edit && !row.is_terminal}
+                  canDelete={
+                    permissions.delete && !row.is_terminal && num(row.paid_amount) === 0
+                  }
                 >
-                  {row.can_check_in && (
+                  {permissions.edit && row.can_check_in && (
                     <IconButton
                       variant="action-view"
                       size="action"
@@ -929,7 +937,7 @@ const Reservation = () => {
                       ariaLabel={`Check in ${guestName(row)}`}
                     />
                   )}
-                  {row.can_check_out && (
+                  {permissions.edit && row.can_check_out && (
                     <IconButton
                       variant="action-view"
                       size="action"
@@ -940,7 +948,7 @@ const Reservation = () => {
                       ariaLabel={`Check out ${guestName(row)}`}
                     />
                   )}
-                  {num(row.balance_amount) > 0 && !row.is_terminal && (
+                  {permissions.edit && num(row.balance_amount) > 0 && !row.is_terminal && (
                     <IconButton
                       variant="action-edit"
                       size="action"
@@ -953,7 +961,7 @@ const Reservation = () => {
                       ariaLabel={`Record payment for ${guestName(row)}`}
                     />
                   )}
-                  {num(row.extra_amount) > 0 && (
+                  {permissions.edit && num(row.extra_amount) > 0 && (
                     <IconButton
                       variant="action-edit"
                       size="action"
@@ -988,7 +996,7 @@ const Reservation = () => {
             variant: "secondary",
             onClick: () => viewRow && handlePrint(viewRow),
           },
-          ...(viewRow?.can_mark_no_show
+          ...(permissions.edit && viewRow?.can_mark_no_show
             ? [{
                 label: "Mark no-show",
                 variant: "secondary",
@@ -999,7 +1007,7 @@ const Reservation = () => {
                 },
               }]
             : []),
-          ...(viewRow?.can_cancel
+          ...(permissions.edit && viewRow?.can_cancel
             ? [{
                 label: "Cancel reservation",
                 variant: "error",

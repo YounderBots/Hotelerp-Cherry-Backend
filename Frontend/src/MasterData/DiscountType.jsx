@@ -11,6 +11,7 @@ import APICall from "../APICalls/APICalls";
 import { readList } from "../functions/apiHelpers";
 import { useApiResources } from "../hooks/useApiResource";
 import { useToast } from "../hooks/useToast";
+import { usePagePermissions } from "../hooks/usePagePermissions";
 
 const DiscountType = () => {
   // Both lookups in one parallel load. The countries list only feeds the
@@ -26,6 +27,7 @@ const DiscountType = () => {
     { fetch: () => APICall.getT("/masterdata/country_currency"), select: readList },
   ]);
 
+  const permissions = usePagePermissions("/discount_type");
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
@@ -150,7 +152,7 @@ const DiscountType = () => {
         title="Discount Types"
         loading={loading}
         emptyMessage="No discount types yet. Add the first one to get started."
-        hasActionButton
+        hasActionButton={permissions.add}
         searchable
         pagination
         exportable
@@ -194,6 +196,8 @@ const DiscountType = () => {
                 onView={() => setViewData(row)}
                 onEdit={() => handleEdit(row)}
                 onDelete={() => setDeleteId(row.id)}
+                canEdit={permissions.edit}
+                canDelete={permissions.delete}
               />
             ),
           },
