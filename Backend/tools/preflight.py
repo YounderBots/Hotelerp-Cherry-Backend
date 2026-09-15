@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import socket
 import sys
 import urllib.error
@@ -43,6 +44,10 @@ DEFAULT_SERVICES = {
     "restaurant": 8050, "bar": 8060,
 }
 DEFAULT_GATEWAY = 8000
+
+# The password every seeded account ships with, published in the seed source
+# and in Backend/db/*/README.md. Check 5 exists to assert it no longer works.
+SEEDED_PASSWORD = "Hotel@2026"
 
 FAILS: list[str] = []
 WARNS: list[str] = []
@@ -99,11 +104,23 @@ def main() -> int:
     ap.add_argument("--services", default="",
                     help="name=port,name=port (default: the local ports)")
     ap.add_argument("--admin-email", default="admin@cherryhotel.com")
-    ap.add_argument("--admin-password", default="Hotel@2026")
-    ap.add_argument("--low-email", default="rahul.nair@cherryhotel.com",
+    ap.add_argument("--admin-password", default=SEEDED_PASSWORD,
+                    help="only used by check 5, which asserts that the SEEDED "
+                         "password no longer works. Leave it alone.")
+    ap.add_argument("--low-email",
+                    default=os.getenv("PREFLIGHT_LOW_EMAIL", "rahul.nair@cherryhotel.com"),
                     help="a LOW-privilege account, used to prove the "
                          "permission checks actually refuse something")
-    ap.add_argument("--low-password", default="Hotel@2026")
+    # Check 3 is the most important one here, and it needs a working sign-in.
+    # After rotate_passwords.py has done its job the seeded password is gone --
+    # which is the point -- so this has to be supplied, or the check that asks
+    # "is RBAC actually enforcing?" quietly degrades to a warning on exactly the
+    # deployments that are ready for production.
+    ap.add_argument("--low-password",
+                    default=os.getenv("PREFLIGHT_LOW_PASSWORD", SEEDED_PASSWORD),
+                    help="password for --low-email. Set it, or export "
+                         "PREFLIGHT_LOW_PASSWORD, once the seeded password has "
+                         "been rotated.")
     args = ap.parse_args()
 
     services = dict(DEFAULT_SERVICES)
@@ -150,8 +167,12 @@ def main() -> int:
     print("\n=== 3. the permission checks refuse something ===")
     low = login(host, args.gateway, args.low_email, args.low_password)
     if "_error" in low:
-        warn("could not sign in as the low-privilege account",
-             f"{low['_error']} {low.get('_body','')}")
+        detail = f"{low['_error']} {low.get('_body','')}"
+        if args.low_password == SEEDED_PASSWORD:
+            detail += (" -- the seeded password has been rotated (good). Pass "
+                       "--low-password, or export PREFLIGHT_LOW_PASSWORD, so "
+                       "this check can run.")
+        warn("could not sign in as the low-privilege account", detail)
     else:
         token = low["access_token"]
         claim_pages = sorted((low.get("menus") or [])
