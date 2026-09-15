@@ -94,12 +94,15 @@ PREFIXES = ("masterdata", "hotel", "user", "restaurant", "bar")
 #   /masterdata/templates/static/upload_image/{file}
 #   /user/templates/static/users/{file}
 #   /hotel/templates/static/identity_proofs/{file}
-#       The same shape, for the other three upload directories: room photos
-#       (Rooms), employee photos (Employee) and a reservation's scanned ID
-#       proof. All three are behind StaticFiles mounts, so none is derivable,
-#       and all three are now fetched with the session token by ImagePicker /
-#       AttachmentPreview. Without these rows every stored photo in the app
-#       403s the moment the gateway is switched to enforce.
+#   /bar/templates/static/upload_image/{file}
+#       The same shape, for the other upload directories: room photos (Rooms
+#       and Room View), employee photos (Employee), a reservation's scanned ID
+#       proof, and bar menu tiles (Bar Menu Management). All are behind
+#       StaticFiles mounts, so none is derivable, and all are fetched with the
+#       session token by ImagePicker / AuthedImage / AttachmentPreview. Without
+#       these rows every stored photo in the app 403s the moment the gateway is
+#       switched to enforce -- which is how the bar menu tiles and the Room
+#       View grid were found broken.
 # ---------------------------------------------------------------------------
 # SELF-SERVICE ENDPOINTS
 # ---------------------------------------------------------------------------
@@ -115,25 +118,32 @@ PREFIXES = ("masterdata", "hotel", "user", "restaurant", "bar")
 #       What the SPA reads to draw its own navigation. Gating the menu behind a
 #       menu permission is circular.
 #
-#   user/me, user/me/password
-#       The signed-in user's own record and their own password. Neither takes a
-#       user id: the row comes from the JWT, so there is no colleague to reach
-#       and nothing a page permission would be protecting. They are reached
-#       from the avatar menu, which has no menu row -- so mapping them the
-#       normal way would produce rows nothing can grant, denying every role
-#       including an owner holding every permission.
+#   user/me, user/me/password, user/me/photo
+#       The signed-in user's own record, their own password and their own
+#       profile photo. None takes a user id: the row comes from the JWT, so
+#       there is no colleague to reach and nothing a page permission would be
+#       protecting. They are reached from the avatar menu, which has no menu
+#       row -- so mapping them the normal way would produce rows nothing can
+#       grant, denying every role including an owner holding every permission.
+#
+#       me/photo exists BECAUSE of that: employee photos are served from a
+#       StaticFiles mount whose gateway row belongs to the HRM Employee page,
+#       so a user's own avatar on their own Profile page 403'd for every role
+#       that cannot read the staff directory.
 SELF_SERVICE: dict[tuple[str, str, str], str] = {
     ("user", "role_permissions/{id}", "GET"): "the SPA's own navigation",
     ("user", "menus", "GET"): "the SPA's own navigation",
     ("user", "submenus", "GET"): "the SPA's own navigation",
     ("user", "me", "GET"): "the caller's own record",
     ("user", "me/password", "PUT"): "the caller's own password",
+    ("user", "me/photo", "GET"): "the caller's own profile photo",
 }
 
 CURATED_ROWS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("hotel", "templates/static/room_incidents/{id}", "GET"): ("/room_incident_log",),
-    ("masterdata", "templates/static/upload_image/{id}", "GET"): ("/rooms",),
+    ("masterdata", "templates/static/upload_image/{id}", "GET"): ("/room_view", "/rooms",),
     ("restaurant", "templates/static/upload_image/{id}", "GET"): ("/menus",),
+    ("bar", "templates/static/upload_image/{id}", "GET"): ("/bar_menus",),
     ("user", "templates/static/users/{id}", "GET"): ("/employee",),
     ("hotel", "templates/static/identity_proofs/{id}", "GET"): (
         "/add_new_reservation",

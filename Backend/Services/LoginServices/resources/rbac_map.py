@@ -96,6 +96,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("bar", "table", "POST"): ("/bar_table_master",),
     ("bar", "table/{id}", "DELETE"): ("/bar_table_master",),
     ("bar", "table/{id}", "PUT"): ("/bar_table_master",),
+    ("bar", "templates/static/upload_image/{id}", "GET"): ("/bar_menus",),
     ("bar", "upload_image", "POST"): ("/bar_menus",),
     ("bar", "variant/{id}", "DELETE"): ("/bar_menus",),
     ("bar", "variant/{id}", "PUT"): ("/bar_menus",),
@@ -197,7 +198,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("masterdata", "tax", "POST"): ("/tax_types",),
     ("masterdata", "tax", "PUT"): ("/tax_types",),
     ("masterdata", "tax/{id}", "DELETE"): ("/tax_types",),
-    ("masterdata", "templates/static/upload_image/{id}", "GET"): ("/rooms",),
+    ("masterdata", "templates/static/upload_image/{id}", "GET"): ("/room_view", "/rooms",),
     # ---- restaurant ----
     ("restaurant", "bill", "GET"): ("/billing_payments",),
     ("restaurant", "bill/generate/{id}", "POST"): ("/billing_payments",),
@@ -467,6 +468,7 @@ UNREACHABLE_ROUTES: tuple[str, ...] = (
 ALWAYS_ALLOW: set[tuple[str, str, str]] = {
     ("user", "me", "GET"),  # the caller's own record
     ("user", "me/password", "PUT"),  # the caller's own password
+    ("user", "me/photo", "GET"),  # the caller's own profile photo
     ("user", "menus", "GET"),  # the SPA's own navigation
     ("user", "role_permissions/{id}", "GET"),  # the SPA's own navigation
     ("user", "submenus", "GET"),  # the SPA's own navigation

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, status, HTTPException, Request
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import bcrypt
@@ -671,6 +672,55 @@ def get_my_profile(request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal server error",
         )
+
+
+# =====================================================
+# THE CALLER'S OWN PHOTO
+# =====================================================
+# Employee photos live under a StaticFiles mount at
+# /templates/static/users/<file>, and the gateway maps that path to the HRM
+# Employee page -- correctly, because it can serve ANY colleague's photo and a
+# staff directory is not something every role may read.
+#
+# The consequence was that the avatar on a user's own Profile page 403'd for
+# every role except Admin: the screen is reachable by everyone, the photo
+# behind it was not.
+#
+# This route resolves the file from the token instead of from the URL, so it
+# can only ever answer with the caller's own photo. That is what lets it sit in
+# the gateway's ALWAYS_ALLOW set beside /me and /me/password.
+@router.get("/me/photo")
+def get_my_photo(request: Request, db: Session = Depends(get_db)):
+    """The caller's own profile photo, resolved from the token."""
+    auth_user_id, auth_role, company_id, token = verify_authentication(request)
+    if not auth_user_id or not company_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+
+    user = (
+        db.query(models.Users)
+        .filter(
+            models.Users.id == auth_user_id,
+            models.Users.company_id == company_id,
+        )
+        .first()
+    )
+    if not user or not user.Photo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No photo on file")
+
+    # The stored value is a URL path ("/templates/static/users/<file>"). Only
+    # its last segment is used, and the result is required to resolve inside
+    # the upload directory: a stored value of "../../.env" must not be able to
+    # turn this into a file read.
+    filename = os.path.basename(str(user.Photo).replace("\\", "/"))
+    root = os.path.realpath(UPLOAD_DIR)
+    target = os.path.realpath(os.path.join(root, filename))
+    if os.path.commonpath([root, target]) != root or not os.path.isfile(target):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No photo on file")
+
+    return FileResponse(target)
 
 
 # Long enough to resist a guess, short enough that people will not write it on

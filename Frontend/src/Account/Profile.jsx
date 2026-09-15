@@ -76,9 +76,18 @@ const Profile = () => {
     },
   );
 
-  // The photo sits behind the authenticated gateway proxy, so a plain <img
-  // src> is answered 401 -- see hooks/useAuthedMedia.js.
-  const photo = useAuthedMedia(me?.photo || null, "/user");
+  // Fetched from /user/me/photo rather than from the stored path.
+  //
+  // Both sit behind the authenticated gateway proxy, so a plain <img src> is
+  // answered 401 either way -- see hooks/useAuthedMedia.js. The difference is
+  // authorisation: the stored path lives under a StaticFiles mount that can
+  // serve ANY colleague's photo, so the gateway grants it to the HRM Employee
+  // page, and this screen -- which every role can open -- was answered 403 for
+  // everyone but Admin. /me/photo resolves the file from the token, so it can
+  // only ever be the caller's own and needs no page permission.
+  //
+  // Still keyed on me?.photo so a user with no photo on file makes no request.
+  const photo = useAuthedMedia(me?.photo ? "/me/photo" : null, "/user");
 
   const fullName =
     [me?.first_name, me?.last_name].filter(Boolean).join(" ").trim() ||

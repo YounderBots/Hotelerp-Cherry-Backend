@@ -530,10 +530,25 @@ def test_a_user_with_no_permissions_at_all_can_change_their_own_password(enforce
 
 def test_front_desk_reaches_self_service_without_any_hrm_permission(enforce):
     """The case that motivated the exemption: a Front Desk claim holds nothing
-    on /user or /employee, and must still reach both."""
+    on /user or /employee, and must still reach all three."""
     claim = {"/reservation": VIEW | CREATE | EDIT, "/dashboard": VIEW}
     assert check(claim, "user", "me", "GET") is None
     assert check(claim, "user", "me/password", "PUT") is None
+    assert check(claim, "user", "me/photo", "GET") is None
+
+
+def test_a_user_with_no_permissions_at_all_can_see_their_own_photo(enforce):
+    """Employee photos are served from a StaticFiles mount whose row belongs to
+    the HRM Employee page, so the avatar on a user's OWN profile answered 403
+    for every role that cannot read the staff directory. /me/photo resolves the
+    file from the token, so it can only ever be the caller's own."""
+    assert check({}, "user", "me/photo", "GET") is None
+
+
+def test_the_staff_photo_mount_is_still_gated(enforce):
+    """The fix must not have widened the directory itself: reaching a photo BY
+    PATH still requires the Employee page."""
+    assert check({}, "user", "templates/static/users/someone.png", "GET") is not None
 
 
 def test_self_service_is_not_mapped_as_an_ordinary_row():
@@ -542,6 +557,7 @@ def test_self_service_is_not_mapped_as_an_ordinary_row():
     mapping failure."""
     assert ("user", "me", "GET") not in ROUTE_PERMISSIONS
     assert ("user", "me/password", "PUT") not in ROUTE_PERMISSIONS
+    assert ("user", "me/photo", "GET") not in ROUTE_PERMISSIONS
 
 
 def test_the_exempt_set_stays_small_and_self_scoped():
@@ -557,6 +573,9 @@ def test_the_exempt_set_stays_small_and_self_scoped():
         ("user", "submenus", "GET"),
         ("user", "me", "GET"),
         ("user", "me/password", "PUT"),
+        # Resolves the file from the JWT, not from the URL. The only photo it
+        # can answer with is the caller's own.
+        ("user", "me/photo", "GET"),
     }
     # Nothing exempt may carry a path parameter that names a user.
     for prefix, path, method in ALWAYS_ALLOW:
