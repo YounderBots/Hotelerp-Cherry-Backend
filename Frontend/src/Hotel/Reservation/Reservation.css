@@ -1413,7 +1413,10 @@ select:focus {
   background: #fff;
   border-radius: 18px;
   box-shadow: 0px 6px 18px rgba(0, 0, 0, 0.08);
-  font-family: "Segoe UI", sans-serif;
+  /* Inherits Urbanist from :root like every other panel. This was the only
+     rule in the application naming a system font, so the billing panel on
+     Add New Reservation rendered in a different typeface from the form it
+     sits beside -- and in a different one again on anything but Windows. */
 }
 
 .pay-header h2 {

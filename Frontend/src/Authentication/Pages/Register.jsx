@@ -6,9 +6,30 @@ import "./Register.css";
 import logo from "../../assets/layout/Cherry.png";
 import { useAuth } from "../../Context/AuthContext";
 
+// Where an access request is sent. There is no self-service sign-up: a staff
+// account is created in HRM by somebody who already has one, so this form
+// composes an email rather than posting anywhere.
 const ADMIN_CONTACT_EMAIL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_ADMIN_CONTACT_EMAIL) ||
-  "admin@hotel.com";
+  "admin@cherryhotel.com";
+
+// The property's own policy documents. The consent checkbox used to link to
+// two paths that are not routes, so both opened the application's "page not
+// found" screen in a new tab. When a property has not supplied its URLs the
+// wording stands on its own rather than promising a document that is not there.
+const TERMS_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_TERMS_URL) || "";
+const PRIVACY_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_PRIVACY_URL) || "";
+
+const PolicyLink = ({ href, children }) =>
+  href ? (
+    <a className="auth-link inline" href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  ) : (
+    <>{children}</>
+  );
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^[+\d][\d\s\-()]{6,19}$/;
@@ -318,24 +339,9 @@ const Register = () => {
               />
               <span>
                 I agree to the{" "}
-                <a
-                  className="auth-link inline"
-                  href="/terms"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Terms
-                </a>{" "}
+                <PolicyLink href={TERMS_URL}>Terms</PolicyLink>{" "}
                 &amp;{" "}
-                <a
-                  className="auth-link inline"
-                  href="/privacy"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Privacy Policy
-                </a>
-                .
+                <PolicyLink href={PRIVACY_URL}>Privacy Policy</PolicyLink>.
               </span>
             </label>
             {errors.agree && (

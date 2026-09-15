@@ -6,9 +6,12 @@ import "./ForgotPassword.css";
 import logo from "../../assets/layout/Cherry.png";
 import { useAuth } from "../../Context/AuthContext";
 
+// Who a reset request goes to. There is no email service behind this screen:
+// a password is reset by an administrator in HRM, so the form composes a
+// message to them. Set VITE_ADMIN_CONTACT_EMAIL to the property's own address.
 const ADMIN_CONTACT_EMAIL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_ADMIN_CONTACT_EMAIL) ||
-  "admin@hotel.com";
+  "admin@cherryhotel.com";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
