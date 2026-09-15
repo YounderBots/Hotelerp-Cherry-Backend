@@ -22,6 +22,18 @@ import APICall from "../APICalls/APICalls";
  * The object URL is revoked when the path changes or the caller unmounts, so
  * a modal opened and closed repeatedly does not leak one blob per open.
  *
+ * ONE FETCH PER FILE, NOT ONE PER CALLER
+ * The bytes are cached by (prefix, path) and shared. The Room View grid is why:
+ * twenty-five room cards draw four distinct photographs between them, and every
+ * card fetched its own copy -- twenty-seven requests to render six images, with
+ * the same file pulled down as many as seven times. Callers that mount together
+ * now share one in-flight request, and a later mount reuses the bytes.
+ *
+ * The BLOB is shared, never the object URL: each caller still creates and
+ * revokes its own, so one component unmounting cannot invalidate another's src.
+ * A failed fetch is dropped from the cache rather than remembered, so a 403
+ * during a token refresh does not poison the entry for the rest of the session.
+ *
  * @param {string|File|null} path  stored path ("/templates/static/..."), or a
  *                                 File/blob URL/data URL, which are passed
  *                                 through untouched — a freshly picked file
@@ -30,6 +42,31 @@ import APICall from "../APICalls/APICalls";
  *                                 mount, e.g. "/masterdata", "/user", "/hotel".
  * @returns {{url: string|null, status: 'idle'|'loading'|'ready'|'error'}}
  */
+// Bounded so a long shift does not retain every image the operator has seen.
+// Insertion-ordered, so dropping the oldest key is a plain shift().
+const MAX_CACHED = 60;
+const cache = new Map();
+
+function fetchOnce(url) {
+    const hit = cache.get(url);
+    if (hit) return hit;
+
+    const pending = APICall.getBlobT(url).catch((err) => {
+        // Never remember a failure: the next mount should try again.
+        cache.delete(url);
+        throw err;
+    });
+
+    cache.set(url, pending);
+    while (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value);
+    return pending;
+}
+
+/** Drop everything cached. For tests, and for a sign-out that changes identity. */
+export function clearAuthedMediaCache() {
+    cache.clear();
+}
+
 export function useAuthedMedia(path, prefix = "") {
     const passthrough =
         path instanceof File ||
@@ -51,7 +88,7 @@ export function useAuthedMedia(path, prefix = "") {
                 if (!alive) return null;
                 setState({ url: null, status: "loading" });
                 const suffix = String(path).startsWith("/") ? path : `/${path}`;
-                return APICall.getBlobT(`${prefix}${suffix}`);
+                return fetchOnce(`${prefix}${suffix}`);
             })
             .then((blob) => {
                 if (!alive || !blob) return;

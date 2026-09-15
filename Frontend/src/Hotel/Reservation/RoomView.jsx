@@ -7,7 +7,8 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
-import APICall, { ApiError, baseURL } from "../../APICalls/APICalls";
+import APICall, { ApiError } from "../../APICalls/APICalls";
+import AuthedImage from "../../stories/AuthedImage";
 import "./Reservation.css";
 
 const readList = (res) =>
@@ -41,16 +42,22 @@ const BUCKET_CLASS = {
   not_ready: "status-not-ready",
 };
 
-// Image path resolver — backend stores real uploads under "/templates/static/…".
-// If it's already an absolute URL, use as-is; otherwise prefix with the API baseURL.
-const resolveImage = (path) => {
+// Which stored path, if any, is worth asking the server for.
+//
+// This used to build an absolute URL from the API base and hand it to a plain
+// <img src>. Two things were wrong with that, and either alone was enough: the
+// URL missed the `/masterdata` service prefix, so it addressed the gateway root
+// where no such route exists; and a subresource request carries no
+// Authorization header, so even the right URL is refused. Every one of the
+// property's room photos rendered as a broken image. AuthedImage fetches the
+// bytes with the session token instead.
+const storedImage = (path) => {
   if (!path || typeof path !== "string") return null;
   // Seed rows point Room_Image_* at "/assets/rooms/placeholder-N.jpg", which do
   // not exist on disk and 404 through the gateway. Treat them as "no image" so
   // the neutral placeholder icon renders and no request is made.
   if (path.startsWith("/assets/")) return null;
-  if (/^https?:\/\//i.test(path)) return path;
-  return `${baseURL}${path.startsWith("/") ? "" : "/"}${path}`;
+  return path;
 };
 
 const RoomView = () => {
@@ -136,7 +143,7 @@ const RoomView = () => {
   const handleRefresh = () => setRefreshTick((n) => n + 1);
 
   const activeRoomImage = activeRoom
-    ? resolveImage(activeRoom.images?.image_1 || activeRoom.images?.image_2 || activeRoom.images?.image_3 || activeRoom.images?.image_4)
+    ? storedImage(activeRoom.images?.image_1 || activeRoom.images?.image_2 || activeRoom.images?.image_3 || activeRoom.images?.image_4)
     : null;
   const activeRoomBucket = activeRoom ? bucketOf(activeRoom) : null;
 
@@ -225,7 +232,7 @@ const RoomView = () => {
         <div className="rvw-grid">
           {filteredRooms.map((room) => {
             const bucket = bucketOf(room);
-            const img = resolveImage(room.images?.image_1);
+            const img = storedImage(room.images?.image_1);
             return (
               <button
                 type="button"
@@ -239,16 +246,13 @@ const RoomView = () => {
                 </div>
 
                 <div className="rvw-thumb" aria-hidden="true">
-                  {img ? (
-                    <img
-                      src={img}
-                      alt=""
-                      loading="lazy"
-                      onError={(e) => { e.currentTarget.style.display = "none"; }}
-                    />
-                  ) : (
-                    <Building2 size={40} aria-hidden="true" />
-                  )}
+                  <AuthedImage
+                    path={img}
+                    prefix="/masterdata"
+                    alt=""
+                    loading="lazy"
+                    fallback={<Building2 size={40} aria-hidden="true" />}
+                  />
                 </div>
 
                 <div className="rvw-body">
@@ -288,15 +292,12 @@ const RoomView = () => {
             </button>
 
             <div className="rvw-modal-thumb">
-              {activeRoomImage ? (
-                <img
-                  src={activeRoomImage}
-                  alt={`Room ${activeRoom.room_no}`}
-                  onError={(e) => { e.currentTarget.style.display = "none"; }}
-                />
-              ) : (
-                <Building2 size={80} aria-hidden="true" />
-              )}
+              <AuthedImage
+                path={activeRoomImage}
+                prefix="/masterdata"
+                alt={`Room ${activeRoom.room_no}`}
+                fallback={<Building2 size={80} aria-hidden="true" />}
+              />
             </div>
 
             <div className="room-image-info">

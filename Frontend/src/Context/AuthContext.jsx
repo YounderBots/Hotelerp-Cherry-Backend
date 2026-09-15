@@ -1,6 +1,7 @@
 // src/Context/AuthContext.jsx
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { setUnauthorizedHandler } from "../APICalls/APICalls";
+import { clearAuthedMediaCache } from "../hooks/useAuthedMedia";
 
 const AuthContext = createContext(null);
 
@@ -27,6 +28,10 @@ const clearStoredAuth = () => {
         localStorage.removeItem(USER_KEY);
         localStorage.removeItem(MENUS_KEY);
     } catch { /* ignore */ }
+    // Stored uploads are cached in memory by path so one file is fetched once.
+    // On a shared front-desk machine the next person to sign in must not be
+    // handed the previous one's staff photo out of that cache.
+    clearAuthedMediaCache();
 };
 
 export const AuthProvider = ({ children }) => {
