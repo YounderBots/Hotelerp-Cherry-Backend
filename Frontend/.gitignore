@@ -29,3 +29,7 @@ storybook-static
 # requires the lockfile to be committed, and without it every install
 # resolves dependencies afresh -- so the versions CI tests are not the
 # versions anyone else gets.
+
+# Reports written by the browser audits in e2e/. A record of one run on one
+# machine, not part of the product.
+e2e-reports/
