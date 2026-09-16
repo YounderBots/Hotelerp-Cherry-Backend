@@ -41,6 +41,11 @@ BILLING_SERVICES = ["BarServices", "RestaurantServices"]
 # to run from that service root to import them.
 NIGHT_AUDIT_SERVICE = "HotelServices"
 
+# The preflight suite imports Backend/tools/preflight.py by path and stubs its
+# HTTP layer, so it needs no service package at all. It runs from the gateway
+# directory because the gateway is what preflight points at.
+TOOLS_SERVICE = "LoginServices"
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SERVICES_DIR = ROOT / "Backend" / "Services"
 TESTS_DIR = ROOT / "Backend" / "tests"
@@ -72,6 +77,9 @@ def main() -> int:
         # one touches the database, so it builds the Master Data schema as a
         # second in-memory SQLite database to resolve the cross-schema mapping.
         (NIGHT_AUDIT_SERVICE, "test_reservation_housekeeping.py"),
+        # Preflight check 6, which asks a deployment whether the images its
+        # database points at are actually on the server.
+        (TOOLS_SERVICE, "test_preflight_images.py"),
     ]
     # Billing exists only in these two, and both expose the same endpoint, so
     # the money guards run against each.

@@ -37,13 +37,20 @@ photo, staff avatar, menu tile and identity proof broken.
 for f in sql/*.sql; do mysql -u root -p < "$f"; done
 
 # 2. images — copy into the running services' static trees.
-#    ../../Services is Backend/Services, relative to this directory.
-cp -r uploads/MasterDataServices/. ../../Services/MasterDataServices/
-cp -r uploads/UserServices/.       ../../Services/UserServices/
-cp -r uploads/HotelServices/.      ../../Services/HotelServices/
-cp -r uploads/RestaurantServices/. ../../Services/RestaurantServices/
-cp -r uploads/BarServices/.        ../../Services/BarServices/
+python ../../tools/restore_uploads.py --release 15-Sept-2026
+python ../../tools/restore_uploads.py --release 15-Sept-2026 --verify
 ```
+
+**Step 2 is the one that gets skipped.** It used to be five hand-typed `cp -r`
+lines, and on the deployment at `168.231.103.18` they were not run: the SQL
+loaded, every endpoint answered `200`, and all 88 image paths the API served
+resolved to nothing. Nothing detected it, because the rows were all present —
+the only symptom was that no picture in the application loaded.
+
+Restore the SQL and the images **from the same release**. A re-seed mints new
+filenames, so a release's `uploads/` only matches the database that shipped
+beside it; mixing two releases leaves every path pointing at a file that was
+never there.
 
 Then regenerate the gateway permission map, which is derived from the live
 `menus` table, and change the passwords:

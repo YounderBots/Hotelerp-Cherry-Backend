@@ -119,6 +119,22 @@ def main() -> int:
         if env.get("SERVICE_HOST") != host:
             problems.append(f"SERVICE_HOST={env.get('SERVICE_HOST')} (want {host})")
 
+        # The gateway is the only place permissions are checked, and rbac.py
+        # falls back to 'audit' -- evaluate, log, then allow anyway. An env
+        # that simply omits the key therefore deploys with authorisation off
+        # and nothing saying so, which is how 168.231.103.18 ran with every
+        # role able to reach every endpoint.
+        if svc == "LoginServices":
+            mode = env.get("RBAC_GATEWAY_MODE", "").strip().lower()
+            if not mode:
+                problems.append(
+                    "RBAC_GATEWAY_MODE unset -- the gateway falls back to "
+                    "'audit', which logs what it would deny and allows it. "
+                    "Set it to 'enforce'.")
+            elif mode != "enforce":
+                warn(f"{svc}: RBAC_GATEWAY_MODE={mode!r} -- permissions are "
+                     f"not being enforced. Only correct during a first rollout.")
+
         dsn = env.get("DB_URI", "")
         if not dsn:
             problems.append("DB_URI missing -- production config raises at import")

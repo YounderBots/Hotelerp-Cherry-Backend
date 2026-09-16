@@ -11,7 +11,7 @@ Read-only. It logs in and issues GETs; it writes nothing.
 WHY THIS EXISTS
     A deployment can pass every unit test, serve every page, answer "ok" on
     /healthz -- and still be wrong in ways only the running environment can
-    show. All four checks below are things that were TRUE of a real deployment
+    show. All five checks below are things that were TRUE of a real deployment
     of this system while it looked healthy:
 
       * the reservation module answered 500 on every request, because
@@ -20,7 +20,10 @@ WHY THIS EXISTS
         every endpoint and the denials were only being logged;
       * all five internal services were published to the internet, so the
         gateway that does the permission checks could simply be stepped around;
-      * the shared demo password was still live.
+      * the shared demo password was still live;
+      * every image the database pointed at was missing from the server,
+        because restoring the release loaded the SQL but never copied the
+        files -- 200s everywhere, and not one picture in the application.
 
     None of those is visible from the code. Each is a property of the machine
     the code was deployed onto.
@@ -33,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socket
 import sys
 import urllib.error
@@ -68,16 +72,27 @@ def warn(label, detail=""):
 
 
 def get(url, token=None, timeout=20):
+    status, body, _ctype = get_typed(url, token, timeout)
+    return status, body
+
+
+def get_typed(url, token=None, timeout=20):
+    """As get(), but also returns the response Content-Type.
+
+    Check 6 needs it: a static mount that has lost its files answers the image
+    URL with a JSON 404 body, and "did this return bytes, and were they an
+    image?" is the question being asked.
+    """
     req = urllib.request.Request(url, method="GET")
     if token:
         req.add_header("Authorization", "Bearer " + token)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status, r.read()
+            return r.status, r.read(), r.headers.get("Content-Type", "")
     except urllib.error.HTTPError as e:
-        return e.code, e.read()
+        return e.code, e.read(), e.headers.get("Content-Type", "")
     except Exception as exc:                                   # noqa: BLE001
-        return 0, str(exc).encode()
+        return 0, str(exc).encode(), ""
 
 
 def login(host, port, email, password, timeout=25):
@@ -93,6 +108,94 @@ def login(host, port, email, password, timeout=25):
         return {"_error": e.code, "_body": e.read().decode()[:200]}
     except Exception as exc:                                   # noqa: BLE001
         return {"_error": 0, "_body": str(exc)[:200]}
+
+
+# Where stored image paths can be read back from, per gateway prefix. One
+# cheap list endpoint per module that is known to carry an image column.
+IMAGE_SOURCES = {
+    "masterdata": ["/room"],
+    "user": ["/users"],
+    "restaurant": ["/menu"],
+    "bar": ["/menu"],
+    "hotel": ["/roomincident_log"],
+}
+
+# Stored paths look like "/templates/static/upload_image/<uuid>.jpg".
+STORED_PATH = re.compile(
+    r'"(/templates/static/[^"]+\.(?:jpg|jpeg|png|webp|gif))"', re.I)
+
+# How many distinct files to actually fetch per module. The question is "is the
+# static tree populated", not "is every byte present" -- verify_seed.py answers
+# the second, against the disk, where it is cheap.
+SAMPLE_PER_MODULE = 5
+
+
+def check_images(host, gateway, token):
+    """Do the paths the database serves have files behind them?
+
+    WHY THIS CHECK EXISTS
+        Restoring a release is two steps -- load the SQL, then copy
+        `Backend/db/<release>/uploads/` into the services' static trees. The
+        second is easy to skip, and skipping it is invisible from the API: the
+        rows are all there, every endpoint answers 200, and the only symptom is
+        that no picture in the application loads.
+
+        That is what happened on the deployment at 168.231.103.18. Checks 1-5
+        all passed on the image question because none of them asked it.
+
+        Fix with: python Backend/tools/restore_uploads.py
+    """
+    print("\n=== 6. the stored images actually serve ===")
+    if not token:
+        warn("could not check images", "no usable sign-in; pass --low-password")
+        return
+
+    checked = failed = 0
+    for module, endpoints in sorted(IMAGE_SOURCES.items()):
+        paths: list[str] = []
+        denied = False
+        for ep in endpoints:
+            st, body = get(f"http://{host}:{gateway}/{module}{ep}", token)
+            if st in (401, 403):
+                denied = True
+                continue
+            if st != 200:
+                continue
+            for p in STORED_PATH.findall(body.decode("utf-8", "replace")):
+                if p not in paths:
+                    paths.append(p)
+
+        if not paths:
+            if denied:
+                # Not a fault: a low-privilege token is SUPPOSED to be refused
+                # here, and check 3 is the one that cares about that.
+                print(f"  SKIP  {module} -- this account may not read it")
+            else:
+                print(f"  SKIP  {module} -- no stored image paths found")
+            continue
+
+        broken = []
+        for p in paths[:SAMPLE_PER_MODULE]:
+            st, body, ctype = get_typed(f"http://{host}:{gateway}/{module}{p}", token)
+            checked += 1
+            if st != 200 or not ctype.lower().startswith("image/"):
+                broken.append((p, st))
+                failed += 1
+
+        if broken:
+            p, st = broken[0]
+            bad(f"{module}: stored images do not load",
+                f"{len(broken)} of {len(paths[:SAMPLE_PER_MODULE])} sampled "
+                f"failed (of {len(paths)} referenced) -- e.g. {p} -> {st}. The "
+                "database points at files that are not on the server. Run "
+                "`python Backend/tools/restore_uploads.py` on the server, from "
+                "the release whose SQL is loaded.")
+        else:
+            ok(f"{module}: stored images load",
+               f"{len(paths[:SAMPLE_PER_MODULE])} of {len(paths)} sampled")
+
+    if checked and not failed:
+        ok("every sampled image was served", f"{checked} file(s)")
 
 
 def main() -> int:
@@ -165,6 +268,9 @@ def main() -> int:
 
     # -- 3. are the permission checks actually enforcing --------------------
     print("\n=== 3. the permission checks refuse something ===")
+    # Kept for check 6, which needs any working token to read the stored image
+    # paths back out of the API.
+    any_token = None
     low = login(host, args.gateway, args.low_email, args.low_password)
     if "_error" in low:
         detail = f"{low['_error']} {low.get('_body','')}"
@@ -174,7 +280,7 @@ def main() -> int:
                        "this check can run.")
         warn("could not sign in as the low-privilege account", detail)
     else:
-        token = low["access_token"]
+        token = any_token = low["access_token"]
         claim_pages = sorted((low.get("menus") or [])
                              and [m.get("path") for m in low["menus"]] or [])
         # An HRM read this account holds no permission for.
@@ -223,10 +329,17 @@ def main() -> int:
     if "_error" in admin:
         ok("the seeded admin password no longer works")
     else:
+        # A failure, but it does hand check 6 a token that can read every
+        # module -- so the images get checked on exactly the deployments that
+        # have not been hardened yet.
+        any_token = admin["access_token"]
         bad("THE SEEDED DEMO PASSWORD STILL WORKS",
             f"{args.admin_email} still signs in with the password published in "
             "Backend/db/*/README.md and in the seed source. Change it before "
             "this is reachable by anyone.")
+
+    # -- 6. the images the database points at ------------------------------
+    check_images(host, args.gateway, any_token)
 
     print()
     if FAILS:

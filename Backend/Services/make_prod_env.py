@@ -113,6 +113,18 @@ def build(service: str, cfg: tuple, shared: dict, args) -> str:
             f"LOGIN_RATE_LIMIT_BURST={args.rate_burst}",
             "PROXY_TIMEOUT_SECONDS=30",
             "UPSTREAM_TIMEOUT_SECONDS=10",
+            "",
+            # rbac.py defaults to 'audit' on purpose -- switching a 222-row
+            # permission map on blind is not something to do to a live hotel.
+            # That default belongs to a ROLLOUT, though, not to a file whose
+            # name says PRODUCTION: written here, the deploy at
+            # 168.231.103.18 ran with every role able to reach every endpoint
+            # and the denials only being logged. A production env states the
+            # value it wants.
+            "# 'audit' logs what would be denied and allows it; 'enforce' denies.",
+            "# Start at audit if this map has never run here, read the",
+            "# rbac_would_deny lines, then come back and set enforce.",
+            f"RBAC_GATEWAY_MODE={args.rbac_mode}",
         ]
 
     L += ["", f"UPLOAD_MAX_BYTES={args.upload_max}", ""]
@@ -138,6 +150,11 @@ def main() -> int:
     p.add_argument("--max-overflow", default="20")
     p.add_argument("--rate-limit", default="10")
     p.add_argument("--rate-burst", default="3")
+    p.add_argument("--rbac-mode", default="enforce",
+                   choices=["off", "audit", "enforce"],
+                   help="gateway permission checking (default: enforce). Use "
+                        "'audit' only for a first rollout onto a deployment "
+                        "whose permission map has never been exercised.")
     p.add_argument("--upload-max", default="5242880")
     p.add_argument("--out-dir", default=None,
                    help="Stage files here instead of writing into service dirs")
