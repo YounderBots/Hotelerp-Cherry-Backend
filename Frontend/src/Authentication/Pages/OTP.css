@@ -1,7 +1,7 @@
 /* =========================
    OTP — PAGE
-   Scoped to .otp-page / .otp-card so the shared Authentication.css
-   (last remaining consumer: LockScreen) stays untouched.
+   Scoped to .otp-page / .otp-card, like every other auth page. The shared
+   Authentication.css they were migrated off has since been deleted.
 ========================= */
 
 .otp-page {

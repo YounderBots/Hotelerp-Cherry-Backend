@@ -206,7 +206,7 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-/* Opt-in sticky header for TableTemplate (mirrors Table.css). */
+/* Opt-in sticky header for TableTemplate. */
 .table-sticky-header thead th {
   position: sticky;
   top: 0;
@@ -663,12 +663,15 @@ body.dark .filter-checkbox:hover {
    SHARED CELL PRIMITIVES
    -----------------------------------------------------
    .table-empty, .table-loading-spinner, .table-cell-badge, .badge-* and
-   .table-cell-avatar are all rendered by TableTemplate.jsx but were only ever
-   defined in Table.css — which is imported solely by Table.jsx, a component
-   nothing in the app renders. That stylesheet therefore never reached the
-   bundle, so on every one of the 50+ TableTemplate screens the empty state
-   was unstyled text, the loading spinner was a 0x0 div that displayed
-   nothing at all, and every `type: "badge"` column rendered as bare text.
+   .table-cell-avatar are all rendered by TableTemplate.jsx but were once only
+   defined in Table.css — imported solely by Table.jsx, a component nothing in
+   the app rendered. That stylesheet therefore never reached the bundle, so on
+   every one of the 50+ TableTemplate screens the empty state was unstyled
+   text, the loading spinner was a 0x0 div that displayed nothing at all, and
+   every `type: "badge"` column rendered as bare text.
+
+   They live here now, in the sheet the component actually imports. Table.jsx
+   and Table.css have both been deleted.
 ===================================================== */
 
 /* ---------- Empty / loading state ---------- */

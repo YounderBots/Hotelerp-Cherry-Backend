@@ -60,8 +60,26 @@ Frontend/coverage/
 * copy.*
 * copy [0-9].*
 
-# Uploaded media served from the services at runtime
-Backend/Services/*/templates/static/uploads/
+# Runtime media served from the services' static mounts.
+#
+# Everything under here is generated or uploaded, never authored: the seed
+# writes room, menu and staff imagery with fresh UUID filenames on every run
+# (Backend/tools/seed/images.py), and the upload endpoints write guest identity
+# proofs and incident photographs beside them.
+#
+# This rule used to say `.../static/uploads/`, which matches nothing -- the
+# real directories are upload_image/, users/, identity_proofs/ and
+# room_incidents/. So 112 generated files were committed, and because each
+# re-seed mints new filenames they matched exactly one developer's database
+# and were orphans in every other clone. Worse, a guest identity document
+# uploaded while testing would have been committed too.
+#
+# The images that ARE meant to be in the repo live elsewhere and are not
+# covered by this rule:
+#   Backend/tools/seed/photos/     vendored source photographs, the seed input
+#   Backend/db/<release>/uploads/  a release export, restored by
+#                                  Backend/tools/restore_uploads.py
+Backend/Services/*/templates/static/
 
 # Standalone nested repo, not part of this project
 /hotelerp.in/

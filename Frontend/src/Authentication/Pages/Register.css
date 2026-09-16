@@ -1,8 +1,8 @@
 /* =========================
    REGISTER — PAGE
-   Scoped to .register-page / .register-card to co-exist with the
-   shared Authentication.css (still used by ForgotPassword, LockScreen, OTP)
-   without style bleed in either direction.
+   Scoped to .register-page / .register-card, so no auth page can bleed style
+   into another. The shared Authentication.css this once co-existed with has
+   since been deleted -- every auth page now carries its own sheet.
 ========================= */
 
 .register-page {

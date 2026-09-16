@@ -1,84 +1,100 @@
-# Production readiness audit
+# Production readiness
 
-Module-by-module audit on the `production-audit` branch. Eight modules
-committed separately; each commit message records what was wrong and why.
+Where this system actually stands, and what is left. Rewritten 16 September
+2026; the previous version described the August `production-audit` branch and
+had gone stale on every major point — it called gateway RBAC "the largest open
+item" (it shipped), counted 23 backend tests (there are 321) and said there was
+no CI (`.github/workflows/ci.yml`).
 
-## Modules completed
+## What holds today
 
-| # | Module | Commit |
-|---|--------|--------|
-| 1 | Backend security & configuration baseline (6 services) | `6a0f5c6` |
-| 2 | Authorization — RBAC enforcement, tenant isolation | `87b4574` |
-| 3 | Shared UI component library, lint baseline | `7b09df4` |
-| 4 | App shell — error boundary, 404, route guards, code splitting | `768bf7d` |
-| 5 | Authentication pages | `d70f88b` |
-| 6 | Endpoint authentication sweep (all 341 endpoints) | `2a97cfb` |
-| 7 | Room Incident Log — data loss and duplication | `925e0e1` |
-| 8 | Silent failures — Housekeeping, Master Data | `183639c` |
+**Authorization.** The gateway authorises every request to the five
+operational services against a generated route→page→action map
+(`LoginServices/resources/rbac_map.py`, built by `Backend/tools/build_rbac_map.py`
+from the live `menus` table). `RBAC_GATEWAY_MODE=enforce` denies with 403;
+`audit` logs what it would deny, which is the rollout setting, not the
+production one. This was the August audit's largest open item and the reason it
+could not be closed then — the permission model is keyed by page link and the
+services expose endpoint names — so the map is the mapping that was missing.
 
-## Verification
+**Authentication.** Every service verifies the JWT itself. The gateway is
+perimeter enforcement, not defence in depth: the five services bind to
+127.0.0.1 so the perimeter is the only way in, and they keep their own auth for
+when it is not.
 
-- All 6 backend services import with no database, fail loudly on missing
-  production secrets, and start clean when configured.
-- 23 backend tests (`Backend/tests/`): 13 RBAC against a real schema in
-  in-memory SQLite, 10 JWT run against each of 5 services — 63 assertions.
-- Night-audit endpoints verified with live requests to return 401 without a
-  token and to reject a forged bearer token.
-- Frontend builds; entry bundle 360 kB → 274 kB (gzip 104 → 86 kB).
-- Frontend lint 141 problems → 99.
+**Tests.** 321 across 14 suites (`python Backend/tests/run_all.py`), one
+subprocess per service because six services each define a top-level `configs`
+package and a single pytest process would let the first one imported win.
+Frontend: 100 tests over 8 files, lint at 12 warnings, build clean. CI runs all
+of it plus `check_pins.py`, which fails if an install resolves anything other
+than the pinned versions.
 
-## Remaining work
+**Data.** `Backend/tools/verify_seed.py` asserts 34 invariants that span
+schemas and so cannot be database constraints — money that reconciles, rooms
+never double-booked, room state matching the bookings, every stored image path
+resolving to a real file, every menu link matching a route in `App.jsx`.
 
-### 1. RBAC beyond the admin surface — the largest open item
+**End-to-end.** Two suites against the running system, which catch what
+in-process tests cannot: `Backend/tests/e2e/` over HTTP through the real
+gateway and MySQL, and `Frontend/e2e/` in a real browser.
 
-`role_permissions` is now enforced for user/role/menu/department/designation/
-shift administration in UserServices. The operational services (hotel,
-restaurant, bar, masterdata) still authorise on *authentication* alone: any
-logged-in user can call any of their endpoints.
+**Deployment checks.** `Backend/tools/preflight.py` asks a *running*
+deployment the six questions that no unit test can: is the gateway up, are the
+services' own dependencies reachable, does RBAC actually refuse something, are
+the internal ports exposed, does the seeded password still work, and do the
+images the database points at actually serve.
 
-This was not completed because the permission model is keyed by **page link**
-(`/rooms`, `/reservation`) while those services expose **endpoint names**
-(`/facilities_list`, `/room_reservation_checkin`). No mapping between the two
-exists in the schema, and inventing one would either lock legitimate users out
-of production or grant access wrongly — a product decision, not a refactor.
+## What is left
 
-Recommended approach: a declarative table per service mapping route →
-(page, action), reviewed against the menu seed data, then the existing
-`require_permission` call. `Backend/Services/UserServices/resources/
-authorization.py` is written to be reusable; it needs the tenant's menu rows,
-which for those services means either a lookup call to UserServices or
-embedding the permission set into the JWT at login.
+### 1. The live deployment is behind the repo — the largest open item
 
-### 2. `react-hooks/set-state-in-effect` — 75 occurrences, ~40 files
+`168.231.103.18` runs a pre-hardening build. Verified 16 September 2026 by
+sweeping all 153 live GET endpoints. Nothing here is a code defect: local
+passes every suite and all 34 invariants.
 
-React 19's compiler flags synchronous `setState` inside an effect body; each
-causes an extra render pass. Most are prop-to-state mirroring that should be
-derived during render or keyed instead. These are per-page and were addressed
-alongside the pages actually audited (App.jsx's menu state became a `useMemo`).
-The rest need per-case judgement: several are load-then-populate flows where a
-blind rewrite changes behaviour, so a bulk codemod is the wrong tool.
+| | Symptom | Fix, on the server |
+|---|---|---|
+| 1 | `/room_reservation` and `/room_reservation/{id}` answer 500 | grant the Hotel DB user SELECT on `hotelerp_masterdata`, same MySQL server |
+| 2 | every stored image 404s — all 88 paths | `python Backend/tools/restore_uploads.py --release 15-Sept-2026` |
+| 3 | RBAC in audit: every role reaches every endpoint | `RBAC_GATEWAY_MODE=enforce` |
+| 4 | all five internal services reachable from the internet | bind `SERVICE_HOST=127.0.0.1`, or firewall |
+| 5 | seeded password `Hotel@2026` still signs in as admin | `python Backend/tools/rotate_passwords.py --confirm` |
+| 6 | `/readyz` 404s, `/healthz` returns the old flat body | deploy current `main` and restart |
 
-### 3. Pages not individually audited
+A `git pull` alone does **not** fix the images. The live database references
+the `15-Sept-2026` release filenames; a re-seed mints new UUIDs, so the two
+sets have the same count and zero overlap. Restore SQL and images from the
+same release. `preflight.py` is the check for all six:
 
-Modules 1–6 were cross-cutting and cover every page (auth, routing, error
-handling, the shared component library, endpoint authorisation). Pages given an
-individual functional audit: Login, Register, ForgotPassword, OTP,
-RoomIncidentLog, TaskAssign, Rooms, RoomType, DiscountType, TaxTypes, and the
-eight MasterData pages touched in Module 3.
+```bash
+python Backend/tools/preflight.py --host 168.231.103.18 --gateway 9010 \
+  --services hotel=9005,user=9020,masterdata=9015,bar=9025,restaurant=9030
+```
 
-Not yet audited page-by-page: Reservation (1930 lines), AddNewReservation,
-Booking, ReservationListEdit, ReservationModelView, Employee, User, the four
-roster/shift-planning pages, GuestEnquiry, the three Night Audit pages, all 15
-Restaurant pages, all 10 Bar pages, and the dashboards. The systematic sweeps
-that *did* cover them: edit-path correctness (found one bug, fixed), swallowed
-errors (found four pages, fixed), `alert()`/`console` usage (cleared),
-XSS in print paths (checked, clean), and endpoint authentication (21 fixed).
+### 2. `react-hooks/set-state-in-effect` — 10 occurrences
+
+React 19's compiler flags synchronous `setState` in an effect body; each costs
+an extra render pass. Most are prop-to-state mirroring that should be derived
+during render or keyed instead. Down from 75. The rest need per-case judgement:
+several are load-then-populate flows where a blind rewrite changes behaviour,
+so a codemod is the wrong tool. Two other warnings remain — one
+`exhaustive-deps`, one `react-refresh/only-export-components`.
+
+### 3. Defence in depth
+
+Authorization is enforced once, at the gateway. Anything that reaches a service
+on loopback still bypasses it. Pushing the same check into each service is a
+later step, not a substitute — and it only matters once item 1.4 is closed,
+since today the services are reachable directly from the internet anyway.
 
 ### 4. Smaller items
 
-- `/authentication/otp` is unrouted: the page calls `/verify_otp` and
-  `/resend_otp`, which no service implements. Restore the route when they exist.
-- `employeeController.py` in HotelServices is not registered and is superseded
-  by UserServices `/user/users`. Hardened but should probably be deleted.
-- 9 remaining `no-unused-vars`, mostly in Storybook story files.
-- No CI. The test suites and lint are only useful if something runs them.
+- `/authentication/otp` is intentionally unrouted: the page calls `/verify_otp`
+  and `/resend_otp`, which no service implements. `App.jsx` says so beside the
+  auth routes. Restore the route when the endpoints exist.
+- The seeded dataset is a photograph of one day. Its dates do not move, so
+  re-seed rather than restore when the dashboard's arrivals should be today's —
+  see `Backend/db/15-Sept-2026/README.md`.
+- Replace the stock room and menu photography with the property's own before
+  go-live. The rate cards and room numbers are already yours; the pictures are
+  not, and `PHOTO-CREDITS.md` has to travel with them while they are.

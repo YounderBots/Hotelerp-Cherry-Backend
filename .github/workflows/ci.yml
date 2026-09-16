@@ -60,9 +60,13 @@ jobs:
         run: npm ci
 
       # --max-warnings holds the baseline the audit established. Lower it as
-      # warnings get fixed; never raise it.
+      # warnings get fixed; never raise it. 99 -> 68 -> 12. The remaining 12:
+      # 10 react-hooks/set-state-in-effect, 1 exhaustive-deps, 1
+      # react-refresh/only-export-components. The set-state ones need per-case
+      # judgement -- several are load-then-populate flows that a blind rewrite
+      # would change the behaviour of, so a codemod is the wrong tool.
       - name: Lint
-        run: npm run lint -- --max-warnings=68
+        run: npm run lint -- --max-warnings=12
 
       - name: Test
         run: npm test

@@ -1,7 +1,8 @@
 /* =========================
    LOCK SCREEN — PAGE
    Scoped to .lock-page / .lock-card so nothing else depends on shape.
-   Authentication.css is now unused after this page (Deferred D21 cleanup).
+   This page was the last consumer of the shared Authentication.css; with
+   every auth page now carrying its own scoped sheet, that file was deleted.
 ========================= */
 
 .lock-page {
