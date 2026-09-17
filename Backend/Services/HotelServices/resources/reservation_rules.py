@@ -747,8 +747,10 @@ def quote(
     else:
         room_amount = room_total
 
-    # Per-bed cost for the whole stay, from the first room's type unless the
-    # caller priced it explicitly.
+    # Cost of ONE extra bed for the whole stay, from the first room's type
+    # unless the caller priced it explicitly. The charge is this times
+    # `extra_bed_count` -- the reservation view draws the pair as
+    # "1,600.00 x 2", so the stored figure is a rate, never a total.
     extra_bed_count = max(0, as_int(extra_bed_count))
     if extra_bed_cost is None:
         first_type = None
@@ -760,6 +762,15 @@ def quote(
         extra_bed_cost = money(extra_bed_cost)
         if extra_bed_cost < 0:
             raise RuleError("Extra bed cost cannot be negative")
+
+    # No extra bed means no extra-bed money. The rate derived above is a price
+    # list entry, not a charge, and it was being stored against bookings that
+    # took no extra bed: the folio carried a figure nobody was billed, the
+    # reservation view drew "1,600.00 x 0", and the identity
+    # `room + beds + extras - discount + tax = overall` that verify_seed
+    # asserts failed on every such booking while the money itself was right.
+    if extra_bed_count == 0:
+        extra_bed_cost = 0.0
 
     extra_charges = money(extra_charges)
     if extra_charges < 0:

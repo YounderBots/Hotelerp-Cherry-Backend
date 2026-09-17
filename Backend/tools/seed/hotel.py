@@ -125,9 +125,18 @@ class Ledger:
 
 def folio(room_nos, rate_type, nights, *, tax_id, discount_id,
           extra_beds=0, extra_charges=0.0):
-    """Price a stay from the rate plan. The only place money is decided."""
+    """Price a stay from the rate plan. The only place money is decided.
+
+    `extra_bed_cost` is what ONE extra bed costs for the whole stay, not the
+    total for all of them -- the API stores it that way
+    (reservation_rules.quote) and the reservation view draws the
+    pair as "1,600.00 x 2". This used to store the total, so a seeded booking
+    with two beds rendered its folio line at twice what was charged, and the
+    folio identity verify_seed asserts held only for the fixtures and failed
+    on every reservation the API created.
+    """
     room_amount = 0.0
-    bed_cost_total = 0.0
+    per_bed_for_stay = 0.0
     for no in room_nos:
         _idx, type_id = ROOM_BY_NO[no]
         rates = RATE_BY_TYPE[type_id]
@@ -136,13 +145,15 @@ def folio(room_nos, rate_type, nights, *, tax_id, discount_id,
             room_amount += rates["weekly"] * weeks + rates["daily"] * spare
         else:
             room_amount += rates[rate_type] * nights
-        bed_cost_total += rates["bed_cost"] * extra_beds * nights
+        per_bed_for_stay += rates["bed_cost"] * nights
 
     room_amount = money(room_amount)
-    extra_bed_cost = money(bed_cost_total)
+    # No extra bed means no extra-bed money, same rule the API applies.
+    extra_bed_cost = money(per_bed_for_stay) if extra_beds else 0.0
+    bed_total = money(extra_bed_cost * extra_beds)
     extra_charges = money(extra_charges)
 
-    gross = money(room_amount + extra_bed_cost + extra_charges)
+    gross = money(room_amount + bed_total + extra_charges)
     discount_pct = DISCOUNT_PCT[discount_id]
     discount_amount = money(gross * discount_pct / 100.0)
     taxable = money(gross - discount_amount)

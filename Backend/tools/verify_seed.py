@@ -60,14 +60,22 @@ def media_path(stored: str, schema: str, default_dir: str) -> str:
 
 def main() -> int:
     print("=== 1. money reconciles on every folio ===")
+    # `extra_bed_cost` is the cost of ONE bed for the whole stay, so the charge
+    # is that times `extra_bed_count`. This check used to read the column as
+    # the total, which is what the seed wrote and the API did not: it passed on
+    # every fixture and failed on every reservation booked through the API --
+    # validating the demo data and rejecting the product. Both writers now
+    # store the rate (reservation_rules.quote, seed/hotel.folio).
     bad = rows("hotelerp_hotel", """
-        SELECT room_reservation_id, room_amount, extra_bed_cost, extra_charges,
-               discount_amount, tax_amount, overall_amount
+        SELECT room_reservation_id, room_amount, extra_bed_count, extra_bed_cost,
+               extra_charges, discount_amount, tax_amount, overall_amount
         FROM room_reservation
-        WHERE ABS((room_amount + extra_bed_cost + extra_charges
+        WHERE ABS((room_amount
+                   + COALESCE(extra_bed_count, 0) * COALESCE(extra_bed_cost, 0)
+                   + extra_charges
                    - discount_amount + tax_amount) - overall_amount) > 0.02
     """)
-    check("overall = rooms + beds + extras - discount + tax", not bad,
+    check("overall = rooms + beds x count + extras - discount + tax", not bad,
           "; ".join(f"{r[0]}" for r in bad[:3]))
 
     bad = rows("hotelerp_hotel", """
