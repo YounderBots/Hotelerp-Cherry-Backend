@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Enum as SAEnum,
     Float,
+    Numeric,
     ForeignKey,
     Integer,
     String,
@@ -194,10 +195,10 @@ class BarMenuItem(Base):
     category_id = Column(Integer, ForeignKey("bar_menu_category.id"), nullable=False, index=True)
     sub_category_id = Column(Integer, ForeignKey("bar_menu_sub_category.id"), nullable=True, index=True)
 
-    price = Column(Float, nullable=False)
-    cost_price = Column(Float, nullable=True)
+    price = Column(Numeric(12, 2, asdecimal=False), nullable=False)
+    cost_price = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
-    tax_percentage = Column(Float, nullable=True)
+    tax_percentage = Column(Numeric(6, 3, asdecimal=False), nullable=True)
     service_charge_applicable = Column(Boolean, nullable=False, default=False)
 
     preparation_time = Column(Integer, nullable=True)
@@ -236,7 +237,7 @@ class BarMenuVariant(Base):
     menu_id = Column(Integer, ForeignKey("bar_menu_item.id"), nullable=False, index=True)
 
     variant_name = Column(String(50), nullable=False, index=True)  # 30ml | 60ml | 90ml | Glass | Bottle
-    price = Column(Float, nullable=False)
+    price = Column(Numeric(12, 2, asdecimal=False), nullable=False)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_menu_variant_status_enum"), nullable=False, index=True, default="ACTIVE")
 
@@ -257,7 +258,7 @@ class BarMenuModifier(Base):
     menu_id = Column(Integer, ForeignKey("bar_menu_item.id"), nullable=False, index=True)
 
     modifier_name = Column(String(100), nullable=False, index=True)  # e.g. "On the Rocks", "Extra Shot"
-    price = Column(Float, nullable=True)
+    price = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     modifier_type = Column(SAEnum("Add-on", "Remove", name="bar_modifier_type_enum"), nullable=True)
 
@@ -310,15 +311,15 @@ class BarOrder(Base):
     )
     payment_status = Column(SAEnum("Pending", "Partial", "Paid", name="bar_order_payment_status_enum"), nullable=False, index=True)
 
-    sub_total = Column(Float, default=0)
-    tax_amount = Column(Float, default=0)
-    service_charge = Column(Float, default=0)
+    sub_total = Column(Numeric(12, 2, asdecimal=False), default=0)
+    tax_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
+    service_charge = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     discount_type = Column(SAEnum("Percentage", "Flat", name="bar_order_discount_type_enum"), nullable=True)
-    discount_value = Column(Float, default=0)
-    discount_amount = Column(Float, default=0)
+    discount_value = Column(Numeric(12, 2, asdecimal=False), default=0)
+    discount_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    grand_total = Column(Float, default=0)
+    grand_total = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     special_notes = Column(String(255), nullable=True)
 
@@ -346,7 +347,7 @@ class BarOrderItem(Base):
     station_id = Column(Integer, ForeignKey("bar_station.id"), nullable=False, index=True)
 
     quantity = Column(Integer, nullable=False)
-    price = Column(Float, nullable=False)
+    price = Column(Numeric(12, 2, asdecimal=False), nullable=False)
 
     item_status = Column(SAEnum("Pending", "Preparing", "Ready", "Served", "Cancelled", name="bar_order_item_status_enum"), nullable=False, index=True)
 
@@ -373,7 +374,7 @@ class BarOrderItemModifier(Base):
     modifier_id = Column(Integer, ForeignKey("bar_menu_modifier.id"), nullable=False, index=True)
 
     modifier_name = Column(String(100), nullable=False)
-    price = Column(Float, nullable=True)
+    price = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())
 
@@ -479,24 +480,24 @@ class BarBill(Base):
     guest_name = Column(String(100), nullable=True)
     guest_mobile = Column(String(20), nullable=True, index=True)
 
-    sub_total = Column(Float, default=0)
+    sub_total = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    cgst_percentage = Column(Float, nullable=True)
-    cgst_amount = Column(Float, default=0)
+    cgst_percentage = Column(Numeric(6, 3, asdecimal=False), nullable=True)
+    cgst_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    sgst_percentage = Column(Float, nullable=True)
-    sgst_amount = Column(Float, default=0)
+    sgst_percentage = Column(Numeric(6, 3, asdecimal=False), nullable=True)
+    sgst_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    service_charge_percentage = Column(Float, nullable=True)
-    service_charge_amount = Column(Float, default=0)
+    service_charge_percentage = Column(Numeric(6, 3, asdecimal=False), nullable=True)
+    service_charge_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     discount_type = Column(SAEnum("Percentage", "Flat", name="bar_bill_discount_type_enum"), nullable=True)
-    discount_value = Column(Float, default=0)
-    discount_amount = Column(Float, default=0)
+    discount_value = Column(Numeric(12, 2, asdecimal=False), default=0)
+    discount_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    round_off = Column(Float, default=0)
+    round_off = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    grand_total = Column(Float, nullable=False)
+    grand_total = Column(Numeric(12, 2, asdecimal=False), nullable=False)
 
     bill_status = Column(SAEnum("Open", "Paid", "Cancelled", name="bar_bill_status_enum"), nullable=False, index=True)
     payment_status = Column(SAEnum("Pending", "Partial", "Paid", name="bar_bill_payment_status_enum"), nullable=False, index=True)
@@ -527,10 +528,10 @@ class BarBillItem(Base):
     item_name = Column(String(150), nullable=False)
 
     quantity = Column(Integer, nullable=False)
-    rate = Column(Float, nullable=False)
-    amount = Column(Float, nullable=False)
+    rate = Column(Numeric(12, 2, asdecimal=False), nullable=False)
+    amount = Column(Numeric(12, 2, asdecimal=False), nullable=False)
 
-    tax_amount = Column(Float, default=0)
+    tax_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_bill_item_status_enum"), nullable=False, index=True, default="ACTIVE")
     created_by = Column(String(100), nullable=False)
@@ -576,7 +577,7 @@ class BarBillPayment(Base):
     bill_id = Column(Integer, ForeignKey("bar_bill.id"), nullable=False, index=True)
     payment_method_id = Column(Integer, ForeignKey("bar_payment_method.id"), nullable=False, index=True)
 
-    paid_amount = Column(Float, nullable=False)
+    paid_amount = Column(Numeric(12, 2, asdecimal=False), nullable=False)
     payment_reference = Column(String(100), nullable=True)
     payment_date = Column(Date, nullable=False, index=True)
     payment_time = Column(Time, nullable=False)
@@ -625,7 +626,7 @@ class BarBillSplitDetail(Base):
     split_id = Column(Integer, ForeignKey("bar_bill_split.id"), nullable=False, index=True)
     child_bill_id = Column(Integer, ForeignKey("bar_bill.id"), nullable=False, index=True)
     split_number = Column(Integer, nullable=False)
-    split_amount = Column(Float, nullable=False)
+    split_amount = Column(Numeric(12, 2, asdecimal=False), nullable=False)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_bill_split_detail_status_enum"), nullable=False, index=True, default="ACTIVE")
     created_by = Column(String(100), nullable=False)
@@ -651,7 +652,7 @@ class BarInventoryItem(Base):
     category = Column(String(100), nullable=True, index=True)  # Spirits | Wine | Beer | Mixers | Garnish
     unit = Column(SAEnum("Bottle", "Litre", "ml", "Can", "Nos", name="bar_inventory_unit_enum"), nullable=False, index=True)
 
-    min_stock_level = Column(Float, default=0)
+    min_stock_level = Column(Numeric(12, 3, asdecimal=False), default=0)
 
     is_perishable = Column(Boolean, nullable=False, default=False)
 
@@ -677,7 +678,7 @@ class BarInventoryStock(Base):
     inventory_item_id = Column(Integer, ForeignKey("bar_inventory_item.id"), nullable=False, index=True)
     station_id = Column(Integer, ForeignKey("bar_station.id"), nullable=True, index=True)  # Null = Main Store
 
-    available_quantity = Column(Float, nullable=False)
+    available_quantity = Column(Numeric(12, 3, asdecimal=False), nullable=False)
 
     last_updated_date = Column(Date, nullable=True)
 
@@ -702,7 +703,7 @@ class BarInventoryStockTransaction(Base):
 
     transaction_type = Column(SAEnum("IN", "OUT", "ADJUSTMENT", "WASTE", name="bar_stock_transaction_type_enum"), nullable=False, index=True)
 
-    quantity = Column(Float, nullable=False)
+    quantity = Column(Numeric(12, 3, asdecimal=False), nullable=False)
 
     reference_type = Column(SAEnum("Purchase", "BOT", "Manual", "Transfer", name="bar_stock_reference_type_enum"), nullable=True)
     reference_id = Column(String(100), nullable=True)
@@ -725,7 +726,7 @@ class BarRecipe(Base):
     menu_id = Column(Integer, ForeignKey("bar_menu_item.id"), nullable=False, index=True)
     inventory_item_id = Column(Integer, ForeignKey("bar_inventory_item.id"), nullable=False, index=True)
 
-    quantity_required = Column(Float, nullable=False)
+    quantity_required = Column(Numeric(12, 3, asdecimal=False), nullable=False)
     unit = Column(SAEnum("Bottle", "Litre", "ml", "Can", "Nos", name="bar_recipe_unit_enum"), nullable=False)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_recipe_status_enum"), nullable=False, index=True, default="ACTIVE")
@@ -746,9 +747,9 @@ class BarInventoryPurchase(Base):
 
     inventory_item_id = Column(Integer, ForeignKey("bar_inventory_item.id"), nullable=False, index=True)
 
-    quantity = Column(Float, nullable=False)
-    unit_price = Column(Float, nullable=False)
-    total_amount = Column(Float, nullable=False)
+    quantity = Column(Numeric(12, 3, asdecimal=False), nullable=False)
+    unit_price = Column(Numeric(12, 2, asdecimal=False), nullable=False)
+    total_amount = Column(Numeric(12, 2, asdecimal=False), nullable=False)
 
     purchase_date = Column(Date, nullable=False, index=True)
     supplier_name = Column(String(150), nullable=True)
@@ -787,7 +788,7 @@ class BarGuest(Base):
 
     special_notes = Column(String(255), nullable=True)
 
-    loyalty_points = Column(Float, default=0)
+    loyalty_points = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_guest_status_enum"), nullable=False, index=True, default="ACTIVE")
 
@@ -838,7 +839,7 @@ class BarGuestVisitHistory(Base):
 
     visit_type = Column(SAEnum("At Table", "At Counter", "Takeaway", name="bar_guest_visit_type_enum"), nullable=False, index=True)
 
-    total_amount = Column(Float, nullable=True)
+    total_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     rating = Column(Integer, nullable=True)
     feedback = Column(String(255), nullable=True)
@@ -893,14 +894,14 @@ class BarStaffAssignment(Base):
 
     floor_id = Column(Integer, ForeignKey("bar_floor.id"), nullable=True, index=True)
 
-    sales_target = Column(Float, nullable=True)
-    actual_sales = Column(Float, default=0)
+    sales_target = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    actual_sales = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     clock_in_at = Column(DateTime, nullable=True)
     clock_out_at = Column(DateTime, nullable=True)
 
-    opening_cash_float = Column(Float, nullable=True)
-    closing_cash_amount = Column(Float, nullable=True)
+    opening_cash_float = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    closing_cash_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     shift_status = Column(
         SAEnum("Scheduled", "On Shift", "On Break", "Closed", name="bar_staff_shift_status_enum"),
@@ -933,10 +934,10 @@ class BarDailySalesReport(Base):
     total_orders = Column(Integer, default=0)
     total_bills = Column(Integer, default=0)
 
-    total_sales = Column(Float, default=0)
-    total_tax = Column(Float, default=0)
-    total_discount = Column(Float, default=0)
-    total_service_charge = Column(Float, default=0)
+    total_sales = Column(Numeric(12, 2, asdecimal=False), default=0)
+    total_tax = Column(Numeric(12, 2, asdecimal=False), default=0)
+    total_discount = Column(Numeric(12, 2, asdecimal=False), default=0)
+    total_service_charge = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_daily_sales_report_status_enum"), nullable=False, index=True, default="ACTIVE")
     created_by = Column(String(100), nullable=True)
@@ -960,7 +961,7 @@ class BarItemSalesReport(Base):
     category_id = Column(Integer, ForeignKey("bar_menu_category.id"), nullable=True, index=True)
     quantity_sold = Column(Integer, default=0)
 
-    total_amount = Column(Float, default=0)
+    total_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_item_sales_report_status_enum"), nullable=False, index=True, default="ACTIVE")
     created_by = Column(String(100), nullable=True)
@@ -982,7 +983,7 @@ class BarPaymentModeReport(Base):
 
     payment_method_id = Column(Integer, ForeignKey("bar_payment_method.id"), nullable=False, index=True)
 
-    total_amount = Column(Float, default=0)
+    total_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_payment_mode_report_status_enum"), nullable=False, index=True, default="ACTIVE")
     created_by = Column(String(100), nullable=True)
@@ -1006,7 +1007,7 @@ class BarStaffPerformanceReport(Base):
     role = Column(SAEnum("Bartender", "Cashier", "Manager", name="bar_staff_report_role_enum"), nullable=False, index=True)
 
     total_orders = Column(Integer, default=0)
-    total_sales = Column(Float, default=0)
+    total_sales = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     status = Column(SAEnum(*STATUS_VALUES, name="bar_staff_performance_report_status_enum"), nullable=False, index=True, default="ACTIVE")
     created_by = Column(String(100), nullable=True)

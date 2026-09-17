@@ -1,7 +1,7 @@
 from configs import BaseConfig
 import os
 from sqlalchemy import Boolean, Column,String, DateTime, LargeBinary ,func
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Time,Date,DateTime,BLOB, JSON,Float
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Time,Date,DateTime,BLOB, JSON,Float, Numeric
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
@@ -61,30 +61,30 @@ class RoomReservation(Base):
     tax_type_id = Column(Integer, nullable=True, index=True)        # tax_types.id
     discount_type_id = Column(Integer, nullable=True, index=True)   # discount_types.id
 
-    room_amount = Column(Float, default=0)
-    extra_charges = Column(Float, default=0)
+    room_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
+    extra_charges = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    tax_percentage = Column(Float, nullable=True)
-    tax_amount = Column(Float, nullable=True)
+    tax_percentage = Column(Numeric(6, 3, asdecimal=False), nullable=True)
+    tax_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
-    discount_percentage = Column(Float, nullable=True)
-    discount_amount = Column(Float, nullable=True)
+    discount_percentage = Column(Numeric(6, 3, asdecimal=False), nullable=True)
+    discount_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
-    overall_amount = Column(Float, nullable=True)
+    overall_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     # ---------------- Payment ----------------
     payment_method_id = Column(Integer, nullable=True, index=True)  # payment_methods.id
 
-    paying_amount = Column(Float, nullable=True)
-    paid_amount = Column(Float, default=0)
+    paying_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    paid_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    balance_amount = Column(Float, nullable=True)
-    extra_amount = Column(Float, default=0)
+    balance_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    extra_amount = Column(Numeric(12, 2, asdecimal=False), default=0)
 
     extra_bed_count = Column(Integer, default=0)
-    extra_bed_cost = Column(Float, default=0)
+    extra_bed_cost = Column(Numeric(12, 2, asdecimal=False), default=0)
 
-    total_amount = Column(Float, nullable=True)
+    total_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     # ---------------- Reservation Info ----------------
     booking_status_id = Column(Integer, nullable=True, index=True)  # reservation_status.id
@@ -145,9 +145,9 @@ class RoomDetails(Base):
 
     # ---------------- Extra Charges ----------------
     extra_bed_count = Column(Integer, nullable=True)
-    extra_bed_cost = Column(Float, nullable=True)
+    extra_bed_cost = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
-    total_amount = Column(Float, nullable=True)
+    total_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     room_complementary = Column(String(10), nullable=True)  # Yes / No
 
@@ -173,7 +173,7 @@ class ReservationAmountPaidHistory(Base):
     reservation_id = Column(String(255), nullable=False, index=True)
     user_id = Column(String(255), nullable=False, index=True)
 
-    amount = Column(Float, nullable=False)
+    amount = Column(Numeric(12, 2, asdecimal=False), nullable=False)
     paid_date = Column(Date, nullable=False, index=True)
 
     payment_method = Column(String(100), nullable=False, index=True)
@@ -371,7 +371,7 @@ class LaundryItems(Base):
 
     # ---------------- Item Details ----------------
     item_name = Column(String(100), nullable=False, index=True)
-    price = Column(Float, nullable=False)
+    price = Column(Numeric(12, 2, asdecimal=False), nullable=False)
 
     # ---------------- System Fields ----------------
     status = Column(String(50), nullable=False, index=True)
@@ -403,7 +403,7 @@ class LaundryManagement(Base):
     item_prices = Column(JSON, nullable=False)        # {item_id: price}
 
     total_items = Column(Integer, nullable=False)
-    net_price = Column(Float, nullable=False)
+    net_price = Column(Numeric(12, 2, asdecimal=False), nullable=False)
 
     laundry_status = Column(String(50), nullable=False, index=True)   # Pending | In-Process | Completed | Delivered
 
@@ -489,15 +489,15 @@ class CustomerData(Base):
     special_services_info = Column(JSON, nullable=True)
 
     # ---------------- Billing Snapshot ----------------
-    total_amount = Column(Float, nullable=True)
-    tax_amount = Column(Float, nullable=True)
-    discount_amount = Column(Float, nullable=True)
+    total_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    tax_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    discount_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
-    laundry_amount = Column(Float, nullable=True)
-    bar_amount = Column(Float, nullable=True)
-    cafe_amount = Column(Float, nullable=True)
-    restaurant_amount = Column(Float, nullable=True)
-    special_services_amount = Column(Float, nullable=True)
+    laundry_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    bar_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    cafe_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    restaurant_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    special_services_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     # ---------------- System Fields ----------------
     status = Column(String(50), nullable=False, index=True)
@@ -694,7 +694,7 @@ class NightAudit(Base):
     # best-effort, so it -- and anything derived from it -- may be null.
     rooms_total = Column(Integer, nullable=True)
     rooms_occupied = Column(Integer, nullable=True)
-    occupancy_percent = Column(Float, nullable=True)
+    occupancy_percent = Column(Numeric(6, 3, asdecimal=False), nullable=True)
     room_nights = Column(Integer, nullable=True)
 
     # ---------------- Guest Movement ----------------
@@ -711,17 +711,17 @@ class NightAudit(Base):
     no_show_reservation_ids = Column(JSON, nullable=True)
 
     # ---------------- Revenue (accrued for this night only) ----------------
-    room_revenue = Column(Float, nullable=True)
-    extra_charges = Column(Float, nullable=True)
-    tax_amount = Column(Float, nullable=True)
-    discount_amount = Column(Float, nullable=True)
-    gross_revenue = Column(Float, nullable=True)
+    room_revenue = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    extra_charges = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    tax_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    discount_amount = Column(Numeric(12, 2, asdecimal=False), nullable=True)
+    gross_revenue = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     # ---------------- Settlement (cash movement on this date) ----------------
-    payments_collected = Column(Float, nullable=True)
+    payments_collected = Column(Numeric(12, 2, asdecimal=False), nullable=True)
     # [{payment_method, amount}] -- by method name as recorded on the payment.
     payment_breakdown = Column(JSON, nullable=True)
-    outstanding_balance = Column(Float, nullable=True)
+    outstanding_balance = Column(Numeric(12, 2, asdecimal=False), nullable=True)
 
     # ---------------- System Fields ----------------
     token = Column(String(36), unique=True, nullable=False, index=True, default=lambda: str(uuid.uuid4()))

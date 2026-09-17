@@ -1,7 +1,7 @@
 from configs import BaseConfig
 import os
 from sqlalchemy import Boolean, Column, String, DateTime, LargeBinary, func, UniqueConstraint
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Time, Date, DateTime, BLOB, JSON, Float
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Time, Date, DateTime, BLOB, JSON, Float, Numeric
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime
 from models import engine
@@ -38,17 +38,17 @@ class Room_Type(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     Type_Name = Column(String(100), nullable=False, index=True)
-    Room_Cost = Column(Float, nullable=False, index=True)
-    Bed_Cost = Column(Float, nullable=False, index=True)
+    Room_Cost = Column(Numeric(12, 2, asdecimal=False), nullable=False, index=True)
+    Bed_Cost = Column(Numeric(12, 2, asdecimal=False), nullable=False, index=True)
     Complementry = Column(String(100), nullable=False, index=True)  # Room Complementry table id store
 
     # Rate Types
-    Daily_Rate = Column(Float, nullable=True, index=True)
-    Weekly_Rate = Column(Float, nullable=True, index=True)
-    Bed_Only_Rate = Column(Float, nullable=True, index=True)
-    Bed_And_Breakfast_Rate = Column(Float, nullable=True, index=True)
-    Half_Board_Rate = Column(Float, nullable=True, index=True)
-    Full_Board_Rate = Column(Float, nullable=True, index=True)
+    Daily_Rate = Column(Numeric(12, 2, asdecimal=False), nullable=True, index=True)
+    Weekly_Rate = Column(Numeric(12, 2, asdecimal=False), nullable=True, index=True)
+    Bed_Only_Rate = Column(Numeric(12, 2, asdecimal=False), nullable=True, index=True)
+    Bed_And_Breakfast_Rate = Column(Numeric(12, 2, asdecimal=False), nullable=True, index=True)
+    Half_Board_Rate = Column(Numeric(12, 2, asdecimal=False), nullable=True, index=True)
+    Full_Board_Rate = Column(Numeric(12, 2, asdecimal=False), nullable=True, index=True)
 
     status = Column(String(100), nullable=False, index=True)
     created_by = Column(String(100), nullable=False, index=True)
