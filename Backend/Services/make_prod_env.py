@@ -228,6 +228,16 @@ def main() -> int:
         print()
         print("Next: verify each service starts, then confirm the six agree:")
         print("  python make_prod_env.py --verify-only  (see verify_prod_env.py)")
+        print()
+        # The DB user chosen above needs privileges in two schemas it does not
+        # own, because HotelServices reads Master Data on its own connection to
+        # keep an availability check and its booking in one transaction. Say so
+        # here, where that user is named: skipping it starts every service
+        # cleanly and answers 500 on every reservation screen.
+        print("Then grant that DB user the cross-schema privileges "
+              "HotelServices needs:")
+        print("  python Backend/tools/grant_cross_schema.py           # report")
+        print("  python Backend/tools/grant_cross_schema.py --confirm # apply")
     return 0
 
 

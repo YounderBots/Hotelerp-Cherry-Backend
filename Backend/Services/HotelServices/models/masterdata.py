@@ -21,10 +21,16 @@ WHY READ-ONLY
     needs. Treat them as a view: if a column is missing, add it here, never
     write through these classes.
 
-    The one exception is `Room.Room_Booking_status`, which the reservation
-    lifecycle does have to keep in step (see `sync_room_booking_status` in the
-    controller). That is a status flag *about* occupancy, and occupancy is
-    exactly what this module owns.
+    The exception is `room`'s three state flags, which this service does have
+    to keep in step: `Room_Booking_status` (occupancy, recomputed by
+    `sync_room_booking_status`), `Room_Working_status` (dirty at checkout) and
+    `Room_Status` (blocked by a housekeeping task). Those are statements
+    *about* occupancy and housekeeping, which is exactly what this module owns.
+
+    It is also why the deployment needs UPDATE on `room` and not only SELECT:
+    the lifecycle writes those columns, and `lock_rooms()` takes
+    `SELECT ... FOR UPDATE` on the same rows, which MySQL refuses without
+    UPDATE as well. See Backend/tools/grant_cross_schema.py.
 
 SCHEMA RESOLUTION
     The schema name is derived from this service's own DB URI rather than
@@ -39,7 +45,7 @@ from __future__ import annotations
 import logging
 import os
 
-from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy import Column, DateTime, Float, Integer, String, text
 from sqlalchemy.orm import declarative_base
 
 from configs import Configuration
@@ -247,8 +253,22 @@ class StaffUser(MasterBase):
 # ---------------------------------------------------------------------------
 # Deployment probe
 # ---------------------------------------------------------------------------
+FIX = ("Run `python Backend/tools/grant_cross_schema.py` on the server to see "
+       "exactly which privilege is missing, and `--confirm` to grant it. "
+       "Restart this service afterwards: MySQL applies a database-level grant "
+       "at a connection's next USE, and the pool holds connections opened "
+       "before it.")
+
+
+def _is_mysql(db) -> bool:
+    try:
+        return db.get_bind().dialect.name == "mysql"
+    except Exception:                                          # noqa: BLE001
+        return False
+
+
 def probe(db) -> tuple[bool, str]:
-    """Can this service actually read the Master Data schema?
+    """Can this service read the Master Data schema -- and write room state?
 
     WHY THIS EXISTS
         These mappings are cross-schema: HotelServices reads Master Data's
@@ -259,22 +279,33 @@ def probe(db) -> tuple[bool, str]:
 
         The price is a deployment coupling that nothing enforced and nothing
         documented: every schema must live on the SAME MySQL server, and the
-        user in this service's DB_URI must be able to SELECT from the Master
-        Data schema.
+        user in this service's DB_URI must hold privileges in a schema it does
+        not own.
 
-        Break either half and the service still starts, /healthz still says
-        "ok", housekeeping and the night audit still work -- and every
-        reservation screen answers 500. That is exactly how it reached
-        production: the reservation list, the reservation detail and the
-        availability check were the only three endpoints down, and the
-        deployment looked healthy.
+        Break either half and the service still starts, housekeeping and the
+        night audit still work -- and every reservation screen answers 500.
+        That is exactly how it reached production: the reservation list, the
+        reservation detail and the availability check were the only three
+        endpoints down, and the deployment looked healthy.
+
+    WHY IT CHECKS THE WRITE TOO
+        The failure in the log only ever names SELECT, so SELECT is what gets
+        granted -- and the list comes back while every attempt to *book* still
+        fails, because the reservation lifecycle writes `Room_Booking_status`
+        back and `lock_rooms()` takes `SELECT ... FOR UPDATE`, which MySQL
+        will not run without UPDATE on top of SELECT. A probe that checks only
+        the read half declares that deployment ready.
+
+        EXPLAIN runs the privilege check and nothing else -- MySQL requires
+        the same privileges to EXPLAIN a statement as to execute it -- so this
+        stays a read-only probe, takes no row lock, and is safe to call per
+        request. `id = 0` matches no row in any case.
 
     Returns (ok, detail). Cheap enough for a readiness probe: one indexed
-    read, no scan.
+    read and one plan, no scan.
     """
     try:
         db.query(MasterRoom.id).limit(1).all()
-        return True, f"{MASTERDATA_SCHEMA} readable"
     except Exception as exc:                                   # noqa: BLE001
         reason = str(getattr(exc, "orig", exc))[:200]
         return False, (
@@ -282,5 +313,55 @@ def probe(db) -> tuple[bool, str]:
             "Every schema must be on the same MySQL server as this service's, "
             "and this service's DB user needs SELECT on it. Set "
             "MASTERDATA_DB_SCHEMA if the schema is not named "
-            "<own-prefix>_masterdata."
+            f"<own-prefix>_masterdata. {FIX}"
+        )
+
+    if not _is_mysql(db):
+        # SQLite under test, where the schema is an ATTACHed database and
+        # every privilege is implicit. Nothing to assert.
+        return True, f"{MASTERDATA_SCHEMA} readable"
+
+    try:
+        db.execute(text(
+            f"EXPLAIN UPDATE `{MASTERDATA_SCHEMA}`.`room` "
+            "SET `Room_Booking_status` = `Room_Booking_status` WHERE `id` = 0"
+        ))
+    except Exception as exc:                                   # noqa: BLE001
+        reason = str(getattr(exc, "orig", exc))[:200]
+        if "denied" not in reason.lower():
+            # Not a privilege problem -- an ancient MySQL that cannot EXPLAIN
+            # an UPDATE, say. The read works, which is the half that matters
+            # for serving; do not fail readiness over an inconclusive check.
+            logger.warning("masterdata_write_probe_inconclusive detail=%s", reason)
+            return True, f"{MASTERDATA_SCHEMA} readable (write check inconclusive)"
+        return False, (
+            f"can read {MASTERDATA_SCHEMA!r} but cannot write "
+            f"{MASTERDATA_SCHEMA}.room: {reason}. Reservations will list but "
+            "no booking, check-in, check-out or room block will succeed: this "
+            "service keeps the room's occupancy and housekeeping flags in step "
+            "and takes SELECT ... FOR UPDATE on those rows, which MySQL "
+            f"refuses without UPDATE as well as SELECT. {FIX}"
+        )
+
+    return True, f"{MASTERDATA_SCHEMA} readable and room state writable"
+
+
+def probe_users(db) -> tuple[bool, str]:
+    """Can this service read the Users schema?
+
+    Same coupling, smaller blast radius: housekeeping validates that a task's
+    assignee is a real member of staff against `users`.`users`. Without the
+    grant, assigning a task 500s while every other screen in the service works
+    -- so it gets its own check rather than being folded into the one above,
+    which would report "reservations are down" for a housekeeping problem.
+    """
+    try:
+        db.query(StaffUser.id).limit(1).all()
+        return True, f"{USERS_SCHEMA} readable"
+    except Exception as exc:                                   # noqa: BLE001
+        reason = str(getattr(exc, "orig", exc))[:200]
+        return False, (
+            f"cannot read {USERS_SCHEMA}.users: {reason}. Assigning a "
+            "housekeeping task checks its assignee against that table and will "
+            f"answer 500 until this is fixed. {FIX}"
         )

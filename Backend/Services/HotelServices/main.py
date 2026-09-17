@@ -116,16 +116,27 @@ def root_api():
 
 
 def _dependency_checks() -> dict:
-    """Every dependency this service cannot do its job without."""
+    """Every dependency this service cannot do its job without.
+
+    Two cross-schema reads, reported separately because they fail separately
+    and break different screens: without Master Data the whole reservation
+    module is down, while without the Users schema only assigning a
+    housekeeping task is.
+    """
     from models import SessionLocal
     from models.masterdata import probe as masterdata_probe
+    from models.masterdata import probe_users
 
     db = SessionLocal()
     try:
-        ok, detail = masterdata_probe(db)
+        md_ok, md_detail = masterdata_probe(db)
+        users_ok, users_detail = probe_users(db)
     finally:
         db.close()
-    return {"masterdata": {"ok": ok, "detail": detail}}
+    return {
+        "masterdata": {"ok": md_ok, "detail": md_detail},
+        "users": {"ok": users_ok, "detail": users_detail},
+    }
 
 
 # Liveness. Stays 200 whenever the process is serving, so a dependency being
@@ -177,11 +188,11 @@ def _check_dependencies_on_boot():
         if c["ok"]:
             logger.info("dependency_ok name=%s detail=%s", name, c["detail"])
         else:
-            logger.critical(
-                "DEPENDENCY UNAVAILABLE name=%s -- %s "
-                "Reservation availability, the reservation list and the "
-                "reservation detail will answer 500 until this is fixed.",
-                name, c["detail"])
+            # The detail names the consequence itself -- which screens go down
+            # differs per check, so stating one fixed sentence here would be
+            # wrong for the other.
+            logger.critical("DEPENDENCY UNAVAILABLE name=%s -- %s",
+                            name, c["detail"])
 
 
 app.include_router(router, prefix="")

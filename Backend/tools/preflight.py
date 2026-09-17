@@ -254,11 +254,21 @@ def main() -> int:
         if st == 200:
             ok("hotel service reports ready")
         elif st == 503:
+            # Report every failing check, not just the first: the Master Data
+            # and Users schemas are separate grants that fail separately, and
+            # naming only one sends the operator back for a second round trip.
+            details = []
             try:
-                detail = json.loads(body.decode())["checks"]["masterdata"]["detail"]
+                checks = json.loads(body.decode())["checks"]
+                details = [f"{name}: {c['detail']}"
+                           for name, c in checks.items() if not c.get("ok")]
             except Exception:                                  # noqa: BLE001
-                detail = body.decode()[:180]
-            bad("hotel service is NOT ready", detail)
+                pass
+            if not details:
+                details = [body.decode()[:180]]
+            bad("hotel service is NOT ready", details[0])
+            for extra in details[1:]:
+                print(f"        {extra}")
         elif st == 404:
             warn("hotel /readyz not deployed",
                  "this build predates the readiness probe; upgrade to see "
