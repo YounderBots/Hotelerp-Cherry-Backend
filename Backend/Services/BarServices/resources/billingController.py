@@ -317,6 +317,30 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
             detail=f"paid_amount exceeds the outstanding balance of {outstanding}",
         )
 
+    # The payment method has to be one this property configured. Without this
+    # the id went straight into the insert and the foreign key refused it, so
+    # the endpoint answered 500 with an unhandled IntegrityError -- money
+    # rejected by a database constraint rather than by a rule, and a till
+    # operator told only "Internal server error". Same reason the hotel side
+    # checks it (reservationController._payment_method_name).
+    method = (
+        db.query(models.BarPaymentMethod)
+        .filter(
+            models.BarPaymentMethod.id == payload.payment_method_id,
+            models.BarPaymentMethod.company_id == company_id,
+            models.BarPaymentMethod.status == STATUS,
+        )
+        .first()
+    )
+    if not method:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"payment_method_id {payload.payment_method_id} is not one of "
+                "this property's configured payment methods"
+            ),
+        )
+
     try:
         now = datetime.now()
         payment = models.BarBillPayment(

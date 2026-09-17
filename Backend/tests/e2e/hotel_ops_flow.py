@@ -9,7 +9,7 @@ import urllib.request
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from api import GW, req, login, rows  # noqa: E402
+from api import GW, req, login, rows, refused  # noqa: E402
 
 TOK = login("admin@cherryhotel.com")
 FAILS, PASSES = [], 0
@@ -83,14 +83,14 @@ s, b = req("GET", "/hotel/housekeeper_tasks", TOK)
 check("task: appears in list", any(r.get("id") == task_id for r in rows(b)), f"{len(rows(b))} rows")
 
 s, b = req("POST", "/hotel/housekeeper_tasks", TOK, {**payload, "room_no": 999999})
-check("task: unknown room refused", s >= 400, f"{s} {str(b)[:160]}")
+check("task: unknown room refused", refused(s), f"{s} {str(b)[:160]}")
 s, b = req("POST", "/hotel/housekeeper_tasks", TOK, {**payload, "task_status": "Nonsense"})
-check("task: unknown status refused", s >= 400, f"{s} {str(b)[:160]}")
+check("task: unknown status refused", refused(s), f"{s} {str(b)[:160]}")
 s, b = req("POST", "/hotel/housekeeper_tasks", TOK, {**payload, "room_status": "Ready"})
-check("task: unknown room status refused", s >= 400, f"{s} {str(b)[:160]}")
+check("task: unknown room status refused", refused(s), f"{s} {str(b)[:160]}")
 s, b = req("POST", "/hotel/housekeeper_tasks", TOK, {**payload, "employee_id": 999999,
                                                     "assign_staff": 999999})
-check("task: unknown employee refused", s >= 400, f"{s} {str(b)[:160]}")
+check("task: unknown employee refused", refused(s), f"{s} {str(b)[:160]}")
 
 if task_id:
     s, b = req("PUT", "/hotel/housekeeper_tasks", TOK,
@@ -138,10 +138,10 @@ if attachment:
 
 s, b = multipart("POST", "/hotel/roomincident_log", {**fields, "room_id": 999999},
                  {"attachment_file": ("evidence.png", PNG, "image/png")})
-check("incident: unknown room refused", s >= 400, f"{s} {str(b)[:160]}")
+check("incident: unknown room refused", refused(s), f"{s} {str(b)[:160]}")
 s, b = multipart("POST", "/hotel/roomincident_log", {**fields, "severity": "Apocalyptic"},
                  {"attachment_file": ("evidence.png", PNG, "image/png")})
-check("incident: unknown severity refused", s >= 400, f"{s} {str(b)[:160]}")
+check("incident: unknown severity refused", refused(s), f"{s} {str(b)[:160]}")
 
 if inc_id:
     s, b = multipart("PUT", "/hotel/roomincident_log",
@@ -160,11 +160,11 @@ check("enquiry: create -> 200/201", s in (200, 201), f"{s} {str(b)[:220]}")
 enq_id = (b.get("data") or {}).get("id") if s in (200, 201) else None
 
 s, b = req("POST", "/hotel/inquiry", TOK, {**enq, "inquiry_mode": "Carrier Pigeon"})
-check("enquiry: unknown mode refused", s >= 400, f"{s} {str(b)[:160]}")
+check("enquiry: unknown mode refused", refused(s), f"{s} {str(b)[:160]}")
 s, b = req("POST", "/hotel/inquiry", TOK, {**enq, "inquiry_status": "Maybe"})
-check("enquiry: unknown status refused", s >= 400, f"{s} {str(b)[:160]}")
+check("enquiry: unknown status refused", refused(s), f"{s} {str(b)[:160]}")
 s, b = req("POST", "/hotel/inquiry", TOK, {**enq, "guest_name": ""})
-check("enquiry: blank guest name refused", s >= 400, f"{s} {str(b)[:160]}")
+check("enquiry: blank guest name refused", refused(s), f"{s} {str(b)[:160]}")
 s, b = req("POST", "/hotel/inquiry", TOK, {**enq, "guest_name": "x" * 500})
 check("enquiry: very long guest name refused cleanly (not 500)", s == 400,
       f"{s} {str(b)[:160]}")

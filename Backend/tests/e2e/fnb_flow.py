@@ -7,7 +7,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from api import req, login, rows  # noqa: E402
+from api import req, login, rows, refused  # noqa: E402
 
 TOK = login("admin@cherryhotel.com")
 FAILS, PASSES = [], 0
@@ -54,10 +54,10 @@ def venue_flow(prefix, ticket_path, label, dine_in):
         return
 
     s, b = req("POST", f"/{prefix}/order", TOK, {"order_type": dine_in, "table_id": 999999})
-    check(f"{label}: unknown table refused", s >= 400, f"{s} {str(b)[:150]}")
+    check(f"{label}: unknown table refused", refused(s), f"{s} {str(b)[:150]}")
 
     s, b = req("POST", f"/{prefix}/order", TOK, {"order_type": "Not A Type", "table_id": table_id})
-    check(f"{label}: unknown order type refused", s >= 400, f"{s} {str(b)[:150]}")
+    check(f"{label}: unknown order type refused", refused(s), f"{s} {str(b)[:150]}")
 
     # ---- items -------------------------------------------------------------
     s, b = req("POST", f"/{prefix}/order/{oid}/items", TOK,
@@ -67,13 +67,13 @@ def venue_flow(prefix, ticket_path, label, dine_in):
 
     s, b = req("POST", f"/{prefix}/order/{oid}/items", TOK,
                {"items": [{"menu_id": item["id"], "quantity": 0}]})
-    check(f"{label}: zero quantity refused", s >= 400, f"{s} {str(b)[:150]}")
+    check(f"{label}: zero quantity refused", refused(s), f"{s} {str(b)[:150]}")
     s, b = req("POST", f"/{prefix}/order/{oid}/items", TOK,
                {"items": [{"menu_id": item["id"], "quantity": -3}]})
-    check(f"{label}: negative quantity refused", s >= 400, f"{s} {str(b)[:150]}")
+    check(f"{label}: negative quantity refused", refused(s), f"{s} {str(b)[:150]}")
     s, b = req("POST", f"/{prefix}/order/{oid}/items", TOK,
                {"items": [{"menu_id": 999999, "quantity": 1}]})
-    check(f"{label}: unknown menu item refused", s >= 400, f"{s} {str(b)[:150]}")
+    check(f"{label}: unknown menu item refused", refused(s), f"{s} {str(b)[:150]}")
 
     s, b = req("GET", f"/{prefix}/order/{oid}", TOK)
     detail = (b.get("data") or {})
@@ -127,17 +127,17 @@ def venue_flow(prefix, ticket_path, label, dine_in):
     check(f"{label}: bill is readable and has a total", s == 200 and net > 0, f"{s} {str(bill)[:220]}")
 
     s, b = req("POST", f"/{prefix}/bill/generate/{oid}", TOK, CHARGES)
-    check(f"{label}: billing the same order twice refused", s >= 400, f"{s} {str(b)[:180]}")
+    check(f"{label}: billing the same order twice refused", refused(s), f"{s} {str(b)[:180]}")
 
     # ---- payment ------------------------------------------------------------
     s, b = req("POST", f"/{prefix}/bill/{bill_id}/payment", TOK,
                {"payment_method_id": method_id, "paid_amount": -5,
                 "payment_reference": None, "remarks": None})
-    check(f"{label}: negative payment refused", s >= 400, f"{s} {str(b)[:150]}")
+    check(f"{label}: negative payment refused", refused(s), f"{s} {str(b)[:150]}")
     s, b = req("POST", f"/{prefix}/bill/{bill_id}/payment", TOK,
                {"payment_method_id": 999999, "paid_amount": net,
                 "payment_reference": None, "remarks": None})
-    check(f"{label}: unknown payment method refused", s >= 400, f"{s} {str(b)[:150]}")
+    check(f"{label}: unknown payment method refused", refused(s), f"{s} {str(b)[:150]}")
 
     s, b = req("POST", f"/{prefix}/bill/{bill_id}/payment", TOK,
                {"payment_method_id": method_id, "paid_amount": net,

@@ -14,7 +14,7 @@ import urllib.request
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from api import GW, req, login, rows  # noqa: E402
+from api import GW, req, login, rows, refused  # noqa: E402
 
 TOK = login("admin@cherryhotel.com")
 FAILS, PASSES = [], 0
@@ -208,16 +208,16 @@ print(f"  balance before payment: {balance}")
 
 s, b = req("POST", f"/hotel/room_reservation_pay/{token}", TOK,
            {"paying_amount": -10, "payment_method": pay_name})
-check("negative payment refused", s >= 400, f"{s} {str(b)[:150]}")
+check("negative payment refused", refused(s), f"{s} {str(b)[:150]}")
 s, b = req("POST", f"/hotel/room_reservation_pay/{token}", TOK,
            {"paying_amount": 0, "payment_method": pay_name})
-check("zero payment refused", s >= 400, f"{s} {str(b)[:150]}")
+check("zero payment refused", refused(s), f"{s} {str(b)[:150]}")
 s, b = req("POST", f"/hotel/room_reservation_pay/{token}", TOK,
            {"paying_amount": balance + 1000, "payment_method": pay_name})
-check("overpayment refused", s >= 400, f"{s} {str(b)[:150]}")
+check("overpayment refused", refused(s), f"{s} {str(b)[:150]}")
 s, b = req("POST", f"/hotel/room_reservation_pay/{token}", TOK,
            {"paying_amount": 100, "payment_method": "Not A Real Method"})
-check("unknown payment method refused", s >= 400, f"{s} {str(b)[:150]}")
+check("unknown payment method refused", refused(s), f"{s} {str(b)[:150]}")
 
 half = round(balance / 2, 2)
 s, b = req("POST", f"/hotel/room_reservation_pay/{token}", TOK,
@@ -238,7 +238,7 @@ s, b = req("GET", f"/hotel/room_reservation_checkout_preview/{token}", TOK)
 check("checkout preview -> 200", s == 200, f"{s} {str(b)[:200]}")
 
 s, b = req("POST", f"/hotel/room_reservation_checkout/{token}", TOK, {})
-check("checkout with a balance outstanding is refused", s >= 400, f"{s} {str(b)[:180]}")
+check("checkout with a balance outstanding is refused", refused(s), f"{s} {str(b)[:180]}")
 
 s, b = req("POST", f"/hotel/room_reservation_pay/{token}", TOK,
            {"paying_amount": balance - half, "payment_method": pay_name})
@@ -255,11 +255,11 @@ check("balance is zero after checkout", float(row.get("balance_amount") or 0) ==
       str(row.get("balance_amount")))
 
 s, b = req("POST", f"/hotel/room_reservation_checkin/{token}", TOK, {})
-check("cannot check in a departed reservation", s >= 400, f"{s} {str(b)[:150]}")
+check("cannot check in a departed reservation", refused(s), f"{s} {str(b)[:150]}")
 s, b = req("POST", f"/hotel/room_reservation_cancel/{token}", TOK, {"cancellation_reason": "test"})
-check("cannot cancel a departed reservation", s >= 400, f"{s} {str(b)[:150]}")
+check("cannot cancel a departed reservation", refused(s), f"{s} {str(b)[:150]}")
 s, b = req("DELETE", f"/hotel/room_reservation/{res_id}", TOK)
-check("cannot delete a paid reservation", s >= 400, f"{s} {str(b)[:150]}")
+check("cannot delete a paid reservation", refused(s), f"{s} {str(b)[:150]}")
 
 # ---------------------------------------------- the room is freed for reuse ----
 s, b = req("GET", f"/hotel/room_availability?arrival_date={arrive}&departure_date={depart}", TOK)
@@ -285,7 +285,7 @@ if c_token:
     check("cancellation reason recorded",
           "Guest called" in json.dumps(row), "reason not stored")
     s, b = req("POST", f"/hotel/room_reservation_checkin/{c_token}", TOK, {})
-    check("cannot check in a cancelled reservation", s >= 400, f"{s} {str(b)[:150]}")
+    check("cannot check in a cancelled reservation", refused(s), f"{s} {str(b)[:150]}")
 
     s, b = req("GET", f"/hotel/room_availability?arrival_date={arrive}&departure_date={depart}", TOK)
     freed = (b.get("data") or {}).get("available_room_ids") or []

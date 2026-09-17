@@ -65,3 +65,22 @@ def rows(res):
     if isinstance(d, dict):
         d = d.get("data")
     return d if isinstance(d, list) else []
+
+
+def refused(status_code) -> bool:
+    """Did the API *refuse* this request -- as opposed to crashing on it?
+
+    WHY THIS IS NOT `status >= 400`
+        It was, in 26 assertions across three suites, and that let a real bug
+        sit in a green run: posting a payment with an unknown
+        `payment_method_id` reached the INSERT, the foreign key rejected it,
+        and the endpoint answered 500 with an unhandled IntegrityError. The
+        suite asserted "unknown payment method refused", saw 500, and passed.
+
+        A refusal is a rule the API states: 4xx, with a message naming what was
+        wrong. A 500 is the opposite -- the request got far enough to break
+        something, and the caller is told only "Internal server error". Any
+        check that accepts both cannot tell a working guard from a missing one,
+        which is the only thing it was written to find out.
+    """
+    return 400 <= int(status_code) < 500

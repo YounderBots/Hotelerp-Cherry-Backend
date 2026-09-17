@@ -30,13 +30,16 @@ from resources import billingController
 # Which service are we running inside?
 if hasattr(models, "BarBill"):
     Bill, Payment = models.BarBill, models.BarBillPayment
+    Method = models.BarPaymentMethod
 elif hasattr(models, "RestaurantBill"):
     Bill, Payment = models.RestaurantBill, models.RestaurantBillPayment
+    Method = models.PaymentMethod
 else:  # pragma: no cover - guards a wrong cwd
     raise RuntimeError("run this from BarServices or RestaurantServices")
 
 TENANT = "1"
 USER = "1"
+METHOD_ID = 1
 
 
 @pytest.fixture()
@@ -44,6 +47,14 @@ def db():
     engine = sa.create_engine("sqlite://")
     models.Base.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine)()
+    # Every property has its payment methods configured before it takes money,
+    # so the fixture has one. Without it these tests describe a property that
+    # cannot be paid at all, and the money arithmetic they exist to check never
+    # runs -- see test_refuses_a_payment_method_the_property_has_not_configured
+    # for the case where it is deliberately absent.
+    session.add(Method(id=METHOD_ID, method_name="Cash", status="ACTIVE",
+                       created_by=USER, company_id=TENANT, branch_id="MAIN"))
+    session.commit()
     yield session
     session.close()
 
@@ -170,3 +181,42 @@ def test_still_rejects_an_unknown_bill(db):
     with pytest.raises(HTTPException) as exc:
         billingController.record_payment(9999, payload, None, db)
     assert exc.value.status_code == 404
+
+
+def test_refuses_a_payment_method_the_property_has_not_configured(db):
+    """A 400 naming the field, never a 500 from the foreign key.
+
+    This is the bug the end-to-end sweep of 17 September 2026 found. The
+    endpoint validated the amount and the outstanding balance but never the
+    method, so an unknown `payment_method_id` reached the INSERT and the
+    foreign key rejected it -- `POST /bill/{id}/payment` answered 500 with an
+    unhandled IntegrityError, and a till operator was told "Internal server
+    error" with no indication of what was wrong.
+
+    It survived a green run because `fnb_flow.py` asserted the refusal as
+    `status >= 400`, which a 500 satisfies. Both halves are fixed: the guard
+    here, and `api.refused()` there.
+    """
+    bill = make_bill(db, 500.0)
+    payload = billingController.PaymentIn(payment_method_id=999_999, paid_amount=100.0)
+    with pytest.raises(HTTPException) as exc:
+        billingController.record_payment(bill.id, payload, None, db)
+    assert exc.value.status_code == 400
+    assert "999999" in exc.value.detail.replace(",", "")
+    assert "payment method" in exc.value.detail.lower()
+
+
+def test_refuses_another_property_s_payment_method(db):
+    """Configured, but not by this tenant. Same refusal.
+
+    The method table is shared by every property in the deployment, so an id
+    that exists is not by itself an id this company may charge against.
+    """
+    db.add(Method(id=77, method_name="Other Co Card", status="ACTIVE",
+                  created_by=USER, company_id="999", branch_id="MAIN"))
+    db.commit()
+    bill = make_bill(db, 500.0)
+    payload = billingController.PaymentIn(payment_method_id=77, paid_amount=100.0)
+    with pytest.raises(HTTPException) as exc:
+        billingController.record_payment(bill.id, payload, None, db)
+    assert exc.value.status_code == 400
