@@ -22,7 +22,7 @@ perimeter enforcement, not defence in depth: the five services bind to
 127.0.0.1 so the perimeter is the only way in, and they keep their own auth for
 when it is not.
 
-**Tests.** 321 across 14 suites (`python Backend/tests/run_all.py`), one
+**Tests.** 359 across 16 suites (`python Backend/tests/run_all.py`), one
 subprocess per service because six services each define a top-level `configs`
 package and a single pytest process would let the first one imported win.
 Frontend: 100 tests over 8 files, lint at 12 warnings, build clean. CI runs all
@@ -37,6 +37,20 @@ resolving to a real file, every menu link matching a route in `App.jsx`.
 **End-to-end.** Two suites against the running system, which catch what
 in-process tests cannot: `Backend/tests/e2e/` over HTTP through the real
 gateway and MySQL, and `Frontend/e2e/` in a real browser.
+
+**Money.** Every money column in the five schemas is `DECIMAL`, not `FLOAT`
+(147 of them, migrated 17 September 2026). It was single-precision float, which
+cannot represent `20009.85` and which `mysqldump` writes at six significant
+digits — so every release dump shipped money a few paise light and two of the
+34 invariants failed on any restore. The models declare
+`Numeric(asdecimal=False)`: the column is exact, while SQLAlchemy still hands
+Python a float, so no arithmetic site had to change.
+
+**Releases.** `Backend/tools/export_release.py` cuts a dated release —
+five schema dumps, the images the data points at, and a README whose every
+count is counted rather than typed. It refuses to export a database that fails
+`verify_seed.py`, and `--verify-restore` loads the release back and re-runs the
+checks. The current release is `Backend/db/17-Sept-2026/`.
 
 **Deployment checks.** `Backend/tools/preflight.py` asks a *running*
 deployment the six questions that no unit test can: is the gateway up, are the
@@ -54,17 +68,39 @@ passes every suite and all 34 invariants.
 
 | | Symptom | Fix, on the server |
 |---|---|---|
-| 1 | `/room_reservation` and `/room_reservation/{id}` answer 500 | grant the Hotel DB user SELECT on `hotelerp_masterdata`, same MySQL server |
+| 1 | `/room_reservation` and `/room_reservation/{id}` answer 500 | `python Backend/tools/grant_cross_schema.py --confirm`, then restart the Hotel service |
 | 2 | every stored image 404s — all 88 paths | `python Backend/tools/restore_uploads.py --release 15-Sept-2026` |
 | 3 | RBAC in audit: every role reaches every endpoint | `RBAC_GATEWAY_MODE=enforce` |
 | 4 | all five internal services reachable from the internet | bind `SERVICE_HOST=127.0.0.1`, or firewall |
 | 5 | seeded password `Hotel@2026` still signs in as admin | `python Backend/tools/rotate_passwords.py --confirm` |
 | 6 | `/readyz` 404s, `/healthz` returns the old flat body | deploy current `main` and restart |
 
+**Row 1 has two traps, and the log only shows one of them.** The error reads
+`SELECT command denied to user 'cherryhotel'@'localhost' for table 'room'`.
+
+- *The account.* `'cherryhotel'@'%'` is a **different account** from
+  `'cherryhotel'@'localhost'`. Granting to the first creates a second, empty
+  account, answers `Query OK`, and leaves every 500 exactly where it was.
+  The grant has to name what `SELECT CURRENT_USER()` returns on the service's
+  own connection, which is what the tool reads rather than guesses.
+- *The privilege.* SELECT is the only thing the error names, so SELECT is what
+  gets granted — and then the reservation list works while no **booking**
+  does. The reservation lifecycle writes `room.Room_Booking_status` back and
+  `lock_rooms()` takes `SELECT … FOR UPDATE`, which MySQL refuses without
+  UPDATE on top of SELECT. `hotelerp_users.users` is a third grant again:
+  without it, assigning a housekeeping task 500s.
+
+Restart the Hotel service after granting. MySQL applies a database-level
+privilege change at a connection's next `USE`, and the service holds a
+SQLAlchemy pool opened before the grant — so a fresh `mysql` client proves the
+fix while the running process keeps failing.
+
 A `git pull` alone does **not** fix the images. The live database references
 the `15-Sept-2026` release filenames; a re-seed mints new UUIDs, so the two
 sets have the same count and zero overlap. Restore SQL and images from the
-same release. `preflight.py` is the check for all six:
+**same** release — either put `15-Sept-2026`'s images back beside the data
+already there, or restore `17-Sept-2026` whole, both halves together.
+`preflight.py` is the check for all six:
 
 ```bash
 python Backend/tools/preflight.py --host 168.231.103.18 --gateway 9010 \
@@ -94,7 +130,7 @@ since today the services are reachable directly from the internet anyway.
   auth routes. Restore the route when the endpoints exist.
 - The seeded dataset is a photograph of one day. Its dates do not move, so
   re-seed rather than restore when the dashboard's arrivals should be today's —
-  see `Backend/db/15-Sept-2026/README.md`.
+  see `Backend/db/17-Sept-2026/README.md`, the current release.
 - Replace the stock room and menu photography with the property's own before
   go-live. The rate cards and room numbers are already yours; the pictures are
   not, and `PHOTO-CREDITS.md` has to travel with them while they are.

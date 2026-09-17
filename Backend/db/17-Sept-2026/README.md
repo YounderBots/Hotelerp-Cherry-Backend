@@ -1,19 +1,22 @@
-# HotelERP database release
+# HotelERP database release — 17-Sept-2026
 
 A complete, internally consistent database for the Cherry HotelERP system:
 five schemas, the staff who can log into them, and **112 image files** that
 every image column in the data actually points at.
 
-Exported **15 September 2026** from a database freshly built by
-`Backend/tools/seed_demo_data.py`.
+Exported **17 September 2026** from a database freshly built by
+`Backend/tools/seed_demo_data.py`, by `Backend/tools/export_release.py`, which
+refuses to export a database that fails `verify_seed.py`. Every count below was
+counted from the data, not typed.
 
 ## What is in the box
 
 ```
-Backend/db/15-Sept-2026/
-  README.md  this file
-  sql/       five schema dumps, each with DROP DATABASE / CREATE DATABASE
-  uploads/   112 image files, laid out exactly as the services expect
+Backend/db/17-Sept-2026/
+  README.md          this file
+  PHOTO-CREDITS.md   licence and attribution for every photograph
+  sql/               five schema dumps, each with DROP DATABASE / CREATE DATABASE
+  uploads/           112 image files, laid out exactly as the services expect
 ```
 
 Restore commands below are written to be run **from this directory**.
@@ -37,15 +40,14 @@ photo, staff avatar, menu tile and identity proof broken.
 for f in sql/*.sql; do mysql -u root -p < "$f"; done
 
 # 2. images — copy into the running services' static trees.
-python ../../tools/restore_uploads.py --release 15-Sept-2026
-python ../../tools/restore_uploads.py --release 15-Sept-2026 --verify
+python ../../tools/restore_uploads.py --release 17-Sept-2026
+python ../../tools/restore_uploads.py --release 17-Sept-2026 --verify
 ```
 
-**Step 2 is the one that gets skipped.** It used to be five hand-typed `cp -r`
-lines, and on the deployment at `168.231.103.18` they were not run: the SQL
-loaded, every endpoint answered `200`, and all 88 image paths the API served
-resolved to nothing. Nothing detected it, because the rows were all present —
-the only symptom was that no picture in the application loaded.
+**Step 2 is the one that gets skipped.** On the deployment at
+`168.231.103.18` it was: the SQL loaded, every endpoint answered `200`, and all
+88 image paths the API served resolved to nothing. Nothing detected it, because
+the rows were all present — the only symptom was that no picture loaded.
 
 Restore the SQL and the images **from the same release**. A re-seed mints new
 filenames, so a release's `uploads/` only matches the database that shipped
@@ -54,7 +56,7 @@ never there.
 
 **Then step 3, on any deployment whose services do not connect as `root`.**
 Skip it in dev; on a server with a per-application MySQL user it is not
-optional, and it is the other step that has been missed:
+optional:
 
 ```bash
 python ../../tools/grant_cross_schema.py             # what is missing
@@ -64,29 +66,14 @@ sudo systemctl restart hotelerp-hotel                # whatever it is named
 
 HotelServices reads `hotelerp_masterdata` and `hotelerp_users` on its own
 connection — a booking checks that a room is free and inserts the reservation
-that fills it in one transaction, and an HTTP read to another service could
-not hold the row lock that makes the check mean anything. So the Hotel
-service's MySQL account needs privileges in two schemas it does not own. Miss
-them and the service starts cleanly, housekeeping and the night audit keep
-working, and every reservation screen answers:
+that fills it in one transaction, and an HTTP read to another service could not
+hold the row lock that makes the check mean anything. So the Hotel service's
+MySQL account needs privileges in two schemas it does not own. Miss them and
+the service starts cleanly, housekeeping and the night audit keep working, and
+every reservation screen answers:
 
 ```
 (1142, "SELECT command denied to user 'cherryhotel'@'localhost' for table 'room'")
-```
-
-The tool is idempotent and reports without changing anything until `--confirm`,
-so run it after every restore: these dumps drop and recreate their databases,
-and the account the services connect as is not part of the dump.
-
-**This dump predates the `extra_bed_cost` fix of 17 September 2026**, so one
-of its reservations stores the total for its two extra beds in a column that
-holds the cost of *one* bed for the stay. The money charged is right; the folio
-line renders at twice the bed charge and the row will not satisfy
-`verify_seed`'s folio identity. One command, and it is idempotent:
-
-```bash
-python ../../tools/fix_extra_bed_cost.py             # what it would change
-python ../../tools/fix_extra_bed_cost.py --confirm   # correct it
 ```
 
 Then regenerate the gateway permission map, which is derived from the live
@@ -112,16 +99,16 @@ Every seeded account uses the same password: **`Hotel@2026`**
 
 **Change these before the system is exposed to anyone.** They are shared,
 published credentials — they are in this file, in the seed source and in this
-repository's history. There is a tool for it, so nobody has to hand-write ten
-bcrypt hashes:
+repository's history. There is a tool for it, so nobody has to hand-write
+10 bcrypt hashes:
 
 ```bash
 python Backend/tools/rotate_passwords.py --list      # who would change
 python Backend/tools/rotate_passwords.py --confirm   # strong, unique, printed once
 ```
 
-`Backend/tools/preflight.py` fails while the published password still works, and
-keeps failing until this is done.
+`Backend/tools/preflight.py` fails while the published password still works,
+and keeps failing until this is done.
 
 No role except Admin can delete, which is deliberate — the gateway authorises
 against these permissions.
@@ -129,11 +116,11 @@ against these permissions.
 ## What "consistent" means here
 
 `Backend/tools/verify_seed.py` asserts 34 invariants that span schemas and
-therefore cannot be expressed as database constraints. All 29 pass on this
-release:
+therefore cannot be expressed as database constraints. All 34 pass on this
+release — `export_release.py` will not write one where they do not:
 
-- **Money.** Every folio satisfies `rooms + beds + extras − discount + tax =
-  overall`; `paid` equals the sum of its own payment history; `balance =
+- **Money.** Every folio satisfies `rooms + beds × count + extras − discount +
+  tax = overall`; `paid` equals the sum of its own payment history; `balance =
   overall − paid`; no checked-out stay leaves a balance and nobody is overpaid.
   The same holds for every restaurant and bar bill against its own lines.
 - **Inventory.** No two live stays share a room on the same night, using the
@@ -142,15 +129,10 @@ release:
   without a guest in it. Departed rooms are queued for housekeeping.
 - **References.** Every reservation points at real rooms, rate plans, taxes,
   discounts, payment methods and a status that exists in the master vocabulary.
-  Every permission points at a real menu. Every housekeeping task and every room
-  incident points at a real room, and uses the task/room-status vocabulary the
-  application actually accepts — the previous release wrote room *numbers* into
-  columns the application reads as room *ids*, so the Room column was blank on
-  every one of those rows, and wrote task statuses the Task Assign filter could
-  not match.
+  Every permission points at a real menu. Every housekeeping task and every
+  room incident points at a real room.
 - **Attachments.** Every incident attachment is stored as the path the static
-  mount serves. The previous release stored a bare filename, so not one incident
-  photograph could be opened.
+  mount serves.
 - **Images.** Every one of the 112 stored paths resolves to a file, and no
   unreferenced file is shipped.
 - **Navigation.** Every menu and submenu link matches a route in `App.jsx`.
@@ -160,6 +142,19 @@ Re-run it any time:
 ```bash
 python Backend/tools/verify_seed.py
 ```
+
+## Money survives a restore exactly
+
+Every money column in these five schemas is `DECIMAL`, not `FLOAT`, and that
+matters to a dump. `mysqldump` writes a `FLOAT` at about six significant
+digits, so a folio total of `20009.85` used to be written as `20009.8` and came
+back five paise light. Releases up to and including `15-Sept-2026` carry that
+loss, and the deployment at `168.231.103.18` was restored from one of them.
+
+Confirmed on this release by loading it back and re-running the checks: **all 34 invariants still hold**.
+
+Restoring this release over a database that predates the change brings the
+corrected column types with it — each dump drops and recreates its own schema.
 
 ## Regenerating rather than restoring
 
@@ -174,6 +169,7 @@ python Backend/tools/seed_demo_data.py --dry-run   # show what is there now
 python Backend/tools/seed_demo_data.py --confirm   # wipe and rebuild
 python Backend/tools/build_rbac_map.py
 python Backend/tools/verify_seed.py
+python Backend/tools/export_release.py             # and ship the result
 ```
 
 `--confirm` is mandatory; there is no default that writes. It **destroys all
