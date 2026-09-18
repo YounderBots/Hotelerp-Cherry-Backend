@@ -43,7 +43,7 @@ from sqlalchemy.orm import Session
 
 from configs.base_config import BaseConfig, CommonWords
 from models import get_db, models
-from models.masterdata import MasterRoom, StaffUser
+from resources.master_client import MasterData
 from resources.utils import server_error, verify_authentication
 
 logger = logging.getLogger("hotelservice.housekeeping")
@@ -238,36 +238,37 @@ async def _json_body(request: Request) -> dict:
 
 
 def _auth(request: Request):
+    """Who is calling -- and a Master Data client acting on their behalf.
+
+    The client is lazy: building it costs nothing until a lookup asks Master
+    Data or Users for something, so every handler gets one whether or not it
+    will need it.
+    """
     user_id, role_id, company_id, token = verify_authentication(request)
     if not user_id or not company_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token",
         )
-    return user_id, company_id
+    return user_id, company_id, MasterData.for_token(token)
 
 
 # =====================================================
 # MASTER ROOM: VALIDATION AND WRITE-BACK
 # =====================================================
-def _load_room(db: Session, company_id, room_id: int):
-    """The master room row, or None if it is not an active room here.
+def _load_room(md: MasterData, room_id: int):
+    """The master room, or None if it is not an active room of this property.
 
-    `models.masterdata` maps the MasterData schema on the same server, so this
-    is a plain join-able query rather than a call to another service.
+    Read from Master Data over HTTP, on the caller's behalf, so this service
+    never needs a privilege in another service's schema.
     """
-    return (
-        db.query(MasterRoom)
-        .filter(
-            MasterRoom.id == room_id,
-            MasterRoom.company_id == str(company_id),
-            MasterRoom.status == CommonWords.STATUS,
-        )
-        .first()
-    )
+    try:
+        return md.active_rooms().get(int(room_id))
+    except (TypeError, ValueError):
+        return None
 
 
-def _validate_employee(db: Session, company_id, employee_id) -> None:
+def _validate_employee(md: MasterData, employee_id) -> None:
     """Reject an assignee who is not a member of this property's staff.
 
     The room on the same request has been checked since `_validate_room` was
@@ -275,7 +276,7 @@ def _validate_employee(db: Session, company_id, employee_id) -> None:
     was accepted and stored. Every screen that reads the assignee then shows a
     blank where the housekeeper should be.
 
-    A failure to reach the users schema is logged and allowed through, exactly
+    A failure to reach the Users service is logged and allowed through, exactly
     as the room check does: this is a referential check on an id the staff
     picker already constrains, not the thing standing between a supervisor and
     their work.
@@ -289,15 +290,7 @@ def _validate_employee(db: Session, company_id, employee_id) -> None:
         )
 
     try:
-        person = (
-            db.query(StaffUser)
-            .filter(
-                StaffUser.id == employee_pk,
-                StaffUser.company_id == str(company_id),
-                StaffUser.status == CommonWords.STATUS,
-            )
-            .first()
-        )
+        person = md.staff(employee_pk)
     except Exception:
         logger.exception("users_lookup_failed employee_id=%s", employee_id)
         return
@@ -309,18 +302,18 @@ def _validate_employee(db: Session, company_id, employee_id) -> None:
         )
 
 
-def _validate_room(db: Session, company_id, room_id: int) -> None:
+def _validate_room(md: MasterData, room_id: int) -> None:
     """Reject a room id that is not a room of this property.
 
     Nothing checked this before, so `room_no: 99999` was accepted and stored;
     the row then rendered as a blank room everywhere it was listed.
 
-    A failure to reach the master schema is logged and allowed through rather
-    than turned into a 500: this is a referential check on an id the picker
+    A failure to reach Master Data is logged and allowed through rather than
+    turned into a 503: this is a referential check on an id the picker
     already constrains, not the thing standing between the user and their work.
     """
     try:
-        room = _load_room(db, company_id, room_id)
+        room = _load_room(md, room_id)
     except Exception:
         logger.exception("master_room_lookup_failed room_id=%s", room_id)
         return
@@ -331,7 +324,7 @@ def _validate_room(db: Session, company_id, room_id: int) -> None:
         )
 
 
-def _sync_room_housekeeping(db: Session, company_id, room_ids) -> None:
+def _sync_room_housekeeping(db: Session, md: MasterData, company_id, room_ids) -> None:
     """Recompute a room's two housekeeping columns from its active tasks.
 
     WHY THIS EXISTS
@@ -370,9 +363,11 @@ def _sync_room_housekeeping(db: Session, company_id, room_ids) -> None:
         "blocking" as sellable).
 
     ISOLATION
-        Runs after the task write has been committed, in its own transaction.
-        A room that fails to sync is logged and left alone; the calculation is
-        idempotent, so the next action on any task for that room repairs it.
+        Runs after the task write has been committed. The room columns belong
+        to Master Data and are written there over HTTP, one PATCH per changed
+        column set; a room that fails to sync is logged and left alone, and
+        the calculation is idempotent, so the next action on any task for
+        that room repairs it.
     """
     targets = {rid for rid in (room_ids or []) if rid}
     if not targets:
@@ -380,7 +375,7 @@ def _sync_room_housekeeping(db: Session, company_id, room_ids) -> None:
 
     try:
         for room_id in targets:
-            room = _load_room(db, company_id, room_id)
+            room = _load_room(md, room_id)
             if not room:
                 continue
 
@@ -404,11 +399,12 @@ def _sync_room_housekeeping(db: Session, company_id, room_ids) -> None:
                 (task.room_status or "").strip().lower() == "blocking"
                 for task in open_tasks
             )
-            is_blocked = (room.Room_Status or "").strip().lower() == "blocking"
+            is_blocked = (room.room_status or "").strip().lower() == "blocking"
+            changes = {}
             if want_blocked != is_blocked:
-                room.Room_Status = ROOM_BLOCKED if want_blocked else ROOM_UNBLOCKED
+                changes["room_status"] = ROOM_BLOCKED if want_blocked else ROOM_UNBLOCKED
 
-            current_work = (room.Room_Working_status or "").strip().lower()
+            current_work = (room.working_status or "").strip().lower()
             if tasks:
                 want_work = ROOM_NOT_READY if open_tasks else ROOM_READY
             elif current_work == ROOM_NOT_READY.lower():
@@ -417,11 +413,11 @@ def _sync_room_housekeeping(db: Session, company_id, room_ids) -> None:
                 want_work = None
 
             if want_work and current_work != want_work.lower():
-                room.Room_Working_status = want_work
+                changes["working_status"] = want_work
 
-        db.commit()
+            if changes:
+                md.set_room_state(room_id, **changes)
     except Exception:
-        db.rollback()
         logger.exception("room_housekeeping_sync_failed rooms=%s", sorted(targets))
 
 
@@ -524,7 +520,7 @@ def _incident_row(incident) -> dict:
 @router.get("/housekeeper_tasks", status_code=status.HTTP_200_OK)
 def get_housekeeper_tasks(request: Request, db: Session = Depends(get_db)):
     try:
-        _user_id, company_id = _auth(request)
+        _user_id, company_id, md = _auth(request)
 
         tasks = (
             db.query(models.HousekeeperTask)
@@ -547,7 +543,7 @@ def get_housekeeper_tasks(request: Request, db: Session = Depends(get_db)):
 @router.post("/housekeeper_tasks", status_code=status.HTTP_201_CREATED)
 async def create_housekeeper_task(request: Request, db: Session = Depends(get_db)):
     try:
-        user_id, company_id = _auth(request)
+        user_id, company_id, md = _auth(request)
         payload = await _json_body(request)
 
         # The four columns below are all NOT NULL and all describe the one
@@ -557,9 +553,9 @@ async def create_housekeeper_task(request: Request, db: Session = Depends(get_db
         # a single staff picker.
         employee_id = _required_text(payload, "employee_id", "Assigned employee", max_len=NAME_MAX)
         assign_staff = _text(payload, "assign_staff", max_len=NAME_MAX) or employee_id
-        _validate_employee(db, company_id, employee_id)
+        _validate_employee(md, employee_id)
         room_id = _int(payload, "room_no", "Room", required=True)
-        _validate_room(db, company_id, room_id)
+        _validate_room(md, room_id)
 
         task = models.HousekeeperTask(
             employee_id=employee_id,
@@ -587,7 +583,7 @@ async def create_housekeeper_task(request: Request, db: Session = Depends(get_db
         db.commit()
         db.refresh(task)
 
-        _sync_room_housekeeping(db, company_id, [task.room_no])
+        _sync_room_housekeeping(db, md, company_id, [task.room_no])
 
         return {
             "status": "success",
@@ -605,7 +601,7 @@ async def create_housekeeper_task(request: Request, db: Session = Depends(get_db
 @router.get("/housekeeper_tasks/{task_id}", status_code=status.HTTP_200_OK)
 def get_housekeeper_task(task_id: int, request: Request, db: Session = Depends(get_db)):
     try:
-        _user_id, company_id = _auth(request)
+        _user_id, company_id, md = _auth(request)
 
         if task_id <= 0:
             raise HTTPException(
@@ -637,7 +633,7 @@ def get_housekeeper_task(task_id: int, request: Request, db: Session = Depends(g
 @router.put("/housekeeper_tasks", status_code=status.HTTP_200_OK)
 async def update_housekeeper_task(request: Request, db: Session = Depends(get_db)):
     try:
-        user_id, company_id = _auth(request)
+        user_id, company_id, md = _auth(request)
         payload = await _json_body(request)
 
         task_id = _int(payload, "id", "Housekeeper task id", required=True)
@@ -657,9 +653,9 @@ async def update_housekeeper_task(request: Request, db: Session = Depends(get_db
             )
 
         employee_id = _required_text(payload, "employee_id", "Assigned employee", max_len=NAME_MAX)
-        _validate_employee(db, company_id, employee_id)
+        _validate_employee(md, employee_id)
         room_id = _int(payload, "room_no", "Room", required=True)
-        _validate_room(db, company_id, room_id)
+        _validate_room(md, room_id)
 
         # Both rooms have to be recomputed when a task moves between them, or
         # the room it left keeps a block that nothing holds any more.
@@ -690,7 +686,7 @@ async def update_housekeeper_task(request: Request, db: Session = Depends(get_db
         db.commit()
         db.refresh(task)
 
-        _sync_room_housekeeping(db, company_id, [previous_room_id, task.room_no])
+        _sync_room_housekeeping(db, md, company_id, [previous_room_id, task.room_no])
 
         return {
             "status": "success",
@@ -708,7 +704,7 @@ async def update_housekeeper_task(request: Request, db: Session = Depends(get_db
 @router.delete("/housekeeper_tasks/{task_id}", status_code=status.HTTP_200_OK)
 def delete_housekeeper_task(request: Request, task_id: int, db: Session = Depends(get_db)):
     try:
-        user_id, company_id = _auth(request)
+        user_id, company_id, md = _auth(request)
 
         if task_id <= 0:
             raise HTTPException(
@@ -737,7 +733,7 @@ def delete_housekeeper_task(request: Request, task_id: int, db: Session = Depend
         db.commit()
 
         # Cancelling the task that blocked a room has to release the room.
-        _sync_room_housekeeping(db, company_id, [room_id])
+        _sync_room_housekeeping(db, md, company_id, [room_id])
 
         return {"status": "success", "message": "Housekeeper task deleted successfully"}
 
@@ -754,7 +750,7 @@ def delete_housekeeper_task(request: Request, task_id: int, db: Session = Depend
 @router.get("/roomincident_log", status_code=status.HTTP_200_OK)
 def get_roomincident_logs(request: Request, db: Session = Depends(get_db)):
     try:
-        _user_id, company_id = _auth(request)
+        _user_id, company_id, md = _auth(request)
 
         incidents = (
             db.query(models.HousekeeperRoomIncident)
@@ -793,7 +789,7 @@ async def create_roomincident_log(
     db: Session = Depends(get_db),
 ):
     try:
-        user_id, company_id = _auth(request)
+        user_id, company_id, md = _auth(request)
 
         form = {
             "room_id": room_id,
@@ -814,7 +810,7 @@ async def create_roomincident_log(
             stored_path = _write_upload(data, ext)
 
         incident_room_id = _int(form, "room_id", "Room", required=True)
-        _validate_room(db, company_id, incident_room_id)
+        _validate_room(md, incident_room_id)
 
         incident = models.HousekeeperRoomIncident(
             room_no=incident_room_id,
@@ -853,7 +849,7 @@ async def create_roomincident_log(
 @router.get("/roomincident_log/{incident_id}", status_code=status.HTTP_200_OK)
 def get_roomincident_log(request: Request, incident_id: int, db: Session = Depends(get_db)):
     try:
-        _user_id, company_id = _auth(request)
+        _user_id, company_id, md = _auth(request)
 
         if incident_id <= 0:
             raise HTTPException(
@@ -909,7 +905,7 @@ async def update_roomincident_log(
     the attachment left exactly as it is when no new file is sent.
     """
     try:
-        user_id, company_id = _auth(request)
+        user_id, company_id, md = _auth(request)
 
         form = {
             "id": id,
@@ -945,7 +941,7 @@ async def update_roomincident_log(
             incident.attachment_file = _write_upload(data, ext)
 
         incident_room_id = _int(form, "room_id", "Room", required=True)
-        _validate_room(db, company_id, incident_room_id)
+        _validate_room(md, incident_room_id)
         incident.room_no = incident_room_id
         incident.incident_date = _date(incident_date, "Incident date", required=True)
         incident.incident_time = _time(incident_time, "Incident time", required=True)
@@ -979,7 +975,7 @@ async def update_roomincident_log(
 @router.delete("/roomincident_log/{incident_id}", status_code=status.HTTP_200_OK)
 def delete_roomincident_log(request: Request, incident_id: int, db: Session = Depends(get_db)):
     try:
-        user_id, company_id = _auth(request)
+        user_id, company_id, md = _auth(request)
 
         if incident_id <= 0:
             raise HTTPException(

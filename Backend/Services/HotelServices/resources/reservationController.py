@@ -17,23 +17,15 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import func, or_
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from configs.base_config import CommonWords
 from models import get_db, models
-from models.masterdata import (
-    MasterDiscount,
-    MasterIdentityProof,
-    MasterPaymentMethod,
-    MasterReservationStatus,
-    MasterRoom,
-    MasterRoomType,
-    MasterTaxType,
-)
 from resources import nightAuditService as nas
 from resources import reservation_rules as rules
+from resources.master_client import MasterData
 from resources.utils import server_error, verify_authentication
 
 logger = logging.getLogger(__name__)
@@ -859,7 +851,7 @@ MAX_PAGE_SIZE = 200
 RECENT_BOOKINGS = 5
 
 
-def mark_rooms_for_housekeeping(db: Session, company_id, room_ids) -> list:
+def mark_rooms_for_housekeeping(md: MasterData, room_ids) -> list:
     """A departed guest leaves a dirty room. Say so, once, at checkout.
 
     WHY A ROOM FLAG AND NOT A HOUSEKEEPER TASK
@@ -884,6 +876,14 @@ def mark_rooms_for_housekeeping(db: Session, company_id, room_ids) -> list:
         on the next booking. So it fires once, at the moment of departure, and
         never again.
 
+    WHERE THE WRITE GOES
+        Master Data owns the row; this service tells it, through
+        `PATCH /room/{id}/state`, and does so BEFORE the checkout commits. If
+        Master Data cannot be reached the request fails as a 503 and the
+        checkout rolls back, so the guest is still checked in and the desk
+        retries -- rather than a departed guest whose room nobody was told
+        to clean.
+
     Returns the room numbers marked, so the caller can say what happened.
     """
     ids = sorted({int(r) for r in (room_ids or [])})
@@ -891,18 +891,18 @@ def mark_rooms_for_housekeeping(db: Session, company_id, room_ids) -> list:
         return []
 
     marked = []
-    for room in rules.load_rooms(db, company_id, ids).values():
+    for room in rules.load_rooms(md, ids).values():
         # Never override a room that is out of order -- that is a stronger
         # statement than "needs cleaning" and is not ours to clear.
-        if rules.normalise_status(room.Room_Status) == "blocking":
+        if rules.normalise_status(room.room_status) == "blocking":
             continue
-        if room.Room_Working_status != NEEDS_CLEANING:
-            room.Room_Working_status = NEEDS_CLEANING
-            marked.append(room.Room_No)
+        if room.working_status != NEEDS_CLEANING:
+            md.set_room_state(room.id, working_status=NEEDS_CLEANING)
+            marked.append(room.room_no)
     return marked
 
 
-def sync_room_booking_status(db: Session, company_id, room_ids=None) -> None:
+def sync_room_booking_status(db: Session, md: MasterData, company_id, room_ids=None) -> None:
     """Recompute the property's room occupancy flags from its reservations.
 
     `room.Room_Booking_status` is what the Room View board, the Master Data
@@ -923,18 +923,18 @@ def sync_room_booking_status(db: Session, company_id, room_ids=None) -> None:
 
     `room_ids` is accepted so call sites can document which rooms prompted the
     reconcile, and is deliberately not used to narrow it.
+
+    WHERE THE WRITE GOES
+        Each flag that differs is written to Master Data over HTTP, one PATCH
+        per changed room -- usually one or two -- before the caller commits.
+        Master Data unreachable means a 503 and a rollback; nothing is half
+        done. And because the computation is a full recompute from the book,
+        a flag that did drift (a write that landed after a commit that then
+        failed) is corrected the next time anything touches a reservation.
     """
     today = date.today()
 
-    rooms = {
-        r.id: r
-        for r in db.query(MasterRoom)
-        .filter(
-            MasterRoom.company_id == str(company_id),
-            MasterRoom.status == STATUS,
-        )
-        .all()
-    }
+    rooms = md.active_rooms()
     if not rooms:
         return
 
@@ -993,71 +993,32 @@ def sync_room_booking_status(db: Session, company_id, room_ids=None) -> None:
             wanted = RESERVED_FLAG
         else:
             wanted = AVAILABLE_FLAG
-        if room.Room_Booking_status != wanted:
-            room.Room_Booking_status = wanted
+        if room.booking_status != wanted:
+            md.set_room_state(room_id, booking_status=wanted)
 
 
 # ---------------------------------------------------------------------------
 # Response shaping
 # ---------------------------------------------------------------------------
-def _lookup_maps(db: Session, company_id) -> dict:
+def _lookup_maps(md: MasterData) -> dict:
     """Name lookups so a reservation can be returned with labels, not raw ids.
 
     The list and detail payloads used to carry `payment_method_id: 2` and
     `tax_type_id: 3` and nothing else, so every screen re-fetched all seven
     master endpoints purely to turn them back into words -- and the print
     receipt, which had no such lookup, printed the digit.
+
+    Every row, active or not: a booking made against a payment method that
+    has since been retired still has to say which one.
     """
-    rooms = {
-        r.id: r
-        for r in db.query(MasterRoom)
-        .filter(MasterRoom.company_id == str(company_id))
-        .all()
-    }
-    room_types = {
-        t.id: t
-        for t in db.query(MasterRoomType)
-        .filter(MasterRoomType.company_id == str(company_id))
-        .all()
-    }
-    payment_methods = {
-        p.id: p.payment_method
-        for p in db.query(MasterPaymentMethod)
-        .filter(MasterPaymentMethod.company_id == str(company_id))
-        .all()
-    }
-    taxes = {
-        t.id: t.Tax_Name
-        for t in db.query(MasterTaxType)
-        .filter(MasterTaxType.company_id == str(company_id))
-        .all()
-    }
-    discounts = {
-        d.id: d.Discount_Name
-        for d in db.query(MasterDiscount)
-        .filter(MasterDiscount.company_id == str(company_id))
-        .all()
-    }
-    identities = {
-        i.id: i.Proof_Name
-        for i in db.query(MasterIdentityProof)
-        .filter(MasterIdentityProof.company_id == str(company_id))
-        .all()
-    }
-    statuses = {
-        s.id: s
-        for s in db.query(MasterReservationStatus)
-        .filter(MasterReservationStatus.company_id == str(company_id))
-        .all()
-    }
     return {
-        "rooms": rooms,
-        "room_types": room_types,
-        "payment_methods": payment_methods,
-        "taxes": taxes,
-        "discounts": discounts,
-        "identities": identities,
-        "statuses": statuses,
+        "rooms": md.rooms,
+        "room_types": md.room_types,
+        "payment_methods": {p.id: p.payment_method for p in md.payment_methods.values()},
+        "taxes": {t.id: t.tax_name for t in md.tax_types.values()},
+        "discounts": {d.id: d.discount_name for d in md.discounts.values()},
+        "identities": {i.id: i.proof_name for i in md.identity_proofs.values()},
+        "statuses": {s.id: s for s in md.statuses},
     }
 
 
@@ -1112,10 +1073,10 @@ def _serialise(reservation, maps: dict) -> dict:
         "room_type_ids": room_type_ids,
         "room_ids": room_ids,
         "room_nos": [
-            rooms[r].Room_No for r in room_ids if r in rooms
+            rooms[r].room_no for r in room_ids if r in rooms
         ],
         "room_type_names": [
-            room_types[t].Type_Name for t in room_type_ids if t in room_types
+            room_types[t].room_type_name for t in room_type_ids if t in room_types
         ],
         "rate_type": reservation.rate_type or [],
         "no_of_rooms": reservation.no_of_rooms,
@@ -1147,7 +1108,7 @@ def _serialise(reservation, maps: dict) -> dict:
         "booking_status_id": reservation.booking_status_id,
         "reservation_type": reservation.reservation_type,
         "reservation_status": reservation.reservation_status,
-        "status_color": getattr(status_row, "Color", None),
+        "status_color": getattr(status_row, "color", None),
         "room_complementary": reservation.room_complementary,
         "common_complementary": reservation.common_complementary,
         # ---------------- Identity ----------------
@@ -1372,7 +1333,7 @@ def reservation_summary(
 # PRICE A STAY WITHOUT BOOKING IT
 # =====================================================
 @router.post("/room_reservation_quote", status_code=status.HTTP_200_OK)
-async def quote_reservation(request: Request, db: Session = Depends(get_db)):
+async def quote_reservation(request: Request):
     """What a stay would cost, priced by the same code that books it.
 
     The Add Reservation and Edit screens call this instead of doing arithmetic
@@ -1380,9 +1341,10 @@ async def quote_reservation(request: Request, db: Session = Depends(get_db)):
     confirming are produced by the server that will store them, so the summary
     and the saved booking cannot disagree.
     """
-    user_id, role_id, company_id, _ = verify_authentication(request)
+    user_id, role_id, company_id, token = verify_authentication(request)
     if not company_id:
         raise HTTPException(status_code=401, detail="Invalid authentication token")
+    md = MasterData.for_token(token)
 
     try:
         payload = await request.json()
@@ -1400,8 +1362,7 @@ async def quote_reservation(request: Request, db: Session = Depends(get_db)):
             raise rules.RuleError("Select at least one room")
 
         priced = rules.quote(
-            db,
-            company_id,
+            md,
             room_ids=room_ids,
             rate_types=[str(r) for r in (payload.get("rate_type") or [])],
             nights=nights,
@@ -1518,9 +1479,10 @@ async def create_room_reservation(
         this used to be) the gap between "the room is free" and "the room is
         mine" is exactly where a second booker fits.
     """
-    user_id, role_id, company_id, _ = verify_authentication(request)
+    user_id, role_id, company_id, token = verify_authentication(request)
     if not user_id or not company_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
+    md = MasterData.for_token(token)
 
     phone_number = (phone_number or "").strip()
     if not phone_number:
@@ -1549,22 +1511,14 @@ async def create_room_reservation(
         # Add screen sends the id, the Edit screen sends the label.
         wanted_status = reservation_status
         if not wanted_status and booking_status_id:
-            status_row = (
-                db.query(MasterReservationStatus)
-                .filter(
-                    MasterReservationStatus.id == booking_status_id,
-                    MasterReservationStatus.company_id == str(company_id),
-                    MasterReservationStatus.status == STATUS,
-                )
-                .first()
-            )
+            status_row = md.status_by_id(booking_status_id)
             if not status_row:
                 raise rules.RuleError(
                     f"Reservation status {booking_status_id} does not exist for this property"
                 )
-            wanted_status = status_row.Reservation_Status
+            wanted_status = status_row.reservation_status
 
-        resolved_status = rules.resolve_status(db, company_id, wanted_status)
+        resolved_status = rules.resolve_status(md, wanted_status)
 
         # Opening a booking directly in a terminal state is a data-entry error,
         # not a workflow: it would occupy a reference and a reference number for
@@ -1576,18 +1530,10 @@ async def create_room_reservation(
                 f"A new reservation cannot start as {resolved_status}"
             )
 
-        status_id = (
-            db.query(MasterReservationStatus.id)
-            .filter(
-                MasterReservationStatus.company_id == str(company_id),
-                MasterReservationStatus.Reservation_Status == resolved_status,
-                MasterReservationStatus.status == STATUS,
-            )
-            .scalar()
-        )
+        status_id = md.status_id(resolved_status)
 
-        rules.resolve_payment_method(db, payment_method_id, company_id)
-        rules.resolve_identity_type(db, identity_type_id, company_id)
+        rules.resolve_payment_method(md, payment_method_id)
+        rules.resolve_identity_type(md, identity_type_id)
 
         # ---- Retry of a booking already made? Answer with that one. --------
         replay = _find_replay(
@@ -1617,6 +1563,7 @@ async def create_room_reservation(
 
         rooms = rules.assert_rooms_bookable(
             db,
+            md,
             company_id,
             parsed_room_ids,
             arrival_date,
@@ -1625,8 +1572,7 @@ async def create_room_reservation(
         )
 
         priced = rules.quote(
-            db,
-            company_id,
+            md,
             room_ids=parsed_room_ids,
             rate_types=rate_types,
             nights=nights,
@@ -1661,9 +1607,9 @@ async def create_room_reservation(
 
     reservation.room_ids = parsed_room_ids
     reservation.room_type_ids = sorted(
-        {rules.as_int(rooms[r].Room_Type_ID) for r in parsed_room_ids}
+        {rules.as_int(rooms[r].room_type_id) for r in parsed_room_ids}
     )
-    reservation.room_no = [rooms[r].Room_No for r in parsed_room_ids]
+    reservation.room_no = [rooms[r].room_no for r in parsed_room_ids]
     reservation.rate_type = [
         line["rate_type"] for line in priced["lines"]
     ] or [rules.DEFAULT_RATE_TYPE]
@@ -1706,14 +1652,14 @@ async def create_room_reservation(
                 user_id=str(user_id),
                 amount=priced["paid_amount"],
                 paid_date=date.today(),
-                payment_method=_payment_method_name(db, company_id, payment_method_id),
+                payment_method=_payment_method_name(md, payment_method_id),
                 status=STATUS,
                 created_by=str(user_id),
                 company_id=str(company_id),
             )
         )
 
-    sync_room_booking_status(db, company_id, parsed_room_ids)
+    sync_room_booking_status(db, md, company_id, parsed_room_ids)
 
     try:
         db.commit()
@@ -1776,7 +1722,7 @@ def _clean_email(value) -> Optional[str]:
     return email
 
 
-def _resolve_method_name(db: Session, company_id, name: str, label: str) -> str:
+def _resolve_method_name(md: MasterData, name: str, label: str) -> str:
     """Match a submitted method against the property's configured list.
 
     Returns the name as the master row spells it, so the folio and the
@@ -1785,14 +1731,12 @@ def _resolve_method_name(db: Session, company_id, name: str, label: str) -> str:
     recorded against a method that exists nowhere else in the system, and the
     settlement report would grow a column for it.
     """
-    row = (
-        db.query(MasterPaymentMethod)
-        .filter(
-            func.lower(MasterPaymentMethod.payment_method) == name.lower(),
-            MasterPaymentMethod.company_id == str(company_id),
-            MasterPaymentMethod.status == STATUS,
-        )
-        .first()
+    row = next(
+        (
+            p for p in md.payment_methods.values()
+            if p.status == STATUS and p.payment_method.lower() == name.lower()
+        ),
+        None,
     )
     if not row:
         raise HTTPException(
@@ -1805,16 +1749,12 @@ def _resolve_method_name(db: Session, company_id, name: str, label: str) -> str:
     return row.payment_method
 
 
-def _payment_method_name(db: Session, company_id, payment_method_id) -> str:
-    row = (
-        db.query(MasterPaymentMethod.payment_method)
-        .filter(
-            MasterPaymentMethod.id == payment_method_id,
-            MasterPaymentMethod.company_id == str(company_id),
-        )
-        .scalar()
-    )
-    return row or "Unknown"
+def _payment_method_name(md: MasterData, payment_method_id) -> str:
+    try:
+        row = md.payment_methods.get(int(payment_method_id))
+    except (TypeError, ValueError):
+        row = None
+    return row.payment_method if row else "Unknown"
 
 
 # =====================================================
@@ -1835,12 +1775,13 @@ def get_room_availability(
     simply changing the dates around it.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not company_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
+        md = MasterData.for_token(token)
 
         _assert_stay_dates(arrival_date, departure_date, allow_past=True)
 
@@ -1852,18 +1793,10 @@ def get_room_availability(
             exclude_id=exclude_reservation_id,
         )
 
-        rooms = (
-            db.query(MasterRoom)
-            .filter(
-                MasterRoom.company_id == str(company_id),
-                MasterRoom.status == STATUS,
-            )
-            .order_by(MasterRoom.id.asc())
-            .all()
-        )
+        rooms = [md.active_rooms()[k] for k in sorted(md.active_rooms())]
 
         blocked_ids = {
-            r.id for r in rooms if rules.normalise_status(r.Room_Status) == "blocking"
+            r.id for r in rooms if rules.normalise_status(r.room_status) == "blocking"
         }
 
         nights = rules.nights_between(arrival_date, departure_date)
@@ -1943,12 +1876,13 @@ def get_all_room_reservations(
         those tabs disagree with the book as soon as paging bit.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not company_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
+        md = MasterData.for_token(token)
 
         query = db.query(models.RoomReservation).filter(
             models.RoomReservation.company_id == str(company_id),
@@ -1960,7 +1894,7 @@ def get_all_room_reservations(
             wanted = rules.normalise_status(reservation_status)
             labels = [
                 label
-                for label in rules.load_status_vocabulary(db, company_id)
+                for label in rules.load_status_vocabulary(md)
                 if rules.normalise_status(label) == wanted
             ]
             query = query.filter(
@@ -2024,7 +1958,7 @@ def get_all_room_reservations(
         start = (page - 1) * page_size
         rows = rows[start : start + page_size]
 
-        maps = _lookup_maps(db, company_id)
+        maps = _lookup_maps(md)
         data = [_serialise(r, maps) for r in rows]
 
         return {
@@ -2051,12 +1985,13 @@ def get_room_reservation_by_id(
     reservation_id: int, request: Request, db: Session = Depends(get_db)
 ):
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not company_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
+        md = MasterData.for_token(token)
 
         if reservation_id <= 0:
             raise HTTPException(status_code=400, detail="Invalid reservation id")
@@ -2073,7 +2008,7 @@ def get_room_reservation_by_id(
         if not reservation:
             raise HTTPException(status_code=404, detail="Room reservation not found")
 
-        maps = _lookup_maps(db, company_id)
+        maps = _lookup_maps(md)
         payload = _serialise(reservation, maps)
 
         # The per-room breakdown behind the total, so the View screen can show
@@ -2105,13 +2040,13 @@ def _rate_breakdown(reservation, maps: dict) -> list[dict]:
         room = rooms.get(room_id)
         if not room:
             continue
-        room_type = room_types.get(rules.as_int(room.Room_Type_ID))
+        room_type = room_types.get(rules.as_int(room.room_type_id))
         rate = rate_types[index] if index < len(rate_types) else rules.DEFAULT_RATE_TYPE
         lines.append(
             {
                 "room_id": room_id,
-                "room_no": room.Room_No,
-                "room_type_name": getattr(room_type, "Type_Name", None),
+                "room_no": room.room_no,
+                "room_type_name": getattr(room_type, "room_type_name", None),
                 "rate_type": rate,
                 "units": rules.units_for(rate, nights),
             }
@@ -2171,9 +2106,10 @@ async def update_room_reservation(
     paid figure would silently erase that history.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Unauthorized")
+        md = MasterData.for_token(token)
 
         if id <= 0:
             raise HTTPException(status_code=400, detail="Invalid reservation id")
@@ -2241,23 +2177,13 @@ async def update_room_reservation(
 
         wanted_status = reservation_status
         if not wanted_status and booking_status_id:
-            status_row = (
-                db.query(MasterReservationStatus)
-                .filter(
-                    MasterReservationStatus.id == booking_status_id,
-                    MasterReservationStatus.company_id == str(company_id),
-                    MasterReservationStatus.status == STATUS,
-                )
-                .first()
-            )
-            wanted_status = getattr(status_row, "Reservation_Status", None)
+            status_row = md.status_by_id(booking_status_id)
+            wanted_status = getattr(status_row, "reservation_status", None)
 
-        resolved_status = rules.resolve_status(
-            db, company_id, wanted_status or previous_status
-        )
+        resolved_status = rules.resolve_status(md, wanted_status or previous_status)
         rules.assert_transition(previous_status, resolved_status)
 
-        rules.resolve_payment_method(db, payment_method_id, company_id)
+        rules.resolve_payment_method(md, payment_method_id)
 
         # Serialise against concurrent bookers for both the rooms being taken
         # and the ones being released.
@@ -2265,6 +2191,7 @@ async def update_room_reservation(
 
         rooms = rules.assert_rooms_bookable(
             db,
+            md,
             company_id,
             parsed_room_ids,
             arrival_date,
@@ -2274,8 +2201,7 @@ async def update_room_reservation(
         )
 
         priced = rules.quote(
-            db,
-            company_id,
+            md,
             room_ids=parsed_room_ids,
             rate_types=rate_types,
             nights=nights,
@@ -2307,9 +2233,9 @@ async def update_room_reservation(
 
     reservation.room_ids = parsed_room_ids
     reservation.room_type_ids = sorted(
-        {rules.as_int(rooms[r].Room_Type_ID) for r in parsed_room_ids}
+        {rules.as_int(rooms[r].room_type_id) for r in parsed_room_ids}
     )
-    reservation.room_no = [rooms[r].Room_No for r in parsed_room_ids]
+    reservation.room_no = [rooms[r].room_no for r in parsed_room_ids]
     reservation.rate_type = [line["rate_type"] for line in priced["lines"]] or [
         rules.DEFAULT_RATE_TYPE
     ]
@@ -2330,22 +2256,14 @@ async def update_room_reservation(
     if reservation_type:
         reservation.reservation_type = reservation_type.upper()
     reservation.reservation_status = resolved_status
-    reservation.booking_status_id = (
-        db.query(MasterReservationStatus.id)
-        .filter(
-            MasterReservationStatus.company_id == str(company_id),
-            MasterReservationStatus.Reservation_Status == resolved_status,
-            MasterReservationStatus.status == STATUS,
-        )
-        .scalar()
-    )
+    reservation.booking_status_id = md.status_id(resolved_status)
 
     reservation.room_complementary = (room_complementary or "").strip() or None
     reservation.common_complementary = (common_complementary or "").strip() or None
     reservation.updated_by = str(user_id)
 
     # Both sets: rooms just released have to go back to Available.
-    sync_room_booking_status(db, company_id, set(parsed_room_ids) | set(previous_rooms))
+    sync_room_booking_status(db, md, company_id, set(parsed_room_ids) | set(previous_rooms))
 
     db.commit()
     db.refresh(reservation)
@@ -2387,12 +2305,13 @@ def delete_room_reservation(
     to a stay that is under way or has been paid for loses real information.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
+        md = MasterData.for_token(token)
 
         if reservation_id <= 0:
             raise HTTPException(status_code=400, detail="Invalid reservation id")
@@ -2420,7 +2339,7 @@ def delete_room_reservation(
         reservation.status = UNSTATUS
         reservation.updated_by = str(user_id)
 
-        sync_room_booking_status(db, company_id, room_ids)
+        sync_room_booking_status(db, md, company_id, room_ids)
         db.commit()
 
         return {"status": "success", "message": "Room reservation deleted successfully"}
@@ -2471,21 +2390,13 @@ def _load_by_id_or_token(db: Session, company_id, key: str):
     return _load_by_token(db, company_id, key)
 
 
-def _apply_status(db: Session, reservation, company_id, user_id, target: str):
+def _apply_status(md: MasterData, reservation, user_id, target: str):
     """Move a reservation to `target`, enforcing the transition table."""
-    resolved = rules.resolve_status(db, company_id, target)
+    resolved = rules.resolve_status(md, target)
     rules.assert_transition(reservation.reservation_status, resolved)
 
     reservation.reservation_status = resolved
-    reservation.booking_status_id = (
-        db.query(MasterReservationStatus.id)
-        .filter(
-            MasterReservationStatus.company_id == str(company_id),
-            MasterReservationStatus.Reservation_Status == resolved,
-            MasterReservationStatus.status == STATUS,
-        )
-        .scalar()
-    )
+    reservation.booking_status_id = md.status_id(resolved)
     reservation.updated_by = str(user_id)
     return resolved
 
@@ -2502,9 +2413,10 @@ def reservation_checkin(key: str, request: Request, db: Session = Depends(get_db
     invisible. Which statuses may arrive is now the transition table's answer.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
+        md = MasterData.for_token(token)
 
         reservation = _load_by_id_or_token(db, company_id, key)
 
@@ -2525,9 +2437,9 @@ def reservation_checkin(key: str, request: Request, db: Session = Depends(get_db
                 ),
             )
 
-        _apply_status(db, reservation, company_id, user_id, rules.CHECKED_IN)
+        _apply_status(md, reservation, user_id, rules.CHECKED_IN)
         sync_room_booking_status(
-            db, company_id, [int(r) for r in (reservation.room_ids or [])]
+            db, md, company_id, [int(r) for r in (reservation.room_ids or [])]
         )
         db.commit()
         db.refresh(reservation)
@@ -2551,7 +2463,7 @@ def reservation_checkin(key: str, request: Request, db: Session = Depends(get_db
         raise server_error(logger, exc, "checkin_failed")
 
 
-def _early_checkout_position(db: Session, company_id, reservation) -> dict:
+def _early_checkout_position(md: MasterData, reservation) -> dict:
     """What the folio looks like if the guest leaves today.
 
     An early departure is two separate facts, and conflating them is how a
@@ -2595,8 +2507,7 @@ def _early_checkout_position(db: Session, company_id, reservation) -> dict:
     # night count.
     try:
         priced = rules.quote(
-            db,
-            company_id,
+            md,
             room_ids=[int(r) for r in (reservation.room_ids or [])],
             rate_types=list(reservation.rate_type or []),
             nights=actual_nights,
@@ -2638,9 +2549,10 @@ def reservation_checkout_preview(
     that the guest was charged for nights they did not stay.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
+        md = MasterData.for_token(token)
 
         reservation = _load_by_id_or_token(db, company_id, key)
 
@@ -2657,7 +2569,7 @@ def reservation_checkout_preview(
 
         return {
             "status": "success",
-            "data": _early_checkout_position(db, company_id, reservation),
+            "data": _early_checkout_position(md, reservation),
         }
 
     except HTTPException:
@@ -2694,9 +2606,10 @@ async def reservation_checkout(
     never asked for money they no longer owe.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
+        md = MasterData.for_token(token)
 
         try:
             payload = await request.json()
@@ -2705,7 +2618,7 @@ async def reservation_checkout(
         adjust_stay = bool((payload or {}).get("adjust_stay", False))
 
         reservation = _load_by_id_or_token(db, company_id, key)
-        position = _early_checkout_position(db, company_id, reservation)
+        position = _early_checkout_position(md, reservation)
 
         if adjust_stay:
             if not position["is_early"]:
@@ -2723,8 +2636,7 @@ async def reservation_checkout(
                 )
 
             priced = rules.quote(
-                db,
-                company_id,
+                md,
                 room_ids=[int(r) for r in (reservation.room_ids or [])],
                 rate_types=list(reservation.rate_type or []),
                 nights=position["actual_nights"],
@@ -2753,12 +2665,12 @@ async def reservation_checkout(
 
         room_ids = [int(r) for r in (reservation.room_ids or [])]
 
-        _apply_status(db, reservation, company_id, user_id, rules.CHECKED_OUT)
-        sync_room_booking_status(db, company_id, room_ids)
+        _apply_status(md, reservation, user_id, rules.CHECKED_OUT)
+        sync_room_booking_status(db, md, company_id, room_ids)
         # The room is free to sell again (above) AND dirty (below). Those are
         # two different facts and both have to be recorded, or housekeeping
         # never learns the guest has gone.
-        needs_cleaning = mark_rooms_for_housekeeping(db, company_id, room_ids)
+        needs_cleaning = mark_rooms_for_housekeeping(md, room_ids)
 
         db.commit()
         db.refresh(reservation)
@@ -2813,9 +2725,10 @@ async def reservation_cancel(key: str, request: Request, db: Session = Depends(g
         with a guess.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
+        md = MasterData.for_token(token)
 
         # Body is optional on the wire so a malformed request fails on the
         # reason check below with a useful message, not on JSON parsing.
@@ -2837,14 +2750,14 @@ async def reservation_cancel(key: str, request: Request, db: Session = Depends(g
             )
 
         reservation = _load_by_id_or_token(db, company_id, key)
-        _apply_status(db, reservation, company_id, user_id, rules.CANCELLED)
+        _apply_status(md, reservation, user_id, rules.CANCELLED)
 
         reservation.cancellation_reason = reason
         reservation.cancelled_at = datetime.now()
         reservation.cancelled_by = str(user_id)
 
         sync_room_booking_status(
-            db, company_id, [int(r) for r in (reservation.room_ids or [])]
+            db, md, company_id, [int(r) for r in (reservation.room_ids or [])]
         )
         db.commit()
         db.refresh(reservation)
@@ -2883,9 +2796,10 @@ def reservation_no_show(key: str, request: Request, db: Session = Depends(get_db
     cancellation usually is not.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
+        md = MasterData.for_token(token)
 
         reservation = _load_by_id_or_token(db, company_id, key)
 
@@ -2903,9 +2817,9 @@ def reservation_no_show(key: str, request: Request, db: Session = Depends(get_db
                 ),
             )
 
-        _apply_status(db, reservation, company_id, user_id, rules.NO_SHOW)
+        _apply_status(md, reservation, user_id, rules.NO_SHOW)
         sync_room_booking_status(
-            db, company_id, [int(r) for r in (reservation.room_ids or [])]
+            db, md, company_id, [int(r) for r in (reservation.room_ids or [])]
         )
         db.commit()
         db.refresh(reservation)
@@ -2938,9 +2852,10 @@ async def reservation_pay_due_amount(
 ):
     """Record a payment against the outstanding balance."""
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
+        md = MasterData.for_token(token)
 
         try:
             payload = await request.json()
@@ -2950,9 +2865,7 @@ async def reservation_pay_due_amount(
         payment_method = (payload.get("payment_method") or "").strip()
         if not payment_method:
             raise HTTPException(status_code=400, detail="Payment method is required")
-        payment_method = _resolve_method_name(
-            db, company_id, payment_method, "Payment method"
-        )
+        payment_method = _resolve_method_name(md, payment_method, "Payment method")
 
         try:
             paying_amount = rules.money(float(payload.get("paying_amount")))
@@ -3034,9 +2947,10 @@ async def reservation_refund_extra_amount(
     refund had happened was that a number had got smaller.
     """
     try:
-        user_id, role_id, company_id, _ = verify_authentication(request)
+        user_id, role_id, company_id, token = verify_authentication(request)
         if not user_id or not company_id:
             raise HTTPException(status_code=401, detail="Invalid authentication token")
+        md = MasterData.for_token(token)
 
         try:
             payload = await request.json()
@@ -3046,9 +2960,7 @@ async def reservation_refund_extra_amount(
         refund_method = (payload.get("refund_method") or "").strip()
         if not refund_method:
             raise HTTPException(status_code=400, detail="Refund method is required")
-        refund_method = _resolve_method_name(
-            db, company_id, refund_method, "Refund method"
-        )
+        refund_method = _resolve_method_name(md, refund_method, "Refund method")
 
         try:
             refund_amount = rules.money(float(payload.get("refund_amount")))

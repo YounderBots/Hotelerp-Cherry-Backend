@@ -51,7 +51,11 @@ SERVICES = {
     "LoginServices":      ("0.0.0.0",   8000, "hotelerp_users",      True,  True),
     "UserServices":       ("127.0.0.1", 8020, "hotelerp_users",      False, False),
     "MasterDataServices": ("127.0.0.1", 8030, "hotelerp_masterdata", False, False),
-    "HotelServices":      ("127.0.0.1", 8040, "hotelerp_hotel",      False, False),
+    # Hotel reads Master Data and Users over HTTP (rooms, rate cards, the
+    # status vocabulary; a housekeeping assignee) and writes room state back,
+    # so it needs the sibling URLs like Restaurant and Bar do -- and, unlike
+    # before, NO privilege on any schema but its own.
+    "HotelServices":      ("127.0.0.1", 8040, "hotelerp_hotel",      True,  False),
     "RestaurantServices": ("127.0.0.1", 8050, "hotelerp_restaurant", True,  False),
     "BarServices":        ("127.0.0.1", 8060, "hotelerp_bar",        True,  False),
 }
@@ -229,15 +233,13 @@ def main() -> int:
         print("Next: verify each service starts, then confirm the six agree:")
         print("  python make_prod_env.py --verify-only  (see verify_prod_env.py)")
         print()
-        # The DB user chosen above needs privileges in two schemas it does not
-        # own, because HotelServices reads Master Data on its own connection to
-        # keep an availability check and its booking in one transaction. Say so
-        # here, where that user is named: skipping it starts every service
-        # cleanly and answers 500 on every reservation screen.
-        print("Then grant that DB user the cross-schema privileges "
-              "HotelServices needs:")
-        print("  python Backend/tools/grant_cross_schema.py           # report")
-        print("  python Backend/tools/grant_cross_schema.py --confirm # apply")
+        # Every service's DB user needs privileges on its OWN schema only.
+        # HotelServices reaches Master Data and Users over the loopback URLs
+        # written above, never through their schemas, so there is no
+        # cross-schema GRANT to run. Its own schema does need the migration
+        # that adds the double-booking lock table.
+        print("Then bring each schema up to this build:")
+        print("  python Backend/migrations/migrate.py upgrade all")
     return 0
 
 

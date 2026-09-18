@@ -46,11 +46,14 @@ NIGHT_AUDIT_SERVICE = "HotelServices"
 # directory because the gateway is what preflight points at.
 TOOLS_SERVICE = "LoginServices"
 
-# The cross-schema privilege suite covers HotelServices' readiness probe and
-# the grant tool together, because they have to agree on one thing: which
-# schema the service will actually query. It runs from HotelServices, whose
-# models/masterdata.py it imports.
-CROSS_SCHEMA_SERVICE = "HotelServices"
+# The Hotel service reads Master Data and Users over HTTP. Its side of that
+# wire -- the client, the records the rules read, the 503 a sibling being down
+# turns into, the lock that stayed in its own schema -- runs from HotelServices.
+# The other side -- the real /snapshot and PATCH /room/{id}/state routes, served
+# over SQLite and fed to that same client -- runs from MasterDataServices, so
+# the contract is asserted from both ends in one run.
+MASTER_CLIENT_SERVICE = "HotelServices"
+SNAPSHOT_CONTRACT_SERVICE = "MasterDataServices"
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SERVICES_DIR = ROOT / "Backend" / "Services"
@@ -79,20 +82,20 @@ def main() -> int:
         (NIGHT_AUDIT_SERVICE, "test_night_audit.py"),
         # Reservation's rules are pure functions in the same service.
         (NIGHT_AUDIT_SERVICE, "test_reservation_rules.py"),
-        # The quote engine, which needs Master Data and so gets the same
-        # ATTACHed-SQLite harness. It decides every figure on a folio; the
-        # suite above covers only the pure helpers around it.
+        # The quote engine, which prices from Master Data -- answered here by
+        # tests/fake_master.py behind the real HTTP client. It decides every
+        # figure on a folio; the suite above covers only the pure helpers.
         (NIGHT_AUDIT_SERVICE, "test_reservation_pricing.py"),
-        # The checkout -> housekeeping handover. Unlike the rules above this
-        # one touches the database, so it builds the Master Data schema as a
-        # second in-memory SQLite database to resolve the cross-schema mapping.
+        # The checkout -> housekeeping handover: the Hotel schema in SQLite,
+        # Master Data faked, and every room-state write asserted on the wire.
         (NIGHT_AUDIT_SERVICE, "test_reservation_housekeeping.py"),
         # Preflight check 6, which asks a deployment whether the images its
         # database points at are actually on the server.
         (TOOLS_SERVICE, "test_preflight_images.py"),
         # The privileges HotelServices needs in schemas it does not own --
         # the 500 that took down every reservation screen in production.
-        (CROSS_SCHEMA_SERVICE, "test_cross_schema_grants.py"),
+        (MASTER_CLIENT_SERVICE, "test_master_client.py"),
+        (SNAPSHOT_CONTRACT_SERVICE, "test_snapshot_contract.py"),
     ]
     # Billing exists only in these two, and both expose the same endpoint, so
     # the money guards run against each.

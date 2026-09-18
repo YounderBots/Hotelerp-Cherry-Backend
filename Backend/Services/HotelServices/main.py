@@ -106,31 +106,14 @@ app.mount("/templates/static", StaticFiles(directory="templates/static"), name="
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.exception("unhandled_exception", extra={"path": str(request.url.path)})
-
-    # A MySQL privilege refusal is not a bug in this code; it is a deployment
-    # step that was skipped, and it has an exact fix. Say the fix HERE -- after
-    # the trace, so it is the last thing in the journal before the access line
-    # -- and answer 503 with a detail that names the class of failure. Both
-    # are for the person who otherwise reads "Internal server error" in the
-    # browser, then forty lines of pymysql, and is left to work out for
-    # themselves that the whole thing is one missing GRANT.
-    #
-    # 503, not 500: the service is up and the code is fine; a dependency is
-    # unavailable to it. /readyz says the same thing for the same reason, and
-    # a proxy or a preflight can tell the two apart.
-    #
     # The controllers catch their own exceptions and go through the same
-    # helper; this is the net under everything else.
-    from models.masterdata import privilege_refusal
-    from resources.utils import INTERNAL_ERROR, PRIVILEGE_MISSING
+    # helper; this is the net under everything else. It answers what the
+    # helper answers: a sibling service being down is a 503 that names it,
+    # anything else is a plain 500 with the cause in the log.
+    from resources.utils import server_error
 
-    fix = privilege_refusal(exc)
-    if fix is not None:
-        logger.critical("MYSQL PRIVILEGE MISSING path=%s -- %s",
-                        request.url.path, fix)
-        return JSONResponse(status_code=503, content={"detail": PRIVILEGE_MISSING})
-    return JSONResponse(status_code=500, content={"detail": INTERNAL_ERROR})
+    err = server_error(logger, exc, "unhandled_exception")
+    return JSONResponse(status_code=err.status_code, content={"detail": err.detail})
 
 
 @app.get("/")
@@ -141,21 +124,23 @@ def root_api():
 def _dependency_checks() -> dict:
     """Every dependency this service cannot do its job without.
 
-    Two cross-schema reads, reported separately because they fail separately
+    Two sibling services, reported separately because they fail separately
     and break different screens: without Master Data the whole reservation
-    module is down, while without the Users schema only assigning a
-    housekeeping task is.
+    module is down, while without Users only assigning a housekeeping task
+    is. Both are reached over HTTP on the caller's behalf; this service's
+    own database account never leaves its own schema, so there is no
+    cross-schema privilege left to probe.
     """
-    from models import SessionLocal
-    from models.masterdata import probe as masterdata_probe
-    from models.masterdata import probe_users
+    from resources.master_client import probe
 
-    db = SessionLocal()
-    try:
-        md_ok, md_detail = masterdata_probe(db)
-        users_ok, users_detail = probe_users(db)
-    finally:
-        db.close()
+    md_ok, md_detail = probe(
+        "Master Data", BaseConfig.MASTER_SERVICE_URL, "MASTER_SERVICE_URL",
+        "Every reservation screen answers 503 until it is.",
+    )
+    users_ok, users_detail = probe(
+        "Users", BaseConfig.USER_SERVICE_URL, "USER_SERVICE_URL",
+        "Assigning a housekeeping task cannot check its assignee until it is.",
+    )
     return {
         "masterdata": {"ok": md_ok, "detail": md_detail},
         "users": {"ok": users_ok, "detail": users_detail},
@@ -201,11 +186,10 @@ def readyz():
 def _check_dependencies_on_boot():
     """Say it once, loudly, at boot rather than 500 per request afterwards.
 
-    The cross-schema Master Data mapping is a deployment coupling: all schemas
-    on one MySQL server, and this service's DB user able to SELECT from the
-    Master Data schema. Nothing enforced it and nothing said so, so a
-    deployment that got it wrong started cleanly and broke only the reservation
-    module.
+    This service reads Master Data and Users over HTTP. A deployment whose
+    MASTER_SERVICE_URL or USER_SERVICE_URL points nowhere used to start
+    cleanly and break only the reservation module, one 500 at a time; now the
+    boot log names the URL that does not answer.
     """
     for name, c in _dependency_checks().items():
         if c["ok"]:

@@ -215,16 +215,16 @@ def test_a_stay_always_bills_at_least_one_unit():
 # ---------------------------------------------------------------------------
 
 class _RoomType:
-    """Just enough of masterdata.room_type to price a line."""
+    """Just enough of a room type, as the Master Data API sends it, to price a line."""
 
     def __init__(self, **kw):
-        self.Daily_Rate = kw.get("daily")
-        self.Weekly_Rate = kw.get("weekly")
-        self.Bed_Only_Rate = kw.get("bed_only")
-        self.Bed_And_Breakfast_Rate = kw.get("bed_breakfast")
-        self.Half_Board_Rate = kw.get("half_board")
-        self.Full_Board_Rate = kw.get("full_board")
-        self.Room_Cost = kw.get("room_cost", 0)
+        self.daily_rate = kw.get("daily")
+        self.weekly_rate = kw.get("weekly")
+        self.bed_only_rate = kw.get("bed_only")
+        self.bed_breakfast_rate = kw.get("bed_breakfast")
+        self.half_board_rate = kw.get("half_board")
+        self.full_board_rate = kw.get("full_board")
+        self.room_cost = kw.get("room_cost", 0)
 
 
 def test_bed_and_breakfast_reads_the_column_it_is_stored_in():

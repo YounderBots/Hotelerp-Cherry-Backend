@@ -52,62 +52,35 @@ filenames, so a release's `uploads/` only matches the database that shipped
 beside it; mixing two releases leaves every path pointing at a file that was
 never there.
 
-**Then step 3, on any deployment whose services do not connect as `root`.**
-Skip it in dev; on a server with a per-application MySQL user it is not
-optional, and it is the other step that has been missed:
+**Then step 3: bring the Hotel schema up to this build, and point the Hotel
+service at its siblings.**
 
 ```bash
-# with the interpreter the Hotel service runs on (its venv), so pymysql imports
-python ../../tools/grant_cross_schema.py             # what is missing
-python ../../tools/grant_cross_schema.py --confirm   # grant it -- asks for MySQL root's password
-systemctl list-units --type=service | grep -i hotel  # the unit's name
-sudo systemctl restart <that unit>                   # a pool does not see a grant until it reconnects
+python Backend/migrations/migrate.py upgrade hotel   # adds room_lock (see below)
+grep -E "MASTER_SERVICE_URL|USER_SERVICE_URL" Backend/Services/HotelServices/.env
+sudo systemctl restart <the hotel unit>
 curl -s localhost:8040/readyz                        # "status": "ready"
 ```
 
-`--confirm` grants as MySQL `root` (or `--admin-user`, or `MYSQL_PWD` for a
-script). The service's own account cannot do it: it is the account *missing*
-the privileges. If the server cannot run the tool yet -- it has not pulled this
-release -- the three statements are fixed and can go straight into
-`mysql -u root -p`. Aim them at the account MySQL names in the error, **host
-included**; `'cherryhotel'@'%'` is a different, empty account and granting to
-it changes nothing:
-
-```sql
-GRANT SELECT ON `hotelerp_masterdata`.*      TO 'cherryhotel'@'localhost';
-GRANT UPDATE ON `hotelerp_masterdata`.`room` TO 'cherryhotel'@'localhost';
-GRANT SELECT ON `hotelerp_users`.`users`     TO 'cherryhotel'@'localhost';
-```
-
-Then restart the Hotel service. All three, not just the SELECT the error
-names: without the UPDATE the list works and no booking does.
-
-HotelServices reads `hotelerp_masterdata` and `hotelerp_users` on its own
-connection — a booking checks that a room is free and inserts the reservation
-that fills it in one transaction, and an HTTP read to another service could
-not hold the row lock that makes the check mean anything. So the Hotel
-service's MySQL account needs privileges in two schemas it does not own. Miss
-them and the service starts cleanly, housekeeping and the night audit keep
-working, and every reservation screen answers:
+The Hotel service does **not** read any other service's database. Rooms, rate
+cards, tax, discounts, payment methods, identity proofs and the status
+vocabulary come from MasterDataServices over HTTP (`GET /snapshot`, once per
+request), a housekeeping assignee is checked against UserServices, and the
+room's occupancy and housekeeping flags are written back through
+`PATCH /room/{id}/state`. Its MySQL account needs privileges on
+`hotelerp_hotel` and nothing else -- there is no cross-schema GRANT to run,
+and there never will be again. What it does need is the two URLs in its
+`.env`; `make_prod_env.py` writes them, and `/readyz` names whichever one
+does not answer:
 
 ```
-(1142, "SELECT command denied to user 'cherryhotel'@'localhost' for table 'room'")
+MASTER_SERVICE_URL=http://127.0.0.1:8030
+USER_SERVICE_URL=http://127.0.0.1:8020
 ```
 
-The tool is idempotent and reports without changing anything until `--confirm`,
-so run it after every restore: these dumps drop and recreate their databases,
-and the account the services connect as is not part of the dump.
-
-**This dump predates the `extra_bed_cost` fix of 17 September 2026**, so one
-of its reservations stores the total for its two extra beds in a column that
-holds the cost of *one* bed for the stay. The money charged is right; the folio
-line renders at twice the bed charge and the row will not satisfy
-`verify_seed`'s folio identity. One command, and it is idempotent:
-
-```bash
-python ../../tools/fix_extra_bed_cost.py             # what it would change
-python ../../tools/fix_extra_bed_cost.py --confirm   # correct it
-```
+The double-booking guard stayed in one transaction: it locks a row in the
+Hotel schema's own `room_lock` table, which is why the migration above is
+part of this step.
 
 Then regenerate the gateway permission map, which is derived from the live
 `menus` table, and change the passwords:

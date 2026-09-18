@@ -3,9 +3,11 @@
     cd Backend/Services/HotelServices
     ASCEND_ENV=dev DB_AUTO_CREATE=false python -m pytest ../../tests/test_reservation_housekeeping.py -v
 
-No MySQL required. The Master Data schema is a second in-memory SQLite database
-ATTACHed under its real name, which is what lets the cross-schema `MasterRoom`
-mapping resolve here exactly as it does against MySQL.
+No MySQL and no HTTP. The Hotel schema is an in-memory SQLite database; Master
+Data is `fake_master.FakeMaster`, an in-memory stand-in for the
+MasterDataServices API behind the real client, so every room-state write here
+goes through the same `PATCH /room/{id}/state` call production makes -- and
+`master.writes()` says exactly what was written.
 
 WHY THIS EXISTS
 When a guest departs, two separate facts become true and BOTH have to be
@@ -32,11 +34,11 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import models.models as models
-from models.masterdata import MASTERDATA_SCHEMA, USERS_SCHEMA, MasterBase, MasterRoom
+from fake_master import FakeMaster
 from resources import reservationController as rc
+from resources.master_client import MasterData
 
 TENANT = "1"
-OTHER_TENANT = "2"
 
 READY = "Ready"
 NOT_READY = "Not Ready"
@@ -45,188 +47,169 @@ UNASSIGNED = "Not Assigne"  # the master schema's own spelling
 
 @pytest.fixture()
 def db():
-    # One connection for the whole test: an ATTACH lives on the connection, so
-    # a pool that hands out a second one would lose the master schema.
+    """The Hotel schema -- and only the Hotel schema."""
     engine = sa.create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    with engine.connect() as conn:
-        conn.exec_driver_sql(f"ATTACH DATABASE ':memory:' AS {MASTERDATA_SCHEMA}")
-        # MasterBase also carries the read-only `users` view housekeeping
-        # validates an assignee against, so its schema has to exist here too or
-        # create_all fails on the whole metadata.
-        conn.exec_driver_sql(f"ATTACH DATABASE ':memory:' AS {USERS_SCHEMA}")
-        conn.commit()
     models.Base.metadata.create_all(bind=engine)
-    MasterBase.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine)()
     yield session
     session.close()
 
 
-def make_room(
-    db,
-    room_id,
-    room_no=None,
-    working=READY,
-    room_status="UnBlocking",
-    company_id=TENANT,
-    status="ACTIVE",
-):
-    room = MasterRoom(
-        id=room_id,
-        Room_No=room_no or str(100 + room_id),
-        Room_Name=f"Room {room_id}",
-        Room_Type_ID="1",
-        Bed_Type_ID="1",
-        Max_Adult_Occupy="2",
-        Max_Child_Occupy="1",
-        Room_Booking_status="Available",
-        Room_Working_status=working,
-        Room_Status=room_status,
-        status=status,
-        company_id=company_id,
+@pytest.fixture()
+def master() -> FakeMaster:
+    """Master Data, as the property's own service would answer for it.
+
+    Whatever is in here IS this property's master data: the real service
+    scopes the snapshot by the caller's company, so another tenant's room
+    is simply not in it.
+    """
+    return FakeMaster()
+
+
+@pytest.fixture()
+def md(master) -> MasterData:
+    """One request's client. A later request is `MasterData(master)` again."""
+    return MasterData(master)
+
+
+def make_room(master, room_id, room_no=None, working=READY,
+              room_status="UnBlocking", status="ACTIVE", **more):
+    return master.add_room(
+        id=room_id, room_no=room_no or str(100 + room_id),
+        working_status=working, room_status=room_status, status=status, **more,
     )
-    db.add(room)
-    db.commit()
-    return room
 
 
-def working_status(db, room_id):
-    return db.query(MasterRoom).filter(MasterRoom.id == room_id).one().Room_Working_status
+def working_status(master, room_id):
+    """What Master Data now holds -- the fixture, not the client's copy."""
+    return master.room(room_id)["working_status"]
 
 
 # ---------------------------------------------------------------------------
 # The handover itself
 # ---------------------------------------------------------------------------
 
-def test_a_departed_room_is_flagged_for_cleaning(db):
-    make_room(db, 1, room_no="101", working=READY)
+def test_a_departed_room_is_flagged_for_cleaning(db, md, master):
+    make_room(master, 1, room_no="101", working=READY)
 
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1])
-    db.commit()
+    marked = rc.mark_rooms_for_housekeeping(md, [1])
 
     assert marked == ["101"]
-    assert working_status(db, 1) == NOT_READY
+    assert working_status(master, 1) == NOT_READY
 
 
-def test_every_room_on_a_multi_room_booking_is_flagged(db):
-    make_room(db, 1, room_no="101")
-    make_room(db, 2, room_no="102")
-    make_room(db, 3, room_no="103")
+def test_every_room_on_a_multi_room_booking_is_flagged(db, md, master):
+    make_room(master, 1, room_no="101")
+    make_room(master, 2, room_no="102")
+    make_room(master, 3, room_no="103")
 
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1, 2, 3])
-    db.commit()
+    marked = rc.mark_rooms_for_housekeeping(md, [1, 2, 3])
 
     assert sorted(marked) == ["101", "102", "103"]
-    assert all(working_status(db, r) == NOT_READY for r in (1, 2, 3))
+    assert all(working_status(master, r) == NOT_READY for r in (1, 2, 3))
 
 
-def test_a_room_already_dirty_is_not_reported_as_newly_marked(db):
+def test_a_room_already_dirty_is_not_reported_as_newly_marked(db, md, master):
     """The return value drives the message the desk is shown, so it lists only
     what actually changed. A room already awaiting cleaning is left alone."""
-    make_room(db, 1, room_no="101", working=NOT_READY)
+    make_room(master, 1, room_no="101", working=NOT_READY)
 
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1])
-    db.commit()
+    marked = rc.mark_rooms_for_housekeeping(md, [1])
 
     assert marked == []
-    assert working_status(db, 1) == NOT_READY
+    assert working_status(master, 1) == NOT_READY
 
 
-def test_an_unassigned_room_is_moved_to_needs_cleaning(db):
+def test_an_unassigned_room_is_moved_to_needs_cleaning(db, md, master):
     """'Not Assigne' is the master schema's third readiness value. A guest has
     just left the room, so it needs cleaning regardless of what it said before."""
-    make_room(db, 1, room_no="101", working=UNASSIGNED)
+    make_room(master, 1, room_no="101", working=UNASSIGNED)
 
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1])
-    db.commit()
+    marked = rc.mark_rooms_for_housekeeping(md, [1])
 
     assert marked == ["101"]
-    assert working_status(db, 1) == NOT_READY
+    assert working_status(master, 1) == NOT_READY
 
 
 # ---------------------------------------------------------------------------
 # What it must NOT touch
 # ---------------------------------------------------------------------------
 
-def test_an_out_of_order_room_is_left_alone(db):
+def test_an_out_of_order_room_is_left_alone(db, md, master):
     """Blocked means out of order, which is a stronger statement than "needs
     cleaning" and is not this module's to overwrite. Downgrading it would put a
     broken room back into housekeeping's ordinary queue."""
-    make_room(db, 1, room_no="101", working=READY, room_status="Blocking")
+    make_room(master, 1, room_no="101", working=READY, room_status="Blocking")
 
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1])
-    db.commit()
-
-    assert marked == []
-    assert working_status(db, 1) == READY
-
-
-def test_another_tenants_room_is_never_touched(db):
-    make_room(db, 1, room_no="101", company_id=OTHER_TENANT, working=READY)
-
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1])
-    db.commit()
+    marked = rc.mark_rooms_for_housekeeping(md, [1])
 
     assert marked == []
-    assert working_status(db, 1) == READY
+    assert working_status(master, 1) == READY
 
 
-def test_a_soft_deleted_room_is_never_touched(db):
-    make_room(db, 1, room_no="101", status="INACTIVE", working=READY)
-
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1])
-    db.commit()
+def test_another_tenants_room_is_never_touched(db, md, master):
+    """Master Data scopes the snapshot by the caller's company, so a room that
+    belongs to another property is not in it at all -- there is nothing here
+    to reach across to. What a reservation names and the snapshot lacks is
+    left alone, and no write is attempted."""
+    marked = rc.mark_rooms_for_housekeeping(md, [1])
 
     assert marked == []
-    assert working_status(db, 1) == READY
+    assert master.writes() == []
 
 
-def test_an_unknown_room_id_is_ignored_rather_than_raising(db):
+def test_a_soft_deleted_room_is_never_touched(db, md, master):
+    make_room(master, 1, room_no="101", status="INACTIVE", working=READY)
+
+    marked = rc.mark_rooms_for_housekeeping(md, [1])
+
+    assert marked == []
+    assert working_status(master, 1) == READY
+
+
+def test_an_unknown_room_id_is_ignored_rather_than_raising(db, md, master):
     """A reservation can name a room that has since been deleted from Master
     Data. Checkout must still succeed -- the guest has left either way."""
-    make_room(db, 1, room_no="101")
+    make_room(master, 1, room_no="101")
 
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1, 999])
-    db.commit()
+    marked = rc.mark_rooms_for_housekeeping(md, [1, 999])
 
     assert marked == ["101"]
 
 
 @pytest.mark.parametrize("room_ids", [None, [], ()])
-def test_no_rooms_is_a_no_op(db, room_ids):
-    assert rc.mark_rooms_for_housekeeping(db, TENANT, room_ids) == []
+def test_no_rooms_is_a_no_op(db, md, master, room_ids):
+    assert rc.mark_rooms_for_housekeeping(md, room_ids) == []
 
 
-def test_duplicate_room_ids_are_collapsed(db):
+def test_duplicate_room_ids_are_collapsed(db, md, master):
     """`room_ids` comes off the reservation, which has carried duplicates."""
-    make_room(db, 1, room_no="101")
+    make_room(master, 1, room_no="101")
 
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, [1, 1, 1])
-    db.commit()
+    marked = rc.mark_rooms_for_housekeeping(md, [1, 1, 1])
 
     assert marked == ["101"]
 
 
-def test_string_room_ids_are_accepted(db):
+def test_string_room_ids_are_accepted(db, md, master):
     """JSON round trips have turned these into strings before now."""
-    make_room(db, 7, room_no="107")
+    make_room(master, 7, room_no="107")
 
-    marked = rc.mark_rooms_for_housekeeping(db, TENANT, ["7"])
-    db.commit()
+    marked = rc.mark_rooms_for_housekeeping(md, ["7"])
 
     assert marked == ["107"]
-    assert working_status(db, 7) == NOT_READY
+    assert working_status(master, 7) == NOT_READY
 
 
 # ---------------------------------------------------------------------------
 # The one-way property
 # ---------------------------------------------------------------------------
 
-def test_the_reconcile_does_not_undo_housekeepings_work(db):
+def test_the_reconcile_does_not_undo_housekeepings_work(db, md, master):
     """THE POINT OF THE WHOLE DESIGN.
 
     A cleaner marks the room Ready. Something then triggers the booking-status
@@ -238,38 +221,37 @@ def test_the_reconcile_does_not_undo_housekeepings_work(db):
     If someone ever folds the housekeeping flag into the reconcile "so it stays
     consistent", this fails.
     """
-    make_room(db, 1, room_no="101", working=READY)
+    make_room(master, 1, room_no="101", working=READY)
 
-    rc.mark_rooms_for_housekeeping(db, TENANT, [1])
-    db.commit()
-    assert working_status(db, 1) == NOT_READY
+    rc.mark_rooms_for_housekeeping(md, [1])
+    assert working_status(master, 1) == NOT_READY
 
-    # Housekeeping cleans it.
-    room = db.query(MasterRoom).filter(MasterRoom.id == 1).one()
-    room.Room_Working_status = READY
-    db.commit()
+    # Housekeeping cleans it -- in Master Data, from its own screen.
+    master.room(1)["working_status"] = READY
 
-    # Anything at all triggers the reconcile.
-    rc.sync_room_booking_status(db, TENANT, [1])
+    # Anything at all triggers the reconcile, on a later request.
+    rc.sync_room_booking_status(db, MasterData(master), TENANT, [1])
     db.commit()
 
-    assert working_status(db, 1) == READY
+    assert working_status(master, 1) == READY
+    # And the reconcile never sent a word about readiness over the wire.
+    assert all("working_status" not in body for _rid, body in master.writes()[1:])
 
 
-def test_the_reconcile_frees_the_room_for_sale_without_cleaning_it(db):
+def test_the_reconcile_frees_the_room_for_sale_without_cleaning_it(db, md, master):
     """The two facts are independent: sellable again, and still dirty."""
-    make_room(db, 1, room_no="101", working=READY)
-    room = db.query(MasterRoom).filter(MasterRoom.id == 1).one()
-    room.Room_Booking_status = "Occupied"
+    make_room(master, 1, room_no="101", working=READY, booking_status="Occupied")
+
+    rc.mark_rooms_for_housekeeping(md, [1])
+    rc.sync_room_booking_status(db, md, TENANT, [1])
     db.commit()
 
-    rc.mark_rooms_for_housekeeping(db, TENANT, [1])
-    rc.sync_room_booking_status(db, TENANT, [1])
-    db.commit()
-
-    row = db.query(MasterRoom).filter(MasterRoom.id == 1).one()
-    assert row.Room_Booking_status == "Available"   # free to sell
-    assert row.Room_Working_status == NOT_READY     # and dirty
+    row = master.room(1)
+    assert row["booking_status"] == "Available"   # free to sell
+    assert row["working_status"] == NOT_READY     # and dirty
+    # Two facts, two writes, each carrying only its own fact.
+    assert master.writes() == [(1, {"working_status": NOT_READY}),
+                               (1, {"booking_status": "Available"})]
 
 
 # ---------------------------------------------------------------------------

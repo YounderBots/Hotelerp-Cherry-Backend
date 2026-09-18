@@ -132,13 +132,6 @@ def can_view_any(token: str, *pages: str) -> bool:
 # ---------------------------------------------------------------------------
 INTERNAL_ERROR = "Internal server error"
 
-# Names the class of failure and where the remedy is, and nothing else: no
-# account, no schema, no SQL. Those go to the log, which is the operator's;
-# this goes to the browser, which is anyone's.
-PRIVILEGE_MISSING = ("The Hotel service is not allowed to read its database: a "
-                     "MySQL privilege is missing. The service log names the "
-                     "exact GRANT to run.")
-
 
 def server_error(log: logging.Logger, exc: Exception,
                  event: str = "unhandled_exception") -> HTTPException:
@@ -148,23 +141,24 @@ def server_error(log: logging.Logger, exc: Exception,
     driver errors and whole SQL statements on the front-office screen.
 
     One failure is the exception to that rule, because it is not a bug in
-    this code and it has an exact fix: MySQL refusing this service a
-    privilege on the Master Data or Users schema -- a deployment step that
-    was skipped. For that one, the log gets the fix itself (the GRANT
-    statements, aimed at the account MySQL named) as the LAST line before the
-    access log, where whoever is tailing the journal will read it; and the
-    browser gets a 503 that says which kind of problem it is, so nobody
-    spends an afternoon reading "Internal server error" as a crash. 503
-    rather than 500 for the same reason /readyz answers 503: the service is
-    up, a dependency is not available to it.
+    this code and the operator can act on it: a sibling service this one
+    depends on -- Master Data for everything a reservation needs, Users for a
+    housekeeping assignee -- could not be reached, or refused the forwarded
+    token. That is a 503 naming the service, with the URL and the .env key
+    that set it in the log; the same fact /readyz reports before any request
+    does. 503 rather than 500 because the service is up and a dependency is
+    not, and a proxy or a preflight can tell the two apart.
     """
-    from models.masterdata import privilege_refusal   # no cycle: models never import resources
+    from resources.master_client import MasterDataUnavailable
 
+    if isinstance(exc, MasterDataUnavailable):
+        log.error("%s dependency_unavailable service=%s -- %s",
+                  event, exc.service, exc.detail)
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(f"The {exc.service} service is unavailable, so this request "
+                    "cannot be completed. The Hotel service log names the URL."),
+        )
     log.exception(event, exc_info=exc)
-    fix = privilege_refusal(exc)
-    if fix is None:
-        return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                             detail=INTERNAL_ERROR)
-    log.critical("MYSQL PRIVILEGE MISSING -- %s", fix)
-    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                         detail=PRIVILEGE_MISSING)
+    return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                         detail=INTERNAL_ERROR)

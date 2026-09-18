@@ -4,9 +4,10 @@
     ASCEND_ENV=dev DB_AUTO_CREATE=false python -m pytest \
         ../../tests/test_reservation_pricing.py -v
 
-No MySQL required: Master Data is a second in-memory SQLite database ATTACHed
-under its real name, the same trick test_reservation_housekeeping.py uses, so
-the cross-schema mappings resolve here exactly as they do against MySQL.
+No MySQL and no HTTP: Master Data is answered by `fake_master.FakeMaster`,
+an in-memory stand-in for the MasterDataServices API behind the real client
+(`resources/master_client.py`), so the engine prices from records shaped
+exactly as production receives them.
 
 WHY THIS SUITE EXISTS
     `quote()` is "the single source of every total", and nothing tested it.
@@ -42,22 +43,9 @@ WHY THIS SUITE EXISTS
 from __future__ import annotations
 
 import pytest
-import sqlalchemy as sa
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-from models.masterdata import (
-    MASTERDATA_SCHEMA,
-    USERS_SCHEMA,
-    MasterBase,
-    MasterDiscount,
-    MasterRoom,
-    MasterRoomType,
-    MasterTaxType,
-)
+from fake_master import fake_master
 from resources import reservation_rules as rules
-
-TENANT = "1"
 
 ROOM_ID = 1
 TYPE_ID = 7
@@ -73,46 +61,24 @@ ROOM_TOTAL = DAILY_RATE * NIGHTS              # 10000
 
 @pytest.fixture()
 def db():
-    engine = sa.create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+    """The Master Data this property has, as the API would send it."""
+    md, master = fake_master()
+    master.add_room_type(
+        id=TYPE_ID, room_type_name="Deluxe", room_cost=DAILY_RATE, bed_cost=BED_COST,
+        daily_rate=DAILY_RATE, weekly_rate=DAILY_RATE * 6,
     )
-    with engine.connect() as conn:
-        conn.exec_driver_sql(f"ATTACH DATABASE ':memory:' AS {MASTERDATA_SCHEMA}")
-        conn.exec_driver_sql(f"ATTACH DATABASE ':memory:' AS {USERS_SCHEMA}")
-        conn.commit()
-    MasterBase.metadata.create_all(bind=engine)
-    s = sessionmaker(bind=engine)()
-
-    s.add(MasterRoomType(
-        id=TYPE_ID, Type_Name="Deluxe", Room_Cost=DAILY_RATE, Bed_Cost=BED_COST,
-        Daily_Rate=DAILY_RATE, Weekly_Rate=DAILY_RATE * 6,
-        status="ACTIVE", company_id=TENANT,
-    ))
-    s.add(MasterRoom(
-        id=ROOM_ID, Room_No="101", Room_Name="Room 101",
-        Room_Type_ID=str(TYPE_ID), Bed_Type_ID="1",
-        Max_Adult_Occupy="2", Max_Child_Occupy="1",
-        Room_Booking_status="Available", Room_Working_status="Ready",
-        Room_Status="UnBlocking", status="ACTIVE", company_id=TENANT,
-    ))
+    master.add_room(id=ROOM_ID, room_no="101", room_type_id=str(TYPE_ID))
     # Percentages are free text in the master schema, exactly as in production.
-    s.add(MasterTaxType(id=3, Tax_Name="GST 12", Tax_Percentage="12",
-                        status="ACTIVE", company_id=TENANT))
-    s.add(MasterDiscount(id=4, Discount_Name="Corporate 10",
-                         Discount_Percentage="10",
-                         status="ACTIVE", company_id=TENANT))
-    s.commit()
-    yield s
-    s.close()
+    master.add_tax(id=3, tax_name="GST 12", tax_percentage="12")
+    master.add_discount(id=4, discount_name="Corporate 10", discount_percentage="10")
+    return md
 
 
-def price(db, **kw):
+def price(md, **kw):
     kw.setdefault("room_ids", [ROOM_ID])
     kw.setdefault("rate_types", ["daily"])
     kw.setdefault("nights", NIGHTS)
-    return rules.quote(db, TENANT, **kw)
+    return rules.quote(md, **kw)
 
 
 def folio_identity_holds(q) -> bool:

@@ -24,6 +24,15 @@ class BaseConfig(object):
     # token this service receives is rejected.
     JWT_ISSUER = os.getenv("JWT_ISSUER", "hotelerp-login")
 
+    # The two services this one depends on. Reservation reads rooms, rate
+    # cards, tax, discounts, payment methods, identity proofs and the status
+    # vocabulary from Master Data, and writes room state back; Housekeeping
+    # checks an assignee against Users. Both over HTTP, on behalf of the
+    # caller, so this service's database account never leaves its own schema.
+    # Loopback by default; make_prod_env.py writes the same.
+    MASTER_SERVICE_URL = os.getenv("MASTER_SERVICE_URL", "http://127.0.0.1:8030")
+    USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://127.0.0.1:8020")
+
     SESSION_SECRET = os.getenv(
         "SESSION_SECRET",
         None if _IS_PROD else "dev-only-session-secret",

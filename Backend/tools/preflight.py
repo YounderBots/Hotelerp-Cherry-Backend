@@ -254,9 +254,9 @@ def main() -> int:
         if st == 200:
             ok("hotel service reports ready")
         elif st == 503:
-            # Report every failing check, not just the first: the Master Data
-            # and Users schemas are separate grants that fail separately, and
-            # naming only one sends the operator back for a second round trip.
+            # Report every failing check, not just the first: Master Data and
+            # Users are separate services that fail separately, and naming
+            # only one sends the operator back for a second round trip.
             details = []
             try:
                 checks = json.loads(body.decode())["checks"]
@@ -271,8 +271,9 @@ def main() -> int:
                 print(f"        {extra}")
         elif st == 404:
             warn("hotel /readyz not deployed",
-                 "this build predates the readiness probe; upgrade to see "
-                 "cross-schema failures at deploy time rather than as 500s")
+                 "this build predates the readiness probe; upgrade to see an "
+                 "unreachable Master Data or Users service at deploy time "
+                 "rather than as 500s")
         else:
             bad("hotel /readyz", f"status {st}")
 

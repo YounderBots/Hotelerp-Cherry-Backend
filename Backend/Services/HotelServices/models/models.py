@@ -733,6 +733,30 @@ class NightAudit(Base):
     company_id = Column(String(100), nullable=False, index=True)
 
 
+class RoomLock(Base):
+    """One row per room id, and nothing else: the double-booking mutex.
+
+    Two bookers checking the same room for the same night both see it free,
+    and both insert, unless something makes them take turns. That something
+    is a row lock: `reservation_rules.lock_rooms` takes `SELECT ... FOR
+    UPDATE` on the room's row here before the availability check, so the
+    second booker waits until the first has committed and then sees the
+    first booking.
+
+    It used to lock Master Data's `room` row -- the thing being contended --
+    which was the last reason this service needed a privilege in another
+    service's schema. A mutex does not have to be the contended thing, only a
+    row every contender agrees to lock first. This table is that row: created
+    on first use (`INSERT IGNORE`), never read for anything, never joined.
+    The room's real record stays where it belongs, in Master Data.
+    """
+
+    __tablename__ = "room_lock"
+
+    # The room's id in Master Data -- supplied, never generated here.
+    room_id = Column(Integer, primary_key=True, autoincrement=False)
+
+
 # ---------------------------------------------------------------------------
 # Schema creation is opt-in.
 #

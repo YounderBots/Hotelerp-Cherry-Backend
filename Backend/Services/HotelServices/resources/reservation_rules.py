@@ -36,35 +36,28 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from models import models
-from models.masterdata import (
-    MasterDiscount,
-    MasterIdentityProof,
-    MasterPaymentMethod,
-    MasterReservationStatus,
-    MasterRoom,
-    MasterRoomType,
-    MasterTaxType,
-)
+from resources.master_client import MasterData, Room, RoomType
 
 ACTIVE = "ACTIVE"
 
 # ---------------------------------------------------------------------------
 # Rate types
 # ---------------------------------------------------------------------------
-# Maps a selectable rate type onto the column of `room_type` that prices it.
-# Everything bills per night except `weekly`, which bills per started week.
+# Maps a selectable rate type onto the field of a room type that prices it,
+# as the Master Data API names it. Everything bills per night except `weekly`,
+# which bills per started week.
 #
 # The frontend key set and this table are the contract between the two; the
 # previous frontend copy of this map spelled bed & breakfast
 # "bed_and_breakfast_rate" while the API returns "bed_breakfast_rate", so
 # choosing that rate silently priced the room at zero.
 RATE_COLUMN = {
-    "daily": "Daily_Rate",
-    "weekly": "Weekly_Rate",
-    "bed_only": "Bed_Only_Rate",
-    "bed_breakfast": "Bed_And_Breakfast_Rate",
-    "half_board": "Half_Board_Rate",
-    "full_board": "Full_Board_Rate",
+    "daily": "daily_rate",
+    "weekly": "weekly_rate",
+    "bed_only": "bed_only_rate",
+    "bed_breakfast": "bed_breakfast_rate",
+    "half_board": "half_board_rate",
+    "full_board": "full_board_rate",
 }
 DEFAULT_RATE_TYPE = "daily"
 WEEKLY_RATE_TYPE = "weekly"
@@ -188,21 +181,12 @@ def nights_between(arrival: date, departure: date) -> int:
 # ---------------------------------------------------------------------------
 # Master data lookups
 # ---------------------------------------------------------------------------
-def load_status_vocabulary(db: Session, company_id) -> list[str]:
+def load_status_vocabulary(md: MasterData) -> list[str]:
     """The property's active reservation statuses, in master-data order."""
-    rows = (
-        db.query(MasterReservationStatus)
-        .filter(
-            MasterReservationStatus.company_id == str(company_id),
-            MasterReservationStatus.status == ACTIVE,
-        )
-        .order_by(MasterReservationStatus.id.asc())
-        .all()
-    )
-    return [r.Reservation_Status for r in rows]
+    return [s.reservation_status for s in md.active_statuses()]
 
 
-def resolve_status(db: Session, company_id, requested) -> str:
+def resolve_status(md: MasterData, requested) -> str:
     """Match `requested` against the master vocabulary, or raise.
 
     Matching is fold-insensitive so "no show", "No-Show" and "NOSHOW" all
@@ -213,7 +197,7 @@ def resolve_status(db: Session, company_id, requested) -> str:
     if not requested or not str(requested).strip():
         raise RuleError("reservation_status is required")
 
-    vocabulary = load_status_vocabulary(db, company_id)
+    vocabulary = load_status_vocabulary(md)
     if not vocabulary:
         raise RuleError(
             "No reservation statuses are configured for this property. "
@@ -358,8 +342,13 @@ def assert_transition(current: Optional[str], target: str) -> None:
     )
 
 
-def _lookup_or_raise(db, model, pk, company_id, label: str, *, required: bool):
-    """Fetch an active master row by id, or explain which one was wrong."""
+def _lookup_or_raise(table: dict, pk, label: str, *, required: bool):
+    """An active master row by id, or explain which one was wrong.
+
+    `table` is one of the snapshot's id-keyed maps. The snapshot is already
+    the caller's company -- the sibling scoped it by the forwarded token --
+    so "exists" here means "exists for this property".
+    """
     if pk in (None, "", 0):
         if required:
             raise RuleError(f"{label} is required")
@@ -369,34 +358,26 @@ def _lookup_or_raise(db, model, pk, company_id, label: str, *, required: bool):
     except (TypeError, ValueError):
         raise RuleError(f"{label} must be a number")
 
-    row = (
-        db.query(model)
-        .filter(
-            model.id == pk,
-            model.company_id == str(company_id),
-            model.status == ACTIVE,
-        )
-        .first()
-    )
-    if not row:
+    row = table.get(pk)
+    if not row or row.status != ACTIVE:
         raise RuleError(f"{label} {pk} does not exist for this property")
     return row
 
 
-def resolve_payment_method(db, pk, company_id, *, required=True):
-    return _lookup_or_raise(db, MasterPaymentMethod, pk, company_id, "Payment method", required=required)
+def resolve_payment_method(md: MasterData, pk, *, required=True):
+    return _lookup_or_raise(md.payment_methods, pk, "Payment method", required=required)
 
 
-def resolve_identity_type(db, pk, company_id, *, required=True):
-    return _lookup_or_raise(db, MasterIdentityProof, pk, company_id, "Identity type", required=required)
+def resolve_identity_type(md: MasterData, pk, *, required=True):
+    return _lookup_or_raise(md.identity_proofs, pk, "Identity type", required=required)
 
 
-def resolve_tax_type(db, pk, company_id):
-    return _lookup_or_raise(db, MasterTaxType, pk, company_id, "Tax type", required=False)
+def resolve_tax_type(md: MasterData, pk):
+    return _lookup_or_raise(md.tax_types, pk, "Tax type", required=False)
 
 
-def resolve_discount_type(db, pk, company_id):
-    return _lookup_or_raise(db, MasterDiscount, pk, company_id, "Discount type", required=False)
+def resolve_discount_type(md: MasterData, pk):
+    return _lookup_or_raise(md.discounts, pk, "Discount type", required=False)
 
 
 # ---------------------------------------------------------------------------
@@ -485,65 +466,67 @@ def lock_rooms(db: Session, room_ids: Iterable[int]) -> None:
     help; the two transactions genuinely do not see each other's uncommitted
     rows.
 
-    Locking the master `room` rows first makes the pair atomic: the second
+    Taking a row lock per room first makes the pair atomic: the second
     booker blocks on `SELECT ... FOR UPDATE` until the first commits, and by
     the time it proceeds the first booking is visible to its availability
-    check. The room row is the natural mutex because it is the thing being
-    contended, it already exists, and every booking path touches it.
+    check.
+
+    THE ROW IS OURS
+        The lock used to be taken on Master Data's `room` row -- "the thing
+        being contended" -- which was the one place this service still
+        needed a privilege in another service's schema after every read had
+        moved to HTTP. A mutex does not need to be the contended thing; it
+        needs to be a row every booker for that room agrees to lock first.
+        `room_lock` in this service's own schema is that row: one per room
+        id, created on first use, never read for anything else. The overlap
+        check this guards reads `room_reservation`, also ours, so the whole
+        guard is one transaction on one schema.
 
     Ordering by id prevents the classic deadlock where two multi-room bookings
     grab the same pair of rooms in opposite order.
+
+    Not for SQLite (the test double), which has no row locks and serialises
+    writers on its own.
     """
     ids = sorted({int(r) for r in room_ids})
     if not ids:
         return
+    if db.get_bind().dialect.name != "mysql":
+        return
+
     placeholders = ", ".join(f":r{i}" for i in range(len(ids)))
     params = {f"r{i}": rid for i, rid in enumerate(ids)}
-    from models.masterdata import MASTERDATA_SCHEMA
 
+    # Make sure the row exists. Two first-time bookers for the same room both
+    # INSERT; the second waits on the first's uncommitted row and then finds
+    # it already there -- which is itself the serialisation we want.
+    for rid in ids:
+        db.execute(text("INSERT IGNORE INTO `room_lock` (`room_id`) VALUES (:rid)"),
+                   {"rid": rid})
     db.execute(
         text(
-            f"SELECT id FROM `{MASTERDATA_SCHEMA}`.`room` "
-            f"WHERE id IN ({placeholders}) FOR UPDATE"
+            f"SELECT room_id FROM `room_lock` "
+            f"WHERE room_id IN ({placeholders}) ORDER BY room_id FOR UPDATE"
         ),
         params,
     )
 
 
-def load_rooms(db: Session, company_id, room_ids: Iterable[int]) -> dict[int, MasterRoom]:
-    ids = [int(r) for r in room_ids]
-    if not ids:
-        return {}
-    rows = (
-        db.query(MasterRoom)
-        .filter(
-            MasterRoom.id.in_(ids),
-            MasterRoom.company_id == str(company_id),
-            MasterRoom.status == ACTIVE,
-        )
-        .all()
-    )
-    return {r.id: r for r in rows}
+def load_rooms(md: MasterData, room_ids: Iterable[int]) -> dict[int, Room]:
+    """The active rooms among `room_ids`, by id."""
+    active = md.active_rooms()
+    return {rid: active[rid] for rid in {int(r) for r in room_ids} if rid in active}
 
 
-def load_room_types(db: Session, company_id, type_ids: Iterable[int]) -> dict[int, MasterRoomType]:
-    ids = [int(t) for t in type_ids if t not in (None, "")]
-    if not ids:
-        return {}
-    rows = (
-        db.query(MasterRoomType)
-        .filter(
-            MasterRoomType.id.in_(ids),
-            MasterRoomType.company_id == str(company_id),
-            MasterRoomType.status == ACTIVE,
-        )
-        .all()
-    )
-    return {r.id: r for r in rows}
+def load_room_types(md: MasterData, type_ids: Iterable[int]) -> dict[int, RoomType]:
+    active = md.active_room_types()
+    wanted = {int(t) for t in type_ids if t not in (None, "")}
+    return {tid: active[tid] for tid in wanted if tid in active}
 
 
 def assert_rooms_bookable(
     db: Session,
+    md: MasterData,
     company_id,
     room_ids: list[int],
     arrival: date,
@@ -551,7 +534,7 @@ def assert_rooms_bookable(
     *,
     exclude_id: Optional[int] = None,
     occupancy: Optional[dict[int, tuple[int, int]]] = None,
-) -> dict[int, MasterRoom]:
+) -> dict[int, Room]:
     """Every gate a room has to pass before it can be sold. Returns the rooms.
 
     Call `lock_rooms` first if this is guarding a write -- on its own this is
@@ -571,7 +554,7 @@ def assert_rooms_bookable(
     if len(set(room_ids)) != len(room_ids):
         raise RuleError("The same room was selected more than once")
 
-    rooms = load_rooms(db, company_id, room_ids)
+    rooms = load_rooms(md, room_ids)
 
     missing = [r for r in room_ids if r not in rooms]
     if missing:
@@ -585,8 +568,8 @@ def assert_rooms_bookable(
     # block is disqualifying, because the column also carries the legacy value
     # "ACTIVE" on rows created before that vocabulary settled.
     blocked = [
-        rooms[r].Room_No for r in room_ids
-        if normalise_status(rooms[r].Room_Status) == "blocking"
+        rooms[r].room_no for r in room_ids
+        if normalise_status(rooms[r].room_status) == "blocking"
     ]
     if blocked:
         raise RuleError(
@@ -598,19 +581,19 @@ def assert_rooms_bookable(
         for room_id in room_ids:
             room = rooms[room_id]
             adults, children = occupancy.get(room_id, (0, 0))
-            max_adult = as_int(room.Max_Adult_Occupy, 0)
-            max_child = as_int(room.Max_Child_Occupy, 0)
+            max_adult = as_int(room.max_adult, 0)
+            max_child = as_int(room.max_child, 0)
             if adults < 1:
-                raise RuleError(f"Room {room.Room_No} needs at least one adult")
+                raise RuleError(f"Room {room.room_no} needs at least one adult")
             if max_adult and adults > max_adult:
                 raise RuleError(
-                    f"Room {room.Room_No} takes at most {max_adult} adult(s)"
+                    f"Room {room.room_no} takes at most {max_adult} adult(s)"
                 )
             if children < 0:
-                raise RuleError(f"Room {room.Room_No} cannot have negative children")
+                raise RuleError(f"Room {room.room_no} cannot have negative children")
             if max_child and children > max_child:
                 raise RuleError(
-                    f"Room {room.Room_No} takes at most {max_child} child(ren)"
+                    f"Room {room.room_no} takes at most {max_child} child(ren)"
                 )
 
     # The date-range conflict. This is the actual double-booking check.
@@ -623,7 +606,7 @@ def assert_rooms_bookable(
         if not windows:
             continue
         spans = ", ".join(f"{s.isoformat()} to {e.isoformat()}" for s, e in windows)
-        clashes.append(f"Room {rooms[room_id].Room_No} is already booked {spans}")
+        clashes.append(f"Room {rooms[room_id].room_no} is already booked {spans}")
     if clashes:
         raise RuleError("; ".join(clashes), status_code=409)
 
@@ -633,10 +616,10 @@ def assert_rooms_bookable(
 # ---------------------------------------------------------------------------
 # Pricing
 # ---------------------------------------------------------------------------
-def rate_for(room_type: MasterRoomType, rate_type: str) -> float:
+def rate_for(room_type: RoomType, rate_type: str) -> float:
     """Per-unit price for a rate type, falling back to the daily rate.
 
-    `Room_Cost` is the last resort: a property that has not filled in the rate
+    `room_cost` is the last resort: a property that has not filled in the rate
     columns still has a room cost, and pricing a stay at zero because a rate
     column is null is worse than pricing it at the base cost.
     """
@@ -646,9 +629,9 @@ def rate_for(room_type: MasterRoomType, rate_type: str) -> float:
         if value not in (None, ""):
             return as_float(value)
 
-    if room_type.Daily_Rate not in (None, ""):
-        return as_float(room_type.Daily_Rate)
-    return as_float(room_type.Room_Cost)
+    if room_type.daily_rate not in (None, ""):
+        return as_float(room_type.daily_rate)
+    return as_float(room_type.room_cost)
 
 
 def units_for(rate_type: str, nights: int) -> int:
@@ -660,8 +643,7 @@ def units_for(rate_type: str, nights: int) -> int:
 
 
 def quote(
-    db: Session,
-    company_id,
+    md: MasterData,
     *,
     room_ids: list[int],
     rate_types: list[str],
@@ -696,9 +678,9 @@ def quote(
     """
     nights = max(1, int(nights or 1))
 
-    rooms = load_rooms(db, company_id, room_ids)
-    type_ids = {as_int(rooms[r].Room_Type_ID) for r in rooms}
-    room_types = load_room_types(db, company_id, type_ids)
+    rooms = load_rooms(md, room_ids)
+    type_ids = {as_int(rooms[r].room_type_id) for r in rooms}
+    room_types = load_room_types(md, type_ids)
 
     lines = []
     room_total = 0.0
@@ -706,10 +688,10 @@ def quote(
         room = rooms.get(int(room_id))
         if not room:
             continue
-        room_type = room_types.get(as_int(room.Room_Type_ID))
+        room_type = room_types.get(as_int(room.room_type_id))
         if not room_type:
             raise RuleError(
-                f"Room {room.Room_No} has no active room type, so it cannot be priced"
+                f"Room {room.room_no} has no active room type, so it cannot be priced"
             )
 
         rate_type = (
@@ -725,9 +707,9 @@ def quote(
         lines.append(
             {
                 "room_id": room.id,
-                "room_no": room.Room_No,
+                "room_no": room.room_no,
                 "room_type_id": room_type.id,
-                "room_type_name": room_type.Type_Name,
+                "room_type_name": room_type.room_type_name,
                 "rate_type": rate_type,
                 "unit_rate": money(unit_rate),
                 "units": units,
@@ -756,7 +738,7 @@ def quote(
         first_type = None
         if lines:
             first_type = room_types.get(lines[0]["room_type_id"])
-        per_bed_per_night = as_float(getattr(first_type, "Bed_Cost", 0))
+        per_bed_per_night = as_float(getattr(first_type, "bed_cost", 0))
         extra_bed_cost = money(per_bed_per_night * nights)
     else:
         extra_bed_cost = money(extra_bed_cost)
@@ -779,24 +761,24 @@ def quote(
     extra_bed_total = money(extra_bed_count * extra_bed_cost)
     taxable = money(room_amount + extra_charges + extra_bed_total)
 
-    tax_row = resolve_tax_type(db, tax_type_id, company_id)
-    discount_row = resolve_discount_type(db, discount_type_id, company_id)
+    tax_row = resolve_tax_type(md, tax_type_id)
+    discount_row = resolve_discount_type(md, discount_type_id)
 
-    tax_percentage = as_float(getattr(tax_row, "Tax_Percentage", 0)) if tax_row else 0.0
+    tax_percentage = as_float(getattr(tax_row, "tax_percentage", 0)) if tax_row else 0.0
     discount_percentage = (
-        as_float(getattr(discount_row, "Discount_Percentage", 0)) if discount_row else 0.0
+        as_float(getattr(discount_row, "discount_percentage", 0)) if discount_row else 0.0
     )
 
     # Master data stores these as free-text strings, so a typo there must not
     # become a negative total here.
     if not 0 <= tax_percentage <= 100:
         raise RuleError(
-            f"Tax '{tax_row.Tax_Name}' is configured at {tax_percentage}%, "
+            f"Tax '{tax_row.tax_name}' is configured at {tax_percentage}%, "
             "which is outside 0-100. Fix it under Master Data → Tax."
         )
     if not 0 <= discount_percentage <= 100:
         raise RuleError(
-            f"Discount '{discount_row.Discount_Name}' is configured at "
+            f"Discount '{discount_row.discount_name}' is configured at "
             f"{discount_percentage}%, which is outside 0-100. "
             "Fix it under Master Data → Discount."
         )
@@ -825,11 +807,11 @@ def quote(
         "extra_bed_total": extra_bed_total,
         "taxable_amount": taxable,
         "tax_type_id": tax_row.id if tax_row else None,
-        "tax_name": tax_row.Tax_Name if tax_row else None,
+        "tax_name": tax_row.tax_name if tax_row else None,
         "tax_percentage": money(tax_percentage),
         "tax_amount": tax_amount,
         "discount_type_id": discount_row.id if discount_row else None,
-        "discount_name": discount_row.Discount_Name if discount_row else None,
+        "discount_name": discount_row.discount_name if discount_row else None,
         "discount_percentage": money(discount_percentage),
         "discount_amount": discount_amount,
         "overall_amount": overall_amount,
