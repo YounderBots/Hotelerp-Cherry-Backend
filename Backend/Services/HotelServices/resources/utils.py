@@ -144,9 +144,9 @@ def server_error(log: logging.Logger, exc: Exception,
     this code and the operator can act on it: a sibling service this one
     depends on -- Master Data for everything a reservation needs, Users for a
     housekeeping assignee -- could not be reached, or refused the forwarded
-    token. That is a 503 naming the service, with the URL and the .env key
-    that set it in the log; the same fact /readyz reports before any request
-    does. 503 rather than 500 because the service is up and a dependency is
+    token. That is a 503 naming the service, the address this service tried
+    and the .env key that set it; the same fact /readyz reports before any
+    request does. 503 rather than 500 because the service is up and a dependency is
     not, and a proxy or a preflight can tell the two apart.
     """
     from resources.master_client import MasterDataUnavailable
@@ -154,10 +154,17 @@ def server_error(log: logging.Logger, exc: Exception,
     if isinstance(exc, MasterDataUnavailable):
         log.error("%s dependency_unavailable service=%s -- %s",
                   event, exc.service, exc.detail)
+        # The address goes to the browser too. It is a loopback URL and an
+        # environment variable's name -- nothing anyone can use -- and the
+        # person reading it is the one who has to change it. Said only in
+        # the log, it went unread for a day on a box whose main.py predates
+        # /readyz.
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(f"The {exc.service} service is unavailable, so this request "
-                    "cannot be completed. The Hotel service log names the URL."),
+            detail=(f"The {exc.label} service is unavailable{exc.where()}, so this "
+                    "request cannot be completed. Fix that value in the Hotel "
+                    "service's .env and restart it; the Hotel service log has "
+                    "the full error."),
         )
     log.exception(event, exc_info=exc)
     return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

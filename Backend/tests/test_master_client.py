@@ -119,14 +119,30 @@ class TestSnapshot:
         assert md.status_id("confirmed") is None    # exact spelling: the rules fold, this does not
 
     def test_a_snapshot_without_data_is_a_dependency_failure(self):
+        """Reachable and answering, but not the Master Data this build knows:
+        an older MasterDataServices, or another program on that port -- which
+        is exactly what a default URL hits when a deployment moved the ports."""
         class Old:
             def get(self, service, path):
                 return {"detail": "Not Found"}     # a MasterData build that predates /snapshot
             def patch(self, *a):                   # pragma: no cover
                 raise AssertionError
+            def base_url(self, service):
+                return "http://127.0.0.1:8030"
         with pytest.raises(MasterDataUnavailable) as e:
             MasterData(Old()).rooms
-        assert "/snapshot" in str(e.value)
+        assert "http://127.0.0.1:8030/snapshot returned no data" in e.value.detail
+        assert e.value.where() == " at http://127.0.0.1:8030 (MASTER_SERVICE_URL)"
+
+    def test_a_transport_with_no_address_still_raises_a_usable_error(self):
+        class Old:
+            def get(self, service, path):
+                return None
+            def patch(self, *a):                   # pragma: no cover
+                raise AssertionError
+        with pytest.raises(MasterDataUnavailable) as e:
+            MasterData(Old()).rooms
+        assert e.value.where() == "" and "/snapshot" in e.value.detail
 
 
 class TestStaff:
@@ -233,15 +249,30 @@ class TestLock:
 # When the sibling is down: what the browser and the journal see
 # ---------------------------------------------------------------------------
 class TestUnavailable:
-    def test_the_controllers_answer_503_naming_the_service(self, caplog):
+    def test_the_controllers_answer_503_naming_the_service_and_the_address(self, caplog):
+        """The 503 says where this service looked and which .env key put it there.
+
+        The address is a loopback URL and an environment variable's name --
+        nothing anyone can use -- and the person reading the browser is the
+        one who has to change it. Kept only in the log, it went unread for a
+        day on a box whose stale main.py had no /readyz to say it either.
+        """
         log = logging.getLogger("test.hotel")
+        exc = MasterDataUnavailable("master", "http://127.0.0.1:8030/snapshot is unreachable",
+                                    base_url="http://127.0.0.1:8030", env_var="MASTER_SERVICE_URL")
         with caplog.at_level("ERROR", logger="test.hotel"):
-            err = server_error(log, MasterDataUnavailable("master", "http://127.0.0.1:8030/snapshot is unreachable"),
-                               "list_reservations_failed")
+            err = server_error(log, exc, "list_reservations_failed")
         assert err.status_code == 503
-        assert "master service is unavailable" in err.detail
-        assert "127.0.0.1:8030" not in err.detail            # the URL is the log's, not the browser's
-        assert "127.0.0.1:8030" in caplog.records[-1].getMessage()
+        assert err.detail.startswith(
+            "The Master Data service is unavailable at http://127.0.0.1:8030 (MASTER_SERVICE_URL)")
+        assert ".env" in err.detail and "restart" in err.detail
+        assert "127.0.0.1:8030/snapshot" in caplog.records[-1].getMessage()
+
+    def test_a_refusal_with_no_address_still_names_the_service(self):
+        err = server_error(logging.getLogger("test.hotel"),
+                           MasterDataUnavailable("users", "no data"), "x_failed")
+        assert err.status_code == 503
+        assert err.detail.startswith("The Users service is unavailable, so")
 
     def test_an_ordinary_crash_is_still_a_plain_500(self):
         err = server_error(logging.getLogger("test.hotel"), KeyError("room"), "x_failed")
@@ -255,6 +286,8 @@ class TestUnavailable:
         with pytest.raises(MasterDataUnavailable) as e:
             t.get("master", "/snapshot")
         assert "MASTER_SERVICE_URL" in e.value.detail and "ConnectError" in e.value.detail
+        assert (e.value.base_url, e.value.env_var) == ("http://127.0.0.1:1", "MASTER_SERVICE_URL")
+        assert e.value.where() == " at http://127.0.0.1:1 (MASTER_SERVICE_URL)"
 
     def test_a_rejected_token_is_a_deploy_fault_not_the_callers(self, monkeypatch):
         """Our caller was accepted here and refused there: the services are

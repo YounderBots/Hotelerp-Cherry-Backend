@@ -67,14 +67,36 @@ logger = logging.getLogger(__name__)
 ACTIVE = "ACTIVE"
 TIMEOUT_SECONDS = 5.0
 
+MASTER = "master"
+USERS = "users"
+ENV_VAR = {MASTER: "MASTER_SERVICE_URL", USERS: "USER_SERVICE_URL"}
+
 
 class MasterDataUnavailable(Exception):
-    """A sibling service could not be reached or refused this service."""
+    """A sibling service could not be reached or refused this service.
 
-    def __init__(self, service: str, detail: str):
+    Carries the base URL this service tried and the .env key that set it, so
+    the 503 can say "Master Data at http://127.0.0.1:8030 (MASTER_SERVICE_URL)"
+    to whoever is looking -- which, on a box whose main.py predates /readyz,
+    is the browser and not a journal.
+    """
+
+    def __init__(self, service: str, detail: str, *, base_url: str = "", env_var: str = ""):
         self.service = service
         self.detail = detail
+        self.base_url = base_url
+        self.env_var = env_var
         super().__init__(f"{service}: {detail}")
+
+    @property
+    def label(self) -> str:
+        return {MASTER: "Master Data", USERS: "Users"}.get(self.service, self.service)
+
+    def where(self) -> str:
+        """`at http://127.0.0.1:8030 (MASTER_SERVICE_URL)`, or '' when unknown."""
+        if not self.base_url:
+            return ""
+        return f" at {self.base_url}" + (f" ({self.env_var})" if self.env_var else "")
 
 
 # ---------------------------------------------------------------------------
@@ -167,13 +189,12 @@ def _build(cls, row: dict):
 # ---------------------------------------------------------------------------
 # Transport -- the only thing that knows about HTTP. Tests substitute it.
 # ---------------------------------------------------------------------------
-MASTER = "master"
-USERS = "users"
 
 
 class Transport(Protocol):
     def get(self, service: str, path: str) -> Optional[dict]: ...
     def patch(self, service: str, path: str, body: dict) -> Optional[dict]: ...
+    def base_url(self, service: str) -> str: ...     # "" when it has no address
 
 
 class HttpTransport:
@@ -194,16 +215,23 @@ class HttpTransport:
     def _url(self, service: str, path: str) -> str:
         return f"{self._base[service]}/{path.lstrip('/')}"
 
+    def base_url(self, service: str) -> str:
+        return self._base[service]
+
+    def _fail(self, service: str, detail: str) -> MasterDataUnavailable:
+        return MasterDataUnavailable(service, detail, base_url=self._base[service],
+                                     env_var=ENV_VAR[service])
+
     def _send(self, method: str, service: str, path: str, body=None) -> Optional[dict]:
         url = self._url(service, path)
         try:
             with httpx.Client(timeout=self._timeout) as client:
                 resp = client.request(method, url, headers=self._headers, json=body)
         except httpx.HTTPError as exc:
-            raise MasterDataUnavailable(
+            raise self._fail(
                 service, f"{url} is unreachable ({exc.__class__.__name__}). "
-                "Check that the service is running and that this service's "
-                "MASTER_SERVICE_URL / USER_SERVICE_URL point at it."
+                f"Check that the service is running and that {ENV_VAR[service]} "
+                "in this service's .env points at it."
             ) from exc
 
         if resp.status_code == 404:
@@ -212,19 +240,17 @@ class HttpTransport:
             # Our own caller's token was accepted here and refused there: the
             # two services are not verifying the same JWT. That is a deploy
             # fault (JWT_SECRET_KEY / JWT_ISSUER differ), not the caller's.
-            raise MasterDataUnavailable(
+            raise self._fail(
                 service, f"{url} rejected the forwarded token ({resp.status_code}). "
                 "JWT_SECRET_KEY and JWT_ISSUER must be identical in every "
                 "service's .env."
             )
         if resp.status_code >= 400:
-            raise MasterDataUnavailable(
-                service, f"{url} answered {resp.status_code}: {resp.text[:200]}"
-            )
+            raise self._fail(service, f"{url} answered {resp.status_code}: {resp.text[:200]}")
         try:
             return resp.json()
         except ValueError as exc:
-            raise MasterDataUnavailable(service, f"{url} did not return JSON") from exc
+            raise self._fail(service, f"{url} did not return JSON") from exc
 
     def get(self, service: str, path: str) -> Optional[dict]:
         return self._send("GET", service, path)
@@ -265,9 +291,15 @@ class MasterData:
             payload = self._t.get(MASTER, "/snapshot")
             data = (payload or {}).get("data")
             if not isinstance(data, dict):
+                # Reachable, answering, and not Master Data as this build knows
+                # it: a MasterDataServices older than /snapshot, or something
+                # else entirely on that port. Say where, as the transport does
+                # for a connection that fails outright.
+                base = getattr(self._t, "base_url", lambda _s: "")(MASTER)
                 raise MasterDataUnavailable(
-                    MASTER, "/snapshot returned no data -- is MasterDataServices "
-                    "on a build that has it?"
+                    MASTER, f"{base or 'Master Data'}/snapshot returned no data -- "
+                    "is that MasterDataServices, on a build that has /snapshot?",
+                    base_url=base, env_var=ENV_VAR[MASTER] if base else "",
                 )
             self._snapshot = {
                 "rooms": {r.id: r for r in map(lambda x: _build(Room, x), data.get("rooms", []))},

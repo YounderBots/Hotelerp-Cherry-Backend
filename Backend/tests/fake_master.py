@@ -84,6 +84,9 @@ class FakeMaster:
         return next((r for r in self.snapshot["rooms"] if int(r["id"]) == int(room_id)), None)
 
     # -- the Transport protocol -------------------------------------------------
+    def base_url(self, service: str) -> str:
+        return f"fake://{service}"
+
     def get(self, service: str, path: str) -> Optional[dict]:
         self.calls.append(("GET", service, path, None))
         if self.down:
