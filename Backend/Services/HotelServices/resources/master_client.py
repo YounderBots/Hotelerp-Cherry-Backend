@@ -80,6 +80,7 @@ from dataclasses import dataclass
 from typing import Optional, Protocol
 
 import httpx
+from jose import JWTError, jwt
 
 from configs.base_config import BaseConfig
 
@@ -320,7 +321,7 @@ class MasterData:
 
     @classmethod
     def for_token(cls, token: str) -> "MasterData":
-        return cls(HttpTransport(token, gateway_url=BaseConfig.API_GATEWAY_URL))
+        return cls(HttpTransport(token, gateway_url=gateway_url(token)))
 
     # -- the snapshot -------------------------------------------------------
     def _load(self) -> dict:
@@ -459,29 +460,83 @@ class MasterData:
 
 
 # ---------------------------------------------------------------------------
+# Where the gateway is
+# ---------------------------------------------------------------------------
+# The last address a token told us, kept so /readyz can report what requests
+# actually use rather than only what the .env says. Process-wide by design:
+# there is one gateway, and the claim is the gateway's own statement about
+# itself, verified under the shared secret.
+_learned: dict = {"gw": ""}
+
+
+def gateway_url(token: Optional[str] = None) -> str:
+    """The gateway this service calls back through, for `token`'s request.
+
+    Precedence, and why:
+      1. API_GATEWAY_URL when the operator SET it. Their word wins -- the one
+         case the claim gets wrong is a gateway on another host, where the
+         loopback address it writes about itself is not reachable from here.
+      2. The token's `gw` claim. The gateway signs its own loopback address
+         into every token it mints, so a deployment that never set (1) --
+         the live one -- works regardless. Read from a VERIFIED token only:
+         a claim is trustworthy because it is signed, so it is not read from
+         an unverified one.
+      3. The default: the gateway's port in the standard layout.
+    """
+    if BaseConfig.API_GATEWAY_URL_CONFIGURED:
+        return BaseConfig.API_GATEWAY_URL.rstrip("/")
+    if token:
+        try:
+            claims = jwt.decode(token, BaseConfig.SECRET_KEY,
+                                algorithms=[BaseConfig.ALGORITHM],
+                                issuer=BaseConfig.JWT_ISSUER)
+        except JWTError:
+            claims = {}
+        gw = str(claims.get("gw") or "").strip().rstrip("/")
+        if gw.startswith(("http://", "https://")):
+            _learned["gw"] = gw
+            return gw
+    return BaseConfig.API_GATEWAY_URL.rstrip("/")
+
+
+def learned_gateway_url() -> str:
+    """What the last token said, or '' before any request has arrived."""
+    return _learned["gw"]
+
+
+# ---------------------------------------------------------------------------
 # Readiness
 # ---------------------------------------------------------------------------
-def probe(gateway_url: str, timeout: float = 3.0) -> tuple[bool, str]:
+def probe(timeout: float = 3.0) -> tuple[bool, str]:
     """Can this service reach the gateway? For /readyz and the boot log.
 
-    Asks the gateway's own liveness endpoint, which needs no token. Master
-    Data and Users are behind it; a gateway that answers but cannot reach one
-    of them shows up per request as a 503 naming that service, not here --
-    their liveness endpoints are behind the proxy's authentication and a
-    readiness probe holds no token.
+    Probes the address requests actually use: the configured one if set,
+    else what the last token said, else the default. Asks the gateway's own
+    liveness endpoint, which needs no token. Master Data and Users are behind
+    it; a gateway that answers but cannot reach one of them shows up per
+    request as a 503 naming that service, not here -- their liveness
+    endpoints are behind the proxy's authentication and a readiness probe
+    holds no token.
     """
-    url = f"{gateway_url.rstrip('/')}/healthz"
+    if BaseConfig.API_GATEWAY_URL_CONFIGURED:
+        base, source = BaseConfig.API_GATEWAY_URL, f"{ENV_VAR} in .env"
+    elif learned_gateway_url():
+        base, source = learned_gateway_url(), "the gateway's own token claim"
+    else:
+        base, source = BaseConfig.API_GATEWAY_URL, "the default; no request has arrived yet"
+    url = f"{base.rstrip('/')}/healthz"
     try:
         with httpx.Client(timeout=timeout) as client:
             resp = client.get(url)
     except httpx.HTTPError as exc:
         return False, (
-            f"gateway unreachable at {url} ({exc.__class__.__name__}). Master Data "
-            "and Users are reached through it, so every reservation screen and "
-            f"housekeeping assignment answers 503 until it is. Check that {ENV_VAR} "
-            "in this service's .env is the gateway's address -- the same one the "
-            "frontend uses."
+            f"gateway unreachable at {url} ({exc.__class__.__name__}; address from "
+            f"{source}). Master Data and Users are reached through it, so every "
+            "reservation screen and housekeeping assignment answers 503 until it "
+            f"is. Set {ENV_VAR} in this service's .env to the gateway's address, or "
+            "deploy a gateway build that writes its address into the token."
         )
     if resp.status_code != 200:
-        return False, f"gateway at {url} answered {resp.status_code}"
-    return True, f"gateway reachable at {url}; Master Data and Users are called through it"
+        return False, f"gateway at {url} answered {resp.status_code} (address from {source})"
+    return True, (f"gateway reachable at {url} (address from {source}); Master Data and "
+                  "Users are called through it")

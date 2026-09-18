@@ -132,7 +132,7 @@ def _dependency_checks() -> dict:
     """
     from resources.master_client import probe
 
-    ok, detail = probe(BaseConfig.API_GATEWAY_URL)
+    ok, detail = probe()
     return {"gateway": {"ok": ok, "detail": detail}}
 
 

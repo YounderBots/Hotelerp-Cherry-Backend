@@ -68,7 +68,7 @@ passes every suite and all 34 invariants.
 
 | | Symptom | Fix, on the server |
 |---|---|---|
-| 1 | `/room_reservation` and `/room_reservation/{id}` answer 500 | Deploy the 18 Sept build: the Hotel service now reads Master Data and Users through the gateway and never touches their schemas, so no GRANT is needed. Run `python Backend/migrations/migrate.py upgrade hotel` (adds `room_lock`), set `API_GATEWAY_URL` in the Hotel `.env`, regenerate the gateway's map (`build_rbac_map.py`), restart both; `/readyz` names the address if it cannot reach the gateway |
+| 1 | `/room_reservation` and `/room_reservation/{id}` answer 500 | Deploy the 18 Sept build: the Hotel service now reads Master Data and Users through the gateway and never touches their schemas, so no GRANT is needed. Run `python Backend/migrations/migrate.py upgrade hotel` (adds `room_lock`), regenerate the gateway's map (`build_rbac_map.py`), restart gateway + masterdata + hotel, sign in again (the gateway now writes its own address into the token, so the Hotel `.env` needs nothing); `/readyz` names the address it uses and where it came from |
 | 2 | every stored image 404s — all 88 paths | `python Backend/tools/restore_uploads.py --release 15-Sept-2026` |
 | 3 | RBAC in audit: every role reaches every endpoint | `RBAC_GATEWAY_MODE=enforce` |
 | 4 | all five internal services reachable from the internet | bind `SERVICE_HOST=127.0.0.1`, or firewall |

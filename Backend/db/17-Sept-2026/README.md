@@ -59,9 +59,8 @@ service at the gateway.**
 
 ```bash
 python Backend/migrations/migrate.py upgrade hotel   # adds room_lock (see below)
-grep API_GATEWAY_URL Backend/Services/HotelServices/.env
 python Backend/tools/build_rbac_map.py               # the gateway's map gains the service routes
-sudo systemctl restart <the hotel unit> <the gateway unit>
+sudo systemctl restart <the gateway unit> <the masterdata unit> <the hotel unit>
 curl -s localhost:8040/readyz                        # "status": "ready"
 ```
 
@@ -76,12 +75,19 @@ own token, so the gateway's authentication and permission map apply to them
 exactly as to the browser's calls. Its MySQL account needs privileges on
 `hotelerp_hotel` and nothing else; there is no cross-schema GRANT to run.
 
-What it does need is the gateway's address in its `.env`; `make_prod_env.py`
-writes it, and `/readyz` says so when it does not answer:
+It finds the gateway on its own: the gateway writes its address into every
+token it signs (the `gw` claim), and the Hotel service calls back through
+that. So on a one-host deployment nothing has to be configured -- users just
+sign in again after the deploy so their token carries the claim. When the
+gateway is on another host, set the address explicitly and it wins:
 
 ```
-API_GATEWAY_URL=http://127.0.0.1:8000
+API_GATEWAY_URL=http://gateway.internal:8000     # Hotel .env, optional
+GATEWAY_SELF_URL=http://gateway.internal:8000    # gateway .env, optional
 ```
+
+`/readyz` on the Hotel service reports which address it is using and where
+that came from.
 
 The gateway's permission map must carry the three service-to-service routes
 (`masterdata/snapshot`, `masterdata/room/{id}/state`, `user/users/{id}`), which

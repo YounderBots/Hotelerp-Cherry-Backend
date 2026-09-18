@@ -353,23 +353,29 @@ class TestReadiness:
     def _probe_with(self, monkeypatch, handler):
         mock_http(monkeypatch, handler)
 
+    def _configured(self, monkeypatch, url):
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL_CONFIGURED", True)
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL", url)
+
     def test_reachable(self, monkeypatch):
         seen = []
         def ok_(request):
-            seen.append(str(request.url))
+            seen.append((str(request.url), request.headers.get("authorization")))
             return httpx.Response(200, json={"status": "ok"})
         self._probe_with(monkeypatch, ok_)
-        ok, detail = mc.probe("http://127.0.0.1:8000")
-        assert ok and "reachable" in detail and "through it" in detail
-        assert seen == ["http://127.0.0.1:8000/healthz"]        # no token needed, none sent
+        self._configured(monkeypatch, "http://127.0.0.1:8000")
+        ok, detail = mc.probe()
+        assert ok and "reachable" in detail and "through it" in detail and ".env" in detail
+        assert seen == [("http://127.0.0.1:8000/healthz", None)]   # no token needed, none sent
 
     def test_unreachable_names_the_url_and_the_env_key(self, monkeypatch):
         def refuse(request):
             raise httpx.ConnectError("refused", request=request)
         self._probe_with(monkeypatch, refuse)
-        ok, detail = mc.probe("http://127.0.0.1:8000")
+        self._configured(monkeypatch, "http://127.0.0.1:8000")
+        ok, detail = mc.probe()
         assert not ok
-        for needle in ("http://127.0.0.1:8000/healthz", "API_GATEWAY_URL", "503", "frontend"):
+        for needle in ("http://127.0.0.1:8000/healthz", "API_GATEWAY_URL", "503"):
             assert needle in detail
 
     def test_readyz_reports_the_gateway(self, monkeypatch):
@@ -386,3 +392,75 @@ class TestReadiness:
         body = resp.json()
         assert body["degraded"] == ["gateway"]
         assert "API_GATEWAY_URL" in body["checks"]["gateway"]["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Where the gateway is: .env > the token's own claim > the default
+# ---------------------------------------------------------------------------
+class TestGatewayResolution:
+    def _token(self, **extra):
+        import time
+        from jose import jwt
+        from configs.base_config import BaseConfig
+        now = int(time.time())
+        return jwt.encode({"user_id": 1, "company_id": "1", "iat": now, "exp": now + 60,
+                           "iss": BaseConfig.JWT_ISSUER, **extra},
+                          BaseConfig.SECRET_KEY, algorithm=BaseConfig.ALGORITHM)
+
+    def test_the_tokens_claim_is_used_when_nothing_is_configured(self, monkeypatch):
+        """The live deployment: no API_GATEWAY_URL in the Hotel .env, gateway on
+        a port nothing here knows. The gateway wrote it into the token."""
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL_CONFIGURED", False)
+        mc._learned["gw"] = ""
+        assert mc.gateway_url(self._token(gw="http://127.0.0.1:9010")) == "http://127.0.0.1:9010"
+        assert mc.learned_gateway_url() == "http://127.0.0.1:9010"
+
+    def test_an_explicit_setting_beats_the_claim(self, monkeypatch):
+        """The operator's word wins: on a split deployment the loopback address
+        the gateway writes about itself is not reachable from here."""
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL_CONFIGURED", True)
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL", "http://gateway.internal:8000/")
+        assert mc.gateway_url(self._token(gw="http://127.0.0.1:9010")) == "http://gateway.internal:8000"
+
+    def test_a_token_without_the_claim_falls_back_to_the_default(self, monkeypatch):
+        """A token minted by a gateway build older than the claim."""
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL_CONFIGURED", False)
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL", "http://127.0.0.1:8000")
+        assert mc.gateway_url(self._token()) == "http://127.0.0.1:8000"
+        assert mc.gateway_url(None) == "http://127.0.0.1:8000"
+
+    def test_the_claim_is_read_only_from_a_token_this_service_can_verify(self, monkeypatch):
+        """A claim is trusted because it is signed. An unsigned or foreign token
+        contributes nothing, however plausible its `gw` looks."""
+        from jose import jwt
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL_CONFIGURED", False)
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL", "http://127.0.0.1:8000")
+        forged = jwt.encode({"user_id": 1, "gw": "http://evil.example"}, "not-our-secret", algorithm="HS256")
+        assert mc.gateway_url(forged) == "http://127.0.0.1:8000"
+
+    def test_a_claim_that_is_not_a_url_is_ignored(self, monkeypatch):
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL_CONFIGURED", False)
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL", "http://127.0.0.1:8000")
+        assert mc.gateway_url(self._token(gw="127.0.0.1:9010")) == "http://127.0.0.1:8000"
+
+    def test_for_token_builds_the_transport_on_the_resolved_address(self, monkeypatch):
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL_CONFIGURED", False)
+        md = MasterData.for_token(self._token(gw="http://127.0.0.1:9010"))
+        assert md._t.base_url("master") == "http://127.0.0.1:9010"
+
+    def test_readiness_probes_what_requests_use(self, monkeypatch):
+        """Before any request the default; after one, what the token said."""
+        seen = []
+        def ok_(request):
+            seen.append(str(request.url))
+            return httpx.Response(200, json={"status": "ok"})
+        mock_http(monkeypatch, ok_)
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL_CONFIGURED", False)
+        monkeypatch.setattr(mc.BaseConfig, "API_GATEWAY_URL", "http://127.0.0.1:8000")
+        mc._learned["gw"] = ""
+        ok, detail = mc.probe()
+        assert ok and "default" in detail
+        mc.gateway_url(self._token(gw="http://127.0.0.1:9010"))
+        ok, detail = mc.probe()
+        assert ok and "token claim" in detail
+        assert seen == ["http://127.0.0.1:8000/healthz", "http://127.0.0.1:9010/healthz"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections import defaultdict, deque
 from typing import Deque, Dict
@@ -194,7 +195,11 @@ async def login_post(
         logger.warning(
             "empty_permission_claim user=%s role=%s", user_data.get("id"), user_data.get("role_id")
         )
-    access_token = create_access_token(data={**claims, "perm": permission_claim})
+    # `gw`: where this gateway is, for services that call back through it.
+    gw = self_url(request)
+    access_token = create_access_token(
+        data={**claims, "perm": permission_claim, **({"gw": gw} if gw else {})}
+    )
     request.session["access_token"] = access_token
 
     # ---------------- Redirect target (URL-safe) ----------------
@@ -228,6 +233,38 @@ async def login_post(
         },
         "menus": menus,
     }
+
+
+# =====================================================
+# WHERE THIS GATEWAY IS
+# =====================================================
+def self_url(request: Request) -> str:
+    """This gateway's address, for a service on the same host to call back.
+
+    Written into every access token as the `gw` claim. A downstream service
+    that needs Master Data or Users -- the Hotel service does, for every
+    reservation -- calls back THROUGH this gateway, and this is how it learns
+    where the gateway is without being told in its own .env. The live
+    deployment spent a day with the Hotel service calling a gateway at the
+    default port; nothing on that box knew the real one except this process.
+
+    Built from a server-side fact only: the port this process is actually
+    bound to, as the ASGI server reports it (`scope["server"]`), on loopback.
+    NEVER from the request's Host or X-Forwarded-* headers -- a caller
+    controls those, and a signed claim of a caller-chosen address would let
+    them steer the Hotel service at a Master Data of their own and book a
+    room at any price it names.
+
+    GATEWAY_SELF_URL overrides it for the deployment where the services are
+    not on one host; the Hotel service's own API_GATEWAY_URL, when set,
+    overrides the claim in turn.
+    """
+    explicit = (os.getenv("GATEWAY_SELF_URL") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    server = request.scope.get("server") or ()
+    port = server[1] if len(server) == 2 and server[1] else None
+    return f"http://127.0.0.1:{port}" if port else ""
 
 
 # =====================================================

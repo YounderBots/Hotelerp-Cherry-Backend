@@ -660,3 +660,58 @@ def test_the_assignee_check_is_granted_where_the_staff_list_already_is():
     exactly the same pages -- neither wider nor narrower."""
     assert (ROUTE_PERMISSIONS[("user", "users/{id}", "GET")]
             == ROUTE_PERMISSIONS[("user", "users", "GET")])
+
+
+# --------------------------------------------------------------------------
+# The `gw` claim: the gateway tells services where it is, inside the token
+#
+# A downstream service that calls back through this gateway (the Hotel
+# service, for Master Data and Users) learns the gateway's address from the
+# token it already holds, so a deployment that never set API_GATEWAY_URL in
+# the Hotel .env still works. The live one never had.
+# --------------------------------------------------------------------------
+
+def _request(scope_server=("0.0.0.0", 9010), headers=()):
+    from starlette.requests import Request
+    scope = {"type": "http", "method": "POST", "path": "/login_post", "headers": list(headers),
+             "server": scope_server, "query_string": b""}
+    return Request(scope)
+
+
+def test_the_gateway_writes_its_bound_port_on_loopback(monkeypatch):
+    from resources.loginController import self_url
+    monkeypatch.delenv("GATEWAY_SELF_URL", raising=False)
+    assert self_url(_request(("0.0.0.0", 9010))) == "http://127.0.0.1:9010"
+
+
+def test_the_claim_never_comes_from_the_callers_headers(monkeypatch):
+    """A Host or X-Forwarded-Host is the caller's to set. A signed claim of a
+    caller-chosen address would let them steer the Hotel service at a Master
+    Data of their own and book a room at any price it names."""
+    from resources.loginController import self_url
+    monkeypatch.delenv("GATEWAY_SELF_URL", raising=False)
+    evil = [(b"host", b"evil.example:80"), (b"x-forwarded-host", b"evil.example"),
+            (b"x-forwarded-proto", b"https")]
+    assert self_url(_request(("0.0.0.0", 9010), evil)) == "http://127.0.0.1:9010"
+
+
+def test_an_operator_can_name_the_address_for_a_split_deployment(monkeypatch):
+    from resources.loginController import self_url
+    monkeypatch.setenv("GATEWAY_SELF_URL", "http://gateway.internal:8000/")
+    assert self_url(_request()) == "http://gateway.internal:8000"
+
+
+def test_no_bound_port_means_no_claim(monkeypatch):
+    from resources.loginController import self_url
+    monkeypatch.delenv("GATEWAY_SELF_URL", raising=False)
+    assert self_url(_request(scope_server=None)) == ""
+
+
+def test_the_minted_token_carries_the_claim():
+    from jose import jwt
+    from configs import BaseConfig
+    from resources.utils import create_access_token
+    tok = create_access_token(data={"user_id": 1, "perm": {}, "gw": "http://127.0.0.1:9010"})
+    claims = jwt.decode(tok, BaseConfig.SECRET_KEY, algorithms=[BaseConfig.ALGORITHM],
+                        issuer=BaseConfig.JWT_ISSUER)
+    assert claims["gw"] == "http://127.0.0.1:9010"

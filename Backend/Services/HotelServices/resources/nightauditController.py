@@ -13,7 +13,6 @@ from datetime import date, timedelta
 import datetime as dt
 
 import logging
-import os
 
 import httpx
 
@@ -32,9 +31,9 @@ logger = logging.getLogger("hotelservice.nightaudit")
 # call site treats a failure as "unknown" and carries on -- see
 # `_fetch_rooms_total`.
 # Through the gateway, like every other call this service makes to a
-# sibling: one address, the one the frontend uses, and the permission map
-# sees the call. See resources/master_client.py.
-API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://127.0.0.1:8000")
+# sibling, at the address resources/master_client.gateway_url resolves for
+# the caller's token.
+from resources.master_client import gateway_url as _gateway_url  # noqa: E402
 
 router = APIRouter()
 
@@ -685,7 +684,7 @@ async def _fetch_rooms_total(token: str) -> Optional[int]:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
-                f"{API_GATEWAY_URL}/masterdata/room",
+                f"{_gateway_url(token)}/masterdata/room",
                 headers={"Authorization": f"Bearer {token}"},
             )
         if resp.status_code != 200:
