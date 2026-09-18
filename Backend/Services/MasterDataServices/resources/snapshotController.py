@@ -28,7 +28,7 @@ THE SNAPSHOT (`GET /snapshot`)
     use (`room_no`, `daily_rate`, `tax_percentage`, ...), so a consumer speaks
     one vocabulary to this service and never this schema's column names.
 
-THE STATE WRITE (`PATCH /room/{room_id}/state`)
+THE STATE WRITE (`PUT /room/{room_id}/state`)
     The three columns of `room` that are statements about operations rather
     than about the room -- occupancy, housekeeping readiness, and whether the
     room is blocked -- and nothing else. The Hotel service keeps them in step
@@ -37,6 +37,19 @@ THE STATE WRITE (`PATCH /room/{room_id}/state`)
     two of these three. Each field is optional and only the fields sent are
     written, so a caller that knows one fact does not have to assert the
     others.
+
+    PUT rather than PATCH, although the semantics are partial: every call
+    between services goes through the login gateway, which proxies and
+    authorises exactly GET, POST, PUT and DELETE -- the four verbs the whole
+    system speaks -- and a fifth verb would have to be threaded through the
+    proxy, the permission map and its generator for one route.
+
+WHO MAY CALL THESE
+    Both are reached through the gateway on the caller's own token, so the
+    gateway's permission map decides: `snapshot` for any page of the Hotel
+    module, the state write for any page whose actions cause it (a booking, a
+    check-out, a housekeeping task). See Backend/tools/build_rbac_map.py,
+    SERVICE_ROWS.
 """
 
 from __future__ import annotations
@@ -175,7 +188,7 @@ class RoomState(BaseModel):
     room_status: Optional[str] = Field(None, max_length=100)
 
 
-@router.patch("/room/{room_id}/state", status_code=status.HTTP_200_OK)
+@router.put("/room/{room_id}/state", status_code=status.HTTP_200_OK)
 def set_room_state(
     room_id: int,
     body: RoomState,

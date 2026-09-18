@@ -488,30 +488,39 @@ beside it; mixing two releases leaves every path pointing at a file that was
 never there.
 
 **Then step 3: bring the Hotel schema up to this build, and point the Hotel
-service at its siblings.**
+service at the gateway.**
 
 ```bash
 python Backend/migrations/migrate.py upgrade hotel   # adds room_lock (see below)
-grep -E "MASTER_SERVICE_URL|USER_SERVICE_URL" Backend/Services/HotelServices/.env
-sudo systemctl restart <the hotel unit>
+grep API_GATEWAY_URL Backend/Services/HotelServices/.env
+python Backend/tools/build_rbac_map.py               # the gateway's map gains the service routes
+sudo systemctl restart <the hotel unit> <the gateway unit>
 curl -s localhost:8040/readyz                        # "status": "ready"
 ```
 
 The Hotel service does **not** read any other service's database. Rooms, rate
 cards, tax, discounts, payment methods, identity proofs and the status
-vocabulary come from MasterDataServices over HTTP (`GET /snapshot`, once per
+vocabulary come from MasterDataServices (`GET /masterdata/snapshot`, once per
 request), a housekeeping assignee is checked against UserServices, and the
 room's occupancy and housekeeping flags are written back through
-`PATCH /room/{id}/state`. Its MySQL account needs privileges on
-`hotelerp_hotel` and nothing else -- there is no cross-schema GRANT to run,
-and there never will be again. What it does need is the two URLs in its
-`.env`; `make_prod_env.py` writes them, and `/readyz` names whichever one
-does not answer:
+`PUT /masterdata/room/{id}/state`. **Every one of those calls goes through
+the login gateway** -- the same address the frontend uses -- on the caller's
+own token, so the gateway's authentication and permission map apply to them
+exactly as to the browser's calls. Its MySQL account needs privileges on
+`hotelerp_hotel` and nothing else; there is no cross-schema GRANT to run.
+
+What it does need is the gateway's address in its `.env`; `make_prod_env.py`
+writes it, and `/readyz` says so when it does not answer:
 
 ```
-MASTER_SERVICE_URL=http://127.0.0.1:8030
-USER_SERVICE_URL=http://127.0.0.1:8020
+API_GATEWAY_URL=http://127.0.0.1:8000
 ```
+
+The gateway's permission map must carry the three service-to-service routes
+(`masterdata/snapshot`, `masterdata/room/{id}/state`, `user/users/{id}`), which
+`build_rbac_map.py` derives from the Hotel rows -- run it on the gateway's build
+and restart the gateway, or under `RBAC_GATEWAY_MODE=enforce` every reservation
+screen answers 503 naming the missing row.
 
 The double-booking guard stayed in one transaction: it locks a row in the
 Hotel schema's own `room_lock` table, which is why the migration above is

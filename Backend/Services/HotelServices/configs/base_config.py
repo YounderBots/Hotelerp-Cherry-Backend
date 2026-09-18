@@ -24,14 +24,16 @@ class BaseConfig(object):
     # token this service receives is rejected.
     JWT_ISSUER = os.getenv("JWT_ISSUER", "hotelerp-login")
 
-    # The two services this one depends on. Reservation reads rooms, rate
-    # cards, tax, discounts, payment methods, identity proofs and the status
-    # vocabulary from Master Data, and writes room state back; Housekeeping
-    # checks an assignee against Users. Both over HTTP, on behalf of the
-    # caller, so this service's database account never leaves its own schema.
-    # Loopback by default; make_prod_env.py writes the same.
-    MASTER_SERVICE_URL = os.getenv("MASTER_SERVICE_URL", "http://127.0.0.1:8030")
-    USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://127.0.0.1:8020")
+    # Where this service reaches the rest of the system: the login gateway,
+    # the same address the frontend is pointed at. Reservation reads rooms,
+    # rate cards, tax, discounts, payment methods, identity proofs and the
+    # status vocabulary from Master Data (/masterdata/snapshot) and writes
+    # room state back; Housekeeping checks an assignee against Users
+    # (/user/users/{id}). All on the caller's own token, all through the
+    # gateway's authentication and permission map, never to a sibling's
+    # port -- so there is exactly one address to get right, and it is one
+    # every deployment already knows. make_prod_env.py writes it.
+    API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://127.0.0.1:8000")
 
     SESSION_SECRET = os.getenv(
         "SESSION_SECRET",

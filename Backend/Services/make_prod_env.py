@@ -51,11 +51,11 @@ SERVICES = {
     "LoginServices":      ("0.0.0.0",   8000, "hotelerp_users",      True,  True),
     "UserServices":       ("127.0.0.1", 8020, "hotelerp_users",      False, False),
     "MasterDataServices": ("127.0.0.1", 8030, "hotelerp_masterdata", False, False),
-    # Hotel reads Master Data and Users over HTTP (rooms, rate cards, the
-    # status vocabulary; a housekeeping assignee) and writes room state back,
-    # so it needs the sibling URLs like Restaurant and Bar do -- and, unlike
-    # before, NO privilege on any schema but its own.
-    "HotelServices":      ("127.0.0.1", 8040, "hotelerp_hotel",      True,  False),
+    # Hotel reads Master Data and Users THROUGH THE GATEWAY (rooms, rate
+    # cards, the status vocabulary; a housekeeping assignee) and writes room
+    # state back the same way, so it gets API_GATEWAY_URL below rather than
+    # the sibling URLs -- and NO privilege on any schema but its own.
+    "HotelServices":      ("127.0.0.1", 8040, "hotelerp_hotel",      False, False),
     "RestaurantServices": ("127.0.0.1", 8050, "hotelerp_restaurant", True,  False),
     "BarServices":        ("127.0.0.1", 8060, "hotelerp_bar",        True,  False),
 }
@@ -108,6 +108,16 @@ def build(service: str, cfg: tuple, shared: dict, args) -> str:
     if wants_urls:
         L += ["", "# Cross-service calls stay on loopback - never public."]
         L += [f"{name}=http://127.0.0.1:{p}" for name, p in INTERNAL_URLS]
+
+    if service == "HotelServices":
+        # One address, the gateway's: the same one the frontend is pointed
+        # at, so there is nothing new to discover about a deployment. Every
+        # Master Data and Users call goes through its authentication and
+        # permission map on the caller's own token.
+        gateway_port = SERVICES["LoginServices"][1]
+        L += ["", "# Master Data and Users are reached through the gateway, on the "
+                  "caller's behalf.",
+              f"API_GATEWAY_URL=http://127.0.0.1:{gateway_port}"]
 
     if is_gateway:
         L += [

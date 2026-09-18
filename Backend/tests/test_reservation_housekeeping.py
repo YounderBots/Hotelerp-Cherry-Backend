@@ -6,7 +6,7 @@
 No MySQL and no HTTP. The Hotel schema is an in-memory SQLite database; Master
 Data is `fake_master.FakeMaster`, an in-memory stand-in for the
 MasterDataServices API behind the real client, so every room-state write here
-goes through the same `PATCH /room/{id}/state` call production makes -- and
+goes through the same `PUT /room/{id}/state` call production makes -- and
 `master.writes()` says exactly what was written.
 
 WHY THIS EXISTS

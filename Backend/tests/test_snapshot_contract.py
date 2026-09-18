@@ -6,7 +6,7 @@
 
 WHY THIS SUITE EXISTS
     HotelServices no longer reads Master Data's tables; it reads
-    `GET /snapshot` and writes `PATCH /room/{id}/state`, both served by
+    `GET /snapshot` and writes `PUT /room/{id}/state`, both served by
     `resources/snapshotController.py` here. Two services, one contract, and
     nothing in either process can see the other -- so the usual way this
     breaks is one side renaming a field and every reservation quietly
@@ -134,10 +134,13 @@ class ServedTransport:
         r = self.client.get(path, headers=self.headers)
         return None if r.status_code == 404 else r.json()
 
-    def patch(self, service, path, body):
+    def put(self, service, path, body):
         assert service == "master"
-        r = self.client.patch(path, json=body, headers=self.headers)
+        r = self.client.put(path, json=body, headers=self.headers)
         return None if r.status_code == 404 else r.json()
+
+    def base_url(self, service):
+        return "served://" + service
 
 
 # ---------------------------------------------------------------------------
@@ -220,19 +223,19 @@ class TestHotelClientOverTheRealRoutes:
 
 
 # ---------------------------------------------------------------------------
-# PATCH /room/{id}/state on its own
+# PUT /room/{id}/state on its own
 # ---------------------------------------------------------------------------
 class TestRoomState:
     def test_refuses_an_empty_change(self, client):
-        r = client.patch("/room/1/state", json={}, headers=auth())
+        r = client.put("/room/1/state", json={}, headers=auth())
         assert r.status_code == 400
 
     def test_refuses_a_blank_value(self, client):
-        r = client.patch("/room/1/state", json={"room_status": "  "}, headers=auth())
+        r = client.put("/room/1/state", json={"room_status": "  "}, headers=auth())
         assert r.status_code == 400
 
     def test_writes_only_the_fields_sent(self, client, db):
-        r = client.patch("/room/1/state", json={"room_status": "Blocking"}, headers=auth())
+        r = client.put("/room/1/state", json={"room_status": "Blocking"}, headers=auth())
         assert r.status_code == 200
         assert r.json()["data"]["room_status"] == "Blocking"
         db.expire_all()
@@ -241,7 +244,7 @@ class TestRoomState:
             ("Blocking", "Available", "Ready")
 
     def test_unknown_room_is_404(self, client):
-        assert client.patch("/room/999/state", json={"room_status": "Blocking"},
+        assert client.put("/room/999/state", json={"room_status": "Blocking"},
                             headers=auth()).status_code == 404
 
     def test_the_rooms_own_editor_does_not_own_these_columns(self):

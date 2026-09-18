@@ -162,9 +162,8 @@ def server_error(log: logging.Logger, exc: Exception,
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(f"The {exc.label} service is unavailable{exc.where()}, so this "
-                    "request cannot be completed. Fix that value in the Hotel "
-                    "service's .env and restart it; the Hotel service log has "
-                    "the full error."),
+                    "request cannot be completed. The Hotel service log has the "
+                    "full error and what to change."),
         )
     log.exception(event, exc_info=exc)
     return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

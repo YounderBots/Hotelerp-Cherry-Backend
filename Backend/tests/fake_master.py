@@ -3,7 +3,7 @@
 `MasterData` (resources/master_client.py) talks to a `Transport` -- the one
 thing that knows about HTTP. This is a Transport that answers from a dict
 instead, shaped exactly like the wire: `GET /snapshot` returns the seven
-lists, `PATCH /room/{id}/state` writes into them, `GET /users/{id}` answers
+lists, `PUT /room/{id}/state` writes into them, `GET /users/{id}` answers
 from a staff list. So the suites exercise the real client, the real records
 and the real lookups, with no HTTP and no second database -- which is also
 what makes them honest about the boundary: if the wire shape changes here it
@@ -100,8 +100,8 @@ class FakeMaster:
             return {"status": "success", "data": dict(row)} if row else None
         raise AssertionError(f"unexpected GET {service} {path}")
 
-    def patch(self, service: str, path: str, body: dict) -> Optional[dict]:
-        self.calls.append(("PATCH", service, path, dict(body)))
+    def put(self, service: str, path: str, body: dict) -> Optional[dict]:
+        self.calls.append(("PUT", service, path, dict(body)))
         if self.down:
             raise MasterDataUnavailable(service, f"{path} is unreachable (test)")
         assert service == "master" and path.startswith("/room/") and path.endswith("/state"), path
@@ -115,7 +115,7 @@ class FakeMaster:
 
     # -- what was written -------------------------------------------------------
     def writes(self) -> list[tuple[int, dict]]:
-        return [(int(p.split("/")[2]), b) for m, _s, p, b in self.calls if m == "PATCH"]
+        return [(int(p.split("/")[2]), b) for m, _s, p, b in self.calls if m == "PUT"]
 
 
 def fake_master() -> tuple[MasterData, FakeMaster]:

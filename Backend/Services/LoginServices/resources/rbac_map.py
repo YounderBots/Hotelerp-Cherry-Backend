@@ -185,11 +185,13 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("masterdata", "room", "PUT"): ("/rooms",),
     ("masterdata", "room/{id}", "DELETE"): ("/rooms",),
     ("masterdata", "room/{id}", "GET"): ("/rooms",),
+    ("masterdata", "room/{id}/state", "PUT"): ("/add_new_reservation", "/booking", "/guest_enquiry", "/night_audit", "/reservation", "/room_incident_log", "/task_assign",),
     ("masterdata", "room_types", "GET"): ("/add_new_reservation", "/booking", "/room_type", "/room_view", "/rooms",),
     ("masterdata", "room_types", "POST"): ("/room_type",),
     ("masterdata", "room_types", "PUT"): ("/room_type",),
     ("masterdata", "room_types/{id}", "DELETE"): ("/room_type",),
     ("masterdata", "room_types/{id}", "GET"): ("/room_type",),
+    ("masterdata", "snapshot", "GET"): ("/ReservationView", "/add_new_reservation", "/booking", "/dashboard", "/guest_enquiry", "/night_audit", "/reservation", "/reservation_view", "/room_booked_details", "/room_incident_log", "/settlement_summary", "/task_assign", "/user_reserved_details",),
     ("masterdata", "task_type", "GET"): ("/hsk_task_type", "/task_assign",),
     ("masterdata", "task_type", "POST"): ("/hsk_task_type",),
     ("masterdata", "task_type", "PUT"): ("/hsk_task_type",),
@@ -302,6 +304,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("user", "users", "POST"): ("/employee",),
     ("user", "users", "PUT"): ("/employee",),
     ("user", "users/{id}", "DELETE"): ("/employee",),
+    ("user", "users/{id}", "GET"): ("/bar_roster", "/bar_shift_planning", "/employee", "/restaurant_roster", "/restaurant_shift_planning", "/room_incident_log", "/task_assign",),
 }
 
 METHOD_ACTION = {"GET": "view", "POST": "create", "PUT": "edit",
@@ -335,6 +338,13 @@ ACTION_OVERRIDES: dict[tuple[str, str, str], str] = {
     ("hotel", "room_reservation_refund/{id}", "POST"): "edit",
     # ---- reads that happen to be POSTs
     ("hotel", "room_reservation_quote", "POST"): "view",
+    # ---- service-to-service: the Hotel service writes a room's operational
+    # flags on the caller's behalf after a booking, check-out or housekeeping
+    # task. Whoever may open the screen that causes it may cause it; requiring
+    # `edit` would refuse a receptionist who holds only `create` on the
+    # booking screen the moment they book a room. See SERVICE_ROWS in
+    # Backend/tools/build_rbac_map.py.
+    ("masterdata", "room/{id}/state", "PUT"): "view",
 }
 
 # Endpoints the services expose that no page was shown to call. Under
@@ -424,7 +434,6 @@ UNCALLED_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("user", "submenus/by-menu/{id}", "GET"),
     ("user", "submenus/{id}", "DELETE"),
     ("user", "submenus/{id}", "GET"),
-    ("user", "users/{id}", "GET"),
     ("user", "verify_credentials", "POST"),
 )
 

@@ -158,6 +158,51 @@ SERVICES = {
     "restaurant": "RestaurantServices",
     "bar": "BarServices",
 }
+
+# ---------------------------------------------------------------------------
+# SERVICE-TO-SERVICE ROUTES
+# ---------------------------------------------------------------------------
+# Calls one service makes to another THROUGH THE GATEWAY, on the caller's own
+# token, so the caller's page permissions decide them exactly as they decide
+# the browser's calls. The SPA never issues these, so the passes above cannot
+# find them; their pages are DERIVED from the rows of the service that makes
+# the call, which is the honest rule: the Hotel service may ask Master Data
+# for a snapshot on behalf of anyone who may open a Hotel screen at all, and
+# may write a room's operational flags on behalf of anyone who may perform a
+# Hotel action that changes them.
+#
+#   masterdata/snapshot GET
+#       Everything a reservation needs to be read or priced (rooms, rate
+#       cards, tax, discounts, payment methods, identity proofs, statuses),
+#       fetched once per Hotel request. Pages: every page any hotel/* row
+#       names -- listing, detail, booking, housekeeping, night audit.
+#
+#   masterdata/room/{id}/state PUT
+#       The room's occupancy, readiness and blocked flags, kept in step by
+#       the Hotel service after a booking, check-in, check-out, cancellation,
+#       deletion or housekeeping task. Pages: every page a hotel/* WRITE row
+#       names. Action `view` (see ACTION_OVERRIDES): a receptionist holding
+#       only `create` on the booking screen still causes this write by
+#       making a booking, and the write is bounded to three flag columns of
+#       the caller's own company -- what the caller's own action would set.
+#
+#   user/users/{id} GET
+#       Is this assignee an active member of staff, when a housekeeping task
+#       is created or reassigned. Pages: the same pages the staff LIST is
+#       already granted to; the detail reveals nothing the list does not.
+#
+# Rows are added to the table AFTER the SPA-derived rows exist, because they
+# are computed from them.
+SERVICE_ROWS = {
+    ("masterdata", "snapshot", "GET"):
+        lambda table: {p for (pre, _pat, _m), pages in table.items()
+                       if pre == "hotel" for p in pages},
+    ("masterdata", "room/{id}/state", "PUT"):
+        lambda table: {p for (pre, _pat, m), pages in table.items()
+                       if pre == "hotel" and m != "GET" for p in pages},
+    ("user", "users/{id}", "GET"):
+        lambda table: set(table.get(("user", "users", "GET"), ())),
+}
 METHOD = {"get": "GET", "getT": "GET", "post": "POST", "postT": "POST",
           "put": "PUT", "putT": "PUT", "delete": "DELETE", "deleteT": "DELETE"}
 
@@ -557,6 +602,14 @@ def collect():
         table[key].update(pages)
         stats["curated"] += 1
 
+    for key, derive in SERVICE_ROWS.items():
+        pages = derive(table)
+        if not pages:
+            raise SystemExit(f"SERVICE_ROWS: nothing to derive {key} from -- "
+                             "the rows it depends on are missing")
+        table[key].update(pages)
+        stats["service"] += 1
+
     # Self-service endpoints never reach the map: the gateway short-circuits
     # them before consulting it. Leaving them in would put rows in the table
     # that nothing can grant -- their pages have no menu row -- which is a
@@ -651,6 +704,13 @@ ACTION_OVERRIDES: dict[tuple[str, str, str], str] = {
     ("hotel", "room_reservation_refund/{id}", "POST"): "edit",
     # ---- reads that happen to be POSTs
     ("hotel", "room_reservation_quote", "POST"): "view",
+    # ---- service-to-service: the Hotel service writes a room's operational
+    # flags on the caller's behalf after a booking, check-out or housekeeping
+    # task. Whoever may open the screen that causes it may cause it; requiring
+    # `edit` would refuse a receptionist who holds only `create` on the
+    # booking screen the moment they book a room. See SERVICE_ROWS in
+    # Backend/tools/build_rbac_map.py.
+    ("masterdata", "room/{id}/state", "PUT"): "view",
 }
 
 # Endpoints the services expose that no page was shown to call. Under
@@ -753,7 +813,7 @@ def main() -> int:
     print(f"upstream routes         : {stats['upstream']}")
     print(f"rows derived            : {stats['rows']}   "
           f"(pass A {stats['pass_a']}, pass B {stats['pass_b']}, "
-          f"curated {stats['curated']})")
+          f"curated {stats['curated']}, service-to-service {stats['service']})")
     print(f"uncalled by the SPA     : {len(uncalled)}")
     print(f"detail routes w/ parent : {len(parents)}   {', '.join(sorted(parents))}")
     print(f"unreachable routes      : {len(unreachable)}   {', '.join(unreachable)}")

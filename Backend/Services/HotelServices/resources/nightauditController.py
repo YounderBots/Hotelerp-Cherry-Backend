@@ -31,7 +31,10 @@ logger = logging.getLogger("hotelservice.nightaudit")
 # to turn "8 rooms occupied" into "8 of 25 (32%)" on the audit record. Every
 # call site treats a failure as "unknown" and carries on -- see
 # `_fetch_rooms_total`.
-MASTER_SERVICE_URL = os.getenv("MASTER_SERVICE_URL", "http://127.0.0.1:8030")
+# Through the gateway, like every other call this service makes to a
+# sibling: one address, the one the frontend uses, and the permission map
+# sees the call. See resources/master_client.py.
+API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://127.0.0.1:8000")
 
 router = APIRouter()
 
@@ -682,7 +685,7 @@ async def _fetch_rooms_total(token: str) -> Optional[int]:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
-                f"{MASTER_SERVICE_URL}/room",
+                f"{API_GATEWAY_URL}/masterdata/room",
                 headers={"Authorization": f"Bearer {token}"},
             )
         if resp.status_code != 200:

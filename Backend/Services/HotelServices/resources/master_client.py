@@ -16,11 +16,32 @@ WHY THIS EXISTS
     168.231.103.18 did for three days over one missing GRANT.
 
     So the boundary is now the one the rest of the system already uses:
-    Restaurant and Bar ask Users and Master Data over HTTP, the night audit
-    asks `/room` over HTTP, and this module asks `/snapshot` -- everything a
-    reservation needs to be interpreted or priced, in one round trip -- and
-    writes room state back through `PATCH /room/{id}/state`. The Hotel
-    service's database account touches the Hotel schema and nothing else.
+    HTTP, on the caller's behalf. This module asks Master Data for
+    `/snapshot` -- everything a reservation needs to be interpreted or
+    priced, in one round trip -- and writes room state back through
+    `PUT /room/{id}/state`. The Hotel service's database account touches the
+    Hotel schema and nothing else.
+
+THROUGH THE GATEWAY, NOT TO THE PORT
+    Every call goes to the login gateway -- `API_GATEWAY_URL` -- as
+    `/masterdata/...` and `/user/...`, exactly as the browser's calls do. Not
+    to the sibling's own port. Two reasons, and the first is the one that
+    cost a day:
+
+      * There is one address to configure, and it is the one every deployment
+        already knows, because the frontend is pointed at it. A per-service
+        internal URL is a second, invisible fact about the deployment; the
+        live server's Hotel service spent a day calling a Master Data that
+        was not at the default port, with nothing on screen to say so.
+
+      * The gateway is where authentication and authorisation live. A call
+        that goes round it is a call the permission map never sees. Going
+        through it, the Hotel service can do on the caller's behalf exactly
+        what the caller may do, and the map has rows for these routes
+        (Backend/tools/build_rbac_map.py, SERVICE_ROWS).
+
+    The gateway forwards the same token, so Master Data still scopes the
+    snapshot by the caller's company.
 
 WHAT IT COSTS, AND WHAT IT DOES NOT
     One GET per request that needs master data, memoised for the life of the
@@ -69,14 +90,17 @@ TIMEOUT_SECONDS = 5.0
 
 MASTER = "master"
 USERS = "users"
-ENV_VAR = {MASTER: "MASTER_SERVICE_URL", USERS: "USER_SERVICE_URL"}
+ENV_VAR = "API_GATEWAY_URL"
+# The gateway's proxy prefix for each sibling: the browser calls
+# /masterdata/room; so does this service.
+PREFIX = {MASTER: "masterdata", USERS: "user"}
 
 
 class MasterDataUnavailable(Exception):
     """A sibling service could not be reached or refused this service.
 
-    Carries the base URL this service tried and the .env key that set it, so
-    the 503 can say "Master Data at http://127.0.0.1:8030 (MASTER_SERVICE_URL)"
+    Carries the address this service tried and the .env key that set it, so
+    the 503 can say "Master Data at http://127.0.0.1:8000 (API_GATEWAY_URL)"
     to whoever is looking -- which, on a box whose main.py predates /readyz,
     is the browser and not a journal.
     """
@@ -93,7 +117,7 @@ class MasterDataUnavailable(Exception):
         return {MASTER: "Master Data", USERS: "Users"}.get(self.service, self.service)
 
     def where(self) -> str:
-        """`at http://127.0.0.1:8030 (MASTER_SERVICE_URL)`, or '' when unknown."""
+        """`at http://127.0.0.1:8000 (API_GATEWAY_URL)`, or '' when unknown."""
         if not self.base_url:
             return ""
         return f" at {self.base_url}" + (f" ({self.env_var})" if self.env_var else "")
@@ -193,34 +217,34 @@ def _build(cls, row: dict):
 
 class Transport(Protocol):
     def get(self, service: str, path: str) -> Optional[dict]: ...
-    def patch(self, service: str, path: str, body: dict) -> Optional[dict]: ...
+    def put(self, service: str, path: str, body: dict) -> Optional[dict]: ...
     def base_url(self, service: str) -> str: ...     # "" when it has no address
 
 
 class HttpTransport:
-    """Forwards the caller's own token, so the sibling scopes by its company.
+    """The gateway, on the caller's own token.
 
-    Every service verifies the same JWT (shared secret and issuer), which is
-    what makes "on behalf of the caller" work without a service account: the
-    sibling sees the same user, the same role and the same company_id this
-    service did.
+    `GET /snapshot` of Master Data becomes `GET {gateway}/masterdata/snapshot`
+    with the caller's `Authorization` header, which is precisely the request
+    the browser would make. The gateway verifies the token, consults its
+    permission map for that route, and proxies to Master Data with the same
+    header -- so Master Data sees the same user, role and company_id this
+    service did, and scopes accordingly.
     """
 
-    def __init__(self, token: str, *, master_url: str, users_url: str,
-                 timeout: float = TIMEOUT_SECONDS):
+    def __init__(self, token: str, *, gateway_url: str, timeout: float = TIMEOUT_SECONDS):
         self._headers = {"Authorization": f"Bearer {token}"}
-        self._base = {MASTER: master_url.rstrip("/"), USERS: users_url.rstrip("/")}
+        self._gateway = gateway_url.rstrip("/")
         self._timeout = timeout
 
     def _url(self, service: str, path: str) -> str:
-        return f"{self._base[service]}/{path.lstrip('/')}"
+        return f"{self._gateway}/{PREFIX[service]}/{path.lstrip('/')}"
 
     def base_url(self, service: str) -> str:
-        return self._base[service]
+        return self._gateway
 
     def _fail(self, service: str, detail: str) -> MasterDataUnavailable:
-        return MasterDataUnavailable(service, detail, base_url=self._base[service],
-                                     env_var=ENV_VAR[service])
+        return MasterDataUnavailable(service, detail, base_url=self._gateway, env_var=ENV_VAR)
 
     def _send(self, method: str, service: str, path: str, body=None) -> Optional[dict]:
         url = self._url(service, path)
@@ -230,20 +254,37 @@ class HttpTransport:
         except httpx.HTTPError as exc:
             raise self._fail(
                 service, f"{url} is unreachable ({exc.__class__.__name__}). "
-                f"Check that the service is running and that {ENV_VAR[service]} "
-                "in this service's .env points at it."
+                f"Check that the gateway is running and that {ENV_VAR} in this "
+                "service's .env is its address -- the same one the frontend uses."
             ) from exc
 
         if resp.status_code == 404:
             return None
-        if resp.status_code in (401, 403):
-            # Our own caller's token was accepted here and refused there: the
-            # two services are not verifying the same JWT. That is a deploy
-            # fault (JWT_SECRET_KEY / JWT_ISSUER differ), not the caller's.
+        if resp.status_code == 401:
+            # Our own caller's token was accepted here and refused by the
+            # gateway: the two are not verifying the same JWT. A deploy fault
+            # (JWT_SECRET_KEY / JWT_ISSUER differ), not the caller's.
             raise self._fail(
-                service, f"{url} rejected the forwarded token ({resp.status_code}). "
-                "JWT_SECRET_KEY and JWT_ISSUER must be identical in every "
-                "service's .env."
+                service, f"{url} rejected the forwarded token (401). JWT_SECRET_KEY "
+                "and JWT_ISSUER must be identical in every service's .env."
+            )
+        if resp.status_code == 403:
+            # The gateway's permission map refused this route for this role.
+            # The row for it comes from build_rbac_map.py (SERVICE_ROWS); a
+            # gateway on a build without that row, or a map not regenerated
+            # since, denies it under enforce.
+            raise self._fail(
+                service, f"{url} was refused by the gateway's permission map "
+                f"({resp.text[:160]}). Regenerate it with "
+                "`python Backend/tools/build_rbac_map.py` on the gateway's build "
+                "and restart the gateway."
+            )
+        if resp.status_code == 502:
+            # The gateway is up; what it proxies to is not.
+            raise self._fail(
+                service, f"{url}: the gateway could not reach the {PREFIX[service]} "
+                f"service ({resp.text[:120]}). Check that service and the gateway's "
+                "own *_SERVICE_URL for it."
             )
         if resp.status_code >= 400:
             raise self._fail(service, f"{url} answered {resp.status_code}: {resp.text[:200]}")
@@ -255,8 +296,8 @@ class HttpTransport:
     def get(self, service: str, path: str) -> Optional[dict]:
         return self._send("GET", service, path)
 
-    def patch(self, service: str, path: str, body: dict) -> Optional[dict]:
-        return self._send("PATCH", service, path, body)
+    def put(self, service: str, path: str, body: dict) -> Optional[dict]:
+        return self._send("PUT", service, path, body)
 
 
 # ---------------------------------------------------------------------------
@@ -279,11 +320,7 @@ class MasterData:
 
     @classmethod
     def for_token(cls, token: str) -> "MasterData":
-        return cls(HttpTransport(
-            token,
-            master_url=BaseConfig.MASTER_SERVICE_URL,
-            users_url=BaseConfig.USER_SERVICE_URL,
-        ))
+        return cls(HttpTransport(token, gateway_url=BaseConfig.API_GATEWAY_URL))
 
     # -- the snapshot -------------------------------------------------------
     def _load(self) -> dict:
@@ -297,9 +334,10 @@ class MasterData:
                 # for a connection that fails outright.
                 base = getattr(self._t, "base_url", lambda _s: "")(MASTER)
                 raise MasterDataUnavailable(
-                    MASTER, f"{base or 'Master Data'}/snapshot returned no data -- "
-                    "is that MasterDataServices, on a build that has /snapshot?",
-                    base_url=base, env_var=ENV_VAR[MASTER] if base else "",
+                    MASTER, f"{base or 'the gateway'}/{PREFIX[MASTER]}/snapshot returned "
+                    "no data -- is that the gateway, and is Master Data behind it on a "
+                    "build that has /snapshot?",
+                    base_url=base, env_var=ENV_VAR if base else "",
                 )
             self._snapshot = {
                 "rooms": {r.id: r for r in map(lambda x: _build(Room, x), data.get("rooms", []))},
@@ -392,6 +430,7 @@ class MasterData:
         Only the fields given are sent, and only a change is a write: a room
         already in the wanted state costs no request. Returns the room as
         Master Data now holds it, or None if the room is no longer there.
+        PUT, because the gateway proxies GET/POST/PUT/DELETE and nothing else.
         """
         wanted = {
             "booking_status": booking_status,
@@ -406,7 +445,7 @@ class MasterData:
         if not changes:
             return current
 
-        payload = self._t.patch(MASTER, f"/room/{int(room_id)}/state", changes)
+        payload = self._t.put(MASTER, f"/room/{int(room_id)}/state", changes)
         if payload is None:
             logger.warning("room_state_write_skipped room_id=%s reason=not_found", room_id)
             return None
@@ -422,25 +461,27 @@ class MasterData:
 # ---------------------------------------------------------------------------
 # Readiness
 # ---------------------------------------------------------------------------
-def probe(service: str, base_url: str, env_var: str, consequence: str,
-          timeout: float = 3.0) -> tuple[bool, str]:
-    """Can this service reach the sibling it depends on? For /readyz and boot.
+def probe(gateway_url: str, timeout: float = 3.0) -> tuple[bool, str]:
+    """Can this service reach the gateway? For /readyz and the boot log.
 
-    Asks the sibling's own liveness endpoint, which needs no token. A 200 is
-    "reachable"; anything else is reported with the URL and the .env key that
-    set it, so the operator reads which value is wrong rather than which
-    screen is down.
+    Asks the gateway's own liveness endpoint, which needs no token. Master
+    Data and Users are behind it; a gateway that answers but cannot reach one
+    of them shows up per request as a 503 naming that service, not here --
+    their liveness endpoints are behind the proxy's authentication and a
+    readiness probe holds no token.
     """
-    url = f"{base_url.rstrip('/')}/healthz"
+    url = f"{gateway_url.rstrip('/')}/healthz"
     try:
         with httpx.Client(timeout=timeout) as client:
             resp = client.get(url)
     except httpx.HTTPError as exc:
         return False, (
-            f"{service} service unreachable at {url} ({exc.__class__.__name__}). "
-            f"{consequence} Check that it is running and that {env_var} in this "
-            "service's .env points at it."
+            f"gateway unreachable at {url} ({exc.__class__.__name__}). Master Data "
+            "and Users are reached through it, so every reservation screen and "
+            f"housekeeping assignment answers 503 until it is. Check that {ENV_VAR} "
+            "in this service's .env is the gateway's address -- the same one the "
+            "frontend uses."
         )
     if resp.status_code != 200:
-        return False, f"{service} service at {url} answered {resp.status_code}. {consequence}"
-    return True, f"{service} service reachable at {url}"
+        return False, f"gateway at {url} answered {resp.status_code}"
+    return True, f"gateway reachable at {url}; Master Data and Users are called through it"

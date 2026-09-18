@@ -124,27 +124,16 @@ def root_api():
 def _dependency_checks() -> dict:
     """Every dependency this service cannot do its job without.
 
-    Two sibling services, reported separately because they fail separately
-    and break different screens: without Master Data the whole reservation
-    module is down, while without Users only assigning a housekeeping task
-    is. Both are reached over HTTP on the caller's behalf; this service's
-    own database account never leaves its own schema, so there is no
-    cross-schema privilege left to probe.
+    One: the gateway. Master Data (the whole reservation module) and Users
+    (a housekeeping assignee) are reached through it, on the caller's own
+    token, so it is the one address that has to be right -- and it is the
+    one the frontend already uses. This service's own database account never
+    leaves its own schema, so there is no cross-schema privilege to probe.
     """
     from resources.master_client import probe
 
-    md_ok, md_detail = probe(
-        "Master Data", BaseConfig.MASTER_SERVICE_URL, "MASTER_SERVICE_URL",
-        "Every reservation screen answers 503 until it is.",
-    )
-    users_ok, users_detail = probe(
-        "Users", BaseConfig.USER_SERVICE_URL, "USER_SERVICE_URL",
-        "Assigning a housekeeping task cannot check its assignee until it is.",
-    )
-    return {
-        "masterdata": {"ok": md_ok, "detail": md_detail},
-        "users": {"ok": users_ok, "detail": users_detail},
-    }
+    ok, detail = probe(BaseConfig.API_GATEWAY_URL)
+    return {"gateway": {"ok": ok, "detail": detail}}
 
 
 # Liveness. Stays 200 whenever the process is serving, so a dependency being
@@ -186,10 +175,10 @@ def readyz():
 def _check_dependencies_on_boot():
     """Say it once, loudly, at boot rather than 500 per request afterwards.
 
-    This service reads Master Data and Users over HTTP. A deployment whose
-    MASTER_SERVICE_URL or USER_SERVICE_URL points nowhere used to start
-    cleanly and break only the reservation module, one 500 at a time; now the
-    boot log names the URL that does not answer.
+    This service reads Master Data and Users through the gateway. A
+    deployment whose API_GATEWAY_URL points nowhere used to start cleanly and
+    break only the reservation module, one 500 at a time; now the boot log
+    names the address that does not answer.
     """
     for name, c in _dependency_checks().items():
         if c["ok"]:

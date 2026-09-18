@@ -306,6 +306,15 @@ def test_write_rows_are_essentially_unambiguous():
         # therefore correct, and the create permission it resolves to is the
         # same one those pages already need to act on the answer.
         ("hotel", "room_reservation_quote", "POST"),
+        # Reviewed: /masterdata/room/{id}/state is the Hotel service writing a
+        # room's occupancy / readiness / blocked flags on the caller's behalf,
+        # as the consequence of a booking, check-out or housekeeping task. Its
+        # pages are DERIVED as the union of every Hotel write row's pages
+        # (build_rbac_map.py, SERVICE_ROWS), so it is ambiguous by
+        # construction: any screen whose action moves a room's flags may move
+        # them. The write is bounded to three flag columns of the caller's own
+        # company, and its action is `view` (see ACTION_OVERRIDES below).
+        ("masterdata", "room/{id}/state", "PUT"),
         ("restaurant", "kot/item/{id}/status", "PUT"),
         ("restaurant", "kot/{id}/acknowledge", "PUT"),
         ("restaurant", "kot/{id}/status", "PUT"),
@@ -580,3 +589,74 @@ def test_the_exempt_set_stays_small_and_self_scoped():
     # Nothing exempt may carry a path parameter that names a user.
     for prefix, path, method in ALWAYS_ALLOW:
         assert not path.startswith("users/"), f"{path} can address another user"
+
+
+# --------------------------------------------------------------------------
+# Service-to-service calls, which go through this gateway on the caller's
+# own token: the Hotel service reading Master Data and Users.
+#
+# The SPA never issues these, so build_rbac_map.py derives their pages from
+# the Hotel rows (SERVICE_ROWS): whoever may open a Hotel screen may, through
+# the Hotel service, read the snapshot; whoever may perform a Hotel action
+# that changes a room's flags may, through it, write them.
+# --------------------------------------------------------------------------
+
+SERVICE_ROUTES = (
+    ("masterdata", "snapshot", "GET"),
+    ("masterdata", "room/{id}/state", "PUT"),
+    ("user", "users/{id}", "GET"),
+)
+
+
+def test_the_service_routes_are_mapped_not_uncalled():
+    """A build of the gateway that lacks these rows denies every reservation
+    screen under enforce -- the Hotel service cannot price a stay without the
+    snapshot. Pinned so a regenerated map cannot silently drop them."""
+    from resources.rbac_map import UNCALLED_ENDPOINTS
+    for key in SERVICE_ROUTES:
+        assert key in ROUTE_PERMISSIONS, key
+        assert key not in UNCALLED_ENDPOINTS, key
+        assert ROUTE_PERMISSIONS[key], key
+
+
+def test_the_snapshot_is_readable_from_every_hotel_screen():
+    """Derived, not typed: the snapshot's pages are the union of the pages
+    of every hotel/* row, so adding a Hotel screen extends it automatically."""
+    hotel_pages = {p for (pre, _pat, _m), pages in ROUTE_PERMISSIONS.items()
+                   if pre == "hotel" for p in pages}
+    assert set(ROUTE_PERMISSIONS[("masterdata", "snapshot", "GET")]) == hotel_pages
+
+
+def test_a_dashboard_only_role_can_still_have_its_summary_priced(enforce):
+    """A role that may only open the dashboard reads the snapshot through the
+    Hotel service (the dashboard shows reservation labels), and nothing else
+    of Master Data."""
+    perm = {"/dashboard": VIEW}
+    assert check(perm, "masterdata", "snapshot", "GET") is None
+    # Not widened: the room master's own editor and the rate card stay theirs.
+    assert check(perm, "masterdata", "room", "PUT") is not None
+    assert check(perm, "masterdata", "room_types", "GET") is not None
+
+
+def test_a_receptionist_who_may_only_create_bookings_can_cause_the_room_write(enforce):
+    """The override this exists for. Making a booking marks the room Reserved;
+    that write is a PUT, whose default action is `edit`, which a create-only
+    receptionist does not hold. `view` on the screen that causes it is the
+    rule -- the write is the consequence of an action they are allowed."""
+    perm = {"/add_new_reservation": VIEW | CREATE}
+    assert check(perm, "masterdata", "room/12/state", "PUT") is None
+    # ...while the room's own editor stays gated as before.
+    assert check(perm, "masterdata", "room", "PUT") is not None
+
+
+def test_a_bar_only_role_reaches_none_of_it(enforce):
+    perm = {"/bar_billing_payments": VIEW | CREATE | EDIT | DELETE}
+    for prefix, path, method in SERVICE_ROUTES:
+        assert check(perm, prefix, path.replace("{id}", "7"), method) is not None, path
+
+
+def test_the_assignee_check_is_granted_where_the_staff_list_already_is():
+    """The detail reveals nothing the list does not, so it is granted to
+    exactly the same pages -- neither wider nor narrower."""
+    assert (ROUTE_PERMISSIONS[("user", "users/{id}", "GET")]
+            == ROUTE_PERMISSIONS[("user", "users", "GET")])
