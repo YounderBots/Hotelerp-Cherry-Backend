@@ -107,7 +107,30 @@ app.mount("/templates/static", StaticFiles(directory="templates/static"), name="
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("unhandled_exception", extra={"path": str(request.url.path)})
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+    # A MySQL privilege refusal is not a bug in this code; it is a deployment
+    # step that was skipped, and it has an exact fix. Say the fix HERE -- after
+    # the trace, so it is the last thing in the journal before the access line
+    # -- and answer 503 with a detail that names the class of failure. Both
+    # are for the person who otherwise reads "Internal server error" in the
+    # browser, then forty lines of pymysql, and is left to work out for
+    # themselves that the whole thing is one missing GRANT.
+    #
+    # 503, not 500: the service is up and the code is fine; a dependency is
+    # unavailable to it. /readyz says the same thing for the same reason, and
+    # a proxy or a preflight can tell the two apart.
+    #
+    # The controllers catch their own exceptions and go through the same
+    # helper; this is the net under everything else.
+    from models.masterdata import privilege_refusal
+    from resources.utils import INTERNAL_ERROR, PRIVILEGE_MISSING
+
+    fix = privilege_refusal(exc)
+    if fix is not None:
+        logger.critical("MYSQL PRIVILEGE MISSING path=%s -- %s",
+                        request.url.path, fix)
+        return JSONResponse(status_code=503, content={"detail": PRIVILEGE_MISSING})
+    return JSONResponse(status_code=500, content={"detail": INTERNAL_ERROR})
 
 
 @app.get("/")

@@ -23,7 +23,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from resources.utils import verify_authentication
+from resources.utils import server_error, verify_authentication
 from models import get_db, models
 from configs.base_config import CommonWords
 
@@ -149,11 +149,10 @@ def _server_error(operation: str, exc: Exception) -> HTTPException:
     `detail=str(e)` used to be returned verbatim, which put Python exception
     text -- table names, driver errors -- on the front-office screen.
     """
-    logger.exception("inquiry_%s_failed", operation, exc_info=exc)
-    return HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail=INTERNAL_ERROR,
-    )
+    err = server_error(logger, exc, f"inquiry_{operation}_failed")
+    if err.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR:
+        err.detail = INTERNAL_ERROR      # this screen's own wording
+    return err
 
 
 # =====================================================

@@ -68,7 +68,7 @@ passes every suite and all 34 invariants.
 
 | | Symptom | Fix, on the server |
 |---|---|---|
-| 1 | `/room_reservation` and `/room_reservation/{id}` answer 500 | `python Backend/tools/grant_cross_schema.py --confirm`, then restart the Hotel service |
+| 1 | `/room_reservation` and `/room_reservation/{id}` answer 500 | `python Backend/tools/grant_cross_schema.py --confirm` (asks for MySQL root's password), then restart the Hotel service. Since 18 Sept the journal and `/readyz` print the exact GRANT statements themselves |
 | 2 | every stored image 404s — all 88 paths | `python Backend/tools/restore_uploads.py --release 15-Sept-2026` |
 | 3 | RBAC in audit: every role reaches every endpoint | `RBAC_GATEWAY_MODE=enforce` |
 | 4 | all five internal services reachable from the internet | bind `SERVICE_HOST=127.0.0.1`, or firewall |

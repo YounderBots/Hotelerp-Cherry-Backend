@@ -34,24 +34,23 @@ from models.masterdata import (
 )
 from resources import nightAuditService as nas
 from resources import reservation_rules as rules
-from resources.utils import verify_authentication
+from resources.utils import server_error, verify_authentication
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 def _server_error(exc: Exception) -> HTTPException:
-    """Log the detail, return a generic message.
+    """Log the detail, return a generic message -- see resources.utils.server_error.
 
     `detail=str(e)` leaked Python exception text -- driver errors and whole SQL
     statements -- to the browser on every unexpected failure, which is both a
-    poor error message and an information disclosure.
+    poor error message and an information disclosure. The one failure that
+    gets a specific answer is MySQL refusing this service a privilege, which
+    is a skipped deployment step with an exact fix, and the shared helper
+    puts that fix in the log.
     """
-    logger.exception("unhandled_exception")
-    return HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Internal server error",
-    )
+    return server_error(logger, exc)
 
 
 # =====================================================
@@ -1258,9 +1257,8 @@ def hotel_daily_sales(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("hotel_daily_sales_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "hotel_daily_sales_failed")
 
 
 # =====================================================
@@ -1366,9 +1364,8 @@ def reservation_summary(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("reservation_summary_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "reservation_summary_failed")
 
 
 # =====================================================
@@ -1899,12 +1896,8 @@ def get_room_availability(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("room_availability_failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error",
-        )
+    except Exception as exc:
+        raise server_error(logger, exc, "room_availability_failed")
 
 
 # =====================================================
@@ -2046,12 +2039,8 @@ def get_all_room_reservations(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("list_reservations_failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error",
-        )
+    except Exception as exc:
+        raise server_error(logger, exc, "list_reservations_failed")
 
 
 # =====================================================
@@ -2095,12 +2084,8 @@ def get_room_reservation_by_id(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("get_reservation_failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error",
-        )
+    except Exception as exc:
+        raise server_error(logger, exc, "get_reservation_failed")
 
 
 def _rate_breakdown(reservation, maps: dict) -> list[dict]:
@@ -2442,12 +2427,8 @@ def delete_room_reservation(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("delete_reservation_failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error",
-        )
+    except Exception as exc:
+        raise server_error(logger, exc, "delete_reservation_failed")
 
 
 # =====================================================
@@ -2566,9 +2547,8 @@ def reservation_checkin(key: str, request: Request, db: Session = Depends(get_db
         raise _rule_http(exc)
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("checkin_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "checkin_failed")
 
 
 def _early_checkout_position(db: Session, company_id, reservation) -> dict:
@@ -2682,9 +2662,8 @@ def reservation_checkout_preview(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("checkout_preview_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "checkout_preview_failed")
 
 
 @router.post("/room_reservation_checkout/{key}")
@@ -2808,9 +2787,8 @@ async def reservation_checkout(
         raise _rule_http(exc)
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("checkout_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "checkout_failed")
 
 
 @router.post("/room_reservation_cancel/{key}", status_code=status.HTTP_200_OK)
@@ -2892,9 +2870,8 @@ async def reservation_cancel(key: str, request: Request, db: Session = Depends(g
         raise _rule_http(exc)
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("cancel_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "cancel_failed")
 
 
 @router.post("/room_reservation_no_show/{key}", status_code=status.HTTP_200_OK)
@@ -2948,9 +2925,8 @@ def reservation_no_show(key: str, request: Request, db: Session = Depends(get_db
         raise _rule_http(exc)
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("no_show_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "no_show_failed")
 
 
 # =====================================================
@@ -3042,9 +3018,8 @@ async def reservation_pay_due_amount(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("payment_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "payment_failed")
 
 
 @router.post("/room_reservation_refund/{key}", status_code=status.HTTP_200_OK)
@@ -3129,9 +3104,8 @@ async def reservation_refund_extra_amount(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("refund_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "refund_failed")
 
 
 @router.get("/room_reservation_payments/{key}", status_code=status.HTTP_200_OK)
@@ -3185,6 +3159,5 @@ def get_reservation_payment_history(
 
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("payment_history_failed")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        raise server_error(logger, exc, "payment_history_failed")

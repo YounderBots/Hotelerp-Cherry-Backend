@@ -59,10 +59,30 @@ Skip it in dev; on a server with a per-application MySQL user it is not
 optional:
 
 ```bash
+# with the interpreter the Hotel service runs on (its venv), so pymysql imports
 python ../../tools/grant_cross_schema.py             # what is missing
-python ../../tools/grant_cross_schema.py --confirm   # grant it
-sudo systemctl restart hotelerp-hotel                # whatever it is named
+python ../../tools/grant_cross_schema.py --confirm   # grant it -- asks for MySQL root's password
+systemctl list-units --type=service | grep -i hotel  # the unit's name
+sudo systemctl restart <that unit>                   # a pool does not see a grant until it reconnects
+curl -s localhost:8040/readyz                        # "status": "ready"
 ```
+
+`--confirm` grants as MySQL `root` (or `--admin-user`, or `MYSQL_PWD` for a
+script). The service's own account cannot do it: it is the account *missing*
+the privileges. If the server cannot run the tool yet -- it has not pulled this
+release -- the three statements are fixed and can go straight into
+`mysql -u root -p`. Aim them at the account MySQL names in the error, **host
+included**; `'cherryhotel'@'%'` is a different, empty account and granting to
+it changes nothing:
+
+```sql
+GRANT SELECT ON `hotelerp_masterdata`.*      TO 'cherryhotel'@'localhost';
+GRANT UPDATE ON `hotelerp_masterdata`.`room` TO 'cherryhotel'@'localhost';
+GRANT SELECT ON `hotelerp_users`.`users`     TO 'cherryhotel'@'localhost';
+```
+
+Then restart the Hotel service. All three, not just the SELECT the error
+names: without the UPDATE the list works and no booking does.
 
 HotelServices reads `hotelerp_masterdata` and `hotelerp_users` on its own
 connection — a booking checks that a room is free and inserts the reservation

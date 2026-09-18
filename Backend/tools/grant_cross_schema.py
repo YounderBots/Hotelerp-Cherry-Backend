@@ -2,8 +2,17 @@
 """Grant HotelServices the cross-schema privileges it cannot work without.
 
     python Backend/tools/grant_cross_schema.py                 # report only
-    python Backend/tools/grant_cross_schema.py --confirm       # apply them
+    python Backend/tools/grant_cross_schema.py --confirm       # apply, as root
     python Backend/tools/grant_cross_schema.py --print-sql     # hand to a DBA
+
+    --confirm grants as MySQL `root` and prompts for its password (or reads
+    MYSQL_PWD, the mysql client's own convention). The service's account is
+    the one MISSING the privileges, so it can never be the one that grants
+    them; on a server, the only account that can is an administrative one.
+    Run it with the interpreter the Hotel service runs on, so pymysql is
+    importable:
+
+        /path/to/venv/bin/python Backend/tools/grant_cross_schema.py --confirm
 
 WHY THIS EXISTS
     A booking has to check that a room is free and insert the reservation that
@@ -74,8 +83,17 @@ from urllib.parse import unquote
 try:
     import pymysql
 except ImportError:                                            # pragma: no cover
-    print("ERROR: pymysql is not installed. "
-          "pip install -r Backend/requirements.txt", file=sys.stderr)
+    # The service itself needs pymysql, so it IS installed on this machine --
+    # in the service's virtualenv, which is not necessarily the `python` on
+    # PATH. Say so, rather than sending the operator to pip on a server.
+    print("ERROR: pymysql is not importable by {}.".format(sys.executable),
+          file=sys.stderr)
+    print("Run this tool with the interpreter the Hotel service runs on -- the "
+          "one in its virtualenv.", file=sys.stderr)
+    print("  `systemctl cat <hotel unit>` shows it in ExecStart, e.g.:",
+          file=sys.stderr)
+    print("  /path/to/venv/bin/python Backend/tools/grant_cross_schema.py "
+          "--confirm", file=sys.stderr)
     raise SystemExit(2)
 
 REPO = Path(__file__).resolve().parents[2]
@@ -175,17 +193,80 @@ def parse_dsn(uri: str) -> dict:
     }
 
 
+def env_file_values(path: Path) -> dict:
+    """KEY=value pairs from a .env, quotes stripped. Comments and blanks skipped."""
+    out = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
+
+
 def dsn_from_env_file(path: Path) -> str:
     if not path.exists():
         raise SystemExit(
             "ERROR: {} not found.\n"
             "Run this on the server, from the repository root, with the Hotel\n"
             "service's own .env in place -- or pass --service-uri.".format(path))
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("DB_URI="):
-            return line.split("=", 1)[1].strip().strip('"').strip("'")
-    raise SystemExit("ERROR: no DB_URI in {}".format(path))
+    uri = env_file_values(path).get("DB_URI")
+    if not uri:
+        raise SystemExit("ERROR: no DB_URI in {}".format(path))
+    return uri
+
+
+def service_port(path: Path, default=8040) -> int:
+    """Where /readyz answers after the restart -- so the closing hint is right."""
+    try:
+        return int(env_file_values(path).get("SERVICE_PORT") or default)
+    except (OSError, ValueError):
+        return default
+
+
+def admin_credentials(args, svc, prompt=getpass.getpass, env=os.environ,
+                      interactive=None) -> tuple:
+    """Which account applies the GRANTs, and its password.
+
+    The account is `root` unless told otherwise. It used to default to the
+    service's own user, which is right in development -- where the DSN is
+    root's anyway -- and could not work anywhere else: the service account is
+    the one MISSING these privileges, so it is the one account that cannot
+    grant them. On the deployment this tool was written for, that default
+    turned `--confirm` into a guaranteed "FAIL ... denied", and the README
+    told the operator to run exactly that.
+
+    The password, in order: --admin-password (with '-' meaning prompt), the
+    DSN's own if the admin IS the service user, MYSQL_PWD (the mysql client's
+    convention, so a deploy script can set it once), else a prompt -- and a
+    clear refusal rather than a hang when there is no terminal to prompt on.
+    """
+    user = args.admin_user or "root"
+    no_terminal = SystemExit(
+        "ERROR: no password for MySQL {!r} and no terminal to ask on.\n"
+        "Pass --admin-password, or export MYSQL_PWD, or run interactively."
+        .format(user))
+
+    def ask():
+        try:
+            return prompt("MySQL password for {}: ".format(user))
+        except EOFError:          # stdin closed under us: say so, do not hang
+            raise no_terminal from None
+
+    if args.admin_password == "-":
+        return user, ask()
+    if args.admin_password is not None:
+        return user, args.admin_password
+    if user == svc["user"]:
+        return user, svc["password"]
+    if env.get("MYSQL_PWD"):
+        return user, env["MYSQL_PWD"]
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    if not interactive:
+        raise no_terminal
+    return user, ask()
 
 
 def derive_schemas(hotel_db: str, md_override=None, users_override=None) -> dict:
@@ -309,13 +390,12 @@ def main() -> int:
     p.add_argument("--service-uri",
                    help="Hotel service DSN. Default: DB_URI from "
                         "Backend/Services/HotelServices/.env")
-    p.add_argument("--admin-user",
-                   help="MySQL account that may GRANT (e.g. root). Default: "
-                        "the service's own user, which is right in dev and "
-                        "wrong in production.")
-    p.add_argument("--admin-password",
-                   help="Use '-' to be prompted rather than leaving it in "
-                        "shell history.")
+    p.add_argument("--admin-user", default=None,
+                   help="MySQL account that may GRANT. Default: root.")
+    p.add_argument("--admin-password", default=None,
+                   help="Its password. Default: prompt (or MYSQL_PWD if set). "
+                        "'-' forces a prompt; the DSN's own password is used "
+                        "when the admin is the service user, as in dev.")
     p.add_argument("--masterdata-schema", help="Override the derived name")
     p.add_argument("--users-schema", help="Override the derived name")
     p.add_argument("--confirm", action="store_true",
@@ -457,22 +537,17 @@ def main() -> int:
         print("--print-sql to hand the statements to a DBA.")
         return 1
 
-    # 4. Apply, as an account that may grant.
-    admin_user = args.admin_user or svc["user"]
-    if args.admin_password == "-":
-        admin_pw = getpass.getpass("MySQL password for {}: ".format(admin_user))
-    elif args.admin_password is not None:
-        admin_pw = args.admin_password
-    elif admin_user == svc["user"]:
-        admin_pw = svc["password"]
-    else:
-        admin_pw = getpass.getpass("MySQL password for {}: ".format(admin_user))
+    # 4. Apply, as an account that may grant -- root unless told otherwise.
+    admin_user, admin_pw = admin_credentials(args, svc)
 
     try:
         admin = connect(svc["host"], svc["port"], admin_user, admin_pw)
     except Exception as exc:                                   # noqa: BLE001
         print("ERROR: cannot connect as {!r}: {}"
               .format(admin_user, str(exc)[:200]), file=sys.stderr)
+        print("  This must be an account that may GRANT on {}. Pass "
+              "--admin-user / --admin-password -, or export MYSQL_PWD."
+              .format(svc["host"]), file=sys.stderr)
         return 2
 
     # The admin account can see every schema, so this is the one connection
@@ -506,8 +581,9 @@ def main() -> int:
             print("  FAIL  " + s, file=sys.stderr)
             print("        " + str(exc)[:200], file=sys.stderr)
             if "denied" in str(exc).lower():
-                print("        {!r} may not grant this. Use an administrative "
-                      "account: --admin-user root --admin-password -"
+                print("        {!r} may not grant this. Use an account that "
+                      "holds these privileges WITH GRANT OPTION: "
+                      "--admin-user root --admin-password -"
                       .format(admin_user), file=sys.stderr)
             return 1
     print()
@@ -533,8 +609,11 @@ def main() -> int:
     print("  so it reports success while the running process keeps answering")
     print("  500 until its pool turns over.")
     print()
-    print("    sudo systemctl restart hotelerp-hotel   # whatever it is named")
-    print("    curl -s localhost:8040/readyz           # expect \"ready\"")
+    port = service_port(HOTEL_ENV)
+    print("    systemctl list-units --type=service | grep -i hotel   # its name")
+    print("    sudo systemctl restart <that unit>")
+    print("    curl -s localhost:{}/readyz     # expect \"status\": \"ready\""
+          .format(port))
     return 0
 
 

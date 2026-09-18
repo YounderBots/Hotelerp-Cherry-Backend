@@ -44,7 +44,7 @@ from sqlalchemy.orm import Session
 from configs.base_config import BaseConfig, CommonWords
 from models import get_db, models
 from models.masterdata import MasterRoom, StaffUser
-from resources.utils import verify_authentication
+from resources.utils import server_error, verify_authentication
 
 logger = logging.getLogger("hotelservice.housekeeping")
 
@@ -212,17 +212,15 @@ def _one_of(value: Optional[str], allowed: tuple, label: str, default: Optional[
 
 
 def _server_error(exc: Exception) -> HTTPException:
-    """Log the detail, return a generic message.
+    """Log the detail, return a generic message -- see resources.utils.server_error.
 
     `detail=str(e)` leaked Python exception text to the browser on every
     unexpected failure, which is both a poor error message and an information
-    disclosure.
+    disclosure. The shared helper makes one exception: MySQL refusing this
+    service a privilege on `users`.`users`, which is a skipped deployment step,
+    gets its exact GRANT in the log and a 503 rather than a 500.
     """
-    logger.exception("unhandled_exception")
-    return HTTPException(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Internal server error",
-    )
+    return server_error(logger, exc)
 
 
 async def _json_body(request: Request) -> dict:

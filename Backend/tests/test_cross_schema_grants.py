@@ -42,6 +42,7 @@ WHY THIS SUITE EXISTS
 from __future__ import annotations
 
 import importlib.util
+import logging
 import pathlib
 
 import pytest
@@ -54,6 +55,9 @@ from models.masterdata import (
     USERS_SCHEMA,
     MasterBase,
     StaffUser,
+    denied_account,
+    grants,
+    privilege_refusal,
     probe,
     probe_users,
 )
@@ -64,6 +68,14 @@ DENIED_SELECT = (1142, "SELECT command denied to user 'cherryhotel'@'localhost' 
                        "for table 'room'")
 DENIED_UPDATE = (1142, "UPDATE command denied to user 'cherryhotel'@'localhost' "
                        "for table 'room'")
+# Database-level refusal (1044) is worded differently from the table-level one.
+DENIED_DB = (1044, "Access denied for user 'cherryhotel'@'localhost' to database "
+                   "'hotelerp_masterdata'")
+
+ACCOUNT = "'cherryhotel'@'localhost'"
+GRANT_READ = f"GRANT SELECT ON `{MASTERDATA_SCHEMA}`.* TO {ACCOUNT};"
+GRANT_WRITE = f"GRANT UPDATE ON `{MASTERDATA_SCHEMA}`.`room` TO {ACCOUNT};"
+GRANT_USERS = f"GRANT SELECT ON `{USERS_SCHEMA}`.`users` TO {ACCOUNT};"
 
 
 def load_tool():
@@ -184,6 +196,50 @@ class TestProbe:
         assert USERS_SCHEMA in detail
         assert "housekeeping" in detail.lower()
 
+    def test_read_denied_states_the_exact_grant(self):
+        """The log line is the runbook.
+
+        Whoever reads "1142 ... denied ... for table 'room'" in the journal
+        should not then have to find a tool, a README and the right account:
+        the statements are on the line, aimed at the account MySQL named --
+        host included, so nobody grants to 'cherryhotel'@'%' by guesswork.
+        """
+        _, detail = probe(FakeDB(read_error=DENIED_SELECT))
+        assert GRANT_READ in detail
+        assert "@'%'" not in detail
+
+    def test_read_denied_prescribes_the_update_as_well(self):
+        """The write probe never ran, so prescribe both or set the trap again.
+
+        Grant only what this failure names -- SELECT -- and the list works
+        while every booking fails on the UPDATE nobody was told about.
+        """
+        _, detail = probe(FakeDB(read_error=DENIED_SELECT))
+        assert GRANT_WRITE in detail
+        assert GRANT_USERS not in detail       # its own probe, its own line
+
+    def test_write_denied_prescribes_the_update(self):
+        _, detail = probe(FakeDB(explain_error=DENIED_UPDATE))
+        assert GRANT_WRITE in detail
+        assert GRANT_READ not in detail        # SELECT is proven present
+
+    def test_users_denied_prescribes_the_users_grant(self):
+        _, detail = probe_users(FakeDB(users_error=DENIED_SELECT))
+        assert GRANT_USERS in detail
+        assert GRANT_READ not in detail
+
+    def test_a_database_level_refusal_is_read_the_same_way(self):
+        """1044 says "denied for user"; 1142 says "denied to user"."""
+        _, detail = probe(FakeDB(read_error=DENIED_DB))
+        assert GRANT_READ in detail
+
+    def test_a_failure_that_names_no_account_falls_back_to_the_tool(self):
+        """No account, nothing exact to say; the tool asks MySQL for it."""
+        _, detail = probe(FakeDB(read_error=(2003, "Can't connect to MySQL "
+                                                   "server on '127.0.0.1'")))
+        assert "GRANT " not in detail
+        assert "grant_cross_schema" in detail
+
     def test_probe_runs_against_a_real_session(self):
         """The fake above states the failures; this proves the shape is right.
 
@@ -205,6 +261,99 @@ class TestProbe:
             assert probe_users(session)[0] is True
         finally:
             session.close()
+
+
+# ---------------------------------------------------------------------------
+# The request that fails: what the journal and the browser say about it
+# ---------------------------------------------------------------------------
+def _refused(err):
+    return sa.exc.OperationalError("SELECT ...", {}, Exception(err))
+
+
+class TestPrivilegeRefusal:
+    def test_names_the_account_mysql_matched(self):
+        assert denied_account(str(DENIED_SELECT)) == ACCOUNT
+        assert denied_account(str(DENIED_DB)) == ACCOUNT
+        assert denied_account("Lost connection to MySQL server") is None
+
+    def test_a_refused_request_prescribes_all_three_grants(self):
+        """The request only ever names the first privilege it was refused.
+
+        Fix that one alone and the next screen fails on the next one. So the
+        remedy for ANY refusal is the whole set, aimed at the account in the
+        message -- GRANT is idempotent, and three lines cost nothing.
+        """
+        fix = privilege_refusal(_refused(DENIED_SELECT))
+        assert fix is not None
+        for stmt in (GRANT_READ, GRANT_WRITE, GRANT_USERS):
+            assert stmt in fix
+        assert "RESTART" in fix
+
+    def test_anything_else_is_not_a_privilege_problem(self):
+        assert privilege_refusal(KeyError("room")) is None
+        assert privilege_refusal(_refused((2003, "Can't connect"))) is None
+
+    def test_the_500_handler_says_the_fix_and_answers_503(self, caplog):
+        """The two places the operator actually looks.
+
+        The browser banner said "Internal server error" and the journal ended
+        in forty lines of pymysql. Now the banner names the class of failure
+        and the last line of the journal before the access log IS the GRANT.
+        503 rather than 500: the code is fine and a dependency is not, which
+        is what /readyz reports for the same state.
+        """
+        import main
+        from starlette.testclient import TestClient
+
+        @main.app.get("/__test_refused")
+        def refused():
+            raise _refused(DENIED_SELECT)
+
+        client = TestClient(main.app, raise_server_exceptions=False)
+        with caplog.at_level("CRITICAL", logger="hotelservice"):
+            resp = client.get("/__test_refused")
+
+        assert resp.status_code == 503
+        assert "MySQL privilege is missing" in resp.json()["detail"]
+        critical = [r for r in caplog.records if r.levelname == "CRITICAL"]
+        assert len(critical) == 1
+        assert GRANT_READ in critical[0].getMessage()
+        assert "'cherryhotel'@'localhost'" in critical[0].getMessage()
+
+    def test_the_controllers_own_catch_says_the_same(self, caplog):
+        """The path the real request takes -- and the one a handler misses.
+
+        Every controller wraps its body in `except Exception` and raises its
+        own HTTPException(500), so the app-level handler above never sees the
+        MySQL error on a real request: `GET /room_reservation` went through
+        `list_reservations_failed` and came out as "Internal server error"
+        with the fix nowhere. The shared helper is what the controllers call.
+        """
+        from resources.utils import PRIVILEGE_MISSING, server_error
+        log = logging.getLogger("test.controller")
+
+        with caplog.at_level("CRITICAL", logger="test.controller"):
+            err = server_error(log, _refused(DENIED_SELECT), "list_reservations_failed")
+        assert err.status_code == 503
+        assert err.detail == PRIVILEGE_MISSING
+        assert "'cherryhotel'@'localhost'" not in err.detail   # the log's, not the browser's
+        critical = [r for r in caplog.records if r.levelname == "CRITICAL"]
+        assert len(critical) == 1 and GRANT_WRITE in critical[0].getMessage()
+
+        err = server_error(log, KeyError("room"), "list_reservations_failed")
+        assert (err.status_code, err.detail) == (500, "Internal server error")
+
+    def test_an_ordinary_crash_is_still_a_plain_500(self):
+        import main
+        from starlette.testclient import TestClient
+
+        @main.app.get("/__test_crash")
+        def crash():
+            raise KeyError("room")
+
+        resp = TestClient(main.app, raise_server_exceptions=False).get("/__test_crash")
+        assert resp.status_code == 500
+        assert resp.json() == {"detail": "Internal server error"}
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +449,17 @@ class TestWhatItGrants:
         users = [n for n in tool.NEEDS if n.schema_key == "users"]
         assert [n.table for n in users] == ["users"]   # that one table, not .*
 
+    def test_the_service_and_the_tool_prescribe_the_same_grants(self, tool):
+        """One set, two authors: the boot log / 500 handler and the tool.
+
+        If a future cross-schema read is added to one and not the other, the
+        journal prescribes a fix that leaves the tool reporting MISSING, or
+        the other way round -- and the operator, having done what the log
+        said, is told it was not enough.
+        """
+        schemas = {"masterdata": MASTERDATA_SCHEMA, "users": USERS_SCHEMA}
+        assert grants("'u'@'h'") == [n.grant(schemas, "'u'@'h'") for n in tool.NEEDS]
+
     def test_the_write_probe_touches_no_row(self, tool):
         """It must stay safe to run against production, unattended."""
         sql = [n.probe_sql({"masterdata": "md", "users": "us"})
@@ -370,3 +530,76 @@ class TestReporting:
     def test_a_healthy_deployment_reports_clean(self, tool):
         results = self._results(tool, [None, None, None])
         assert tool.report(results, {"masterdata": "md", "users": "us"}) is True
+
+
+# ---------------------------------------------------------------------------
+# Who applies the grants
+# ---------------------------------------------------------------------------
+class _Args:
+    def __init__(self, admin_user=None, admin_password=None):
+        self.admin_user = admin_user
+        self.admin_password = admin_password
+
+
+PROD_SVC = {"user": "cherryhotel", "password": "svc-pw"}
+DEV_SVC = {"user": "root", "password": "root-pw"}
+
+
+class TestAdminCredentials:
+    """The default that turned `--confirm` into a guaranteed failure.
+
+    The service's account is the one MISSING the privileges, so it is the one
+    account that cannot grant them. Defaulting the admin to that account was
+    right only in dev, where the DSN is root's anyway -- and the README told
+    the production operator to run exactly the invocation that could not work.
+    """
+
+    def _prompt(self, calls):
+        def prompt(msg):
+            calls.append(msg)
+            return "typed"
+        return prompt
+
+    def test_on_a_server_it_defaults_to_root_and_asks(self, tool):
+        calls = []
+        user, pw = tool.admin_credentials(_Args(), PROD_SVC, prompt=self._prompt(calls),
+                                          env={}, interactive=True)
+        assert (user, pw) == ("root", "typed")
+        assert calls == ["MySQL password for root: "]
+
+    def test_in_dev_the_dsn_is_already_root_so_nothing_is_asked(self, tool):
+        calls = []
+        user, pw = tool.admin_credentials(_Args(), DEV_SVC, prompt=self._prompt(calls),
+                                          env={}, interactive=True)
+        assert (user, pw) == ("root", "root-pw")
+        assert calls == []
+
+    def test_mysql_pwd_is_honoured_so_a_deploy_script_can_set_it_once(self, tool):
+        calls = []
+        user, pw = tool.admin_credentials(_Args(), PROD_SVC, prompt=self._prompt(calls),
+                                          env={"MYSQL_PWD": "from-env"}, interactive=False)
+        assert (user, pw) == ("root", "from-env")
+        assert calls == []
+
+    def test_dash_always_prompts_even_in_dev(self, tool):
+        calls = []
+        _, pw = tool.admin_credentials(_Args(admin_password="-"), DEV_SVC,
+                                       prompt=self._prompt(calls), env={}, interactive=True)
+        assert pw == "typed" and calls
+
+    def test_an_explicit_password_is_used_as_given(self, tool):
+        user, pw = tool.admin_credentials(_Args("dba", "s3cret"), PROD_SVC,
+                                          prompt=None, env={}, interactive=False)
+        assert (user, pw) == ("dba", "s3cret")
+
+    def test_naming_the_service_user_as_admin_reuses_its_password(self, tool):
+        """Someone whose service account really can grant, as in some dev setups."""
+        user, pw = tool.admin_credentials(_Args("cherryhotel"), PROD_SVC,
+                                          prompt=None, env={}, interactive=False)
+        assert (user, pw) == ("cherryhotel", "svc-pw")
+
+    def test_no_terminal_and_no_password_refuses_rather_than_hangs(self, tool):
+        with pytest.raises(SystemExit) as e:
+            tool.admin_credentials(_Args(), PROD_SVC, prompt=None, env={},
+                                   interactive=False)
+        assert "MYSQL_PWD" in str(e.value)

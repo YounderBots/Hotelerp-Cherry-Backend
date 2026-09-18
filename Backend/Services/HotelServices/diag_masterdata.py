@@ -162,7 +162,7 @@ if missing:
     print("  a connection's next USE, and the pool holds connections opened")
     print("  before it, so the running process keeps 500ing until it reconnects.")
     print()
-    print("  Or let the tool do all of it:")
+    print("  Or let the tool do all of it (it asks for MySQL root's password):")
     print("     python Backend/tools/grant_cross_schema.py --confirm")
     raise SystemExit(1)
 

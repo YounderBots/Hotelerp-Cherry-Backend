@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 from sqlalchemy import Column, DateTime, Float, Integer, String, text
 from sqlalchemy.orm import declarative_base
@@ -259,6 +260,78 @@ FIX = ("Run `python Backend/tools/grant_cross_schema.py` on the server to see "
        "at a connection's next USE, and the pool holds connections opened "
        "before it.")
 
+# What a MySQL privilege refusal looks like, and the one thing in it worth
+# reading -- the account the server matched the connection to, host included:
+#
+#   (1142, "SELECT command denied to user 'cherryhotel'@'localhost' for table 'room'")
+#   (1044, "Access denied for user 'cherryhotel'@'localhost' to database 'hotelerp_masterdata'")
+#
+# That account, and no other, is the one a GRANT has to name. The username in
+# the DSN with a guessed host is how 'cherryhotel'@'%' got created on the
+# deployment at 168.231.103.18: a second, empty account, "Query OK", and every
+# 500 exactly where it was.
+_DENIED_ACCOUNT = re.compile(r"denied (?:to|for) user '([^']+)'@'([^']+)'")
+
+
+def grants(account: str, which=("read", "write", "users")) -> list:
+    """The cross-schema GRANTs this deployment needs, aimed at `account`.
+
+    Keyed so a probe can name only the ones it proved missing. This is the
+    same set Backend/tools/grant_cross_schema.py applies; the test suite
+    holds the two together so neither can drift.
+    """
+    stmts = {
+        "read":  f"GRANT SELECT ON `{MASTERDATA_SCHEMA}`.* TO {account};",
+        "write": f"GRANT UPDATE ON `{MASTERDATA_SCHEMA}`.`room` TO {account};",
+        "users": f"GRANT SELECT ON `{USERS_SCHEMA}`.`users` TO {account};",
+    }
+    return [stmts[k] for k in which]
+
+
+def denied_account(reason: str):
+    """`'cherryhotel'@'localhost'` out of a refusal, or None if it is not one."""
+    m = _DENIED_ACCOUNT.search(reason or "")
+    return "'{}'@'{}'".format(*m.groups()) if m else None
+
+
+def fix_for(reason: str, which=("read", "write", "users")) -> str:
+    """The remedy, worded for whoever is reading the log.
+
+    When MySQL named the account it refused, the remedy IS the SQL: the exact
+    statements, aimed at the exact account, with nothing left to look up or
+    guess. Everything else on the log line is a symptom; this is the only part
+    anyone acts on, so it is written to be pasted into `mysql -u root -p` as
+    it stands. Without an account in the message there is nothing exact to
+    say, and the tool that asks MySQL for it is the answer.
+    """
+    account = denied_account(reason)
+    if not account:
+        return FIX
+    return (
+        "FIX, as a MySQL account that may GRANT (root): "
+        + " ".join(grants(account, which))
+        + " -- then RESTART this service: a pooled connection does not see a "
+        "database-level grant until it reconnects. "
+        "(`python Backend/tools/grant_cross_schema.py --confirm` runs the "
+        "same statements and proves them on a fresh connection.)"
+    )
+
+
+def privilege_refusal(exc):
+    """If `exc` is MySQL refusing this service a privilege, the fix; else None.
+
+    For the 500 handler. A stack trace ends in "1142 ... denied ... for table
+    'room'" and the operator then has to read it backwards to the account,
+    the schema and the grant. This puts the whole remedy on one line, next to
+    the failure, in the journal they are already reading -- and prescribes
+    all three grants, because the request that failed only ever names the
+    first privilege it was refused.
+    """
+    reason = str(getattr(exc, "orig", exc))
+    if denied_account(reason) is None:
+        return None
+    return fix_for(reason)
+
 
 def _is_mysql(db) -> bool:
     try:
@@ -313,7 +386,10 @@ def probe(db) -> tuple[bool, str]:
             "Every schema must be on the same MySQL server as this service's, "
             "and this service's DB user needs SELECT on it. Set "
             "MASTERDATA_DB_SCHEMA if the schema is not named "
-            f"<own-prefix>_masterdata. {FIX}"
+            # Prescribe UPDATE on room alongside SELECT: the write probe below
+            # never ran, and granting SELECT alone is the trap this file
+            # documents at the top.
+            f"<own-prefix>_masterdata. {fix_for(reason, ('read', 'write'))}"
         )
 
     if not _is_mysql(db):
@@ -340,7 +416,7 @@ def probe(db) -> tuple[bool, str]:
             "no booking, check-in, check-out or room block will succeed: this "
             "service keeps the room's occupancy and housekeeping flags in step "
             "and takes SELECT ... FOR UPDATE on those rows, which MySQL "
-            f"refuses without UPDATE as well as SELECT. {FIX}"
+            f"refuses without UPDATE as well as SELECT. {fix_for(reason, ('write',))}"
         )
 
     return True, f"{MASTERDATA_SCHEMA} readable and room state writable"
@@ -363,5 +439,5 @@ def probe_users(db) -> tuple[bool, str]:
         return False, (
             f"cannot read {USERS_SCHEMA}.users: {reason}. Assigning a "
             "housekeeping task checks its assignee against that table and will "
-            f"answer 500 until this is fixed. {FIX}"
+            f"answer 500 until this is fixed. {fix_for(reason, ('users',))}"
         )

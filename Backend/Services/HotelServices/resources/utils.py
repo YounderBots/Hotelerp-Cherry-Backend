@@ -125,3 +125,46 @@ def can_view_any(token: str, *pages: str) -> bool:
     """
     perms = token_permissions(token)
     return any(int(perms.get(page, 0)) & PERM_VIEW for page in pages)
+
+
+# ---------------------------------------------------------------------------
+# The response for a failure nobody planned for
+# ---------------------------------------------------------------------------
+INTERNAL_ERROR = "Internal server error"
+
+# Names the class of failure and where the remedy is, and nothing else: no
+# account, no schema, no SQL. Those go to the log, which is the operator's;
+# this goes to the browser, which is anyone's.
+PRIVILEGE_MISSING = ("The Hotel service is not allowed to read its database: a "
+                     "MySQL privilege is missing. The service log names the "
+                     "exact GRANT to run.")
+
+
+def server_error(log: logging.Logger, exc: Exception,
+                 event: str = "unhandled_exception") -> HTTPException:
+    """What every controller raises from `except Exception`.
+
+    Generic on purpose. `detail=str(e)` used to reach the browser, which put
+    driver errors and whole SQL statements on the front-office screen.
+
+    One failure is the exception to that rule, because it is not a bug in
+    this code and it has an exact fix: MySQL refusing this service a
+    privilege on the Master Data or Users schema -- a deployment step that
+    was skipped. For that one, the log gets the fix itself (the GRANT
+    statements, aimed at the account MySQL named) as the LAST line before the
+    access log, where whoever is tailing the journal will read it; and the
+    browser gets a 503 that says which kind of problem it is, so nobody
+    spends an afternoon reading "Internal server error" as a crash. 503
+    rather than 500 for the same reason /readyz answers 503: the service is
+    up, a dependency is not available to it.
+    """
+    from models.masterdata import privilege_refusal   # no cycle: models never import resources
+
+    log.exception(event, exc_info=exc)
+    fix = privilege_refusal(exc)
+    if fix is None:
+        return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                             detail=INTERNAL_ERROR)
+    log.critical("MYSQL PRIVILEGE MISSING -- %s", fix)
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                         detail=PRIVILEGE_MISSING)
