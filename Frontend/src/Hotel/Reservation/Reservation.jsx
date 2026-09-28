@@ -5,6 +5,8 @@ import TableTemplate from "../../stories/TableTemplate";
 import TableFilters, { FilterDate, FilterSelect } from "../../stories/TableFilters";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
+import PhoneInput from "../../stories/Form/PhoneInput";
+import { regionOf } from "../../stories/Form/phone";
 import RowActions from "../../stories/RowActions";
 import IconButton from "../../stories/IconButton";
 import DetailList, { DetailItem } from "../../stories/DetailList";
@@ -173,6 +175,9 @@ const Reservation = () => {
   const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState(null);
+  // The edit form's phone message, beside the field rather than only in the
+  // dialog-level alert.
+  const [editPhoneError, setEditPhoneError] = useState(null);
   const [editQuote, setEditQuote] = useState(null);
   const [editQuoteError, setEditQuoteError] = useState(null);
   const [editAvailability, setEditAvailability] = useState(null);
@@ -397,7 +402,11 @@ const Reservation = () => {
       salutation: row.salutation || "",
       first_name: row.first_name || "",
       last_name: row.last_name || "",
+      // The reservation's number is stored as E.164, so its country is readable.
+      // Assuming the property's own country would re-read a guest's number as
+      // local, and saving would store it that way.
       phone_number: row.phone_number || "",
+      phone_region: regionOf(row.phone_number) || "IN",
       email: row.email || "",
       arrival_date: isoDay(row.arrival_date),
       departure_date: isoDay(row.departure_date),
@@ -428,6 +437,7 @@ const Reservation = () => {
     if (editSaving) return;
     setEditRow(null);
     setEditForm({});
+    setEditPhoneError(null);
   };
 
   const setField = (field) => (e) =>
@@ -544,6 +554,9 @@ const Reservation = () => {
       fd.set("first_name", editForm.first_name.trim());
       fd.set("last_name", (editForm.last_name || "").trim());
       fd.set("phone_number", editForm.phone_number.trim());
+      // The country the number was read in, so the server does not have to
+      // guess one for a national number (C-086).
+      fd.set("phone_region", editForm.phone_region || "IN");
       fd.set("email", (editForm.email || "").trim());
       fd.set("arrival_date", editForm.arrival_date);
       fd.set("departure_date", editForm.departure_date);
@@ -1195,13 +1208,21 @@ const Reservation = () => {
                 onChange={setField("last_name")}
                 maxLength={100}
               />
-              <Input
+              <PhoneInput
                 label="Phone Number"
                 required
-                type="tel"
+                name="phone_number"
                 value={editForm.phone_number || ""}
-                onChange={setField("phone_number")}
-                maxLength={20}
+                region={editForm.phone_region}
+                error={Boolean(editPhoneError)}
+                helperText={editPhoneError}
+                onChange={(e164, region, result) => {
+                  setEditForm((prev) => ({ ...prev, phone_number: e164, phone_region: region }));
+                  setEditPhoneError(
+                    result && result.ok === false && !result.incomplete ? result.message : null,
+                  );
+                  
+                }}
               />
               <Input
                 label="Email"

@@ -38,7 +38,12 @@ def payload(**overrides):
         "salutation": "Mr.",
         "first_name": "QA",
         "last_name": "Booking",
-        "phone_number": "+1 555 123 4567",
+        # A real, assignable number. This used to be "+1 555 123 4567", and 555
+        # is the range reserved for FICTION -- the booking API now validates
+        # country-aware (C-086), so its own fixture would be refused by its own
+        # rules. A test that passes an invalid value as its idea of valid is how
+        # invalid data reaches a database.
+        "phone_number": "+14155552671",
         "email": "QA.BOOKING@example.com",
         "arrival_date": "2026-12-01",
         "departure_date": "2026-12-02",
@@ -67,6 +72,35 @@ def test_valid_payload_is_canonicalised_and_room_types_are_checked(fake_master):
     assert fake_master.calls == 1
 
 
+def test_a_national_number_is_stored_as_e164(fake_master):
+    """The number a booking is stored under is canonical, whatever was typed."""
+    result = controller._validate_booking_payload(
+        payload(phone_number="(415) 555-2671", phone_region="US"), "token")
+    assert result["phone_number"] == "+14155552671"
+
+    result = controller._validate_booking_payload(
+        payload(phone_number="020 7946 0958", phone_region="GB"), "token")
+    assert result["phone_number"] == "+442079460958"
+
+
+def test_a_national_number_with_no_country_is_refused(fake_master):
+    """Ambiguous, so refused rather than guessed (C-086)."""
+    assert_bad(
+        lambda: controller._validate_booking_payload(
+            payload(phone_number="9876543210"), "token"),
+        "Select the country",
+    )
+
+
+def test_the_fiction_range_is_not_a_valid_number(fake_master):
+    """555 is reserved for fiction, and the old fixture used it."""
+    assert_bad(
+        lambda: controller._validate_booking_payload(
+            payload(phone_number="+1 555 123 4567"), "token"),
+        "does not have that phone number",
+    )
+
+
 @pytest.mark.parametrize(
     "overrides, detail",
     [
@@ -80,6 +114,15 @@ def test_valid_payload_is_canonicalised_and_room_types_are_checked(fake_master):
         ({"room_type": []}, "non-empty"),
         ({"room_type": [1, 2]}, "exactly one room type"),
         ({"room_type": [True]}, "integer"),
+        # Country-aware phone boundaries (C-086).
+        ({"phone_number": "abc"}, "digits only"),
+        ({"phone_number": "9" * 300}, "too long"),
+        ({"phone_number": "12"}, "too short"),
+        ({"phone_number": "\U0001F4DE9876543210"}, "digits only"),
+        ({"phone_number": "-- --"}, "required"),
+        ({"phone_number": "+999123456789"}, "valid phone number"),
+        ({"email": "not-an-email"}, "valid email address"),
+        ({"email": "a@b."}, "valid email address"),
     ],
 )
 def test_invalid_boundaries_are_client_errors(fake_master, overrides, detail):

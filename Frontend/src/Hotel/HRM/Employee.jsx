@@ -1,4 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
+import PhoneInput from "../../stories/Form/PhoneInput";
+import { validatePhone } from "../../stories/Form/phone";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -25,7 +27,6 @@ const GENDERS = ["Male", "Female", "Other", "Prefer not to say"];
 const MARITAL_STATUSES = ["Single", "Married", "Divorced", "Widowed", "Prefer not to say"];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^[+()\-\s\d]{7,20}$/;
 const MAX_PHOTO_MB = 3;
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
@@ -39,6 +40,11 @@ const initialForm = {
   password: "",
   mobile: "",
   alternative_mobile: "",
+  // The country the numbers above are typed in. Sent with them because a
+  // national number with no country is ambiguous and the API refuses to guess
+  // one (C-086). buildCreateForm posts every key in this object, so adding it
+  // here is what sends it.
+  phone_region: "IN",
   dob: "",
   gender: "",
   marital_status: "",
@@ -116,6 +122,10 @@ const Employee = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  // One message per phone field, so each sits under the field it belongs to.
+  const [phoneError, setPhoneError] = useState(null);
+  const [altPhoneError, setAltPhoneError] = useState(null);
+  const [emergencyPhoneError, setEmergencyPhoneError] = useState(null);
   const savingRef = useRef(false);
   const deletingRef = useRef(false);
   const [showModal, setShowModal] = useState(false);
@@ -138,6 +148,21 @@ const Employee = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((p) => ({ ...p, [name]: value }));
+  };
+
+  /**
+   * PhoneInput hands back the canonical E.164 and the country it was read in,
+   * so both are stored: the number in the field the API expects, the region
+   * beside it so a national number can be sent with its country. The message
+   * stays with its own field, not in the form-level banner.
+   */
+  const handlePhoneChange = (field) => (e164, region, result) => {
+    setFormData((p) => ({ ...p, [field]: e164, phone_region: region }));
+    const message =
+      result && result.ok === false && !result.incomplete ? result.message : null;
+    if (field === "mobile") setPhoneError(message);
+    else if (field === "alternative_mobile") setAltPhoneError(message);
+    else setEmergencyPhoneError(message);
   };
 
   /* ================= API ================= */
@@ -233,12 +258,19 @@ const Employee = () => {
     }
     if (!EMAIL_RE.test(formData.company_email.trim())) return "Enter a valid company email";
     if (!EMAIL_RE.test(formData.personal_email.trim())) return "Enter a valid personal email";
-    if (!PHONE_RE.test(formData.mobile.trim())) return "Enter a valid mobile number";
-    if (formData.alternative_mobile && !PHONE_RE.test(formData.alternative_mobile.trim())) {
-      return "Alternative mobile is not a valid number";
+    // Country-aware via libphonenumber. Staff are not all local, and the
+    // hand-written pattern this replaced was blind to every country (C-086).
+    const primary = validatePhone(formData.mobile, formData.phone_region);
+    if (!primary.ok) return primary.message || "Enter a valid mobile number";
+    const alternate = formData.alternative_mobile
+      ? validatePhone(formData.alternative_mobile, formData.phone_region)
+      : { ok: true };
+    if (!alternate.ok) {
+      return alternate.message || "Alternative mobile is not a valid number";
     }
-    if (!PHONE_RE.test(formData.emergency_contact.trim())) {
-      return "Enter a valid emergency contact number";
+    const emergency = validatePhone(formData.emergency_contact, formData.phone_region);
+    if (!emergency.ok) {
+      return emergency.message || "Enter a valid emergency contact number";
     }
     if (!editId && !formData.password) return "Password is required for a new employee";
     if (formData.password && formData.password.length < 6) {
@@ -507,8 +539,27 @@ const Employee = () => {
               disabled={saving}
               helperText={editId ? "Leave blank to keep the current password." : "At least 6 characters."}
             />
-            <Input label="Mobile" required type="tel" name="mobile" value={formData.mobile} onChange={handleChange} disabled={saving} />
-            <Input label="Alternative Mobile" type="tel" name="alternative_mobile" value={formData.alternative_mobile} onChange={handleChange} disabled={saving} />
+            <PhoneInput
+              label="Mobile"
+              required
+              name="mobile"
+              value={formData.mobile}
+              region={formData.phone_region}
+              error={Boolean(phoneError)}
+              helperText={phoneError}
+              disabled={saving}
+              onChange={handlePhoneChange("mobile")}
+            />
+            <PhoneInput
+              label="Alternative Mobile"
+              name="alternative_mobile"
+              value={formData.alternative_mobile}
+              region={formData.phone_region}
+              error={Boolean(altPhoneError)}
+              helperText={altPhoneError || "Optional. Same country as the mobile."}
+              disabled={saving}
+              onChange={handlePhoneChange("alternative_mobile")}
+            />
           </div>
         </div>
 
@@ -570,7 +621,17 @@ const Employee = () => {
           <h4 className="modal-section__title">Emergency Contact</h4>
           <div className="field-grid">
             <Input label="Name" required name="emergency_name" value={formData.emergency_name} onChange={handleChange} disabled={saving} />
-            <Input label="Contact Number" required type="tel" name="emergency_contact" value={formData.emergency_contact} onChange={handleChange} disabled={saving} />
+            <PhoneInput
+              label="Contact Number"
+              required
+              name="emergency_contact"
+              value={formData.emergency_contact}
+              region={formData.phone_region}
+              error={Boolean(emergencyPhoneError)}
+              helperText={emergencyPhoneError || "Who we call if the staff member cannot be reached."}
+              disabled={saving}
+              onChange={handlePhoneChange("emergency_contact")}
+            />
             <Input label="Relationship" required name="emergency_relationship" placeholder="e.g. Spouse" value={formData.emergency_relationship} onChange={handleChange} disabled={saving} />
           </div>
         </div>

@@ -49,6 +49,47 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")
 SERVICES = os.path.join(ROOT, "Backend", "Services")
 
 
+def phone(n: int) -> str:
+    """A unique, assignable phone number in E.164, for a seeded person.
+
+    WHY NOT A MADE-UP TEN DIGITS
+    Guest and staff mobile numbers are validated country-aware and stored as
+    E.164 (C-086), and the generated rows have to survive that: the API refuses a
+    number no numbering plan assigns, and the uniqueness index on `mobile` needs
+    every guest to differ. Two things this avoids, both of which the seed did
+    before:
+
+      * `+1 555 000 0000` is the US *fiction* range, not an assignable number, so
+        a validator rightly refuses it. Seeded rows have to be real-shaped or the
+        dataset contradicts the rules the application enforces.
+      * A bare ten-digit number is ambiguous -- it belongs to whichever country
+        the reader assumes.
+
+    The number rotates through four countries so the dataset demonstrates the
+    thing the feature exists for: a property whose guests are not all local.
+
+    THE PLANS CARRY A LENGTH, because that is the part that is easy to get wrong:
+    a UAE mobile is NINE national digits, not ten, and truncating it produces a
+    number no plan assigns. `tests/test_seed_night_audit.py`'s sibling check in
+    `tests/test_phone_validation.py` -- and the probe in
+    `Backend/tools/normalize_phones.py --dry-run` -- are what caught it.
+    """
+    # (country code, national prefix, total national length). Each prefix is a
+    # range the plan actually assigns: IN mobiles start 6-9, US numbers in the
+    # 415 area, London 020, UAE mobiles 50.
+    PLANS = (
+        ("91", "98765", 10),   # India, mobile
+        ("1", "415555", 10),   # United States
+        ("44", "207946", 10),  # United Kingdom, London
+        ("971", "501", 9),     # United Arab Emirates, mobile
+    )
+    cc, prefix, length = PLANS[n % len(PLANS)]
+    needed = length - len(prefix)
+    # Zero-padded, never truncated: a short number here is an unassignable one.
+    national = f"{prefix}{n:0{needed}d}"
+    return f"+{cc}{national}"
+
+
 def base_uri() -> str:
     """Server URI, read from HotelServices' own .env — no credentials in code."""
     env = os.path.join(SERVICES, "HotelServices", ".env")

@@ -1,8 +1,11 @@
 import React, { useMemo, useState } from "react";
+import { validatePhone } from "../../stories/Form/phone";
 
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
+import PhoneInput from "../../stories/Form/PhoneInput";
+import { regionOf } from "../../stories/Form/phone";
 import Select from "../../stories/Form/Select";
 import RowActions from "../../stories/RowActions";
 import DetailList, { DetailItem } from "../../stories/DetailList";
@@ -38,7 +41,6 @@ import "./Reservation.css";
 
 const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^[+()\-\s\d]{7,20}$/;
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
 
@@ -71,6 +73,10 @@ const guestName = (r) =>
   [r?.first_name, r?.last_name].filter(Boolean).join(" ").trim() || "—";
 
 const emptyForm = {
+  // The country the number was typed in. Sent with the number, not stored
+  // with it: a national number with no country code is ambiguous, and the
+  // API refuses to guess one (C-086).
+  phone_region: "IN",
   salutation: "Mr.",
   first_name: "",
   last_name: "",
@@ -106,6 +112,9 @@ const Booking = () => {
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [formError, setFormError] = useState(null);
+  // The phone field's own message, kept beside the field rather than only
+  // in the form-level banner.
+  const [phoneError, setPhoneError] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [viewRow, setViewRow] = useState(null);
@@ -183,7 +192,11 @@ const Booking = () => {
       salutation: row.salutation || "Mr.",
       first_name: row.first_name || "",
       last_name: row.last_name || "",
+      // The enquiry's number is stored as E.164, so its country is readable.
+      // Assuming the property's own country would re-read a guest's number as
+      // local, and saving would store it that way.
       phone_number: row.phone_number || "",
+      phone_region: regionOf(row.phone_number) || "IN",
       email: row.email || "",
       arrival_date: isoDay(row.arrival_date),
       departure_date: isoDay(row.departure_date),
@@ -208,7 +221,10 @@ const Booking = () => {
     if (!form.first_name?.trim()) return "First name is required.";
     if (!form.last_name?.trim()) return "Last name is required.";
     if (!form.phone_number?.trim()) return "Phone number is required.";
-    if (!PHONE_RE.test(form.phone_number.trim())) return "Enter a valid phone number.";
+    // Country-aware via libphonenumber, matching the API's own rule; the
+    // hand-written pattern this replaced accepted `(((((((` (C-086).
+    const phone = validatePhone(form.phone_number, form.phone_region);
+    if (!phone.ok) return phone.message || "Enter a valid phone number.";
     if (form.email && !EMAIL_RE.test(form.email.trim())) return "Enter a valid email address.";
     if (!form.arrival_date) return "Arrival date is required.";
     if (!form.departure_date) return "Departure date is required.";
@@ -238,6 +254,7 @@ const Booking = () => {
       first_name: form.first_name.trim(),
       last_name: form.last_name.trim(),
       phone_number: form.phone_number.trim(),
+      phone_region: form.phone_region,
       email: form.email ? form.email.trim().toLowerCase() : null,
       arrival_date: form.arrival_date,
       departure_date: form.departure_date,
@@ -465,15 +482,24 @@ const Booking = () => {
           maxLength={100}
           autoComplete="family-name"
         />
-        <Input
+        {/* The country selector, the live formatting and the real validation live in
+            one shared control. The `maxLength={20}` this replaces bounded the
+            national format but not the international one, so it refused some valid
+            numbers while permitting others of no use. */}
+        <PhoneInput
           label="Phone Number"
           required
-          type="tel"
-          inputMode="tel"
+          name="phone_number"
           value={form.phone_number}
-          onChange={setField("phone_number")}
-          maxLength={20}
-          autoComplete="tel"
+          region={form.phone_region}
+          error={Boolean(phoneError)}
+          helperText={phoneError}
+          onChange={(e164, region, result) => {
+            setForm((f) => ({ ...f, phone_number: e164, phone_region: region }));
+            setPhoneError(
+              result && result.ok === false && !result.incomplete ? result.message : null,
+            );
+          }}
         />
         <Input
           label="Email"

@@ -10,6 +10,12 @@ from sqlalchemy.exc import IntegrityError
 
 from models import get_db, models
 from resources.utils import verify_authentication
+from resources.validation import (
+    EMAIL_MESSAGE,
+    clean_name,
+    normalize_phone,
+    validate_email,
+)
 from configs.base_config import CommonWords
 
 router = APIRouter()
@@ -32,19 +38,22 @@ def _auth(request: Request):
 GUEST_TYPES = ("Walk-In", "Regular", "VIP", "Hotel Guest")
 
 
-def _validate_guest_values(*, first_name, last_name, mobile, email, guest_type, special_notes=None):
+def _validate_guest_values(*, first_name, last_name, mobile, email, guest_type,
+                           special_notes=None, phone_region=None):
     if first_name is not None:
         first_name = str(first_name).strip()
         if not first_name or len(first_name) > 100:
             raise HTTPException(status_code=400, detail="first_name must be 1-100 characters")
     if last_name is not None and len(str(last_name).strip()) > 100:
         raise HTTPException(status_code=400, detail="last_name must not exceed 100 characters")
-    if mobile is not None:
-        mobile = re.sub(r"\s+", "", str(mobile))
-        if not re.fullmatch(r"\d{10}", mobile):
-            raise HTTPException(status_code=400, detail="mobile must be a 10-digit number")
-    if email is not None and str(email).strip() and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", str(email).strip()):
-        raise HTTPException(status_code=400, detail="email is invalid")
+    # Country-aware, and stored as E.164. This used to be
+    # `re.fullmatch(r"\d{10}", ...)`, which rejected every guest from outside
+    # the property's home country and stored the same number three ways
+    # depending on who typed it (C-086).
+    mobile = normalize_phone(mobile, field="mobile", default_region=phone_region,
+                             allow_mobile_only=True)
+    if email is not None and str(email).strip() and not validate_email(email):
+        raise HTTPException(status_code=400, detail=EMAIL_MESSAGE)
     if guest_type is not None and guest_type not in GUEST_TYPES:
         raise HTTPException(status_code=400, detail="guest_type is invalid")
     if special_notes is not None and len(str(special_notes).strip()) > 255:
@@ -59,6 +68,11 @@ class GuestIn(BaseModel):
     first_name: str
     last_name: Optional[str] = None
     mobile: str
+    # The country the mobile was typed in, as an ISO-3166-1 alpha-2 code. Sent
+    # by the client because a number with no country code is ambiguous and the
+    # API refuses to guess one -- see resources/validation.py. Optional only so
+    # an international number (+...) still works without it.
+    phone_region: Optional[str] = None
     email: Optional[str] = None
     guest_type: str = "Walk-In"
     special_notes: Optional[str] = None
@@ -68,6 +82,7 @@ class GuestUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     mobile: Optional[str] = None
+    phone_region: Optional[str] = None
     email: Optional[str] = None
     guest_type: Optional[str] = None
     special_notes: Optional[str] = None
@@ -105,6 +120,7 @@ def create_guest(payload: GuestIn, request: Request, db: Session = Depends(get_d
         email=payload.email,
         guest_type=payload.guest_type,
         special_notes=payload.special_notes,
+        phone_region=payload.phone_region,
     )
     existing = db.query(models.BarGuest).filter(
         models.BarGuest.mobile == mobile,
@@ -113,7 +129,9 @@ def create_guest(payload: GuestIn, request: Request, db: Session = Depends(get_d
     ).first()
     if existing:
         raise HTTPException(status_code=409, detail="A guest with this mobile number already exists")
-    values = payload.dict()
+    # `phone_region` travels with the request and is not a column: it exists so
+    # a national number can be read, and is dropped before the row is built.
+    values = payload.dict(exclude={"phone_region"})
     values.update({"first_name": first_name, "mobile": mobile})
     guest = models.BarGuest(guest_code=gen_code("BGST"), created_by=user_id, company_id=company_id, **values)
     db.add(guest)
@@ -169,15 +187,27 @@ def update_guest(guest_id: int, payload: GuestUpdate, request: Request, db: Sess
     )
     if not guest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Guest not found")
-    updates = payload.dict(exclude_unset=True)
-    first_name, mobile = _validate_guest_values(
-        first_name=updates.get("first_name", guest.first_name),
-        last_name=updates.get("last_name", guest.last_name),
-        mobile=updates.get("mobile", guest.mobile),
-        email=updates.get("email", guest.email),
-        guest_type=updates.get("guest_type", guest.guest_type),
-        special_notes=updates.get("special_notes", guest.special_notes),
-    )
+    # `phone_region` is request-scoped, not a column: excluded from the values
+    # that are written back to the row.
+    updates = payload.dict(exclude_unset=True, exclude={"phone_region"})
+    # Rows written before country-aware validation hold a bare national number.
+    # Re-validating one that the caller did not touch would refuse the edit --
+    # changing a guest's name would fail because of a number they never edited.
+    # So an unchanged mobile is left exactly as it is, and the row is only
+    # normalised when the number itself is being changed.
+    if "mobile" not in updates or str(updates.get("mobile")).strip() == str(guest.mobile).strip():
+        mobile = guest.mobile
+        first_name = clean_name(updates.get("first_name", guest.first_name), field="first_name") or guest.first_name
+    else:
+        first_name, mobile = _validate_guest_values(
+            first_name=updates.get("first_name", guest.first_name),
+            last_name=updates.get("last_name", guest.last_name),
+            mobile=updates.get("mobile"),
+            email=updates.get("email", guest.email),
+            guest_type=updates.get("guest_type", guest.guest_type),
+            special_notes=updates.get("special_notes", guest.special_notes),
+            phone_region=payload.phone_region,
+        )
     duplicate = db.query(models.BarGuest).filter(
         models.BarGuest.id != guest.id,
         models.BarGuest.mobile == mobile,

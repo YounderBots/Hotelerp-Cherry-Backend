@@ -11,6 +11,7 @@ import bcrypt
 from fastapi import Form, UploadFile, File
 from resources.authorization import require_permission
 from resources.utils import verify_authentication
+from resources.validation import normalize_email, normalize_phone, validate_email
 from models import models
 from models import get_db
 from configs.base_config import CommonWords
@@ -93,6 +94,10 @@ async def create_user(
     password: str = Form(...),
     mobile: str = Form(...),
     alternative_mobile: str = Form(None),
+    # ISO-3166-1 alpha-2 country the numbers above were typed in (e.g. "IN").
+    # A national number with no country code is ambiguous, so it is refused
+    # rather than guessed -- see resources/validation.py.
+    phone_region: str = Form(None),
 
     # ---------------- PERSONAL ----------------
     dob: str = Form(...),
@@ -145,23 +150,34 @@ async def create_user(
         # NORMALIZATION
         # -------------------------------------------------
         username = username.strip()
-        company_email = company_email.strip().lower()
-        personal_email = personal_email.strip().lower()
-
-        # -------------------------------------------------
-        # EMAIL VALIDATION
-        # -------------------------------------------------
-        if "@" not in company_email or "." not in company_email:
+        # Emails are validated properly and stored lower-cased, so a lookup and
+        # the uniqueness check agree with what was typed. The old rule was
+        # `"@" not in x or "." not in x`, which accepts `@.`, `a@b.`, `a b@c.d`
+        # and a 10KB string while rejecting nothing useful (C-086).
+        if not validate_email(company_email):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid company_email format"
+                detail="Enter a valid company email address, for example name@example.com",
             )
-
-        if "@" not in personal_email or "." not in personal_email:
+        if not validate_email(personal_email):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid personal_email format"
+                detail="Enter a valid personal email address, for example name@example.com",
             )
+        company_email = normalize_email(company_email)
+        personal_email = normalize_email(personal_email)
+
+        # -------------------------------------------------
+        # PHONE VALIDATION
+        # -------------------------------------------------
+        # Staff can be from anywhere, so the number is checked against its own
+        # country's numbering plan and stored as E.164. `phone_region` is the ISO
+        # country the staff member's number was typed in; it is form input, not a
+        # column, and a national number without it is refused rather than guessed.
+        mobile = normalize_phone(mobile, field="mobile", default_region=phone_region)
+        alternative_mobile = normalize_phone(
+            alternative_mobile, field="alternative_mobile", default_region=phone_region
+        )
 
         # -------------------------------------------------
         # DUPLICATE CHECKS
@@ -937,13 +953,50 @@ async def update_user(
                 )
 
         # -------------------------------------------------
+        # FIELD VALIDATION (C-086)
+        # -------------------------------------------------
+        # The update path wrote whatever arrived: an email that was two characters
+        # long, a mobile of "abc". It now runs the same rules as create, and
+        # normalises the values it accepts.
+        phone_region = payload.get("phone_region")
+        if payload.get("company_email") is not None:
+            if not validate_email(payload["company_email"]):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Enter a valid company email address, for example name@example.com",
+                )
+        if payload.get("personal_email") is not None:
+            if not validate_email(payload["personal_email"]):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Enter a valid personal email address, for example name@example.com",
+                )
+        if "mobile" in payload:
+            payload["mobile"] = normalize_phone(
+                payload["mobile"], field="mobile", default_region=phone_region
+            )
+        if "alternative_mobile" in payload:
+            payload["alternative_mobile"] = normalize_phone(
+                payload["alternative_mobile"], field="alternative_mobile",
+                default_region=phone_region,
+            )
+
+        # -------------------------------------------------
         # UPDATE FIELDS (SAFE)
         # -------------------------------------------------
         user.username = payload.get("username", user.username)
         user.First_Name = payload.get("first_name", user.First_Name)
         user.Last_Name = payload.get("last_name", user.Last_Name)
-        user.Personal_Email = payload.get("personal_email", user.Personal_Email)
-        user.Company_Email = payload.get("company_email", user.Company_Email)
+        user.Personal_Email = (
+            normalize_email(payload["personal_email"])
+            if payload.get("personal_email") is not None
+            else user.Personal_Email
+        )
+        user.Company_Email = (
+            normalize_email(payload["company_email"])
+            if payload.get("company_email") is not None
+            else user.Company_Email
+        )
 
         new_password = payload.get("password")
         if new_password and new_password.strip() != "":

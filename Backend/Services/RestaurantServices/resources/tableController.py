@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from models import get_db, models
 from resources.utils import verify_authentication
+from resources.validation import EMAIL_MESSAGE, normalize_phone, validate_email
 from configs.base_config import CommonWords
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,9 @@ class ReservationIn(BaseModel):
     table_id: int
     guest_name: str
     guest_mobile: str
+    # ISO-3166-1 alpha-2 country the number was typed in; see
+    # resources/validation.py for why it cannot be guessed.
+    phone_region: Optional[str] = None
     guest_email: Optional[str] = None
     no_of_guests: int
     reservation_type: str = "Phone"
@@ -135,6 +139,9 @@ class ReservationUpdate(BaseModel):
 class WaitlistIn(BaseModel):
     guest_name: str
     guest_mobile: str
+    # ISO-3166-1 alpha-2 country the number was typed in; see
+    # resources/validation.py for why it cannot be guessed.
+    phone_region: Optional[str] = None
     party_size: int
     floor_id: Optional[int] = None
     section: Optional[str] = None
@@ -216,6 +223,15 @@ def _validate_reservation_values(payload):
         value = getattr(payload, key, None)
         if value is not None and len(str(value).strip()) > 255:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{label} must not exceed 255 characters")
+    # A booking is made by telephone as often as online, so the number is checked
+    # for real rather than only for length: it must be a number in a real
+    # numbering plan, and the region decides how a national one is read (C-086).
+    normalize_phone(getattr(payload, "guest_mobile", None), field="guest_mobile",
+                    default_region=getattr(payload, "phone_region", None))
+    # Same for the address a confirmation is sent to.
+    guest_email = getattr(payload, "guest_email", None)
+    if guest_email and str(guest_email).strip() and not validate_email(guest_email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=EMAIL_MESSAGE)
     return True
 
 

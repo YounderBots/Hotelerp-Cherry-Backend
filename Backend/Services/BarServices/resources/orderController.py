@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from models import get_db, models
 from resources.utils import verify_authentication
+from resources.validation import normalize_phone
 from configs.base_config import CommonWords
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,8 @@ ORDER_TRANSITIONS = {
 }
 
 
-def _validate_order_values(*, order_type, table_id, guest_mobile=None, no_of_guests=None, guest_name=None):
+def _validate_order_values(*, order_type, table_id, guest_mobile=None, no_of_guests=None,
+                           guest_name=None, phone_region=None):
     if order_type not in ORDER_TYPES:
         raise HTTPException(status_code=400, detail="order_type is invalid")
     if order_type == "At Table" and not table_id:
@@ -82,10 +84,15 @@ def _validate_order_values(*, order_type, table_id, guest_mobile=None, no_of_gue
         raise HTTPException(status_code=400, detail="table_id is only valid for At Table orders")
     if guest_name is not None and len(str(guest_name).strip()) > 100:
         raise HTTPException(status_code=400, detail="guest_name must not exceed 100 characters")
-    if guest_mobile is not None and str(guest_mobile).strip() and not re.fullmatch(r"\d{10}", re.sub(r"\s+", "", str(guest_mobile))):
-        raise HTTPException(status_code=400, detail="guest_mobile must be a 10-digit number")
+    # Country-aware, stored as E.164. This was `re.fullmatch(r"\d{10}", ...)`,
+    # which refused every guest outside the home country and every number typed
+    # in international format (C-086). The order is matched against a guest by
+    # this same value, so it has to be canonical to find the right guest.
+    guest_mobile = normalize_phone(guest_mobile, field="guest_mobile",
+                                   default_region=phone_region)
     if no_of_guests is not None and int(no_of_guests) < 1:
         raise HTTPException(status_code=400, detail="no_of_guests must be at least one")
+    return guest_mobile
 
 
 # =====================================================
@@ -96,6 +103,10 @@ class OrderIn(BaseModel):
     table_id: Optional[int] = None
     guest_name: Optional[str] = None
     guest_mobile: Optional[str] = None
+    # ISO-3166-1 alpha-2 country the mobile was typed in. A national number
+    # with no country code is ambiguous and the API will not guess one; see
+    # resources/validation.py.
+    phone_region: Optional[str] = None
     no_of_guests: Optional[int] = None
     server_id: Optional[str] = None
     server_name: Optional[str] = None
@@ -326,12 +337,13 @@ def _order_item_data(item: models.BarOrderItem, item_name: Optional[str], item_p
 def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
 
-    _validate_order_values(
+    guest_mobile = _validate_order_values(
         order_type=payload.order_type,
         table_id=payload.table_id,
         guest_mobile=payload.guest_mobile,
         no_of_guests=payload.no_of_guests,
         guest_name=payload.guest_name,
+        phone_region=payload.phone_region,
     )
 
     table = None
@@ -352,19 +364,21 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Table is not available")
 
     guest = None
-    if payload.guest_mobile:
-        normalized_mobile = re.sub(r"\s+", "", str(payload.guest_mobile))
+    if guest_mobile:
+        # Matched on the canonical E.164 form, so an order typed as
+        # "+91 98765 43210" finds the guest stored as +919876543210.
         guest = (
             db.query(models.BarGuest)
-            .filter(models.BarGuest.mobile == normalized_mobile, models.BarGuest.company_id == company_id, models.BarGuest.status == STATUS)
+            .filter(models.BarGuest.mobile == guest_mobile, models.BarGuest.company_id == company_id, models.BarGuest.status == STATUS)
             .first()
         )
 
     try:
         now = datetime.now()
-        order_values = payload.dict()
-        if payload.guest_mobile:
-            order_values["guest_mobile"] = normalized_mobile
+        # `phone_region` exists so the number could be read; it is not a column.
+        order_values = payload.dict(exclude={"phone_region"})
+        if guest_mobile:
+            order_values["guest_mobile"] = guest_mobile
         order = models.BarOrder(
             order_number=gen_code("BORD"),
             order_date=now.date(),

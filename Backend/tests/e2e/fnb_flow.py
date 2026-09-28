@@ -54,7 +54,8 @@ def venue_flow(prefix, ticket_path, label, dine_in):
     # ---- create ------------------------------------------------------------
     s, b = req("POST", f"/{prefix}/order", TOK, {
         "order_type": dine_in, "table_id": table_id, "room_no": None,
-        "guest_name": "Flow Tester", "guest_mobile": "9876500999", "no_of_guests": 2,
+        "guest_name": "Flow Tester", "guest_mobile": "9876500999",
+        "phone_region": "IN", "no_of_guests": 2,
     })
     check(f"{label}: create order -> 201/200", s in (200, 201), f"{s} {str(b)[:200]}")
     order = (b.get("data") or {}) if s in (200, 201) else {}

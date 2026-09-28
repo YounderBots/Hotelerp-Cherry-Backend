@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, AlertCircle, CheckCircle, X } from "lucide-react";
 import Tabs, { Tab } from "../../stories/Tabs";
+import PhoneInput from "../../stories/Form/PhoneInput";
+import { validatePhone } from "../../stories/Form/phone";
 import Button from "../../stories/Button";
 import RoomCard from "./Pages/Card";
 import Payment from "./payment";
@@ -29,7 +31,9 @@ const RATE_TYPES = [
 // sell it.
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^[+()\-\s\d]{7,20}$/;
+// Phone numbers are validated with libphonenumber, not a pattern: numbering
+// plans differ by country in length, prefixes and ranges, and a regex cannot
+// know that. See stories/Form/PhoneInput and C-086.
 const MAX_FILE_MB = 5;
 const ALLOWED_FILE_EXT = ["pdf", "jpg", "jpeg", "png"];
 
@@ -145,6 +149,11 @@ const AddNewReservation = () => {
     last_name: "",
     email: "",
     phone_number: "",
+    // The country the phone number is typed in. It is sent with the number
+    // because a national number with no country code is ambiguous, and the API
+    // refuses to guess one (C-086). Not stored: the number itself is stored
+    // canonically as E.164.
+    phone_region: "IN",
     arrival_date: "",
     departure_date: "",
     booking_status_id: "",
@@ -180,6 +189,9 @@ const AddNewReservation = () => {
   // availability check and clear the room the guest can no longer have.
   const [refreshAvailability, setRefreshAvailability] = useState(0);
   const [formError, setFormError] = useState(null);
+  // The phone field's own message, kept next to the field rather than only in
+  // the form-level banner, so the person typing can see what to fix.
+  const [phoneError, setPhoneError] = useState(null);
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((kind, text) => setToast({ kind, text, at: Date.now() }), []);
@@ -456,7 +468,11 @@ const AddNewReservation = () => {
     if (!formData.email.trim()) return "Email is required.";
     if (!EMAIL_RE.test(formData.email.trim())) return "Enter a valid email address.";
     if (!formData.phone_number.trim()) return "Phone number is required.";
-    if (!PHONE_RE.test(formData.phone_number.trim())) return "Enter a valid phone number (digits, +, spaces, - and () only).";
+    // Country-aware, via the same libphonenumber rule the API applies. This used
+    // to be a hand-written `/^[+()\-\s\d]{7,20}$/`, which accepted `(((((((` and
+    // `1234567` and refused a number longer than twenty characters (C-086).
+    const phone = validatePhone(formData.phone_number, formData.phone_region);
+    if (!phone.ok) return phone.message || "Enter a valid phone number.";
     if (!formData.arrival_date) return "Arrival date is required.";
     if (!formData.departure_date) return "Departure date is required.";
     if (isoDay(formData.arrival_date) >= isoDay(formData.departure_date)) return "Departure date must be after arrival date.";
@@ -498,10 +514,13 @@ const AddNewReservation = () => {
     const v = validateGuestForm();
     if (v) {
       setFormError(v);
+      // A phone problem is also shown next to the phone field, not only here.
+      if (/phone/i.test(v)) setPhoneError(v);
       showToast("error", v);
       return;
     }
     setFormError(null);
+    setPhoneError(null);
     setModalView(false);
     setPaymentModal(true);
   };
@@ -526,6 +545,10 @@ const AddNewReservation = () => {
     fd.append("first_name", formData.first_name.trim());
     fd.append("last_name", formData.last_name.trim());
     fd.append("phone_number", formData.phone_number.trim());
+    // The country the number was typed in. The server will not guess one from a
+    // bare national number, so a booking with a national format and no region is
+    // refused rather than stored against the wrong country.
+    fd.append("phone_region", formData.phone_region);
     fd.append("email", formData.email.trim().toLowerCase());
 
     fd.append("arrival_date", formData.arrival_date);
@@ -912,18 +935,27 @@ const AddNewReservation = () => {
               />
             </div>
 
+            {/* The country selector, the live formatting and the real validation
+                live in one shared control. The placeholder this replaces was
+                "+1 555 123 4567" -- the 555 range is reserved for fiction, so
+                anyone who copied the example into the field was refused by the
+                very API this form posts to. */}
             <div className="form-group">
-              <label htmlFor="anr-phone">Phone Number <span className="required">*</span></label>
-              <input
-                id="anr-phone"
-                type="tel"
-                inputMode="tel"
-                placeholder="+1 555 123 4567"
-                value={formData.phone_number}
-                onChange={(e) => setFormData((f) => ({ ...f, phone_number: e.target.value }))}
+              <PhoneInput
+                label="Phone Number"
                 required
-                maxLength={20}
-                autoComplete="tel"
+                name="phone_number"
+                id="anr-phone"
+                value={formData.phone_number}
+                region={formData.phone_region}
+                error={Boolean(phoneError)}
+                helperText={phoneError}
+                onChange={(e164, region, result) => {
+                  setFormData((f) => ({ ...f, phone_number: e164, phone_region: region }));
+                  setPhoneError(
+                    result && result.ok === false && !result.incomplete ? result.message : null,
+                  );
+                }}
               />
             </div>
 

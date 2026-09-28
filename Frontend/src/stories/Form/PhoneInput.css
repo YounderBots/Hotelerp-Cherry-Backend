@@ -1,0 +1,175 @@
+/*
+ * PhoneInput layout.
+ *
+ * The country selector and the number are one control visually and one value
+ * semantically: a person should never have to wonder which box the country code
+ * belongs in. Sizing follows Input.css so this does not read as a different
+ * form control from the fields above and below it.
+ */
+.phone-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.phone-field__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary, #5b6472);
+  letter-spacing: 0.02em;
+}
+
+.phone-field__req {
+  color: var(--error, #d64545);
+}
+
+.phone-field__row {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border, #d7dbe2);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.phone-field__row:focus-within {
+  border-color: var(--primary, #2f6feb);
+  box-shadow: 0 0 0 3px rgba(47, 111, 235, 0.15);
+}
+
+.phone-field__row.is-error {
+  border-color: var(--error, #d64545);
+}
+
+.phone-field__row.is-error:focus-within {
+  box-shadow: 0 0 0 3px rgba(214, 69, 69, 0.15);
+}
+
+.phone-field__country {
+  position: relative;
+  flex: 0 0 auto;
+  border-right: 1px solid var(--border, #d7dbe2);
+  background: #f7f8fa;
+}
+
+.phone-field__country-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-primary, #1f2733);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.phone-field__country-button:hover:not(:disabled) {
+  background: #eef0f4;
+}
+
+.phone-field__country-button:focus-visible {
+  outline: 2px solid var(--primary, #2f6feb);
+  outline-offset: -2px;
+}
+
+.phone-field__country-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.phone-field__code {
+  color: var(--text-secondary, #5b6472);
+  font-variant-numeric: tabular-nums;
+}
+
+.phone-field__region {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.phone-field__list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 280px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--border, #d7dbe2);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+}
+
+.phone-field__list button {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+  color: var(--text-primary, #1f2733);
+  cursor: pointer;
+}
+
+.phone-field__list button:hover,
+.phone-field__list button:focus-visible {
+  background: #eef2ff;
+  outline: none;
+}
+
+.phone-field__list-sep {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary, #5b6472);
+  border-top: 1px solid var(--border, #d7dbe2);
+  margin-top: 4px;
+}
+
+.phone-field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 0;
+  outline: none;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text-primary, #1f2733);
+  background: transparent;
+}
+
+.phone-field__input:disabled {
+  background: #f2f3f5;
+  color: var(--text-secondary, #5b6472);
+}
+
+.phone-field__hint {
+  font-size: 12px;
+  color: var(--text-secondary, #5b6472);
+}
+
+/* The select is a control, not a paragraph: keep the two the same height. */
+@media (max-width: 480px) {
+  .phone-field__region {
+    display: none;
+  }
+  .phone-field__country-button {
+    padding: 0 8px;
+  }
+  .phone-field__list {
+    width: min(280px, calc(100vw - 32px));
+  }
+}

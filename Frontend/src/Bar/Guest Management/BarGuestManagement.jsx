@@ -5,6 +5,8 @@ import RowActions from "../../stories/RowActions";
 import DetailList, { DetailItem } from "../../stories/DetailList";
 import ViewSection from "../../stories/ViewSection";
 import Input from "../../stories/Form/Input";
+import PhoneInput from "../../stories/Form/PhoneInput";
+import { regionOf } from "../../stories/Form/phone";
 import Select from "../../stories/Form/Select";
 import Textarea from "../../stories/Form/Textarea";
 import ErrorAlert from "../../stories/ErrorAlert";
@@ -36,6 +38,10 @@ const initialForm = {
   first_name: "",
   last_name: "",
   mobile: "",
+  // The country the mobile is typed in. It travels with the number because a
+  // national number with no country is ambiguous, and the API refuses to guess
+  // one (C-086). It is not stored: the number itself is stored as E.164.
+  phone_region: "IN",
   email: "",
   guest_type: "Walk-In",
   special_notes: "",
@@ -67,6 +73,7 @@ const BarGuestManagement = () => {
   const deletingRef = useRef(false);
   const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [phoneError, setPhoneError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
 
   /* ================= HANDLERS ================= */
@@ -75,16 +82,22 @@ const BarGuestManagement = () => {
     setEditId(null);
     setFormData(initialForm);
     setFormError(null);
+    setPhoneError(null);
     setShowGuestModal(true);
   };
 
   const openEditModal = (row) => {
     setEditId(row.id);
     setFormError(null);
+    setPhoneError(null);
     setFormData({
       first_name: row.first_name || "",
       last_name: row.last_name || "",
       mobile: row.mobile || "",
+      // An existing row is stored as E.164, so the country is the one that
+      // number belongs to. Shown in the selector rather than assumed, so editing
+      // a guest from another country does not re-read their number as local.
+      phone_region: regionOf(row.mobile) || "IN",
       email: row.email || "",
       guest_type: row.guest_type || "Walk-In",
       special_notes: row.special_notes || "",
@@ -127,6 +140,12 @@ const BarGuestManagement = () => {
       setFormError("First name and mobile number are required.");
       return;
     }
+    // A number that is still being typed is not an error yet, so the field's own
+    // message is shown rather than a generic "invalid" at the top of the form.
+    if (phoneError) {
+      setFormError("Check the mobile number before saving.");
+      return;
+    }
 
     savingRef.current = true;
     setSaving(true);
@@ -134,7 +153,10 @@ const BarGuestManagement = () => {
     const payload = {
       first_name: formData.first_name.trim(),
       last_name: formData.last_name.trim() || null,
+      // Already E.164 from PhoneInput; sent as typed, with the country that
+      // says how to read a national one.
       mobile: formData.mobile.trim(),
+      phone_region: formData.phone_region,
       email: formData.email.trim() || null,
       guest_type: formData.guest_type,
       special_notes: formData.special_notes.trim() || null,
@@ -280,14 +302,18 @@ const BarGuestManagement = () => {
           value={formData.last_name}
           onChange={handleChange}
         />
-        <Input
+        <PhoneInput
           label="Mobile Number"
           required
-          type="tel"
           name="mobile"
-          placeholder="10-digit mobile number"
           value={formData.mobile}
-          onChange={handleChange}
+          region={formData.phone_region}
+          error={Boolean(phoneError)}
+          helperText={phoneError}
+          onChange={(e164, region, result) => {
+            setFormData((p) => ({ ...p, mobile: e164, phone_region: region }));
+            setPhoneError(result && result.ok === false && !result.incomplete ? result.message : null);
+          }}
         />
         <Input
           label="Email"

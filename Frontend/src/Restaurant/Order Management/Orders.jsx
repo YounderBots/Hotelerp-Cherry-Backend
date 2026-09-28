@@ -6,6 +6,7 @@ import RowActions from "../../stories/RowActions";
 import IconButton from "../../stories/IconButton";
 import Button from "../../stories/Button";
 import Input from "../../stories/Form/Input";
+import PhoneInput from "../../stories/Form/PhoneInput";
 import Select from "../../stories/Form/Select";
 import ErrorAlert from "../../stories/ErrorAlert";
 import Toast from "../../stories/Toast";
@@ -21,6 +22,10 @@ import "../../stories/OrderDetail.css";
 const ORDER_TYPES = ["Dine-In", "Takeaway", "Delivery", "Room Service"];
 
 const initialForm = {
+  // The country the number is typed in. It is sent with the number, not
+  // stored with it: a national number with no country code is ambiguous
+  // and the API refuses to guess one (C-086).
+  phone_region: "IN",
   order_type: "Dine-In",
   table_id: "",
   room_no: "",
@@ -62,6 +67,9 @@ const Orders = () => {
   const cancelRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState(null);
+  // The phone field's own message, kept next to the field rather than
+  // only in the form-level banner.
+  const [phoneError, setPhoneError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
   const [pick, setPick] = useState(emptyPick);
 
@@ -128,6 +136,7 @@ const Orders = () => {
         room_no: formData.room_no.trim() || null,
         guest_name: formData.guest_name.trim() || null,
         guest_mobile: formData.guest_mobile.trim() || null,
+        phone_region: formData.phone_region,
         no_of_guests: formData.no_of_guests ? Number(formData.no_of_guests) : null,
       });
       showToast("Order created successfully", "success");
@@ -422,12 +431,20 @@ const Orders = () => {
           value={formData.guest_name}
           onChange={handleChange}
         />
-        <Input
+        <PhoneInput
           label="Guest Mobile"
-          type="tel"
+          required
           name="guest_mobile"
           value={formData.guest_mobile}
-          onChange={handleChange}
+          region={formData.phone_region}
+          error={Boolean(phoneError)}
+          helperText={phoneError}
+          onChange={(e164, region, result) => {
+            setFormData((p) => ({ ...p, guest_mobile: e164, phone_region: region }));
+            setPhoneError(
+              result && result.ok === false && !result.incomplete ? result.message : null,
+            );
+          }}
         />
         <Input
           label="No. of Guests"

@@ -2,8 +2,8 @@
 
 **Project:** Cherry Hotel ERP  
 **Last updated:** 2026-09-28  
-**Current page:** 69 of 70 checklist rows pass locally; only Page 70 (`/authentication/otp`) is blocked, with no dead link exposed.  
-**Next action:** the page sweep, the focused responsive sweep, the four-width full sweep and the control sweep are all complete, so the next work is the open release blockers: deployment verification, the bar/restaurant guest child-endpoint 403s (C-066), the stale `/readyz`, seeded `Hotel@2026`, and the outstanding P1 risks (partial-payment cancellation/split, overpayment races, tenant scoping, client-callable room-state mutation, logout/token revocation, upload/content validation, historical F&B inventory reconciliation). The release decision remains **NOT READY**.
+**Current page:** 69 of 70 checklist rows pass locally; only Page 70 (`/authentication/otp`) is blocked, with no dead link exposed. Field validation is audited and fixed (C-086).
+**Next action:** the page sweep, the focused responsive sweep, the four-width full sweep and the control sweep are all complete, and the field-validation audit (C-086) has now replaced the product's phone, email and name rules with country-aware libphonenumber validation and E.164 storage. The next work is the open release blockers: deployment verification, the bar/restaurant guest child-endpoint 403s (C-066), the stale `/readyz`, seeded `Hotel@2026`, and the outstanding P1 risks (partial-payment cancellation/split, overpayment races, tenant scoping, client-callable room-state mutation, logout/token revocation, historical F&B inventory reconciliation). The release decision remains **NOT READY**.
 
 ## Persistent status
 
@@ -14,15 +14,15 @@
 | Pages fully passed | 69 | Pages 1–13 and 15–69 pass locally, and Page 14 now passes after C-027/C-083 (13 + 56 = 69); Page 70 stays blocked; deployment blockers remain release blockers |
 | Pages in progress | 0 | The page sweep, focused responsive sweep, four-width full sweep and control sweep are all complete; only the release blockers remain |
 | Pages blocked | 1 | OTP (`/authentication/otp`): no route, no backend verification/resend contract, and no dead link in the UI |
-| Confirmed bugs fixed and verified this run | 12+ | Hidden-route gate, shared table accessibility/print/test evidence, combo validation, dashboard availability metric, local-date/report handling, URL-addressable detail routes, room-card/file-input accessibility, booking API validation, detail RBAC, and F&B modifier/inventory hardening — plus the Master Data sweep findings C-068 through C-082 (13 pages, index/lock/validation/colour/upload/case-variant/metadata-drift classes) |
+| Confirmed bugs fixed and verified this run | 13+ | Hidden-route gate, shared table accessibility/print/test evidence, combo validation, dashboard availability metric, local-date/report handling, URL-addressable detail routes, room-card/file-input accessibility, booking API validation, detail RBAC, and F&B modifier/inventory hardening — plus the Master Data sweep findings C-068 through C-082 (13 pages, index/lock/validation/colour/upload/case-variant/metadata-drift classes) and C-086, the field-validation audit (phone/email/name) |
 | Open P0/P1/P2 | At least the complaint categories in the register | Page evidence will refine the count |
 
 ## Completed baseline evidence
 
-- `npm test -- --reporter=dot`: **113 tests passed across 10 files** (fresh run after the RoomCard, file-input, detail-RBAC, booking-boundary and C-081 sidebar changes).
+- `npm test -- --reporter=dot`: **143 unit tests across 12 files** (plus 127 storybook tests in a browser project; 268 total) — fresh run after C-086, which added `phone.test.js` and `PhoneInput.test.jsx`.
 - `npm run build`: **passed** (fresh Vite production build after the current fixes).
 - `npm run lint`: completed with **0 errors and 11 warnings**; warnings are tracked as C-007 and are not suppressed.
-- `python Backend/tests/run_all.py`: **26 suites passed** (21 existing — booking validation, combo rules, F&B hardening — plus `test_seed_night_audit.py` with 10 tests, and `test_upload_content.py` run from each of the four services that accept uploads: 65/65/65/78 tests).
+- `python Backend/tests/run_all.py`: **30 suites passed** (now including the phone/email/name matrix from each of the four services that validate a field: 120 tests each) (21 existing — booking validation, combo rules, F&B hardening — plus `test_seed_night_audit.py` with 10 tests, and `test_upload_content.py` run from each of the four services that accept uploads: 65/65/65/78 tests).
 - `python Backend/tests/e2e/run_all.py`: **6 suites / 345 HTTP tests passed** (fresh local MySQL run after the C-082, C-083 and C-085 changes; the stale 0% discount/tax and bar-table-selection expectations were corrected first, and two C-085 identity-document probes were added).
 - `Frontend/e2e/auth_audit.mjs`: **16/16 public auth viewport checks passed** (4 routes × 4 widths).
 - `Frontend/e2e/audit.mjs`: fresh desktop, laptop, tablet, and mobile sweeps passed after the current route/detail changes; the final four-width rerun is recorded in the final regression section below.
@@ -31,6 +31,132 @@
 - `Frontend/e2e/reservation_pages_audit.mjs`: the focused route list now covers 56 routes (all reservation/account/guest/HRM/restaurant/bar/master-data surfaces) and the consolidated master-data run passed 224 route/viewport rows at 1440/1024/768/375 with 0px overflow, 0 modal overflow, and no console/page/request/HTTP errors. Report: `Frontend/e2e-reports/reservation-pages-all-masterdata-final.json`.
 - Local stack startup: all six services and Vite answered their health/root probes through `start-network.ps1` (re-confirmed after the 2026-09-27 environment restart; `/healthz` 200 on 8000/8020/8030/8040/8050/8060 and HTTP 200 on 5173).
 - Existing `Frontend/e2e-reports/audit-admin.json` was inspected as historical evidence; it is not treated as a fresh current run.
+
+## Field-validation audit — C-086 (2026-09-28)
+
+The audit started from a source scan, not from a list, because a hand-kept list is the thing that goes stale.
+
+- `python Backend/tools/field_inventory.py` → **212 input fields across 38 files** (8 phone, 5 email, 1 password,
+  36 numeric, 21 date/time, 140 text). The classifier matches on tokens, not substrings, so
+  `acknowledgment_of_hotel_policies` is not counted as a phone field just because "hotel" contains "tel".
+- `python Backend/tools/probe_phone_matrix.py` → the live matrix through gateway `:8000`, printed one line per
+  case with the status code and the message a user would see.
+- `python Backend/tools/normalize_phones.py --dry-run` → 85 rows needing rewrite, and 10 it refused to guess for.
+- `node Frontend/e2e/phone_field_responsive.mjs` → the field at 1440/1024/768/375.
+
+### What was found, and what it means for the product
+
+| Field class | Before | After |
+|---|---|---|
+| Phone | `\d{10}` in two controllers, a length check in a third, nothing in the rest, and four hand-written SPA regexes | libphonenumber in all four services and the SPA; E.164 storage; country selector |
+| Email | `"@" not in x or "." not in x` for employees; a local regex for bookings | one shared structural rule, applied on create *and* update, stored lower-cased |
+| Name | length only | whitespace collapsed, control characters refused, Unicode and apostrophes kept |
+
+### Deliberate decisions
+
+- **A national number with no country is refused, not guessed.** With the region falling back to IN,
+  `(415) 555-2671` parsed as `+914155552671` — ten digits that fit India's plan and belong to nobody. The API asks
+  for the country instead, and the frontend always sends it.
+- **`room_telephone` is not made country-aware.** A room's telephone is an internal extension, not somebody's
+  number; forcing a numbering plan on it would reject every extension that is not eleven digits. The sweep tool
+  reports it with that note so the exclusion is deliberate and visible.
+- **Registration is reported, not changed.** `Register.jsx` still has its own regex. It posts to an endpoint this
+  pass did not audit, and changing a public form blind is worse than leaving it with a recorded gap.
+- **No number is described as active.** Library validation proves structural validity for a real plan. This
+  application has no SMS/OTP verification, so no message, label or comment claims a number is reachable.
+- **The seed was fixed, not just the data.** `common.phone()` now generates assignable numbers with a per-country
+  national length, rotating through four countries so the demo data exercises the feature instead of hiding it.
+
+### Evidence
+
+- `run_all.py`: **30/30 suites** — now including `test_phone_validation.py` from each of the four services that own
+  a copy of the rule (120 cases each), and the suite asserts the four copies are byte-identical so they cannot drift.
+- `test_booking_validation.py`: the "valid" fixture was `+1 555 123 4567`, the US *fiction* range — a test passing an
+  invalid value as its idea of valid. Replaced with `+14155552671`, plus new cases for national-number-without-country,
+  the fiction range, emoji, over-length, too-short, separators-only and bad emails.
+- e2e: **345/345**. The reservation and F&B flows now send `phone_region` and E.164 numbers.
+- SPA: **268 tests** (143 unit + 127 storybook, up from 113) — `phone.test.js` for the rules, `PhoneInput.test.jsx` for
+  the component. The component test exists because the pure-function test could not see the worst bug found: the
+  field **wiped itself as the user typed**, because a half-typed number has no canonical value and the input was
+  bound to that empty string. It could not be entered at all.
+- lint **0 errors / 11 warnings** (back to the C-007 baseline after the rules moved to `phone.js`, so the module
+  exports one component), build passes, `audit.mjs` clean at 1440 and 375 (66 pages, 0 console/page/network/HTTP
+  errors).
+- Cost recorded honestly: the `phone` chunk is 122 kB (30.6 kB gzipped) — libphonenumber's metadata for 245
+  countries. Acceptable for booking forms, and it is code-split onto the pages that need it, but it is a real cost.
+
+### A second sweep found six more forms
+
+The first pass wired the fields the inventory named. Running the sweep again afterwards showed that was not
+enough — six forms still had a bare `<Input type="tel">`, and with the API now country-aware those screens asked
+for a national number and then refused it:
+
+| Form | Field | Why it was missed |
+|---|---|---|
+| `Bar/Order Management/Orders.jsx` | `guest_mobile` | named, but not in the first pass's target list |
+| `Restaurant/Order Management/Orders.jsx` | `guest_mobile` | same |
+| `Restaurant/Guest Management/GuestManagement.jsx` | `mobile` | the bar twin was done, the restaurant one was not |
+| `Restaurant/Table Reservation/TableReservation.jsx` | `guest_mobile` | named, not in the target list |
+| `Hotel/Reservation/Booking.jsx` | `phone_number` | **no `name` attribute**, so a name-keyed sweep reported "not a person's number" and moved on |
+| `Hotel/Reservation/Reservation.jsx` | `editForm.phone_number` | `editForm` has no declared shape, so there was no form object to inspect |
+
+The last two are the ones worth remembering: a sweep that keys on `name="..."` silently skips a field that has
+no `name`, and a form whose state is a loose object has nothing for a source scan to find. Both are now wired,
+and the reservation edit form derives the country from the stored number — verified in the browser, where a guest
+stored as `+971501000531` opened with the selector on **`+971 AE`** rather than the property's own country, which
+is what stops a good record being corrupted by being opened.
+
+Three defects were found and fixed while wiring them:
+
+- **The wiring tool checked its own output.** It asked "is `phone_region` in this text?" *after* the JSX edit had
+  already written `formData.phone_region`, so the answer was always yes and the country was never declared in
+  `initialForm`. Four files shipped with a region of `undefined`. The check now looks at the form object.
+- **The phone probe leaked its orders.** `probe_phone_matrix.py` deleted the guests it created but skipped the
+  orders, so each run left an active order holding a bar table Occupied — and a later F&B e2e run failed with
+  "no Available table", blaming the wrong thing. It now cancels its orders through the real status endpoint (so the
+  table release runs the product's own logic) and prints the Available count afterwards, so a leak is visible in
+  its own output.
+- **The build caught what lint did not.** `regionOf` was imported from the component module, where it does not
+  live; `npm run lint` was clean and `npm run build` failed. The import now comes from `phone.js`.
+
+### The inventory is its own evidence
+
+`field_inventory.py` reads the source, so it can be re-run to show the change rather than assert it:
+
+| | before | after |
+|---|---:|---:|
+| total input fields | 212 | 204 |
+| phone fields as a bare `<Input>` | 8 | **1** |
+
+Seven of the eight are no longer `<Input type="tel">` because they are now `PhoneInput` components with a country
+selector; the one that remains is `room_telephone`, which is an internal extension and is meant to stay a plain
+text field. The eight-to-one drop is the sweep's own count, not a claim in this document.
+
+### Final gate (2026-09-28, after all of the above)
+
+| Check | Result |
+|---|---|
+| `python Backend/tests/run_all.py` | **30/30 suites** — including the 120-case matrix from each of the four services that validate a field |
+| `python Backend/tests/e2e/run_all.py` | **6/6 suites, 345/345 checks** |
+| `npm test` | **143/143 unit** (12 files) + **127/127 storybook** = 268, up from 113 |
+| `npm run lint` | **0 errors, 11 warnings** — the C-007 baseline, unchanged |
+| `npm run build` | **passed** |
+| `node Frontend/e2e/audit.mjs` × 4 widths | **264 route/viewport rows, 0 problems**, login 200 at 1440/1024/768/375 |
+| `node Frontend/e2e/interact.mjs` | **43 screens, 417 interactions, 0 problems** |
+| `node Frontend/e2e/phone_field_responsive.mjs` | field behaves at **all 4 widths** |
+| `python Backend/tools/probe_phone_matrix.py` | full matrix green, twice, leaving 6 guests and 3 Available tables — same as before it ran |
+| Data | rooms 25, room types 8, bed types 8, halls 7, facilities 15, restaurant guests 8, bar guests 6, bar tables 10, reservations 26, incidents 3 — the seeded baseline; every QA row soft-deleted, 0 untracked upload files |
+
+One operational note worth carrying: the browser harnesses must run *after* Vite has finished rebuilding. Run
+immediately after editing source files, they report a login failure that is really a half-served module graph.
+
+### Data state after the change
+
+- 85 rows normalised to E.164 across four schemas; `normalize_phones.py` reports 0 remaining on a second pass.
+- 10 seeded fiction-range placeholders replaced (opt-in flag, printed, never silent).
+- 22 e2e-created reservations retired (soft-deleted, history preserved) and 12 probe-written upload files removed by
+  `cleanup_qa_artifacts.py`, whose second pass is a no-op. Active reservations returned to 26, incidents to 3, and
+  the upload tree matches what git tracks.
 
 ## Page 1 test record — Login `/`
 

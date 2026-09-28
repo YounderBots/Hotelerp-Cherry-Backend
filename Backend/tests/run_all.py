@@ -50,6 +50,16 @@ NIGHT_AUDIT_SERVICE = "HotelServices"
 # directory because the gateway is what preflight points at.
 TOOLS_SERVICE = "LoginServices"
 
+# Country-aware phone/email/name validation (C-086). The rule is one module per
+# service -- services cannot import each other -- so the same suite runs from
+# each of the four that validate a field, and asserts the copies are identical.
+PHONE_VALIDATION_SERVICES = ["BarServices", "RestaurantServices", "UserServices", "HotelServices"]
+
+# The guard that keeps a hand-written phone regex from coming back. It runs from
+# one root only: it sweeps the whole repository rather than one service, and it
+# carries its own proof that the sweep can still detect a planted pattern.
+PHONE_PATTERN_GUARD_SERVICE = "HotelServices"
+
 # The Hotel service reads Master Data and Users over HTTP. Its side of that
 # wire -- the client, the records the rules read, the 503 a sibling being down
 # turns into, the lock that stayed in its own schema -- runs from HotelServices.
@@ -118,6 +128,12 @@ def main() -> int:
     # match the type its name claims. One suite, run from each service root that
     # owns an upload path, because the module layout is per-service.
     jobs += [(svc, "test_upload_content.py") for svc in UPLOAD_SERVICES]
+    # Field validation (C-086): the phone matrix, plus email and name rules, run
+    # from each service that owns a copy of resources/validation.py.
+    jobs += [(svc, "test_phone_validation.py") for svc in PHONE_VALIDATION_SERVICES]
+    # The pattern guard (C-086): no hand-written phone regex may reappear, and the
+    # check proves it can still fire.
+    jobs.append((PHONE_PATTERN_GUARD_SERVICE, "test_phone_pattern_guard.py"))
     # Combo/package request validation is a Restaurant-only business rule.
     jobs.append(("RestaurantServices", "test_combo_rules.py"))
     # F&B pricing and recipe-deduction guards run against both venue schemas.

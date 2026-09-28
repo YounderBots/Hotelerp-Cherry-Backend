@@ -8,6 +8,7 @@ Run from the repo root.
 import datetime as dt
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -40,8 +41,15 @@ _phone_seq = [5000]
 
 
 def next_phone():
+    """A unique guest number for this run.
+
+    Sent in E.164 with its country, because the API is country-aware (C-086) and
+    a bare national number with no country is ambiguous -- it is refused rather
+    than guessed. The address derived from it stays unique because the digits
+    are.
+    """
     _phone_seq[0] += 1
-    return f"98765{_phone_seq[0]:05d}"
+    return f"+9198765{_phone_seq[0]:05d}"
 
 
 def post_multipart(path, fields, files, tok):
@@ -114,9 +122,13 @@ print(f"  quoted total: {quoted_total}")
 
 
 def booking_fields(room, phone, **over):
+    # The email has to be a valid address, so it is built from the digits rather
+    # than from a value containing "+", which is not valid in a local part.
+    digits = re.sub(r"\D", "", phone)
     f = {
         "salutation": "Mr", "first_name": "Flow", "last_name": "Test",
-        "phone_number": phone, "email": f"flow{phone}@example.com",
+        "phone_number": phone, "phone_region": "IN",
+        "email": f"flow{digits}@example.com",
         "arrival_date": arrive, "departure_date": depart,
         "room_ids": json.dumps([room]),
         "rate_type": json.dumps(["daily"]),

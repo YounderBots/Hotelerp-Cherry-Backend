@@ -37,7 +37,7 @@ import uuid
 import sqlalchemy as sa
 
 from . import images as im
-from .common import COMPANY, SYSTEM, at, audit, day, insert, money, upload_dir
+from .common import COMPANY, SYSTEM, at, audit, day, insert, money, phone, upload_dir
 from .masterdata import ROOM_TYPES, ROOMS
 
 RATE_BY_TYPE = {i: dict(daily=d, weekly=w, bed_only=bo, bed_breakfast=bb,
@@ -497,7 +497,11 @@ def seed(conn, business_date: dt.date) -> dict:
             room_reservation_id=ref,
             salutation=salutation, first_name=first, last_name=last,
             email=f"{first.lower()}.{last.lower().replace(chr(39), '')}@gmail.com",
-            phone_number=f"98{40000000 + n * 137:08d}"[:10],
+            # A unique, assignable number in E.164 -- see common.phone(). The
+            # seeded data has to satisfy the same country-aware validation the
+            # API applies, or the dataset contradicts the rules the application
+            # enforces (C-086).
+            phone_number=phone(n),
             arrival_date=arrival, departure_date=departure,
             no_of_nights=nights, no_of_rooms=len(rooms),
             reservation_status=status,
@@ -653,16 +657,19 @@ def seed_operations(conn, business_date, occupied_today, dirty_rooms, incident_d
     ])
 
     # --- booking enquiries not yet turned into reservations -----------------
+    # The loop variable is `contact`, not `phone`: `phone` is the generator
+    # imported from .common, and a comprehension that shadowed it would store a
+    # function object in the column.
     insert(conn, "room_booking", [
         dict(id=i, room_booking_id=f"RB-{uuid.uuid4().hex[:8].upper()}",
              salutation=sal, first_name=first, last_name=last,
-             phone_number=phone,
+             phone_number=contact,
              email=f"{first.lower()}.{last.lower()}@gmail.com",
              arrival_date=day(arr), departure_date=day(arr + nights),
              no_of_nights=nights, room_type=json.dumps(types),
              no_of_rooms=len(types), no_of_adults=adults, no_of_children=children,
              **audit(created=at(day(-2), 16, 20)))
-        for i, (sal, first, last, phone, types, arr, nights, adults, children)
+        for i, (sal, first, last, contact, types, arr, nights, adults, children)
         in enumerate(BOOKING_ENQUIRIES, start=1)
     ])
 

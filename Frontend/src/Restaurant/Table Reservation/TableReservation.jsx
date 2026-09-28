@@ -7,6 +7,7 @@ import IconButton from "../../stories/IconButton";
 import DetailList, { DetailItem } from "../../stories/DetailList";
 import ViewSection from "../../stories/ViewSection";
 import Input from "../../stories/Form/Input";
+import PhoneInput from "../../stories/Form/PhoneInput";
 import Select from "../../stories/Form/Select";
 import Textarea from "../../stories/Form/Textarea";
 import ErrorAlert from "../../stories/ErrorAlert";
@@ -31,6 +32,10 @@ import { usePagePermissions } from "../../hooks/usePagePermissions";
 const RESERVATION_SOURCES = ["Walk-In", "Phone", "Online", "Hotel Guest"];
 
 const initialForm = {
+  // The country the number is typed in. It is sent with the number, not
+  // stored with it: a national number with no country code is ambiguous
+  // and the API refuses to guess one (C-086).
+  phone_region: "IN",
   table_id: "",
   guest_name: "",
   guest_mobile: "",
@@ -90,6 +95,9 @@ const TableReservation = () => {
   const moveRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState(null);
+  // The phone field's own message, kept next to the field rather than
+  // only in the form-level banner.
+  const [phoneError, setPhoneError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
 
   /* ================= HANDLERS ================= */
@@ -144,6 +152,7 @@ const TableReservation = () => {
         table_id: Number(formData.table_id),
         guest_name: formData.guest_name.trim(),
         guest_mobile: formData.guest_mobile.trim(),
+        phone_region: formData.phone_region,
         guest_email: formData.guest_email.trim() || null,
         reservation_date: formData.reservation_date,
         start_time: formData.start_time,
@@ -396,13 +405,20 @@ const TableReservation = () => {
           value={formData.guest_name}
           onChange={handleChange}
         />
-        <Input
+        <PhoneInput
           label="Contact Number"
           required
-          type="tel"
           name="guest_mobile"
           value={formData.guest_mobile}
-          onChange={handleChange}
+          region={formData.phone_region}
+          error={Boolean(phoneError)}
+          helperText={phoneError}
+          onChange={(e164, region, result) => {
+            setFormData((p) => ({ ...p, guest_mobile: e164, phone_region: region }));
+            setPhoneError(
+              result && result.ok === false && !result.incomplete ? result.message : null,
+            );
+          }}
         />
         <Input
           label="Email"

@@ -27,6 +27,7 @@ from resources import nightAuditService as nas
 from resources import reservation_rules as rules
 from resources.master_client import MasterData
 from resources.utils import server_error, verify_authentication
+from resources.validation import normalize_email, normalize_phone, validate_email
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,8 @@ def _server_error(exc: Exception) -> HTTPException:
     return server_error(logger, exc)
 
 
-_BOOKING_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+# Email and phone are validated by resources/validation.py, shared with every
+# other service, rather than by a rule that lived here alone.
 
 
 def _booking_bad_request(detail: str) -> HTTPException:
@@ -102,9 +104,18 @@ def _validate_booking_payload(payload, token: str) -> dict:
     phone_number = payload.get("phone_number")
     if not isinstance(phone_number, str) or not phone_number.strip():
         raise _booking_bad_request("phone_number is required")
-    phone_number = phone_number.strip()
-    if len(phone_number) > 50:
+    if len(phone_number.strip()) > 50:
         raise _booking_bad_request("phone_number is too long")
+    # Country-aware and stored as E.164. This was a length check and nothing
+    # else, so "abc" was an acceptable guest telephone number (C-086). A hotel
+    # takes bookings from every country its guests come from, so a national
+    # number is read in the region the caller states and a number with no
+    # country code is refused rather than guessed.
+    phone_number = normalize_phone(
+        phone_number,
+        field="phone_number",
+        default_region=payload.get("phone_region"),
+    )
 
     for field in ("first_name", "last_name"):
         value = payload.get(field)
@@ -115,9 +126,14 @@ def _validate_booking_payload(payload, token: str) -> dict:
 
     email = payload.get("email")
     if email not in (None, ""):
-        if not isinstance(email, str) or not _BOOKING_EMAIL_RE.fullmatch(email.strip()):
-            raise _booking_bad_request("email must be a valid email address")
-        email = email.strip().lower()
+        # The same rule every other service uses, so a booking is not held to a
+        # different standard from a guest record. The regex this replaced
+        # (`^[^\s@]+@[^\s@]+\.[^\s@]+$`) accepted `a@.b` and `user@b.`.
+        if not isinstance(email, str) or not validate_email(email):
+            raise _booking_bad_request(
+                "Enter a valid email address, for example name@example.com"
+            )
+        email = normalize_email(email)
     else:
         email = None
 

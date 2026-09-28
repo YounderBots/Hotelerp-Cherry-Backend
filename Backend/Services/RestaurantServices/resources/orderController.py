@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError
 
 from models import get_db, models
 from resources.utils import verify_authentication
+from resources.validation import normalize_phone
 from configs.base_config import CommonWords
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,10 @@ class OrderIn(BaseModel):
     room_no: Optional[str] = None
     guest_name: Optional[str] = None
     guest_mobile: Optional[str] = None
+    # ISO-3166-1 alpha-2 country the number was typed in; a national number with
+    # no country code is ambiguous and is not guessed. See
+    # resources/validation.py.
+    phone_region: Optional[str] = None
     no_of_guests: Optional[int] = None
     server_id: Optional[str] = None
     server_name: Optional[str] = None
@@ -319,14 +324,27 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
 
     guest = None
     if payload.guest_mobile:
+        # Canonicalised before the lookup, so an order typed as "+91 98765 43210"
+        # finds the guest stored as +919876543210. Previously the raw string was
+        # compared, so the same guest produced a different order depending on the
+        # spacing the person used (C-086).
+        guest_mobile = normalize_phone(payload.guest_mobile, field="guest_mobile",
+                                       default_region=payload.phone_region)
         guest = (
             db.query(models.Guest)
-            .filter(models.Guest.mobile == payload.guest_mobile, models.Guest.company_id == company_id, models.Guest.status == STATUS)
+            .filter(models.Guest.mobile == guest_mobile, models.Guest.company_id == company_id, models.Guest.status == STATUS)
             .first()
         )
+    else:
+        guest_mobile = None
 
     try:
         now = datetime.now()
+        # `phone_region` is request-scoped so the number could be read; the row
+        # stores the canonical E.164 value instead.
+        order_values = payload.dict(exclude={"phone_region"})
+        if guest_mobile:
+            order_values["guest_mobile"] = guest_mobile
         order = models.RestaurantOrder(
             order_number=gen_code("ORD"),
             order_date=now.date(),
@@ -339,7 +357,7 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
             guest_id=guest.id if guest else None,
             created_by=user_id,
             company_id=company_id,
-            **payload.dict(),
+            **order_values,
         )
         db.add(order)
         db.flush()

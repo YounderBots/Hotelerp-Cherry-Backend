@@ -31,3 +31,13 @@ itsdangerous==2.2.0
 
 # Loads this service's own .env (configs/__init__.py)
 python-dotenv==1.0.1
+
+# Country-aware phone validation. `resources/validation.py` normalises a phone
+# number to E.164 and checks it against the real numbering plan for its country
+# via libphonenumber, which is Google's maintained metadata for every plan
+# (C-086). Pinned because libphonenumber ships new plan metadata in each release:
+# floating this would silently change which numbers the product accepts, and the
+# 120-case matrix in tests/test_phone_validation.py is pinned to this version.
+# The browser half of the same rule is `libphonenumber-js` in
+# Frontend/package.json, so both halves read the same plans.
+phonenumbers==9.0.40

@@ -24,7 +24,7 @@ import uuid
 
 from . import images as im
 from . import photos
-from .common import COMPANY, RNG, SYSTEM, at, day, insert, money, upload_dir
+from .common import COMPANY, RNG, SYSTEM, at, day, insert, money, phone, upload_dir
 
 BRANCH = "1"
 
@@ -348,7 +348,7 @@ def seed_restaurant(conn) -> dict:
 
     insert(conn, "guest", [
         dict(id=i, guest_code=f"RG-{i:04d}", first_name=f, last_name=l,
-             mobile=f"98401{20000 + i * 7:05d}"[:10],
+             mobile=phone(i),
              email=f"{f.lower()}.{l.lower()}@gmail.com",
              guest_type=t, **_audit())
         for i, (f, l, t) in enumerate(GUEST_NAMES, start=1)])
@@ -414,7 +414,7 @@ def seed_bar(conn) -> dict:
 
     insert(conn, "bar_guest", [
         dict(id=i, guest_code=f"BG-{i:04d}", first_name=f, last_name=l,
-             mobile=f"98402{30000 + i * 11:05d}"[:10],
+             mobile=phone(100 + i),
              email=f"{f.lower()}.{l.lower()}@gmail.com",
              guest_type=t, **_audit())
         for i, (f, l, t) in enumerate(GUEST_NAMES[:6], start=1)])
