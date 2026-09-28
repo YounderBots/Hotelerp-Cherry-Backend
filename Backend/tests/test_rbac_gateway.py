@@ -546,6 +546,13 @@ def test_front_desk_reaches_self_service_without_any_hrm_permission(enforce):
     assert check(claim, "user", "me/photo", "GET") is None
 
 
+def test_role_permission_navigation_exemption_matches_concrete_ids(enforce):
+    """The navigation role lookup is exempt by pattern, not by literal ``{id}``."""
+    assert check({}, "user", "role_permissions/1", "GET") is None
+    assert check({}, "user", "role_permissions/999", "GET") is None
+    assert check({}, "user", "role_permissions/1/extra", "GET") is not None
+
+
 def test_a_user_with_no_permissions_at_all_can_see_their_own_photo(enforce):
     """Employee photos are served from a StaticFiles mount whose row belongs to
     the HRM Employee page, so the avatar on a user's OWN profile answered 403

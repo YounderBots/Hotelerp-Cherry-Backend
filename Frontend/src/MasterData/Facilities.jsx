@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -22,6 +22,9 @@ const Facilities = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -37,7 +40,7 @@ const Facilities = () => {
       facility_name: formData.facility_name.trim(),
     });
     showToast("Facility added successfully", "success");
-    reload();
+    await reload();
   };
 
   const updateFacility = async () => {
@@ -46,7 +49,7 @@ const Facilities = () => {
       facility_name: formData.facility_name.trim(),
     });
     showToast("Facility updated successfully", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -70,12 +73,13 @@ const Facilities = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.facility_name.trim()) {
       showToast("Facility name is required", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -88,19 +92,25 @@ const Facilities = () => {
       // Kept open on failure so the typed value is not thrown away.
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/masterdata/facilities/${id}`);
+      await APICall.deleteT(`/masterdata/facilities/${deleteId}`);
       showToast("Facility deleted successfully", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -196,10 +206,10 @@ const Facilities = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Facility"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

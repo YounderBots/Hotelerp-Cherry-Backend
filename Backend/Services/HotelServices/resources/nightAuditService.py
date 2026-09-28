@@ -122,10 +122,12 @@ def nightly_share(total: Any, nights: int, index: int) -> float:
 
     Taking the difference between two running cumulative totals instead means
     the shares always re-sum to the original amount, with the odd cent landing
-    on a specific night rather than disappearing:
+    on a specific night rather than disappearing. For 100.00 over 3 nights the
+    cent lands on the *second* night, not the last one -- the cumulative
+    rounding is what places it:
 
         >>> [nightly_share(100, 3, i) for i in range(3)]
-        [33.33, 33.33, 33.34]
+        [33.33, 33.34, 33.33]
     """
     amount = money(total)
     if nights <= 0:

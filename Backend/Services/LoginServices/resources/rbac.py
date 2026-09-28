@@ -104,6 +104,35 @@ def _action_for(key, method: str) -> Optional[str]:
     return ACTION_OVERRIDES.get(key) or METHOD_ACTION.get(method)
 
 
+def _pattern_matches(pattern: str, path: str) -> bool:
+    """Return whether a slash-delimited pattern matches a concrete path."""
+    pattern_segs = pattern.split("/")
+    path_segs = path.split("/") if path else []
+    if len(pattern_segs) != len(path_segs):
+        return False
+    return all(
+        expected == actual or (expected.startswith("{") and expected.endswith("}"))
+        for expected, actual in zip(pattern_segs, path_segs)
+    )
+
+
+def _is_always_allowed(prefix: str, path: str, method: str) -> bool:
+    """Match exempt routes, including the one-segment ``{id}`` patterns.
+
+    ``ALWAYS_ALLOW`` stores ``role_permissions/{id}`` rather than every
+    concrete role id. An exact tuple lookup therefore exempted the literal
+    pattern but denied the real request, which made the User permission matrix
+    unusable under gateway enforcement.
+    """
+    method = (method or "GET").upper()
+    for allowed_prefix, pattern, allowed_method in ALWAYS_ALLOW:
+        if allowed_prefix != prefix or allowed_method.upper() != method:
+            continue
+        if pattern == path or _pattern_matches(pattern, (path or "").strip("/")):
+            return True
+    return False
+
+
 def _match(prefix: str, path: str, method: str):
     """Resolve a proxied request against the map. Returns (action, pages) or None."""
     path = (path or "").strip("/")
@@ -118,11 +147,7 @@ def _match(prefix: str, path: str, method: str):
     for (p, pattern, m), pages in ROUTE_PERMISSIONS.items():
         if p != prefix or m != method or "{" not in pattern:
             continue
-        pat_segs = pattern.split("/")
-        if len(pat_segs) != len(segs):
-            continue
-        if all(ps == s or (ps.startswith("{") and ps.endswith("}"))
-               for ps, s in zip(pat_segs, segs)):
+        if _pattern_matches(pattern, path):
             return _action_for((p, pattern, m), method), pages
     return None
 
@@ -147,7 +172,7 @@ def check(
     method = (method or "GET").upper()
     if method == "OPTIONS":
         return None
-    if (prefix, (path or "").strip("/"), method) in ALWAYS_ALLOW:
+    if _is_always_allowed(prefix, path, method):
         return None
 
     resolved = _match(prefix, path, method)

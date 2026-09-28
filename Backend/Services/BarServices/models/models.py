@@ -230,7 +230,10 @@ class BarMenuVariant(Base):
     """Peg sizes (30ml / 60ml / 90ml), bottle vs glass, etc."""
 
     __tablename__ = "bar_menu_variant"
-    __table_args__ = (UniqueConstraint("menu_id", "variant_name", name="uq_bar_menu_variant_name"),)
+    # Uniqueness of variant_name per menu is scoped to active rows by a generated
+    # column plus `uq_bar_menu_variant_active_name` (migration), not by a table
+    # constraint: a hard unique on (menu_id, variant_name) would refuse to
+    # recreate a name whose previous row was soft-deleted. See C-082.
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -719,7 +722,9 @@ class BarInventoryStockTransaction(Base):
 
 class BarRecipe(Base):
     __tablename__ = "bar_recipe"
-    __table_args__ = (UniqueConstraint("menu_id", "inventory_item_id", name="uq_bar_recipe_line"),)
+    # One active line per (menu, inventory item) is enforced by a generated
+    # column plus `uq_bar_recipe_active_line` (migration), not by a table
+    # constraint, so a replaced/soft-deleted line can be re-added. See C-082.
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -772,7 +777,10 @@ class BarInventoryPurchase(Base):
 # =====================================================
 class BarGuest(Base):
     __tablename__ = "bar_guest"
-    __table_args__ = (UniqueConstraint("company_id", "branch_id", "mobile", name="uq_bar_guest_mobile"),)
+    # Active mobile uniqueness per company/branch is enforced by a generated
+    # column plus `uq_bar_guest_active_mobile` (migration), not by a table
+    # constraint, so a guest removed from the active list can be re-registered.
+    # See C-082.
 
     id = Column(Integer, primary_key=True, index=True)
 

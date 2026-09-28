@@ -36,6 +36,10 @@ GATEWAY_SERVICE = "LoginServices"
 # Bill payment guards apply to the two services that take money at a till.
 BILLING_SERVICES = ["BarServices", "RestaurantServices"]
 
+# Services that accept a file upload: Master Data (room/facility images), both
+# venues (menu images) and Hotel (housekeeping attachments, identity documents).
+UPLOAD_SERVICES = ["MasterDataServices", "RestaurantServices", "BarServices", "HotelServices"]
+
 # Night Audit lives entirely in HotelServices: the business date, the accrual
 # arithmetic and the idempotency guard are all defined there, so the suite has
 # to run from that service root to import them.
@@ -86,20 +90,38 @@ def main() -> int:
         # tests/fake_master.py behind the real HTTP client. It decides every
         # figure on a folio; the suite above covers only the pure helpers.
         (NIGHT_AUDIT_SERVICE, "test_reservation_pricing.py"),
+        # Booking-enquiry writes validate dates, numeric boundaries, and the
+        # tenant-scoped room-type relationship at the service boundary.
+        (NIGHT_AUDIT_SERVICE, "test_booking_validation.py"),
         # The checkout -> housekeeping handover: the Hotel schema in SQLite,
         # Master Data faked, and every room-state write asserted on the wire.
         (NIGHT_AUDIT_SERVICE, "test_reservation_housekeeping.py"),
         # Preflight check 6, which asks a deployment whether the images its
         # database points at are actually on the server.
         (TOOLS_SERVICE, "test_preflight_images.py"),
-        # The privileges HotelServices needs in schemas it does not own --
-        # the 500 that took down every reservation screen in production.
+        # The demo seed's night-audit row has to reconcile with the bookings the
+        # same seed writes -- it is the data behind every Night Audit screen, and
+        # its arithmetic is a deliberate duplicate of the service's, so the
+        # suite cross-checks the two. SQLite only; needs no service package, so it
+        # runs from the tools-friendly gateway root like the preflight suite.
+        (TOOLS_SERVICE, "test_seed_night_audit.py"),
+        # The Hotel service's gateway client and its own-schema lock contract.
+        # Cross-service data is reached over HTTP; it must not require grants
+        # on another service's schema.
         (MASTER_CLIENT_SERVICE, "test_master_client.py"),
         (SNAPSHOT_CONTRACT_SERVICE, "test_snapshot_contract.py"),
     ]
     # Billing exists only in these two, and both expose the same endpoint, so
     # the money guards run against each.
     jobs += [(svc, "test_bill_payment.py") for svc in BILLING_SERVICES]
+    # Upload content validation (C-085): each service proves a file's bytes
+    # match the type its name claims. One suite, run from each service root that
+    # owns an upload path, because the module layout is per-service.
+    jobs += [(svc, "test_upload_content.py") for svc in UPLOAD_SERVICES]
+    # Combo/package request validation is a Restaurant-only business rule.
+    jobs.append(("RestaurantServices", "test_combo_rules.py"))
+    # F&B pricing and recipe-deduction guards run against both venue schemas.
+    jobs += [(svc, "test_fnb_hardening.py") for svc in BILLING_SERVICES]
     jobs += [(svc, "test_jwt_auth.py") for svc in SERVICES]
 
     failed = []

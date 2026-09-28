@@ -19,7 +19,7 @@ const PASSWORD = process.env.PW_PASSWORD || "Hotel@2026";
 
 const ROUTES = [
   "/dashboard", "/reservation", "/add_new_reservation", "/booking", "/room_view",
-  "/reservation_view", "/night_audit", "/user_reserved_details",
+  "/reservation_view", "/ReservationView", "/view", "/night_audit", "/user_reserved_details",
   "/room_booked_details", "/settlement_summary", "/guest_enquiry", "/task_assign",
   "/room_incident_log", "/employee", "/user", "/roles", "/department",
   "/designation", "/shift", "/restaurant_roster", "/restaurant_shift_planning",

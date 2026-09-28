@@ -34,6 +34,8 @@ import datetime as dt
 import json
 import uuid
 
+import sqlalchemy as sa
+
 from . import images as im
 from .common import COMPANY, SYSTEM, at, audit, day, insert, money, upload_dir
 from .masterdata import ROOM_TYPES, ROOMS
@@ -54,6 +56,171 @@ def room_id(room_no) -> int:
     `int("402")` here produced rows pointing at a room that does not exist.
     """
     return ROOM_BY_NO[str(room_no)][0]
+
+
+# ===========================================================================
+# The audited night
+# ===========================================================================
+# `nightAuditService.compute_position` is the single definition of "what a
+# night looks like", and the audit snapshot it produces is stored rather than
+# recomputed. The seed has to produce a row of the same shape, so these mirror
+# that function's rules. They are duplicated rather than imported on purpose:
+# `tools/seed` must not import a service package, and a seed that silently
+# depends on service internals stops being a seed.
+_CHECKED_IN, _CHECKED_OUT = "Checked-In", "Checked-Out"
+_CANCELLED, _NO_SHOW = "Cancelled", "No-Show"
+_PENDING_ARRIVAL = ("Confirmed", "Pending", "On Hold")
+_NON_OCCUPYING = {"cancelled", "no-show", "no show"}
+
+
+def _nightly_share(total, nights: int, index: int) -> float:
+    """One night's share of a stay total, split so the nights sum EXACTLY.
+
+    The service does the same cumulative-difference split rather than
+    `round(total / nights, 2)`, so the seeded night's revenue is the figure an
+    operator would reconcile by hand instead of one that drifts by a paisa.
+    """
+    amount = money(total or 0)
+    if nights <= 0:
+        return amount if index <= 0 else 0.0
+    if index < 0 or index >= nights:
+        return 0.0
+    return money(round(round(amount * (index + 1) / nights, 2)
+                       - round(amount * index / nights, 2), 2))
+
+
+def _as_date(value) -> dt.date | None:
+    """A date column as a `date`, whatever the driver handed back.
+
+    MySQL returns DATE columns as `datetime.date`, but the same helper has to
+    survive a driver (or a test) that returns text -- and a bare subtraction on
+    two strings raises instead of quietly mis-reporting, which is the better
+    failure but still a failure.
+    """
+    if value is None or isinstance(value, dt.datetime):
+        return value.date() if isinstance(value, dt.datetime) else None
+    if isinstance(value, dt.date):
+        return value
+    try:
+        return dt.date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def night_audit_row(conn, audited: dt.date, next_business_date: dt.date) -> dict:
+    """The `night_audit` row for the night the seed says was closed."""
+    rows = conn.execute(sa.text(
+        "SELECT arrival_date, departure_date, no_of_nights, reservation_status,"
+        "       room_ids, room_amount, extra_charges, tax_amount, discount_amount,"
+        "       balance_amount"
+        "  FROM room_reservation"
+        " WHERE company_id = :c AND status = 'ACTIVE'"
+    ), {"c": COMPANY}).mappings().all()
+
+    occupancy = {"rooms_occupied": 0, "room_nights": 0}
+    revenue = dict(room_revenue=0.0, extra_charges=0.0, tax_amount=0.0,
+                   discount_amount=0.0)
+    movement = dict(arrivals_expected=0, arrivals_completed=0,
+                    departures_expected=0, departures_completed=0, in_house=0)
+    occupied_rooms, outstanding = set(), 0.0
+
+    for r in rows:
+        arrival, departure = _as_date(r["arrival_date"]), _as_date(r["departure_date"])
+        status = (r["reservation_status"] or "").strip()
+        nights = (departure - arrival).days if arrival and departure else 0
+        index = (audited - arrival).days if arrival else 0
+
+        if (arrival and departure
+                and status.lower() not in _NON_OCCUPYING
+                and arrival <= audited < departure):
+            revenue["room_revenue"] += _nightly_share(r["room_amount"], nights, index)
+            revenue["tax_amount"] += _nightly_share(r["tax_amount"], nights, index)
+            revenue["discount_amount"] += _nightly_share(r["discount_amount"], nights, index)
+            revenue["extra_charges"] += _nightly_share(r["extra_charges"], nights, index)
+            occupancy["room_nights"] += 1
+            for rid in (r["room_ids"] or []):
+                try:
+                    occupied_rooms.add(int(rid))
+                except (TypeError, ValueError):
+                    continue
+            if status == _CHECKED_IN:
+                movement["in_house"] += 1
+
+        if arrival == audited and status != _CANCELLED:
+            if status != _NO_SHOW:
+                movement["arrivals_expected"] += 1
+            if status in (_CHECKED_IN, _CHECKED_OUT):
+                movement["arrivals_completed"] += 1
+
+        if departure == audited and status in (_CHECKED_IN, _CHECKED_OUT):
+            movement["departures_expected"] += 1
+            if status == _CHECKED_OUT:
+                movement["departures_completed"] += 1
+
+        if arrival and arrival <= audited and status not in (_CANCELLED, _NO_SHOW):
+            outstanding += money(r["balance_amount"] or 0)
+
+    occupancy["rooms_occupied"] = len(occupied_rooms)
+    revenue = {k: money(v) for k, v in revenue.items()}
+    revenue["gross_revenue"] = money(
+        revenue["room_revenue"] + revenue["extra_charges"]
+        + revenue["tax_amount"] - revenue["discount_amount"])
+
+    # Cash taken on the audited date, grouped by the method recorded on the
+    # payment -- the same grouping the audit screen shows.
+    breakdown = [
+        {"payment_method": method or "Unspecified", "amount": money(amount)}
+        for method, amount in conn.execute(sa.text(
+            "SELECT payment_method, COALESCE(SUM(amount), 0) AS amount"
+            "  FROM reservation_amount_paid_history"
+            " WHERE company_id = :c AND status = 'ACTIVE' AND paid_date = :d"
+            " GROUP BY payment_method"
+        ), {"c": COMPANY, "d": audited}).all()
+    ]
+
+    rooms_total = len(ROOMS)
+    return dict(
+        id=1,
+        night_audit_id=f"NA-{audited:%Y%m%d}",
+        business_date=audited,
+        next_business_date=next_business_date,
+        audit_status="Completed",
+        # `started_at`/`completed_at` are wall-clock times, and the audit for the
+        # night of `audited` closes after midnight, on `next_business_date` --
+        # which is why the business-date row's `last_audit_at` is stamped with
+        # the new date and the two rows still agree.
+        started_at=at(next_business_date, 2, 10),
+        completed_at=at(next_business_date, 2, 15),
+        run_by=SYSTEM,
+        error_message=None,
+        rooms_total=rooms_total,
+        rooms_occupied=occupancy["rooms_occupied"],
+        occupancy_percent=round(occupancy["rooms_occupied"] * 100.0 / rooms_total, 2),
+        room_nights=occupancy["room_nights"],
+        arrivals_expected=movement["arrivals_expected"],
+        arrivals_completed=movement["arrivals_completed"],
+        departures_expected=movement["departures_expected"],
+        departures_completed=movement["departures_completed"],
+        in_house=movement["in_house"],
+        stayovers=movement["in_house"],
+        no_shows_marked=0,
+        no_show_reservation_ids=json.dumps([]),
+        room_revenue=revenue["room_revenue"],
+        extra_charges=revenue["extra_charges"],
+        tax_amount=revenue["tax_amount"],
+        discount_amount=revenue["discount_amount"],
+        gross_revenue=revenue["gross_revenue"],
+        payments_collected=money(sum(p["amount"] for p in breakdown)),
+        payment_breakdown=json.dumps(breakdown),
+        outstanding_balance=money(max(outstanding, 0.0)),
+        token=str(uuid.uuid4()),
+        status="ACTIVE",
+        created_by=SYSTEM,
+        created_at=at(next_business_date, 2, 15),
+        updated_at=at(next_business_date, 2, 15),
+        updated_by=SYSTEM,
+        company_id=COMPANY,
+    )
 
 # Master Data ids seeded by masterdata.py, referenced by name for readability.
 TAX_GST12, TAX_GST18, TAX_NONE = 3, 4, 6
@@ -509,6 +676,18 @@ def seed_operations(conn, business_date, occupied_today, dirty_rooms, incident_d
         status="ACTIVE", created_by=SYSTEM, created_at=at(audited, 2, 15),
         updated_at=at(business_date, 2, 15), updated_by=SYSTEM,
         company_id=COMPANY)])
+
+    # ...and the audit row that `last_audit_at` claims happened.
+    #
+    # Writing the business-date row on its own left the property claiming an
+    # audit it had no record of: /night_audit/preview and /night_audit/status
+    # read `last_audit_at`, while /night_audit/history reads `night_audit`, so
+    # the Night Audit History screen was empty next to a "last audited
+    # 17 Sep" tile. The figures below are recomputed from the rows just
+    # inserted, with the same rules the service uses (C-083), so the history
+    # entry reconciles with the reservations the same seed wrote.
+    insert(conn, "night_audit", [night_audit_row(conn, audited, business_date)])
+
     return {"tasks": len(tasks), "incidents": len(incidents),
             "enquiries": len(ENQUIRIES), "booking_enquiries": len(BOOKING_ENQUIRIES),
             "audited_date": audited}

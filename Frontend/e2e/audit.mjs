@@ -20,6 +20,9 @@ const OUT = process.env.OUT || `./e2e-reports/audit-${LABEL}`;
 const ROUTES = [
   "/dashboard",
   "/reservation", "/add_new_reservation", "/booking", "/room_view", "/reservation_view",
+  // Stateful detail routes have no sidebar row. They must still render safely
+  // when opened directly or after a refresh loses navigation state.
+  "/ReservationView", "/view",
   "/night_audit", "/user_reserved_details", "/room_booked_details", "/settlement_summary",
   "/guest_enquiry",
   "/task_assign", "/room_incident_log",
@@ -61,17 +64,31 @@ page.on("response", (r) => {
 const fresh = () => ({ consoleErrors: [], consoleWarnings: [], pageErrors: [], netFailed: [], httpErrors: [] });
 
 // ---- login through the real form ----
+// The click can land before the form's submit handler is attached, and a busy
+// service can answer late; either way the SPA stays on the login page and every
+// route in the sweep is then recorded as an access failure. So watch the login
+// response itself, require it to be 200, and only then trust the token.
 bucket = fresh();
-await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
-await page.waitForSelector('input[type="email"], input[name="email"], #email', { timeout: 20000 });
-await page.fill('input[type="email"], input[name="email"], #email', EMAIL);
-await page.fill('input[type="password"], input[name="password"], #password', PASSWORD);
-await Promise.all([
-  page.waitForURL((u) => !u.pathname.match(/^\/$/), { timeout: 30000 }).catch(() => {}),
-  page.click('button[type="submit"]'),
-]);
-await page.waitForTimeout(1500);
-const loginReport = { route: "LOGIN", url: page.url(), ...bucket };
+let loginStatus = null;
+for (let attempt = 0; attempt < 5; attempt += 1) {
+  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('input[type="email"], input[name="email"], #email', { timeout: 20000 });
+  await page.fill('input[type="email"], input[name="email"], #email', EMAIL);
+  await page.fill('input[type="password"], input[name="password"], #password', PASSWORD);
+  const answered = page
+    .waitForResponse((r) => r.url().includes("/login_post"), { timeout: 20000 })
+    .catch(() => null);
+  await page.click('button[type="submit"]');
+  const response = await answered;
+  loginStatus = response ? response.status() : null;
+  await page.waitForTimeout(1500);
+  if (loginStatus === 200 && (await page.evaluate(() => !!localStorage.getItem("AuthToken")))) break;
+  await page.waitForTimeout(3000);
+  if (attempt === 4) {
+    throw new Error(`login failed after 5 attempts (last /login_post status: ${loginStatus})`);
+  }
+}
+const loginReport = { route: "LOGIN", url: page.url(), loginStatus, ...bucket };
 
 const report = [loginReport];
 

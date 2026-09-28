@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -24,6 +24,9 @@ const CurrencyCountry = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -52,13 +55,13 @@ const CurrencyCountry = () => {
   const createCurrency = async () => {
     await APICall.postT("/masterdata/country_currency", payload());
     showToast("Country / currency added successfully", "success");
-    reload();
+    await reload();
   };
 
   const updateCurrency = async () => {
     await APICall.putT("/masterdata/country_currency", { id: editId, ...payload() });
     showToast("Country / currency updated successfully", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -86,7 +89,7 @@ const CurrencyCountry = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.countryName.trim()) {
       showToast("Country name is required", "error");
       return;
@@ -100,6 +103,7 @@ const CurrencyCountry = () => {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -111,22 +115,28 @@ const CurrencyCountry = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
       // Literal, not `${ENDPOINT}`: build_rbac_map.py reads these call
       // sites to derive the gateway permission map, and cannot resolve a
       // variable — this row had dropped out of it.
-      await APICall.deleteT(`/masterdata/country_currency/${id}`);
+      await APICall.deleteT(`/masterdata/country_currency/${deleteId}`);
       showToast("Country / currency deleted successfully", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -242,10 +252,10 @@ const CurrencyCountry = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Country & Currency"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from models import get_db, models
 from resources.utils import verify_authentication
@@ -13,6 +14,7 @@ router = APIRouter()
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
+VALID_ROLES = {"Waiter", "Chef", "Cashier", "Manager"}
 
 
 def _auth(request: Request):
@@ -60,6 +62,28 @@ class ClockOutIn(BaseModel):
 @router.post("/staff_assignment", status_code=status.HTTP_201_CREATED)
 def create_shift(payload: ShiftIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
+    if payload.role not in VALID_ROLES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid staff role")
+    if payload.shift_end is not None and payload.shift_end == payload.shift_start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="shift_end must differ from shift_start",
+        )
+    existing = (
+        db.query(models.RestaurantStaffAssignment)
+        .filter(
+            models.RestaurantStaffAssignment.employee_id == payload.employee_id,
+            models.RestaurantStaffAssignment.shift_date == payload.shift_date,
+            models.RestaurantStaffAssignment.company_id == company_id,
+            models.RestaurantStaffAssignment.status == STATUS,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Employee already has a shift for this date",
+        )
     shift = models.RestaurantStaffAssignment(
         shift_status="Scheduled",
         actual_sales=0,
@@ -68,7 +92,14 @@ def create_shift(payload: ShiftIn, request: Request, db: Session = Depends(get_d
         **payload.dict(),
     )
     db.add(shift)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Employee already has a shift for this date",
+        )
     db.refresh(shift)
     return {"status": "success", "data": {"id": shift.id}}
 
@@ -102,6 +133,17 @@ def update_shift(shift_id: int, payload: ShiftUpdate, request: Request, db: Sess
     )
     if not shift:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shift not found")
+    if payload.role is not None and payload.role not in VALID_ROLES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid staff role")
+    if (
+        payload.shift_start is not None
+        and payload.shift_end is not None
+        and payload.shift_start == payload.shift_end
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="shift_end must differ from shift_start",
+        )
     for field, value in payload.dict(exclude_unset=True).items():
         setattr(shift, field, value)
     shift.updated_by = user_id

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -31,6 +31,9 @@ const DiscountType = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -60,13 +63,13 @@ const DiscountType = () => {
   const createDiscountType = async () => {
     await APICall.postT("/masterdata/discount", payload());
     showToast("Discount Type added successfully", "success");
-    reload();
+    await reload();
   };
 
   const updateDiscountType = async () => {
     await APICall.putT("/masterdata/discount", { id: editId, ...payload() });
     showToast("Discount Type updated successfully", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -94,7 +97,7 @@ const DiscountType = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
 
     // Each check names the field it failed on. This screen used to `return`
     // silently on an incomplete form, so pressing Submit simply did nothing
@@ -108,13 +111,14 @@ const DiscountType = () => {
       return;
     }
     const pct = Number(formData.percentage);
-    if (formData.percentage === "" || Number.isNaN(pct) || pct <= 0 || pct > 100) {
-      // Mirrors the server rule (0 < pct <= 100) so an out-of-range value is
+    if (formData.percentage === "" || Number.isNaN(pct) || pct < 0 || pct > 100) {
+      // Mirrors the server rule (0 <= pct <= 100) so an out-of-range value is
       // caught here rather than coming back as a 400.
-      showToast("Discount Percentage must be a number between 1 and 100", "error");
+      showToast("Discount Percentage must be a number between 0 and 100", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -126,19 +130,25 @@ const DiscountType = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/masterdata/discount/${id}`);
+      await APICall.deleteT(`/masterdata/discount/${deleteId}`);
       showToast("Discount Type deleted successfully", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -271,24 +281,24 @@ const DiscountType = () => {
           required
           type="number"
           inputMode="decimal"
-          min="0.01"
+          min="0"
           max="100"
           step="0.01"
           name="percentage"
           placeholder="0.00"
           value={formData.percentage}
           onChange={handleChange}
-          helperText="Between 1 and 100."
+          helperText="Between 0 and 100."
         />
       </Modal>
 
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Discount Type"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../Context/AuthContext";
 import APICall, { ApiError } from "../../APICalls/APICalls";
+import { todayIso } from "../../functions/formatters";
 
 import KPISection from "./Components/KPISection";
 import BookingPlatform from "./Components/BookingPlatform";
@@ -22,18 +23,20 @@ const HotelDashboardTab = () => {
   const [rooms, setRooms] = useState(null);
   const [dailyRevenue, setDailyRevenue] = useState(0);
   const [activity, setActivity] = useState(null);
-  const [errors, setErrors] = useState({ reservations: null, rooms: null, activity: null });
+  const [errors, setErrors] = useState({ reservations: null, rooms: null, activity: null, sales: null });
   const [refreshTick, setRefreshTick] = useState(0);
 
-  // One value for "today", used by both dated report calls below.
-  const today = isoDay(new Date().toISOString());
+  // One value for "today", used by both dated report calls below. Use the
+  // viewer's local calendar day; toISOString() can report yesterday during the
+  // evening hours east of Greenwich.
+  const today = todayIso();
 
   useEffect(() => {
     mounted.current = true;
     setSummary(null);
     setRooms(null);
     setActivity(null);
-    setErrors({ reservations: null, rooms: null, activity: null });
+    setErrors({ reservations: null, rooms: null, activity: null, sales: null });
 
     const companyId = user?.company_id;
     const activityCall = companyId
@@ -67,6 +70,7 @@ const HotelDashboardTab = () => {
         reservations: rRes.status === "rejected" ? (rRes.reason?.message || "Failed to load bookings.") : null,
         rooms: rRoom.status === "rejected" ? (rRoom.reason?.message || "Failed to load rooms.") : null,
         activity: rAct.status === "rejected" ? (rAct.reason?.message || "Failed to load activity.") : null,
+        sales: rSales.status === "rejected" ? (rSales.reason?.message || "Failed to load today's sales.") : null,
       });
     });
 
@@ -77,9 +81,14 @@ const HotelDashboardTab = () => {
   const kpis = useMemo(() => {
     const roomList = rooms || [];
 
+    // "Available" must mean sellable now, not merely unbooked. A room whose
+    // housekeeping state is dirty/maintenance is shown as Not Ready in the
+    // room-availability card and must not be counted as available here.
     const availableRooms = roomList.filter((r) => {
       const bs = String(r?.booking_status || "").toLowerCase();
-      return bs === "available" || bs === "";
+      const ws = String(r?.working_status || "").toLowerCase();
+      const notReady = ws === "maintenance" || ws === "out of order" || ws === "dirty" || ws === "not ready";
+      return !notReady && (bs === "available" || bs === "");
     }).length;
 
     // Counted by the server across the whole book, not by filtering whatever
@@ -143,7 +152,7 @@ const HotelDashboardTab = () => {
     user?.name ||
     user?.username ||
     user?.role_name ||
-    "back"
+    "User"
   );
 
   const handleRefresh = () => setRefreshTick((n) => n + 1);
@@ -159,7 +168,7 @@ const HotelDashboardTab = () => {
             displayName={displayName}
             kpis={kpis}
             loading={summary === null || rooms === null}
-            error={errors.reservations || errors.rooms}
+            error={errors.reservations || errors.rooms || errors.sales}
             onAddBooking={handleAddBooking}
             onRefresh={handleRefresh}
           />
@@ -192,7 +201,9 @@ const HotelDashboardTab = () => {
               error={errors.reservations}
               onViewAll={() => navigate("/reservation")}
               onRowClick={(booking) =>
-                navigate("/ReservationView", { state: { reservationId: booking.id } })
+                navigate(`/ReservationView?reservationId=${encodeURIComponent(booking.id)}`, {
+                  state: { reservationId: booking.id },
+                })
               }
             />
           </div>

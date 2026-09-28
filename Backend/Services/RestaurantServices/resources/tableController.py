@@ -1,11 +1,13 @@
 import logging
 import uuid
-from datetime import date, datetime, time
+from datetime import date, datetime, time, time
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from models import get_db, models
 from resources.utils import verify_authentication
@@ -31,6 +33,12 @@ def _server_error(exc: Exception) -> HTTPException:
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
+FLOOR_TYPES = ("Restaurant", "Banquet", "Outdoor")
+TABLE_TYPES = ("Standard", "VIP", "Private")
+TABLE_SECTIONS = ("Restaurant", "Outdoor", "Banquet")
+TABLE_STATUSES = ("Available", "Occupied", "Reserved", "Cleaning", "Blocked")
+RESERVATION_SOURCES = ("Walk-In", "Phone", "Online", "Hotel Guest")
+RESERVATION_STATUSES = ("Reserved", "Checked-In", "Completed", "Cancelled", "No-Show")
 
 
 def gen_code(prefix: str) -> str:
@@ -145,6 +153,72 @@ def _auth(request: Request):
     return user_id, role_id, company_id
 
 
+def _validate_floor_values(
+    *,
+    floor_name,
+    floor_number,
+    floor_type,
+    total_tables,
+    total_capacity,
+):
+    if floor_name is not None:
+        floor_name = str(floor_name).strip()
+        if not floor_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="floor_name is required")
+        if len(floor_name) > 100:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="floor_name must not exceed 100 characters")
+    if floor_number is not None and int(floor_number) <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="floor_number must be positive")
+    if floor_type is not None and floor_type not in FLOOR_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="floor_type must be Restaurant, Banquet or Outdoor")
+    for label, value in (("total_tables", total_tables), ("total_capacity", total_capacity)):
+        if value is not None and int(value) < 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{label} must be zero or greater")
+    return floor_name
+
+
+def _validate_table_values(
+    *,
+    table_name,
+    table_number,
+    floor_id,
+    seating_capacity,
+    table_type,
+    section,
+    table_status,
+):
+    if table_name is not None:
+        table_name = str(table_name).strip()
+        if not table_name:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="table_name is required")
+        if len(table_name) > 100:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="table_name must not exceed 100 characters")
+    for label, value in (("table_number", table_number), ("floor_id", floor_id), ("seating_capacity", seating_capacity)):
+        if value is not None and int(value) <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{label} must be positive")
+    if table_type is not None and table_type not in TABLE_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="table_type must be Standard, VIP or Private")
+    if section is not None and section not in TABLE_SECTIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="section must be Restaurant, Outdoor or Banquet")
+    if table_status is not None and table_status not in TABLE_STATUSES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="table_status is invalid")
+    return table_name
+
+
+def _validate_reservation_values(payload):
+    if payload.no_of_guests is None or int(payload.no_of_guests) < 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no_of_guests must be at least 1")
+    if payload.reservation_type not in RESERVATION_SOURCES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reservation_type is invalid")
+    if payload.end_time is not None and payload.end_time <= payload.start_time:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="end_time must be after start_time")
+    for key, label in (("guest_name", "guest_name"), ("guest_mobile", "guest_mobile"), ("guest_email", "guest_email"), ("occasion", "occasion"), ("special_requests", "special_requests")):
+        value = getattr(payload, key, None)
+        if value is not None and len(str(value).strip()) > 255:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{label} must not exceed 255 characters")
+    return True
+
+
 # =====================================================
 # FLOOR MANAGEMENT
 # =====================================================
@@ -152,14 +226,42 @@ def _auth(request: Request):
 def create_floor(payload: FloorIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
     try:
+        floor_name = _validate_floor_values(
+            floor_name=payload.floor_name,
+            floor_number=payload.floor_number,
+            floor_type=payload.floor_type,
+            total_tables=payload.total_tables,
+            total_capacity=payload.total_capacity,
+        )
+        duplicate = (
+            db.query(models.RestaurantFloor)
+            .filter(
+                models.RestaurantFloor.company_id == company_id,
+                models.RestaurantFloor.status == STATUS,
+                models.RestaurantFloor.branch_id == "MAIN",
+                or_(
+                    models.RestaurantFloor.floor_number == payload.floor_number,
+                    func.lower(models.RestaurantFloor.floor_name) == floor_name.lower(),
+                ),
+            )
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Floor number or name already exists")
+        values = payload.dict()
+        values["floor_name"] = floor_name
         floor = models.RestaurantFloor(
             floor_code=gen_code("FLR"),
-            **payload.dict(),
+            **values,
             created_by=user_id,
             company_id=company_id,
         )
         db.add(floor)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Floor number or name already exists")
         db.refresh(floor)
         return {"status": "success", "data": {"id": floor.id, "floor_code": floor.floor_code}}
     except HTTPException:
@@ -191,10 +293,45 @@ def update_floor(floor_id: int, payload: FloorUpdate, request: Request, db: Sess
     )
     if not floor:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Floor not found")
-    for field, value in payload.dict(exclude_unset=True).items():
+    updates = payload.dict(exclude_unset=True)
+    candidate_name = updates.get("floor_name", floor.floor_name)
+    candidate_number = updates.get("floor_number", floor.floor_number)
+    candidate_type = updates.get("floor_type", floor.floor_type)
+    candidate_tables = updates.get("total_tables", floor.total_tables)
+    candidate_capacity = updates.get("total_capacity", floor.total_capacity)
+    candidate_name = _validate_floor_values(
+        floor_name=candidate_name,
+        floor_number=candidate_number,
+        floor_type=candidate_type,
+        total_tables=candidate_tables,
+        total_capacity=candidate_capacity,
+    )
+    duplicate = (
+        db.query(models.RestaurantFloor)
+        .filter(
+            models.RestaurantFloor.company_id == company_id,
+            models.RestaurantFloor.status == STATUS,
+            models.RestaurantFloor.branch_id == floor.branch_id,
+            models.RestaurantFloor.id != floor.id,
+            or_(
+                models.RestaurantFloor.floor_number == candidate_number,
+                func.lower(models.RestaurantFloor.floor_name) == candidate_name.lower(),
+            ),
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Floor number or name already exists")
+    for field, value in updates.items():
         setattr(floor, field, value)
+    if "floor_name" in updates:
+        floor.floor_name = candidate_name
     floor.updated_by = user_id
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Floor number or name already exists")
     return {"status": "success", "message": "Floor updated"}
 
 
@@ -228,15 +365,46 @@ def create_table(payload: TableIn, request: Request, db: Session = Depends(get_d
         )
         if not floor:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="floor_id does not exist")
+        table_name = _validate_table_values(
+            table_name=payload.table_name,
+            table_number=payload.table_number,
+            floor_id=payload.floor_id,
+            seating_capacity=payload.seating_capacity,
+            table_type=payload.table_type,
+            section=payload.section,
+            table_status=payload.table_status,
+        )
+        duplicate = (
+            db.query(models.RestaurantTable)
+            .filter(
+                models.RestaurantTable.company_id == company_id,
+                models.RestaurantTable.branch_id == "MAIN",
+                models.RestaurantTable.floor_id == payload.floor_id,
+                models.RestaurantTable.status == STATUS,
+                or_(
+                    models.RestaurantTable.table_number == payload.table_number,
+                    func.lower(models.RestaurantTable.table_name) == table_name.lower(),
+                ),
+            )
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table number or name already exists on this floor")
+        values = payload.dict()
+        values["table_name"] = table_name
         table = models.RestaurantTable(
             table_code=gen_code("TBL"),
             floor_code=floor.floor_code,
             created_by=user_id,
             company_id=company_id,
-            **payload.dict(),
+            **values,
         )
         db.add(table)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table number or name already exists on this floor")
         db.refresh(table)
         return {"status": "success", "data": {"id": table.id, "table_code": table.table_code}}
     except HTTPException:
@@ -318,10 +486,50 @@ def update_table(table_id: int, payload: TableUpdate, request: Request, db: Sess
     )
     if not table:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
-    for field, value in payload.dict(exclude_unset=True).items():
+    updates = payload.dict(exclude_unset=True)
+    candidate_name = updates.get("table_name", table.table_name)
+    candidate_number = updates.get("table_number", table.table_number)
+    candidate_floor = updates.get("floor_id", table.floor_id)
+    candidate_capacity = updates.get("seating_capacity", table.seating_capacity)
+    candidate_type = updates.get("table_type", table.table_type)
+    candidate_section = updates.get("section", table.section)
+    candidate_status = updates.get("table_status", table.table_status)
+    candidate_name = _validate_table_values(
+        table_name=candidate_name,
+        table_number=candidate_number,
+        floor_id=candidate_floor,
+        seating_capacity=candidate_capacity,
+        table_type=candidate_type,
+        section=candidate_section,
+        table_status=candidate_status,
+    )
+    duplicate = (
+        db.query(models.RestaurantTable)
+        .filter(
+            models.RestaurantTable.company_id == company_id,
+            models.RestaurantTable.branch_id == table.branch_id,
+            models.RestaurantTable.floor_id == candidate_floor,
+            models.RestaurantTable.status == STATUS,
+            models.RestaurantTable.id != table.id,
+            or_(
+                models.RestaurantTable.table_number == candidate_number,
+                func.lower(models.RestaurantTable.table_name) == candidate_name.lower(),
+            ),
+        )
+        .first()
+    )
+    if duplicate:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table number or name already exists on this floor")
+    for field, value in updates.items():
         setattr(table, field, value)
+    if "table_name" in updates:
+        table.table_name = candidate_name
     table.updated_by = user_id
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table number or name already exists on this floor")
     return {"status": "success", "message": "Table updated"}
 
 
@@ -421,13 +629,32 @@ def unmerge_tables(merge_id: int, request: Request, db: Session = Depends(get_db
 @router.post("/table_reservation", status_code=status.HTTP_201_CREATED)
 def create_reservation(payload: ReservationIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
+    _validate_reservation_values(payload)
     table = (
         db.query(models.RestaurantTable)
         .filter(models.RestaurantTable.id == payload.table_id, models.RestaurantTable.company_id == company_id)
+        .with_for_update()
         .first()
     )
     if not table:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="table_id does not exist")
+    if table.table_status in ("Occupied", "Reserved"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table is already reserved or occupied")
+    existing = (
+        db.query(models.RestaurantTableReservation)
+        .filter(
+            models.RestaurantTableReservation.table_id == payload.table_id,
+            models.RestaurantTableReservation.reservation_date == payload.reservation_date,
+            models.RestaurantTableReservation.status == STATUS,
+            models.RestaurantTableReservation.reservation_status.in_(["Reserved", "Checked-In"]),
+        )
+        .all()
+    )
+    for row in existing:
+        row_end = row.end_time or time(23, 59, 59)
+        new_end = payload.end_time or time(23, 59, 59)
+        if payload.start_time < row_end and new_end > row.start_time:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table is already reserved for that time")
     try:
         reservation = models.RestaurantTableReservation(
             reservation_code=gen_code("RSV"),
@@ -447,6 +674,9 @@ def create_reservation(payload: ReservationIn, request: Request, db: Session = D
         return {"status": "success", "data": {"id": reservation.id, "reservation_code": reservation.reservation_code}}
     except HTTPException:
         raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table reservation conflicts with an existing booking")
     except Exception as e:
         db.rollback()
         raise _server_error(e)
@@ -512,27 +742,48 @@ def update_reservation(reservation_id: int, payload: ReservationUpdate, request:
     reservation = (
         db.query(models.RestaurantTableReservation)
         .filter(models.RestaurantTableReservation.id == reservation_id, models.RestaurantTableReservation.company_id == company_id)
+        .with_for_update()
         .first()
     )
     if not reservation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reservation not found")
+    if payload.reservation_status is not None and payload.reservation_status not in RESERVATION_STATUSES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reservation_status is invalid")
+    if reservation.reservation_status in ("Completed", "Cancelled", "No-Show") and payload.reservation_status not in (None, reservation.reservation_status):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Terminal reservation cannot transition again")
 
     for field, value in payload.dict(exclude_unset=True).items():
         setattr(reservation, field, value)
     reservation.updated_by = user_id
 
     if payload.reservation_status in ("Cancelled", "No-Show", "Completed"):
-        table = db.query(models.RestaurantTable).filter(models.RestaurantTable.id == reservation.table_id).first()
-        if table and table.table_status == "Reserved":
+        table = (
+            db.query(models.RestaurantTable)
+            .filter(models.RestaurantTable.id == reservation.table_id, models.RestaurantTable.company_id == company_id)
+            .with_for_update()
+            .first()
+        )
+        if table and table.table_status in ("Reserved", "Occupied"):
             table.table_status = "Available"
             table.updated_by = user_id
     elif payload.reservation_status == "Checked-In":
-        table = db.query(models.RestaurantTable).filter(models.RestaurantTable.id == reservation.table_id).first()
+        table = (
+            db.query(models.RestaurantTable)
+            .filter(models.RestaurantTable.id == reservation.table_id, models.RestaurantTable.company_id == company_id)
+            .with_for_update()
+            .first()
+        )
         if table:
+            if table.table_status not in ("Reserved", "Occupied"):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table is no longer available for check-in")
             table.table_status = "Occupied"
             table.updated_by = user_id
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Reservation conflicts with an existing booking")
     return {"status": "success", "message": "Reservation updated"}
 
 

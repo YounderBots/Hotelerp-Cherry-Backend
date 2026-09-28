@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import RowActions from "../../stories/RowActions";
@@ -60,6 +60,9 @@ const TableMaster = () => {
   const [viewData, setViewData] = useState(null);
   const [deleteRow, setDeleteRow] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
 
@@ -101,7 +104,7 @@ const TableMaster = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (
       !formData.table_name.trim() ||
       !formData.table_number ||
@@ -117,6 +120,7 @@ const TableMaster = () => {
     }
 
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     const payload = {
       table_name: formData.table_name.trim(),
@@ -141,10 +145,11 @@ const TableMaster = () => {
       setShowModal(false);
       setEditId(null);
       setFormData(initialForm);
-      load();
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to save table."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -152,14 +157,19 @@ const TableMaster = () => {
   // Was wired straight to the trash icon with no confirmation: one stray click
   // took a table out of service, and nothing said it had happened.
   const confirmDelete = async () => {
-    const row = deleteRow;
-    setDeleteRow(null);
+    if (!deleteRow || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/bar/table/${row.id}`);
+      await APICall.deleteT(`/bar/table/${deleteRow.id}`);
       showToast("Table deactivated successfully", "delete");
-      load();
+      await load();
+      setDeleteRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to deactivate table."), "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -337,10 +347,10 @@ const TableMaster = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteRow}
-        onClose={() => setDeleteRow(null)}
+        onClose={() => (deleting ? null : setDeleteRow(null))}
         onConfirm={confirmDelete}
         title="Deactivate Table"
-        confirmText="Deactivate"
+        confirmText={deleting ? "Deactivating…" : "Deactivate"}
         size="small"
         destructive
       >

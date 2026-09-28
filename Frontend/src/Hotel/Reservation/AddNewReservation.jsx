@@ -6,6 +6,7 @@ import Button from "../../stories/Button";
 import RoomCard from "./Pages/Card";
 import Payment from "./payment";
 import APICall, { ApiError } from "../../APICalls/APICalls";
+import { todayIso } from "../../functions/formatters";
 import "./Reservation.css";
 
 const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
@@ -479,9 +480,13 @@ const AddNewReservation = () => {
       const maxA = num(room.max_adult);
       const maxC = num(room.max_child);
       if (num(p.adults) < 1) return `Adults must be at least 1 for room ${room.room_no}.`;
-      if (maxA > 0 && num(p.adults) > maxA) return `Room ${room.room_no} allows at most ${maxA} adults.`;
+      if (maxA > 0 && num(p.adults) > maxA) {
+        return `Room ${room.room_no} allows at most ${maxA} ${maxA === 1 ? "adult" : "adults"}.`;
+      }
       if (num(p.children) < 0) return `Children cannot be negative for room ${room.room_no}.`;
-      if (maxC > 0 && num(p.children) > maxC) return `Room ${room.room_no} allows at most ${maxC} children.`;
+      if (maxC > 0 && num(p.children) > maxC) {
+        return `Room ${room.room_no} allows at most ${maxC} ${maxC === 1 ? "child" : "children"}.`;
+      }
     }
     return null;
   };
@@ -662,7 +667,7 @@ const AddNewReservation = () => {
               id="anr-arrival-top"
               type="date"
               value={formData.arrival_date}
-              min={isoDay(new Date().toISOString())}
+              min={todayIso()}
               onChange={(e) => setFormData((f) => ({ ...f, arrival_date: e.target.value }))}
               required
             />

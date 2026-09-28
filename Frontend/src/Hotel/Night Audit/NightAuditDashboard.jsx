@@ -125,6 +125,11 @@ const NightAuditDashboard = () => {
     const daysBehind = preview?.days_behind ?? 0;
 
     const noShowCount = movement.no_show_candidates ?? 0;
+    const hasHistory = (history || []).length > 0;
+    const historyEmptyMessage =
+        preview?.last_audit_at && !hasHistory
+            ? "Business-date marker exists, but no audit snapshot is recorded."
+            : "No night audit has been run for this property yet.";
 
     const refreshAll = useCallback(() => {
         setRunError(null);
@@ -313,7 +318,7 @@ const NightAuditDashboard = () => {
                     </strong>
                     <span className="na-hero__meta">
                         {preview?.last_audit_at
-                            ? `Last audit ${formatDateTime(preview.last_audit_at)}`
+                            ? `${hasHistory ? "Last audit" : "Business-date marker"} ${formatDateTime(preview.last_audit_at)}`
                             : "No audit has been run yet"}
                     </span>
                     {daysBehind > 1 && (
@@ -469,7 +474,7 @@ const NightAuditDashboard = () => {
                 <TableTemplate
                     title="Audit History"
                     loading={historyLoading}
-                    emptyMessage="No night audit has been run for this property yet."
+                    emptyMessage={historyEmptyMessage}
                     columns={historyColumns}
                     data={history}
                     variant="striped"

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -22,6 +22,9 @@ const PaymentMethods = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -35,7 +38,7 @@ const PaymentMethods = () => {
   const createPaymentMethods = async () => {
     await APICall.postT("/masterdata/payment_methods", { payment_method: formData.name.trim() });
     showToast("Payment Method added successfully", "success");
-    reload();
+    await reload();
   };
 
   const updatePaymentMethods = async () => {
@@ -44,7 +47,7 @@ const PaymentMethods = () => {
       payment_method: formData.name.trim(),
     });
     showToast("Payment Method updated successfully", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -70,12 +73,13 @@ const PaymentMethods = () => {
   const handleSave = async () => {
     // Guard plus the disabled Submit below: without both, a double click
     // posted twice and created a duplicate row.
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.name.trim()) {
       showToast("Payment Method Name is required", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       // Awaited, so a failed save leaves the modal open with the typed value
@@ -89,19 +93,25 @@ const PaymentMethods = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/masterdata/payment_methods/${id}`);
+      await APICall.deleteT(`/masterdata/payment_methods/${deleteId}`);
       showToast("Payment Method deleted successfully", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -197,10 +207,10 @@ const PaymentMethods = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Payment Method"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

@@ -13,13 +13,12 @@ import {
 } from "lucide-react";
 
 import APICall, { ApiError } from "../../APICalls/APICalls";
+import { todayIso } from "../../functions/formatters";
 import DonutChart from "./Components/DonutChart";
 import RoomAvailability from "./Components/RoomAvailability";
 import MiniTableCard from "./Components/MiniTableCard";
 import "./OverviewTab.css";
 
-const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
-const today = isoDay(new Date().toISOString());
 const errMsg = (err, fallback) => (err instanceof ApiError && err.message ? err.message : fallback);
 
 const numberFmt = new Intl.NumberFormat(undefined);
@@ -53,6 +52,7 @@ const guestColumns = [
 
 const OverviewTab = ({ onNavigate }) => {
   const navigate = useNavigate();
+  const today = todayIso();
   const mounted = useRef(true);
   const [hotel, setHotel] = useState(null);
   const [restaurant, setRestaurant] = useState(null);
@@ -167,12 +167,12 @@ const OverviewTab = ({ onNavigate }) => {
           : null,
       );
 
-      const failures = [rRes, rRoom, rRestaurant, rBar].filter((r) => r.status === "rejected");
+      const failures = [rRes, rRoom, rRestaurant, rBar, rHotelSales].filter((r) => r.status === "rejected");
       setError(failures.length > 0 ? errMsg(failures[0].reason, "Some overview data could not be loaded.") : null);
     });
 
     return () => { mounted.current = false; };
-  }, [refreshTick]);
+  }, [refreshTick, today]);
 
   const loading = hotel === null && restaurant === null && bar === null;
 

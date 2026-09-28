@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import TableTemplate, { ColorSwatchCell } from "../../stories/TableTemplate";
 import TableFilters, { FilterDate, FilterSelect } from "../../stories/TableFilters";
 import Modal, { ConfirmModal } from "../../stories/Modal";
@@ -15,6 +15,7 @@ import { readList } from "../../functions/apiHelpers";
 import { useApiResources } from "../../hooks/useApiResource";
 import { usePagePermissions } from "../../hooks/usePagePermissions";
 import { useToast } from "../../hooks/useToast";
+import { formatDate, formatDateTime } from "../../functions/formatters";
 
 /**
  * Task Assign — the housekeeping work list.
@@ -108,32 +109,8 @@ const EMPTY_FILTERS = { task_status: "", room_status: "", from: "", to: "" };
 /** "2026-07-31T12:30:55" / "2026-07-31" -> "2026-07-31", for date comparisons. */
 const dayOf = (value) => String(value ?? "").slice(0, 10);
 
-const formatDate = (value) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-};
-
 /** "10:00:00" -> "10:00". The seconds are always zero and only add noise. */
 const formatTime = (value) => (value ? String(value).slice(0, 5) : "—");
-
-const formatDateTime = (value) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
 
 /** Two-line free-text cell; the full value is on the tooltip and in View. */
 const NoteCell = ({ value }) =>
@@ -162,6 +139,8 @@ const TaskAssign = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -378,12 +357,13 @@ const TaskAssign = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!validate()) {
       showToast("Please correct the highlighted fields", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -403,12 +383,14 @@ const TaskAssign = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget || deleting) return;
+    if (!deleteTarget || deleting || deletingRef.current) return;
+    deletingRef.current = true;
     setDeleting(true);
     try {
       await APICall.deleteT(`/hotel/housekeeper_tasks/${deleteTarget.id}`);
@@ -418,6 +400,7 @@ const TaskAssign = () => {
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
     } finally {
+      deletingRef.current = false;
       setDeleting(false);
     }
   };
@@ -749,7 +732,7 @@ const TaskAssign = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteTarget}
-        onClose={() => (deleting ? null : setDeleteTarget(null))}
+        onClose={() => (deleting || deletingRef.current ? null : setDeleteTarget(null))}
         onConfirm={confirmDelete}
         title="Delete Task"
         confirmText={deleting ? "Deleting…" : "Delete"}

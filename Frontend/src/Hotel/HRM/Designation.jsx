@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -22,6 +22,9 @@ const Designation = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -35,13 +38,13 @@ const Designation = () => {
   const createDesignation = async () => {
     await APICall.postT("/user/designations", { designation_name: formData.name.trim() });
     showToast("Designation created", "success");
-    reload();
+    await reload();
   };
 
   const updateDesignation = async () => {
     await APICall.putT("/user/designations", { id: editId, designation_name: formData.name.trim() });
     showToast("Designation updated", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -69,7 +72,7 @@ const Designation = () => {
     // The guard AND the disabled Submit are both needed. This screen used to
     // swap only the button LABEL on `saving` and leave it enabled, so a double
     // click posted twice and created a duplicate designation.
-    if (saving) return;
+    if (saving || savingRef.current) return;
     const name = formData.name.trim();
     if (!name) {
       showToast("Designation Name is required", "error");
@@ -80,6 +83,7 @@ const Designation = () => {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -91,19 +95,25 @@ const Designation = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/user/designations/${id}`);
+      await APICall.deleteT(`/user/designations/${deleteId}`);
       showToast("Designation deleted", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -201,10 +211,10 @@ const Designation = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Designation"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

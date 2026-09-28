@@ -80,7 +80,12 @@ def item_sales(request: Request, report_date: Optional[date] = Query(None), db: 
             func.sum(models.RestaurantBillItem.amount).label("total_amount"),
         )
         .join(models.RestaurantBill, models.RestaurantBill.id == models.RestaurantBillItem.bill_id)
-        .filter(models.RestaurantBill.company_id == company_id, models.RestaurantBill.bill_date == d, models.RestaurantBill.bill_status != "Cancelled")
+        .filter(
+            models.RestaurantBill.company_id == company_id,
+            models.RestaurantBill.bill_date == d,
+            models.RestaurantBill.bill_status != "Cancelled",
+            models.RestaurantBillItem.company_id == company_id,
+        )
         .group_by(models.RestaurantBillItem.menu_id, models.RestaurantBillItem.item_name)
         .order_by(func.sum(models.RestaurantBillItem.amount).desc())
         .all()
@@ -102,12 +107,28 @@ def category_sales(request: Request, report_date: Optional[date] = Query(None), 
         )
         .join(models.RestaurantBillItem, models.RestaurantBillItem.menu_id == models.RestaurantMenu.id)
         .join(models.RestaurantBill, models.RestaurantBill.id == models.RestaurantBillItem.bill_id)
-        .filter(models.RestaurantBill.company_id == company_id, models.RestaurantBill.bill_date == d, models.RestaurantBill.bill_status != "Cancelled")
+        .filter(
+            models.RestaurantBill.company_id == company_id,
+            models.RestaurantBill.bill_date == d,
+            models.RestaurantBill.bill_status != "Cancelled",
+            models.RestaurantBillItem.company_id == company_id,
+            models.RestaurantMenu.company_id == company_id,
+        )
         .group_by(models.RestaurantMenu.category_id)
         .all()
     )
     category_ids = [r.category_id for r in rows]
-    categories = db.query(models.MenuCategory).filter(models.MenuCategory.id.in_(category_ids)).all() if category_ids else []
+    categories = (
+        db.query(models.MenuCategory)
+        .filter(
+            models.MenuCategory.id.in_(category_ids),
+            models.MenuCategory.company_id == company_id,
+            models.MenuCategory.status == STATUS,
+        )
+        .all()
+        if category_ids
+        else []
+    )
     cat_by_id = {c.id: c for c in categories}
 
     data = [
@@ -135,6 +156,8 @@ def payment_mode_report(request: Request, report_date: Optional[date] = Query(No
         .join(models.RestaurantBillPayment, models.RestaurantBillPayment.payment_method_id == models.PaymentMethod.id)
         .filter(
             models.RestaurantBillPayment.company_id == company_id,
+            models.PaymentMethod.company_id == company_id,
+            models.PaymentMethod.status == STATUS,
             models.RestaurantBillPayment.payment_date == d,
             models.RestaurantBillPayment.payment_status == "Success",
         )
@@ -189,7 +212,17 @@ def kitchen_performance(request: Request, report_date: Optional[date] = Query(No
                 entry["prep_seconds"].append((k.completed_at - k.acknowledged_at).total_seconds())
 
     kitchen_ids = list(by_kitchen.keys())
-    kitchens = db.query(models.Kitchen).filter(models.Kitchen.id.in_(kitchen_ids)).all() if kitchen_ids else []
+    kitchens = (
+        db.query(models.Kitchen)
+        .filter(
+            models.Kitchen.id.in_(kitchen_ids),
+            models.Kitchen.company_id == company_id,
+            models.Kitchen.status == STATUS,
+        )
+        .all()
+        if kitchen_ids
+        else []
+    )
     kitchen_by_id = {kk.id: kk for kk in kitchens}
 
     data = []

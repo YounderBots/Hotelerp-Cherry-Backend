@@ -45,6 +45,125 @@ def _server_error(exc: Exception) -> HTTPException:
     return server_error(logger, exc)
 
 
+_BOOKING_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _booking_bad_request(detail: str) -> HTTPException:
+    """Build a client-error response without exposing implementation details."""
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
+def _booking_date(value, field: str) -> date:
+    """Parse an ISO date and turn malformed input into a useful 400."""
+    if not isinstance(value, str) or not value.strip():
+        raise _booking_bad_request(f"{field} is required")
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise _booking_bad_request(f"{field} must be a valid ISO date (YYYY-MM-DD)") from exc
+
+
+def _booking_integer(value, field: str, *, minimum: int) -> int:
+    """Parse a JSON integer boundary without accepting booleans or fractions."""
+    if isinstance(value, bool):
+        raise _booking_bad_request(f"{field} must be an integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise _booking_bad_request(f"{field} must be an integer") from exc
+    if isinstance(value, float) and not value.is_integer():
+        raise _booking_bad_request(f"{field} must be an integer")
+    if isinstance(value, str) and str(parsed) != value.strip():
+        # Do not silently turn "1.5", "01", or other non-canonical text into a
+        # different number. Numeric JSON values and ordinary decimal strings are
+        # still accepted for compatibility with existing clients.
+        try:
+            if float(value.strip()) != parsed:
+                raise _booking_bad_request(f"{field} must be an integer")
+        except ValueError as exc:
+            raise _booking_bad_request(f"{field} must be an integer") from exc
+    if parsed < minimum:
+        raise _booking_bad_request(f"{field} must be at least {minimum}")
+    return parsed
+
+
+def _validate_booking_payload(payload, token: str) -> dict:
+    """Validate and canonicalise a room-booking write.
+
+    A booking request stores one room-type entry for each requested room. The
+    old endpoint accepted zero rooms/adults/children, unknown type IDs and even
+    malformed dates (which surfaced as a 500), allowing malformed requests to
+    become durable rows. Keep this validation at the service boundary as well
+    as in the browser: the API is callable independently of the UI.
+    """
+    if not isinstance(payload, dict):
+        raise _booking_bad_request("Request body must be a JSON object")
+
+    phone_number = payload.get("phone_number")
+    if not isinstance(phone_number, str) or not phone_number.strip():
+        raise _booking_bad_request("phone_number is required")
+    phone_number = phone_number.strip()
+    if len(phone_number) > 50:
+        raise _booking_bad_request("phone_number is too long")
+
+    for field in ("first_name", "last_name"):
+        value = payload.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise _booking_bad_request(f"{field} is required")
+        if len(value.strip()) > 100:
+            raise _booking_bad_request(f"{field} is too long")
+
+    email = payload.get("email")
+    if email not in (None, ""):
+        if not isinstance(email, str) or not _BOOKING_EMAIL_RE.fullmatch(email.strip()):
+            raise _booking_bad_request("email must be a valid email address")
+        email = email.strip().lower()
+    else:
+        email = None
+
+    arrival = _booking_date(payload.get("arrival_date"), "arrival_date")
+    departure = _booking_date(payload.get("departure_date"), "departure_date")
+    if departure <= arrival:
+        raise _booking_bad_request("departure_date must be after arrival_date")
+
+    raw_types = payload.get("room_type")
+    if not isinstance(raw_types, list) or not raw_types:
+        raise _booking_bad_request("room_type must be a non-empty list of room type ids")
+    room_type_ids = [
+        _booking_integer(value, "room_type", minimum=1) for value in raw_types
+    ]
+
+    no_of_rooms = _booking_integer(payload.get("no_of_rooms"), "no_of_rooms", minimum=1)
+    no_of_adults = _booking_integer(payload.get("no_of_adults"), "no_of_adults", minimum=1)
+    no_of_children = _booking_integer(payload.get("no_of_children"), "no_of_children", minimum=0)
+    if len(room_type_ids) != no_of_rooms:
+        raise _booking_bad_request("Select exactly one room type for each room")
+
+    # The type list is a relationship, not free text. Resolve it through the
+    # same tenant-scoped Master Data snapshot used by reservation pricing so a
+    # caller cannot create a dangling reference (or select a retired type).
+    active_types = MasterData.for_token(token).active_room_types()
+    unknown = sorted(set(room_type_ids) - set(active_types))
+    if unknown:
+        raise _booking_bad_request(
+            "Unknown or inactive room type id(s): "
+            + ", ".join(str(value) for value in unknown)
+        )
+
+    return {
+        "phone_number": phone_number,
+        "first_name": payload["first_name"].strip(),
+        "last_name": payload["last_name"].strip(),
+        "email": email,
+        "arrival": arrival,
+        "departure": departure,
+        "room_type_ids": room_type_ids,
+        "no_of_rooms": no_of_rooms,
+        "no_of_adults": no_of_adults,
+        "no_of_children": no_of_children,
+    }
+
+
 # =====================================================
 # COMMON CONSTANTS & CONFIG
 # =====================================================
@@ -95,44 +214,14 @@ async def create_room_booking(request: Request, db: Session = Depends(get_db)):
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON body"
             )
 
-        # -------------------------------------------------
-        # REQUIRED FIELDS
-        # -------------------------------------------------
-        phone_number = payload.get("phone_number")
-        arrival_date = payload.get("arrival_date")
-        departure_date = payload.get("departure_date")
-        room_type_ids = payload.get("room_type")  # list of room_type ids
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
-        if not phone_number:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="phone_number is required",
-            )
-
-        if not arrival_date or not departure_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="arrival_date and departure_date are required",
-            )
-
-        if not isinstance(room_type_ids, list) or not room_type_ids:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_type must be a non-empty list of room type ids",
-            )
-
-        arrival = datetime.strptime(arrival_date, "%Y-%m-%d").date()
-        departure = datetime.strptime(departure_date, "%Y-%m-%d").date()
-
-        if departure <= arrival:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="departure_date must be after arrival_date",
-            )
-
+        # Validate at the service boundary as well as in the browser. The
+        # endpoint is callable directly, and malformed values must not become
+        # durable booking rows (or turn a bad date into a 500).
+        fields = _validate_booking_payload(payload, token)
+        phone_number = fields["phone_number"]
+        arrival = fields["arrival"]
+        departure = fields["departure"]
+        room_type_ids = fields["room_type_ids"]
         no_of_nights = (departure - arrival).days
 
         # -------------------------------------------------
@@ -146,17 +235,17 @@ async def create_room_booking(request: Request, db: Session = Depends(get_db)):
         booking = models.RoomBooking(
             room_booking_id=booking_ref,
             salutation=payload.get("salutation"),
-            first_name=payload.get("first_name"),
-            last_name=payload.get("last_name"),
+            first_name=fields["first_name"],
+            last_name=fields["last_name"],
             phone_number=phone_number,
-            email=payload.get("email"),
+            email=fields["email"],
             arrival_date=arrival,
             departure_date=departure,
             no_of_nights=no_of_nights,
             room_type=room_type_ids,  # ✅ ROOM TYPE TABLE IDs STORED HERE
-            no_of_rooms=payload.get("no_of_rooms"),
-            no_of_adults=payload.get("no_of_adults"),
-            no_of_children=payload.get("no_of_children"),
+            no_of_rooms=fields["no_of_rooms"],
+            no_of_adults=fields["no_of_adults"],
+            no_of_children=fields["no_of_children"],
             status=CommonWords.STATUS,
             created_by=user_id,
             company_id=company_id,
@@ -366,51 +455,16 @@ async def update_room_booking(request: Request, db: Session = Depends(get_db)):
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON body"
             )
 
-        # -------------------------------------------------
-        # REQUIRED FIELDS
-        # -------------------------------------------------
-        booking_id = payload.get("id")
-        phone_number = payload.get("phone_number")
-        arrival_date = payload.get("arrival_date")
-        departure_date = payload.get("departure_date")
-        room_type_ids = payload.get("room_type")
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
-        if not booking_id or not isinstance(booking_id, int) or booking_id <= 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Valid booking id is required",
-            )
-
-        if not phone_number:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="phone_number is required",
-            )
-
-        if not arrival_date or not departure_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="arrival_date and departure_date are required",
-            )
-
-        if not isinstance(room_type_ids, list) or not room_type_ids:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_type must be a non-empty list of room type ids",
-            )
-
-        arrival = datetime.strptime(arrival_date, "%Y-%m-%d").date()
-        departure = datetime.strptime(departure_date, "%Y-%m-%d").date()
-
-        if departure <= arrival:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="departure_date must be after arrival_date",
-            )
-
+        # Validate the same canonical fields on update. A PUT is not allowed
+        # to bypass the relationship and boundary checks that guard POST.
+        booking_id = payload.get("id") if isinstance(payload, dict) else None
+        if isinstance(booking_id, bool) or not isinstance(booking_id, int) or booking_id <= 0:
+            raise _booking_bad_request("Valid booking id is required")
+        fields = _validate_booking_payload(payload, token)
+        phone_number = fields["phone_number"]
+        arrival = fields["arrival"]
+        departure = fields["departure"]
+        room_type_ids = fields["room_type_ids"]
         no_of_nights = (departure - arrival).days
 
         # -------------------------------------------------
@@ -435,11 +489,11 @@ async def update_room_booking(request: Request, db: Session = Depends(get_db)):
         # UPDATE BOOKING
         # -------------------------------------------------
         booking.salutation = payload.get("salutation")
-        booking.first_name = payload.get("first_name")
-        booking.last_name = payload.get("last_name")
+        booking.first_name = fields["first_name"]
+        booking.last_name = fields["last_name"]
 
         booking.phone_number = phone_number
-        booking.email = payload.get("email")
+        booking.email = fields["email"]
 
         booking.arrival_date = arrival
         booking.departure_date = departure
@@ -447,9 +501,9 @@ async def update_room_booking(request: Request, db: Session = Depends(get_db)):
 
         booking.room_type = room_type_ids  # ✅ Room_Type IDs
 
-        booking.no_of_rooms = payload.get("no_of_rooms")
-        booking.no_of_adults = payload.get("no_of_adults")
-        booking.no_of_children = payload.get("no_of_children")
+        booking.no_of_rooms = fields["no_of_rooms"]
+        booking.no_of_adults = fields["no_of_adults"]
+        booking.no_of_children = fields["no_of_children"]
 
         booking.updated_by = user_id
 
@@ -566,6 +620,37 @@ ALLOWED_PROOF_CONTENT_TYPES = {
     "image/png",
     "image/webp",
 }
+
+# The extension and the declared content type are both things the client chose;
+# the first bytes of the payload are not. These two mappings turn a claimed type
+# into the family the bytes must actually be, so an HTML document or a script
+# named `passport.png` cannot be stored as an identity document (C-085).
+_PROOF_EXT_FAMILY = {
+    "jpg": "jpeg", "jpeg": "jpeg",
+    "png": "png",
+    "webp": "webp",
+    "pdf": "pdf",
+}
+_PROOF_FAMILY_CONTENT_TYPES = {
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "pdf": "application/pdf",
+}
+
+
+def _sniff_document_family(data: bytes) -> str:
+    """The document family implied by the first bytes of `data`."""
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data.startswith(b"%PDF-"):
+        return "pdf"
+    return ""
+
 UPLOAD_MAX_BYTES = int(os.getenv("UPLOAD_MAX_BYTES", str(5 * 1024 * 1024)))
 
 # A reservation may not start further in the past than this. Back-dating one
@@ -640,6 +725,25 @@ async def _store_identity_proof(identity_file: UploadFile) -> str:
 
     if not payload:
         raise HTTPException(status_code=400, detail="Identity document is empty")
+
+    # The bytes have to be the document the name and the content type claim.
+    # Everything above this line was client-supplied metadata; this is the first
+    # check in this handler that is not.
+    expected_family = _PROOF_EXT_FAMILY.get(extension)
+    actual_family = _sniff_document_family(bytes(payload))
+    if expected_family and actual_family != expected_family:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Identity document is not a valid "
+                f"{'PDF' if expected_family == 'pdf' else expected_family.upper()}"
+            ),
+        )
+    if content_type and _PROOF_FAMILY_CONTENT_TYPES.get(actual_family) != content_type:
+        raise HTTPException(
+            status_code=400,
+            detail="Identity document content does not match its declared type",
+        )
 
     filename = f"{uuid.uuid4()}.{extension}"
     with open(os.path.join(UPLOAD_DIR, filename), "wb") as handle:

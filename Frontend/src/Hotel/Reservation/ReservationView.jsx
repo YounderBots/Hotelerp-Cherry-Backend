@@ -102,7 +102,9 @@ const ReservationView = () => {
   const handleBack = () => navigate("/reservation");
   const handleRefresh = () => reload();
   const handleCardOpen = (r) =>
-    navigate("/ReservationView", { state: { reservationId: r.id } });
+    navigate(`/ReservationView?reservationId=${encodeURIComponent(r.id)}`, {
+      state: { reservationId: r.id },
+    });
 
   return (
     <div className="rvv-page">

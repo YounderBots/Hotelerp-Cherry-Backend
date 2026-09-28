@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -93,6 +93,11 @@ const MenuManagement = () => {
   const [viewData, setViewData] = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const detailActionRef = useRef(false);
+  const imageRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
 
   const [formData, setFormData] = useState(initialForm);
@@ -187,59 +192,79 @@ const MenuManagement = () => {
   const updateExistingVariantField = (id, field, value) =>
     setExistingDetail((d) => ({ ...d, variants: (d.variants || []).map((v) => (v.id === id ? { ...v, [field]: value } : v)) }));
   const saveExistingVariant = async (v) => {
+    if (detailActionRef.current) return;
+    detailActionRef.current = true;
     try {
       await APICall.putT(`/bar/variant/${v.id}`, { variant_name: v.variant_name, price: Number(v.price) });
-      refreshExistingDetail();
+      await refreshExistingDetail();
     } catch (err) {
       setFormError(errMsg(err, "Failed to update variant."));
+    } finally {
+      detailActionRef.current = false;
     }
   };
   const deleteExistingVariant = async (id) => {
+    if (detailActionRef.current) return;
+    detailActionRef.current = true;
     try {
       await APICall.deleteT(`/bar/variant/${id}`);
-      refreshExistingDetail();
+      await refreshExistingDetail();
     } catch (err) {
       setFormError(errMsg(err, "Failed to delete variant."));
+    } finally {
+      detailActionRef.current = false;
     }
   };
   const addExistingVariant = async () => {
-    if (!newVariant.variant_name.trim() || newVariant.price === "") return;
+    if (!newVariant.variant_name.trim() || newVariant.price === "" || detailActionRef.current) return;
+    detailActionRef.current = true;
     try {
       await APICall.postT(`/bar/menu/${editId}/variant`, {
         variant_name: newVariant.variant_name.trim(),
         price: Number(newVariant.price),
       });
       setNewVariant(emptyVariant());
-      refreshExistingDetail();
+      await refreshExistingDetail();
     } catch (err) {
       setFormError(errMsg(err, "Failed to add variant."));
+    } finally {
+      detailActionRef.current = false;
     }
   };
 
   const updateExistingModifierField = (id, field, value) =>
     setExistingDetail((d) => ({ ...d, modifiers: (d.modifiers || []).map((m) => (m.id === id ? { ...m, [field]: value } : m)) }));
   const saveExistingModifier = async (m) => {
+    if (detailActionRef.current) return;
+    detailActionRef.current = true;
     try {
       await APICall.putT(`/bar/modifier/${m.id}`, {
         modifier_name: m.modifier_name,
         price: m.price !== "" && m.price != null ? Number(m.price) : null,
         modifier_type: m.modifier_type,
       });
-      refreshExistingDetail();
+      await refreshExistingDetail();
     } catch (err) {
       setFormError(errMsg(err, "Failed to update modifier."));
+    } finally {
+      detailActionRef.current = false;
     }
   };
   const deleteExistingModifier = async (id) => {
+    if (detailActionRef.current) return;
+    detailActionRef.current = true;
     try {
       await APICall.deleteT(`/bar/modifier/${id}`);
-      refreshExistingDetail();
+      await refreshExistingDetail();
     } catch (err) {
       setFormError(errMsg(err, "Failed to delete modifier."));
+    } finally {
+      detailActionRef.current = false;
     }
   };
   const addExistingModifier = async () => {
-    if (!newModifier.modifier_name.trim()) return;
+    if (!newModifier.modifier_name.trim() || detailActionRef.current) return;
+    detailActionRef.current = true;
     try {
       await APICall.postT(`/bar/menu/${editId}/modifier`, {
         modifier_name: newModifier.modifier_name.trim(),
@@ -247,13 +272,16 @@ const MenuManagement = () => {
         modifier_type: newModifier.modifier_type,
       });
       setNewModifier(emptyModifier());
-      refreshExistingDetail();
+      await refreshExistingDetail();
     } catch (err) {
       setFormError(errMsg(err, "Failed to add modifier."));
+    } finally {
+      detailActionRef.current = false;
     }
   };
 
   const handleSave = async () => {
+    if (saving || savingRef.current) return;
     if (!formData.item_name.trim() || !formData.price || !formData.category_id) {
       setFormError("Item name, price and category are required.");
       return;
@@ -261,11 +289,13 @@ const MenuManagement = () => {
     const cleanVariants = variants.filter((v) => v.variant_name.trim() && v.price !== "");
     const cleanModifiers = modifiers.filter((m) => m.modifier_name.trim());
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     try {
       const categoryId = resolveCategoryId();
       if (!categoryId) {
         setFormError("Could not resolve a category for this item.");
+        savingRef.current = false;
         setSaving(false);
         return;
       }
@@ -306,10 +336,11 @@ const MenuManagement = () => {
         });
       }
       setShowModal(false);
-      load();
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to save menu item."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -351,14 +382,19 @@ const MenuManagement = () => {
   // Was wired straight to the trash icon: one click took an item off the menu
   // with no confirmation and no feedback.
   const confirmDelete = async () => {
-    const row = deleteRow;
-    setDeleteRow(null);
+    if (!deleteRow || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/bar/menu/${row.id}`);
+      await APICall.deleteT(`/bar/menu/${deleteRow.id}`);
       showToast("Menu item deactivated successfully", "delete");
-      load();
+      await load();
+      setDeleteRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to deactivate menu item."), "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -366,7 +402,8 @@ const MenuManagement = () => {
   // hosted image URL while the identical restaurant screen offered a picker.
   // BarServices now has POST /bar/upload_image.
   const handleImageFile = async (file) => {
-    if (!file) return;
+    if (!file || imageUploading || imageRef.current) return;
+    imageRef.current = true;
     setImageUploading(true);
     setFormError(null);
     try {
@@ -378,6 +415,7 @@ const MenuManagement = () => {
     } catch (err) {
       setFormError(errMsg(err, "Failed to upload image."));
     } finally {
+      imageRef.current = false;
       setImageUploading(false);
     }
   };
@@ -760,10 +798,10 @@ const MenuManagement = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteRow}
-        onClose={() => setDeleteRow(null)}
+        onClose={() => (deleting ? null : setDeleteRow(null))}
         onConfirm={confirmDelete}
         title="Deactivate Menu Item"
-        confirmText="Deactivate"
+        confirmText={deleting ? "Deactivating…" : "Deactivate"}
         size="small"
         destructive
       >

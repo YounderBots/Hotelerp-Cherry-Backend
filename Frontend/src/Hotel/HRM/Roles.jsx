@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -23,6 +23,9 @@ const Roles = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -46,13 +49,13 @@ const Roles = () => {
   const createRole = async () => {
     await APICall.postT("/user/roles", payload());
     showToast("Role created", "success");
-    reload();
+    await reload();
   };
 
   const updateRole = async () => {
     await APICall.putT("/user/roles", { id: editId, ...payload() });
     showToast("Role updated", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -83,7 +86,7 @@ const Roles = () => {
     // Guard AND disabled Submit. This screen used to change only the button
     // label on `saving`, leaving it clickable — a double click created a
     // duplicate role.
-    if (saving) return;
+    if (saving || savingRef.current) return;
     const name = formData.roleName.trim();
     if (!name) {
       showToast("Role name is required", "error");
@@ -93,11 +96,12 @@ const Roles = () => {
       showToast("Role name must be under 100 characters", "error");
       return;
     }
-    if (formData.description.length > 500) {
-      showToast("Description must be under 500 characters", "error");
+    if (formData.description.length > 255) {
+      showToast("Description must be under 255 characters", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -109,19 +113,25 @@ const Roles = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/user/roles/${id}`);
+      await APICall.deleteT(`/user/roles/${deleteId}`);
       showToast("Role deleted", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -231,7 +241,7 @@ const Roles = () => {
           label="Description"
           name="description"
           rows={3}
-          maxLength={500}
+          maxLength={255}
           placeholder="What this role is responsible for"
           value={formData.description}
           onChange={handleChange}
@@ -242,10 +252,10 @@ const Roles = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Role"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

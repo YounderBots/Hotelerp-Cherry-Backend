@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -27,6 +27,9 @@ const Complementary = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -50,13 +53,13 @@ const Complementary = () => {
   const createComplementary = async () => {
     await APICall.postT("/masterdata/complementry", payload());
     showToast("Complementary item added successfully", "success");
-    reload();
+    await reload();
   };
 
   const updateComplementary = async () => {
     await APICall.putT("/masterdata/complementry", { id: editId, ...payload() });
     showToast("Complementary item updated successfully", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -83,12 +86,13 @@ const Complementary = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.name.trim()) {
       showToast("Complementary name is required", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -100,24 +104,28 @@ const Complementary = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
       // Literal, not `${ENDPOINT}`: build_rbac_map.py reads these call
       // sites to derive the gateway permission map, and cannot resolve a
       // variable — this row had dropped out of it.
-      await APICall.deleteT(`/masterdata/complementry/${id}`);
+      await APICall.deleteT(`/masterdata/complementry/${deleteId}`);
       showToast("Complementary item deleted successfully", "delete");
-      // This reload was missing: the row stayed on screen after a successful
-      // delete until the page was reloaded by hand.
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -235,10 +243,10 @@ const Complementary = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Complementary"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

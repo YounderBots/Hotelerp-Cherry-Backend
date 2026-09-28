@@ -15,6 +15,7 @@ import { readList } from "../../functions/apiHelpers";
 import { useApiResource } from "../../hooks/useApiResource";
 import { usePagePermissions } from "../../hooks/usePagePermissions";
 import { useToast } from "../../hooks/useToast";
+import { formatDate, formatDateTime } from "../../functions/formatters";
 
 /**
  * Guest Enquiry — the front-office log of someone asking about the hotel
@@ -70,30 +71,6 @@ const EMPTY_FILTERS = { status: "", mode: "", from: "", to: "" };
 
 /** "2026-07-31T12:30:55" -> "2026-07-31", for comparing against a date input. */
 const dayOf = (value) => String(value ?? "").slice(0, 10);
-
-const formatDate = (value) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-};
-
-const formatDateTime = (value) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
 
 /** Two-line free-text cell; the full value is on the tooltip and in View. */
 const NoteCell = ({ value }) =>

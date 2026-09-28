@@ -6,10 +6,15 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from models import get_db, models
 from resources.utils import verify_authentication
-from resources.inventoryController import deduct_stock_for_menu_item
+from resources.inventoryController import (
+    InsufficientStockError,
+    InventoryDeductionError,
+    deduct_stock_for_menu_item,
+)
 from configs.base_config import CommonWords
 
 logger = logging.getLogger(__name__)
@@ -32,6 +37,58 @@ def _server_error(exc: Exception) -> HTTPException:
 
 STATUS = CommonWords.STATUS
 UNSTATUS = CommonWords.UNSTATUS
+
+KOT_STATUSES = ("New", "Acknowledged", "In Progress", "Completed", "Cancelled")
+KOT_ITEM_STATUSES = ("Pending", "Preparing", "Ready", "Cancelled")
+
+
+def _assert_status(value: str, allowed, field: str) -> None:
+    if value not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field} must be one of: {', '.join(allowed)}",
+        )
+
+
+def _locked_kot(db: Session, kot_id: int, company_id: str):
+    return (
+        db.query(models.KitchenOrderTicket)
+        .filter(models.KitchenOrderTicket.id == kot_id, models.KitchenOrderTicket.company_id == company_id)
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+
+
+def _claim_kot_item(db: Session, kot_item_id: int, ready_at: datetime) -> int:
+    """Atomically claim one non-terminal item for its one inventory deduction."""
+    return (
+        db.query(models.KitchenOrderItem)
+        .filter(
+            models.KitchenOrderItem.id == kot_item_id,
+            models.KitchenOrderItem.preparation_status.notin_(["Ready", "Cancelled"]),
+        )
+        .update(
+            {
+                models.KitchenOrderItem.preparation_status: "Ready",
+                models.KitchenOrderItem.prep_end_time: ready_at,
+            },
+            synchronize_session=False,
+        )
+    )
+
+
+def _claim_order_item(db: Session, order_item_id: int) -> int:
+    """Claim the order line as the cross-ticket idempotency marker."""
+    return (
+        db.query(models.RestaurantOrderItem)
+        .filter(
+            models.RestaurantOrderItem.id == order_item_id,
+            models.RestaurantOrderItem.status == STATUS,
+            models.RestaurantOrderItem.item_status.in_(["Pending", "Preparing"]),
+        )
+        .update({models.RestaurantOrderItem.item_status: "Ready"}, synchronize_session=False)
+    )
 
 
 def gen_code(prefix: str) -> str:
@@ -186,16 +243,17 @@ def get_kot(kot_id: int, request: Request, db: Session = Depends(get_db)):
 @router.put("/kot/{kot_id}/acknowledge", status_code=status.HTTP_200_OK)
 def acknowledge_kot(kot_id: int, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
-    kot = (
-        db.query(models.KitchenOrderTicket)
-        .filter(models.KitchenOrderTicket.id == kot_id, models.KitchenOrderTicket.company_id == company_id)
-        .first()
-    )
+    kot = _locked_kot(db, kot_id, company_id)
     if not kot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="KOT not found")
+    if kot.kot_status in ("Completed", "Cancelled"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A {kot.kot_status} KOT cannot be acknowledged",
+        )
     kot.kot_status = "Acknowledged"
     kot.acknowledged_by = user_id
-    kot.acknowledged_at = datetime.now()
+    kot.acknowledged_at = kot.acknowledged_at or datetime.now()
     kot.updated_by = user_id
     db.commit()
     return {"status": "success", "message": "KOT acknowledged"}
@@ -203,44 +261,117 @@ def acknowledge_kot(kot_id: int, request: Request, db: Session = Depends(get_db)
 
 @router.put("/kot/{kot_id}/status", status_code=status.HTTP_200_OK)
 def update_kot_status(kot_id: int, payload: KotStatusIn, request: Request, db: Session = Depends(get_db)):
-    """Marks the whole ticket (and every item on it) Ready/Completed/Cancelled — this is what the
-    kitchen-display "Mark Ready" action calls."""
+    """Complete a KOT once; retries are successful no-ops.
+
+    The ticket and its item rows are locked in a stable order.  Inventory is
+    deducted only for an item that is not already Ready, and the conditional
+    stock update in the inventory helper prevents two workers from taking the
+    last units concurrently.
+    """
     user_id, role_id, company_id = _auth(request)
-    kot = (
-        db.query(models.KitchenOrderTicket)
-        .filter(models.KitchenOrderTicket.id == kot_id, models.KitchenOrderTicket.company_id == company_id)
-        .first()
-    )
+    _assert_status(payload.kot_status, KOT_STATUSES, "kot_status")
+    kot = _locked_kot(db, kot_id, company_id)
     if not kot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="KOT not found")
 
+    # Terminal states cannot be reopened by a late/retried request.
+    if kot.kot_status in ("Completed", "Cancelled") and payload.kot_status != kot.kot_status:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A {kot.kot_status} KOT cannot be changed to {payload.kot_status}",
+        )
     try:
-        kot.kot_status = payload.kot_status
-        kot.updated_by = user_id
-        if payload.kot_status == "Completed":
-            kot.completed_by = user_id
-            kot.completed_at = datetime.now()
-
-        kot_items = db.query(models.KitchenOrderItem).filter(models.KitchenOrderItem.kot_id == kot_id).all()
         low_stock_alerts = []
-        for ki in kot_items:
-            if payload.kot_status == "Completed":
-                ki.preparation_status = "Ready"
-                ki.prep_end_time = datetime.now()
-                order_item = db.query(models.RestaurantOrderItem).filter(models.RestaurantOrderItem.id == ki.order_item_id).first()
-                if order_item:
-                    order_item.item_status = "Ready"
-                    alerts = deduct_stock_for_menu_item(
-                        db, company_id, order_item.menu_id, kot.kitchen_id, order_item.quantity, kot.kot_number, user_id
+        if payload.kot_status == "Completed":
+            kot_items = (
+                db.query(models.KitchenOrderItem)
+                .filter(models.KitchenOrderItem.kot_id == kot_id)
+                .order_by(models.KitchenOrderItem.id.asc())
+                .populate_existing()
+                .with_for_update()
+                .all()
+            )
+            # Lock all referenced order lines in the same order on every path;
+            # this serialises a whole-ticket completion with an item completion
+            # and avoids the old read/modify/write race.
+            order_item_ids = [ki.order_item_id for ki in kot_items]
+            order_items = (
+                db.query(models.RestaurantOrderItem)
+                .filter(models.RestaurantOrderItem.id.in_(order_item_ids))
+                .order_by(models.RestaurantOrderItem.id.asc())
+                .populate_existing()
+                .with_for_update()
+                .all()
+                if order_item_ids
+                else []
+            )
+            order_item_by_id = {item.id: item for item in order_items}
+            for ki in kot_items:
+                order_item = order_item_by_id.get(ki.order_item_id)
+                if not order_item or order_item.status != STATUS:
+                    continue
+                ready_at = datetime.now()
+                if _claim_kot_item(db, ki.id, ready_at) != 1:
+                    continue
+                if _claim_order_item(db, order_item.id) != 1:
+                    # Another ticket already completed this order line.  The
+                    # KOT still becomes ready, but it must not consume stock a
+                    # second time.
+                    db.refresh(order_item)
+                    set_committed_value(
+                        ki,
+                        "preparation_status",
+                        "Cancelled" if order_item.status != STATUS or order_item.item_status == "Cancelled" else "Ready",
                     )
-                    low_stock_alerts.extend(alerts)
-            elif payload.kot_status == "Cancelled":
-                ki.preparation_status = "Cancelled"
+                    set_committed_value(ki, "prep_end_time", ready_at)
+                    continue
+                set_committed_value(order_item, "item_status", "Ready")
+                low_stock_alerts.extend(
+                    deduct_stock_for_menu_item(
+                        db,
+                        company_id,
+                        order_item.menu_id,
+                        kot.kitchen_id,
+                        order_item.quantity,
+                        kot.kot_number,
+                        user_id,
+                        source_order_item_id=order_item.id,
+                    )
+                )
+                set_committed_value(ki, "preparation_status", "Ready")
+                set_committed_value(ki, "prep_end_time", ready_at)
 
+            kot.kot_status = "Completed"
+            kot.completed_by = user_id
+            kot.completed_at = kot.completed_at or datetime.now()
+        elif payload.kot_status == "Cancelled":
+            kot_items = (
+                db.query(models.KitchenOrderItem)
+                .filter(models.KitchenOrderItem.kot_id == kot_id)
+                .order_by(models.KitchenOrderItem.id.asc())
+                .populate_existing()
+                .with_for_update()
+                .all()
+            )
+            for ki in kot_items:
+                if ki.preparation_status != "Ready":
+                    ki.preparation_status = "Cancelled"
+            kot.kot_status = "Cancelled"
+        else:
+            kot.kot_status = payload.kot_status
+
+        kot.updated_by = user_id
         db.commit()
         return {"status": "success", "message": f"KOT marked {payload.kot_status}", "low_stock_alerts": low_stock_alerts}
     except HTTPException:
+        db.rollback()
         raise
+    except InsufficientStockError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except InventoryDeductionError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         db.rollback()
         raise _server_error(e)
@@ -249,28 +380,109 @@ def update_kot_status(kot_id: int, payload: KotStatusIn, request: Request, db: S
 @router.put("/kot/item/{kot_item_id}/status", status_code=status.HTTP_200_OK)
 def update_kot_item_status(kot_item_id: int, payload: KotItemStatusIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
-    ki = db.query(models.KitchenOrderItem).filter(models.KitchenOrderItem.id == kot_item_id).first()
+    _assert_status(payload.preparation_status, KOT_ITEM_STATUSES, "preparation_status")
+
+    # Resolve and lock the ticket before its item.  The whole-ticket endpoint
+    # takes locks in this same order, so a Ready click and a Mark Completed
+    # click cannot both pass the status check.
+    ki = (
+        db.query(models.KitchenOrderItem)
+        .filter(models.KitchenOrderItem.id == kot_item_id, models.KitchenOrderItem.company_id == company_id)
+        .first()
+    )
     if not ki:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="KOT item not found")
-    kot = db.query(models.KitchenOrderTicket).filter(models.KitchenOrderTicket.id == ki.kot_id, models.KitchenOrderTicket.company_id == company_id).first()
+    kot = _locked_kot(db, ki.kot_id, company_id)
     if not kot:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="KOT item not found")
+    ki = (
+        db.query(models.KitchenOrderItem)
+        .filter(
+            models.KitchenOrderItem.id == kot_item_id,
+            models.KitchenOrderItem.kot_id == kot.id,
+            models.KitchenOrderItem.company_id == company_id,
+        )
+        .populate_existing()
+        .with_for_update()
+        .first()
+    )
+    if not ki:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="KOT item not found")
 
-    low_stock_alerts = []
-    ki.preparation_status = payload.preparation_status
-    if payload.preparation_status == "Preparing" and not ki.prep_start_time:
-        ki.prep_start_time = datetime.now()
-    if payload.preparation_status == "Ready":
-        ki.prep_end_time = datetime.now()
-        order_item = db.query(models.RestaurantOrderItem).filter(models.RestaurantOrderItem.id == ki.order_item_id).first()
-        if order_item:
-            order_item.item_status = "Ready"
-            low_stock_alerts = deduct_stock_for_menu_item(
-                db, company_id, order_item.menu_id, kot.kitchen_id, order_item.quantity, kot.kot_number, user_id
+    if payload.preparation_status == "Ready" and ki.preparation_status == "Ready":
+        db.rollback()
+        return {"status": "success", "message": "KOT item already Ready", "low_stock_alerts": []}
+    if ki.preparation_status == "Ready" and payload.preparation_status != "Ready":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A Ready KOT item cannot be changed")
+    if ki.preparation_status == "Cancelled" and payload.preparation_status == "Ready":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A Cancelled KOT item cannot become Ready")
+    if kot.kot_status == "Cancelled" and payload.preparation_status == "Ready":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A Cancelled KOT cannot become Ready")
+
+    try:
+        low_stock_alerts = []
+        if payload.preparation_status == "Preparing":
+            ki.preparation_status = "Preparing"
+            ki.prep_start_time = ki.prep_start_time or datetime.now()
+        elif payload.preparation_status == "Cancelled":
+            ki.preparation_status = "Cancelled"
+        else:
+            ready_at = datetime.now()
+            if _claim_kot_item(db, ki.id, ready_at) != 1:
+                db.refresh(ki)
+                if ki.preparation_status == "Ready":
+                    db.commit()
+                    return {"status": "success", "message": "KOT item already Ready", "low_stock_alerts": []}
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="KOT item changed concurrently")
+
+            order_item = (
+                db.query(models.RestaurantOrderItem)
+                .filter(
+                    models.RestaurantOrderItem.id == ki.order_item_id,
+                    models.RestaurantOrderItem.company_id == company_id,
+                )
+                .populate_existing()
+                .with_for_update()
+                .first()
             )
+            if not order_item or order_item.status != STATUS:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Order item is not active")
+            if _claim_order_item(db, order_item.id) != 1:
+                db.refresh(order_item)
+                if order_item.status == STATUS and order_item.item_status in ("Ready", "Served"):
+                    set_committed_value(ki, "preparation_status", "Ready")
+                    set_committed_value(ki, "prep_end_time", ready_at)
+                    db.commit()
+                    return {"status": "success", "message": "Order item already Ready", "low_stock_alerts": []}
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order item changed concurrently")
+            set_committed_value(order_item, "item_status", "Ready")
+            low_stock_alerts = deduct_stock_for_menu_item(
+                db,
+                company_id,
+                order_item.menu_id,
+                kot.kitchen_id,
+                order_item.quantity,
+                kot.kot_number,
+                user_id,
+                source_order_item_id=order_item.id,
+            )
+            set_committed_value(ki, "preparation_status", "Ready")
+            set_committed_value(ki, "prep_end_time", ready_at)
 
-    db.commit()
-    return {"status": "success", "message": "KOT item updated", "low_stock_alerts": low_stock_alerts}
+        db.commit()
+        return {"status": "success", "message": "KOT item updated", "low_stock_alerts": low_stock_alerts}
+    except HTTPException:
+        db.rollback()
+        raise
+    except InsufficientStockError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except InventoryDeductionError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        raise _server_error(e)
 
 
 @router.post("/kot/{kot_id}/print", status_code=status.HTTP_200_OK)

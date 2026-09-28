@@ -49,14 +49,30 @@ page.on("response", (r) => {
 });
 
 // ---- sign in --------------------------------------------------------------
+// Same flakiness the load audit hit: a click that lands before the form's
+// submit handler is attached leaves the SPA on the login page and every page
+// below is then reported as blank. Watch the login response, require 200, and
+// retry before believing the run.
 bucket = fresh();
-await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
-await page.waitForSelector('input[type="email"], input[name="email"], #email', { timeout: 20000 });
-await page.fill('input[type="email"], input[name="email"], #email', EMAIL);
-await page.fill('input[type="password"], input[name="password"], #password', PASSWORD);
-await page.click('button[type="submit"]');
-await page.waitForURL((u) => u.pathname !== "/", { timeout: 30000 }).catch(() => {});
-await page.waitForTimeout(1200);
+let loginStatus = null;
+for (let attempt = 0; attempt < 5; attempt += 1) {
+  await page.goto(`${BASE}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('input[type="email"], input[name="email"], #email', { timeout: 20000 });
+  await page.fill('input[type="email"], input[name="email"], #email', EMAIL);
+  await page.fill('input[type="password"], input[name="password"], #password', PASSWORD);
+  const answered = page
+    .waitForResponse((r) => r.url().includes("/login_post"), { timeout: 20000 })
+    .catch(() => null);
+  await page.click('button[type="submit"]');
+  const response = await answered;
+  loginStatus = response ? response.status() : null;
+  await page.waitForTimeout(1500);
+  if (loginStatus === 200 && (await page.evaluate(() => !!localStorage.getItem("AuthToken")))) break;
+  await page.waitForTimeout(3000);
+  if (attempt === 4) {
+    throw new Error(`login failed after 5 attempts (last /login_post status: ${loginStatus})`);
+  }
+}
 
 const settle = async () => {
   await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
@@ -82,17 +98,38 @@ for (const path of PAGES) {
     const rowsBefore = await page.locator("table tbody tr:not(.table-message-row)").count();
     step("rows", String(rowsBefore));
 
-    // ---- sort by the first sortable header --------------------------------
-    const headers = page.locator("table thead th");
+    // ---- sort by a real sortable header ------------------------------------
+    // The first <th> is the non-sortable S.No column. Clicking it made this
+    // audit report "order unchanged" for every table while still returning a
+    // green result, so sorting was effectively untested.
+    const headers = page.locator("table thead th.sortable button");
     const headerCount = await headers.count();
-    if (headerCount > 1 && rowsBefore > 1) {
-      const firstCellBefore = await page.locator("table tbody tr:not(.table-message-row) td").first().innerText().catch(() => "");
-      await headers.nth(0).click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(250);
-      await headers.nth(0).click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(250);
-      const firstCellAfter = await page.locator("table tbody tr:not(.table-message-row) td").first().innerText().catch(() => "");
-      step("sort", firstCellBefore === firstCellAfter ? "order unchanged after two clicks" : "reorders");
+    let sortChanged = false;
+    if (headerCount > 0 && rowsBefore > 1) {
+      const rowOrder = () => page.locator("table tbody tr:not(.table-message-row)")
+        .evaluateAll((rows) => rows.map((row) => row.innerText));
+      const orderBefore = await rowOrder();
+
+      // Try columns until one has a visible order change. A table can have
+      // equal values in its first sortable column, so a single column is not a
+      // reliable proof that sorting is broken.
+      for (let i = 0; i < headerCount && !sortChanged; i += 1) {
+        const header = headers.nth(i);
+        await header.click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(250);
+        const orderAsc = await rowOrder();
+        await header.click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(250);
+        const orderDesc = await rowOrder();
+        const indicator = await header.locator(".sort-indicator").count();
+        sortChanged = JSON.stringify(orderBefore) !== JSON.stringify(orderAsc)
+          || JSON.stringify(orderAsc) !== JSON.stringify(orderDesc);
+        if (sortChanged && !indicator) {
+          // The order changed, but the control did not expose its state.
+          step("sort", "reorders without an indicator");
+        }
+      }
+      step("sort", sortChanged ? "reorders" : "SORT DID NOT CHANGE");
     }
 
     // ---- search: a term that matches nothing must show the empty state ----

@@ -5,8 +5,10 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from models import get_db, models
 from resources.utils import verify_authentication
@@ -39,11 +41,47 @@ ALLOWED_UPLOAD_EXTS = BaseConfig.UPLOAD_ALLOWED_EXTENSIONS
 UPLOAD_MAX_BYTES = BaseConfig.UPLOAD_MAX_BYTES
 
 
+def _sniff_family(data: bytes) -> str:
+    """The file family implied by the first bytes of `data`.
+
+    An extension is a claim the client makes; these bytes are what the server
+    actually received. Only the header is read, which is all that is needed to
+    tell an accepted family apart from a text file or a script wearing an
+    image's name.
+    """
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data.startswith(b"%PDF-"):
+        return "pdf"
+    return ""
+
+
+# `jpg` and `jpeg` are one family, so either extension is accepted for a JPEG
+# header and neither is accepted for anything else.
+_UPLOAD_EXT_FAMILY = {
+    "jpg": "jpeg", "jpeg": "jpeg",
+    "png": "png",
+    "gif": "gif",
+    "webp": "webp",
+    "pdf": "pdf",
+}
+
+
 def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
     """Validate and read an incoming UploadFile.
 
     Returns ``(safe_extension, raw_bytes)``. Raises HTTPException on any
-    violation (bad extension, oversized payload, unreadable filename).
+    violation (bad extension, content that is not that type of file, oversized
+    payload, unreadable filename).
+
+    The extension check alone stored whatever it was given, so a `.png` name
+    was enough to persist a text file or a script on the menu (C-085).
     """
     if not upload or not upload.filename:
         raise HTTPException(status_code=400, detail="File is required")
@@ -53,6 +91,12 @@ def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
     data = upload.file.read(UPLOAD_MAX_BYTES + 1)
     if len(data) > UPLOAD_MAX_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds size limit")
+    expected = _UPLOAD_EXT_FAMILY.get(ext)
+    if expected and _sniff_family(data) != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File content is not a valid {expected.upper()} image",
+        )
     return ext, data
 
 
@@ -104,6 +148,64 @@ def upload_menu_image(request: Request, image: UploadFile = File(...)):
     ext, data = _sanitize_upload(image)
     url = _write_upload(data, ext)
     return {"status": "success", "data": {"url": url}}
+
+
+MENU_AVAILABILITY = ("Available", "Out of Stock")
+MODIFIER_TYPES = ("Add-on", "Remove")
+
+
+def _validate_menu_values(
+    *,
+    item_name,
+    description,
+    price,
+    cost_price,
+    tax_percentage,
+    preparation_time,
+    availability_status,
+    is_veg=None,
+    dietary_tags=None,
+):
+    if item_name is not None:
+        item_name = str(item_name).strip()
+        if not item_name:
+            raise HTTPException(status_code=400, detail="item_name is required")
+        if len(item_name) > 150:
+            raise HTTPException(status_code=400, detail="item_name must not exceed 150 characters")
+    if description is not None and len(str(description).strip()) > 255:
+        raise HTTPException(status_code=400, detail="description must not exceed 255 characters")
+    if price is not None and float(price) <= 0:
+        raise HTTPException(status_code=400, detail="price must be greater than zero")
+    if cost_price is not None and float(cost_price) < 0:
+        raise HTTPException(status_code=400, detail="cost_price must be zero or greater")
+    if tax_percentage is not None and not (0 <= float(tax_percentage) <= 100):
+        raise HTTPException(status_code=400, detail="tax_percentage must be between 0 and 100")
+    if preparation_time is not None and int(preparation_time) < 0:
+        raise HTTPException(status_code=400, detail="preparation_time must be zero or greater")
+    if availability_status is not None and availability_status not in MENU_AVAILABILITY:
+        raise HTTPException(status_code=400, detail="availability_status is invalid")
+    if dietary_tags is not None:
+        if not isinstance(dietary_tags, list) or any(len(str(tag).strip()) > 50 for tag in dietary_tags):
+            raise HTTPException(status_code=400, detail="dietary_tags are invalid")
+    return item_name
+
+
+def _validate_variant_value(variant):
+    name = str(variant.variant_name).strip()
+    if not name or len(name) > 50:
+        raise HTTPException(status_code=400, detail="variant_name must be 1-50 characters")
+    if float(variant.price) <= 0:
+        raise HTTPException(status_code=400, detail="variant price must be greater than zero")
+
+
+def _validate_modifier_value(modifier):
+    name = str(modifier.modifier_name).strip()
+    if not name or len(name) > 100:
+        raise HTTPException(status_code=400, detail="modifier_name must be 1-100 characters")
+    if modifier.price is not None and float(modifier.price) < 0:
+        raise HTTPException(status_code=400, detail="modifier price must be zero or greater")
+    if modifier.modifier_type is not None and modifier.modifier_type not in MODIFIER_TYPES:
+        raise HTTPException(status_code=400, detail="modifier_type is invalid")
 
 
 # =====================================================
@@ -187,6 +289,13 @@ class ComboItemIn(BaseModel):
     menu_id: int
     quantity: int = 1
 
+    @field_validator("quantity")
+    @classmethod
+    def quantity_must_be_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("quantity must be at least 1")
+        return value
+
 
 class ComboIn(BaseModel):
     combo_name: str
@@ -196,6 +305,19 @@ class ComboIn(BaseModel):
     valid_to: Optional[datetime] = None
     items: List[ComboItemIn]
 
+    @field_validator("combo_price")
+    @classmethod
+    def price_must_be_positive(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("combo_price must be greater than zero")
+        return value
+
+    @model_validator(mode="after")
+    def dates_must_be_ordered(self):
+        if self.valid_from and self.valid_to and self.valid_to < self.valid_from:
+            raise ValueError("valid_to must be on or after valid_from")
+        return self
+
 
 class ComboUpdate(BaseModel):
     combo_name: Optional[str] = None
@@ -204,6 +326,55 @@ class ComboUpdate(BaseModel):
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
     items: Optional[List[ComboItemIn]] = None
+
+    @field_validator("combo_price")
+    @classmethod
+    def price_must_be_positive(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and value <= 0:
+            raise ValueError("combo_price must be greater than zero")
+        return value
+
+    @model_validator(mode="after")
+    def supplied_dates_must_be_ordered(self):
+        if self.valid_from and self.valid_to and self.valid_to < self.valid_from:
+            raise ValueError("valid_to must be on or after valid_from")
+        return self
+
+
+def _validate_combo_fields(*, combo_name, description, combo_price, valid_from=None, valid_to=None):
+    if combo_name is not None:
+        combo_name = str(combo_name).strip()
+        if not combo_name:
+            raise HTTPException(status_code=400, detail="combo_name is required")
+        if len(combo_name) > 150:
+            raise HTTPException(status_code=400, detail="combo_name must not exceed 150 characters")
+    if description is not None and len(str(description).strip()) > 255:
+        raise HTTPException(status_code=400, detail="description must not exceed 255 characters")
+    if combo_price is not None and float(combo_price) <= 0:
+        raise HTTPException(status_code=400, detail="combo_price must be greater than zero")
+    if valid_from is not None and valid_to is not None and valid_to < valid_from:
+        raise HTTPException(status_code=400, detail="valid_to must be on or after valid_from")
+    return combo_name
+
+
+def _validate_combo_items(db: Session, company_id: str, items: List[ComboItemIn]) -> None:
+    """Reject malformed/stale combo lines before the database raises a raw 500."""
+    menu_ids = [item.menu_id for item in items]
+    if len(menu_ids) != len(set(menu_ids)):
+        raise HTTPException(status_code=400, detail="A menu item can appear only once in a combo")
+    if not menu_ids:
+        raise HTTPException(status_code=400, detail="A combo must contain at least one menu item")
+    found = (
+        db.query(models.RestaurantMenu.id)
+        .filter(
+            models.RestaurantMenu.company_id == company_id,
+            models.RestaurantMenu.status == STATUS,
+            models.RestaurantMenu.id.in_(menu_ids),
+        )
+        .all()
+    )
+    if len(found) != len(set(menu_ids)):
+        raise HTTPException(status_code=400, detail="One or more menu items are unavailable")
 
 
 # =====================================================
@@ -275,7 +446,55 @@ def list_sub_categories(request: Request, category_id: Optional[int] = Query(Non
 def create_menu_item(payload: MenuItemIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
     try:
+        item_name = _validate_menu_values(
+            item_name=payload.item_name,
+            description=payload.description,
+            price=payload.price,
+            cost_price=payload.cost_price,
+            tax_percentage=payload.tax_percentage,
+            preparation_time=payload.preparation_time,
+            availability_status=payload.availability_status,
+            is_veg=payload.is_veg,
+            dietary_tags=payload.dietary_tags,
+        )
+        category = db.query(models.MenuCategory).filter(
+            models.MenuCategory.id == payload.category_id,
+            models.MenuCategory.company_id == company_id,
+            models.MenuCategory.status == STATUS,
+        ).first()
+        if not category:
+            raise HTTPException(status_code=400, detail="category_id does not exist")
+        kitchen = db.query(models.Kitchen).filter(
+            models.Kitchen.id == payload.kitchen_id,
+            models.Kitchen.company_id == company_id,
+            models.Kitchen.status == STATUS,
+        ).first()
+        if not kitchen:
+            raise HTTPException(status_code=400, detail="kitchen_id does not exist")
+        if payload.sub_category_id is not None:
+            sub = db.query(models.MenuSubCategory).filter(
+                models.MenuSubCategory.id == payload.sub_category_id,
+                models.MenuSubCategory.category_id == payload.category_id,
+                models.MenuSubCategory.company_id == company_id,
+                models.MenuSubCategory.status == STATUS,
+            ).first()
+            if not sub:
+                raise HTTPException(status_code=400, detail="sub_category_id does not belong to category")
+        duplicate = db.query(models.RestaurantMenu).filter(
+            models.RestaurantMenu.company_id == company_id,
+            models.RestaurantMenu.branch_id == "MAIN",
+            models.RestaurantMenu.category_id == payload.category_id,
+            models.RestaurantMenu.status == STATUS,
+            func.lower(models.RestaurantMenu.item_name) == item_name.lower(),
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=409, detail="An active menu item with this name already exists in the category")
+        for variant in payload.variants or []:
+            _validate_variant_value(variant)
+        for modifier in payload.modifiers or []:
+            _validate_modifier_value(modifier)
         data = payload.dict(exclude={"variants", "modifiers"})
+        data["item_name"] = item_name
         item = models.RestaurantMenu(
             item_code=gen_code("ITM"),
             has_variants=bool(payload.variants),
@@ -291,11 +510,18 @@ def create_menu_item(payload: MenuItemIn, request: Request, db: Session = Depend
         for m in (payload.modifiers or []):
             db.add(models.MenuModifier(menu_id=item.id, created_by=user_id, company_id=company_id, **m.dict()))
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="An active menu item with this name already exists in the category")
         db.refresh(item)
         return {"status": "success", "data": {"id": item.id, "item_code": item.item_code}}
     except HTTPException:
         raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An active menu item with this name already exists in the category")
     except Exception as e:
         db.rollback()
         raise _server_error(e)
@@ -360,10 +586,64 @@ def update_menu_item(menu_id: int, payload: MenuItemUpdate, request: Request, db
     )
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
-    for field, value in payload.dict(exclude_unset=True).items():
+    updates = payload.dict(exclude_unset=True)
+    candidate_name = _validate_menu_values(
+        item_name=updates.get("item_name", item.item_name),
+        description=updates.get("description", item.description),
+        price=updates.get("price", item.price),
+        cost_price=updates.get("cost_price", item.cost_price),
+        tax_percentage=updates.get("tax_percentage", item.tax_percentage),
+        preparation_time=updates.get("preparation_time", item.preparation_time),
+        availability_status=updates.get("availability_status", item.availability_status),
+        is_veg=updates.get("is_veg", item.is_veg),
+        dietary_tags=updates.get("dietary_tags", item.dietary_tags),
+    )
+    candidate_category = updates.get("category_id", item.category_id)
+    candidate_kitchen = updates.get("kitchen_id", item.kitchen_id)
+    category = db.query(models.MenuCategory).filter(
+        models.MenuCategory.id == candidate_category,
+        models.MenuCategory.company_id == company_id,
+        models.MenuCategory.status == STATUS,
+    ).first()
+    if not category:
+        raise HTTPException(status_code=400, detail="category_id does not exist")
+    kitchen = db.query(models.Kitchen).filter(
+        models.Kitchen.id == candidate_kitchen,
+        models.Kitchen.company_id == company_id,
+        models.Kitchen.status == STATUS,
+    ).first()
+    if not kitchen:
+        raise HTTPException(status_code=400, detail="kitchen_id does not exist")
+    candidate_sub = updates.get("sub_category_id", item.sub_category_id)
+    if candidate_sub is not None:
+        sub = db.query(models.MenuSubCategory).filter(
+            models.MenuSubCategory.id == candidate_sub,
+            models.MenuSubCategory.category_id == candidate_category,
+            models.MenuSubCategory.company_id == company_id,
+            models.MenuSubCategory.status == STATUS,
+        ).first()
+        if not sub:
+            raise HTTPException(status_code=400, detail="sub_category_id does not belong to category")
+    duplicate = db.query(models.RestaurantMenu).filter(
+        models.RestaurantMenu.company_id == company_id,
+        models.RestaurantMenu.branch_id == item.branch_id,
+        models.RestaurantMenu.category_id == candidate_category,
+        models.RestaurantMenu.status == STATUS,
+        models.RestaurantMenu.id != item.id,
+        func.lower(models.RestaurantMenu.item_name) == candidate_name.lower(),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="An active menu item with this name already exists in the category")
+    for field, value in updates.items():
         setattr(item, field, value)
+    if "item_name" in updates:
+        item.item_name = candidate_name
     item.updated_by = user_id
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An active menu item with this name already exists in the category")
     return {"status": "success", "message": "Menu item updated"}
 
 
@@ -396,10 +676,22 @@ def create_menu_variant(menu_id: int, payload: VariantIn, request: Request, db: 
     )
     if not menu:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
+    _validate_variant_value(payload)
+    duplicate = db.query(models.MenuVariant).filter(
+        models.MenuVariant.menu_id == menu_id,
+        models.MenuVariant.status == STATUS,
+        func.lower(models.MenuVariant.variant_name) == payload.variant_name.strip().lower(),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Variant name already exists")
     variant = models.MenuVariant(menu_id=menu_id, created_by=user_id, company_id=company_id, **payload.dict())
     db.add(variant)
     menu.has_variants = True
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Variant name already exists")
     db.refresh(variant)
     return {"status": "success", "data": {"id": variant.id}}
 
@@ -414,10 +706,28 @@ def update_menu_variant(variant_id: int, payload: VariantUpdate, request: Reques
     )
     if not variant:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
-    for field, value in payload.dict(exclude_unset=True).items():
+    updates = payload.dict(exclude_unset=True)
+    candidate_name = updates.get("variant_name", variant.variant_name).strip()
+    candidate_price = updates.get("price", variant.price)
+    if not candidate_name or len(candidate_name) > 50 or float(candidate_price) <= 0:
+        raise HTTPException(status_code=400, detail="Variant name/price is invalid")
+    duplicate = db.query(models.MenuVariant).filter(
+        models.MenuVariant.menu_id == variant.menu_id,
+        models.MenuVariant.status == STATUS,
+        models.MenuVariant.id != variant.id,
+        func.lower(models.MenuVariant.variant_name) == candidate_name.lower(),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Variant name already exists")
+    for field, value in updates.items():
         setattr(variant, field, value)
+    variant.variant_name = candidate_name
     variant.updated_by = user_id
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Variant name already exists")
     return {"status": "success", "message": "Variant updated"}
 
 
@@ -459,9 +769,21 @@ def create_menu_modifier(menu_id: int, payload: ModifierIn, request: Request, db
     )
     if not menu:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Menu item not found")
+    _validate_modifier_value(payload)
+    duplicate = db.query(models.MenuModifier).filter(
+        models.MenuModifier.menu_id == menu_id,
+        models.MenuModifier.status == STATUS,
+        func.lower(models.MenuModifier.modifier_name) == payload.modifier_name.strip().lower(),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Modifier already exists")
     modifier = models.MenuModifier(menu_id=menu_id, created_by=user_id, company_id=company_id, **payload.dict())
     db.add(modifier)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Modifier already exists")
     db.refresh(modifier)
     return {"status": "success", "data": {"id": modifier.id}}
 
@@ -476,10 +798,29 @@ def update_menu_modifier(modifier_id: int, payload: ModifierUpdate, request: Req
     )
     if not modifier:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modifier not found")
-    for field, value in payload.dict(exclude_unset=True).items():
+    updates = payload.dict(exclude_unset=True)
+    candidate_name = updates.get("modifier_name", modifier.modifier_name).strip()
+    candidate_price = updates.get("price", modifier.price)
+    candidate_type = updates.get("modifier_type", modifier.modifier_type)
+    if not candidate_name or len(candidate_name) > 100 or (candidate_price is not None and float(candidate_price) < 0) or (candidate_type is not None and candidate_type not in MODIFIER_TYPES):
+        raise HTTPException(status_code=400, detail="Modifier fields are invalid")
+    duplicate = db.query(models.MenuModifier).filter(
+        models.MenuModifier.menu_id == modifier.menu_id,
+        models.MenuModifier.status == STATUS,
+        models.MenuModifier.id != modifier.id,
+        func.lower(models.MenuModifier.modifier_name) == candidate_name.lower(),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Modifier already exists")
+    for field, value in updates.items():
         setattr(modifier, field, value)
+    modifier.modifier_name = candidate_name
     modifier.updated_by = user_id
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Modifier already exists")
     return {"status": "success", "message": "Modifier updated"}
 
 
@@ -505,10 +846,27 @@ def deactivate_menu_modifier(modifier_id: int, request: Request, db: Session = D
 @router.post("/combo", status_code=status.HTTP_201_CREATED)
 def create_combo(payload: ComboIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
+    _validate_combo_fields(
+        combo_name=payload.combo_name,
+        description=payload.description,
+        combo_price=payload.combo_price,
+        valid_from=payload.valid_from,
+        valid_to=payload.valid_to,
+    )
+    _validate_combo_items(db, company_id, payload.items)
+    duplicate = db.query(models.ComboDeal).filter(
+        models.ComboDeal.company_id == company_id,
+        models.ComboDeal.branch_id == "MAIN",
+        models.ComboDeal.status == STATUS,
+        models.ComboDeal.is_active == True,
+        func.lower(models.ComboDeal.combo_name) == payload.combo_name.strip().lower(),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="An active combo with this name already exists")
     try:
         combo = models.ComboDeal(
             combo_code=gen_code("CMB"),
-            combo_name=payload.combo_name,
+            combo_name=payload.combo_name.strip(),
             description=payload.description,
             combo_price=payload.combo_price,
             valid_from=payload.valid_from,
@@ -526,6 +884,9 @@ def create_combo(payload: ComboIn, request: Request, db: Session = Depends(get_d
         return {"status": "success", "data": {"id": combo.id, "combo_code": combo.combo_code}}
     except HTTPException:
         raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An active combo with this name already exists")
     except Exception as e:
         db.rollback()
         raise _server_error(e)
@@ -554,13 +915,38 @@ def update_combo(combo_id: int, payload: ComboUpdate, request: Request, db: Sess
     combo = (
         db.query(models.ComboDeal)
         .filter(models.ComboDeal.id == combo_id, models.ComboDeal.company_id == company_id)
+        .with_for_update()
         .first()
     )
     if not combo:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Combo not found")
+    fields = payload.dict(exclude_unset=True, exclude={"items"})
+    effective_from = fields.get("valid_from", combo.valid_from)
+    effective_to = fields.get("valid_to", combo.valid_to)
+    candidate_name = _validate_combo_fields(
+        combo_name=fields.get("combo_name", combo.combo_name),
+        description=fields.get("description", combo.description),
+        combo_price=fields.get("combo_price", combo.combo_price),
+        valid_from=effective_from,
+        valid_to=effective_to,
+    )
+    duplicate = db.query(models.ComboDeal).filter(
+        models.ComboDeal.company_id == company_id,
+        models.ComboDeal.branch_id == combo.branch_id,
+        models.ComboDeal.status == STATUS,
+        models.ComboDeal.is_active == True,
+        models.ComboDeal.id != combo.id,
+        func.lower(models.ComboDeal.combo_name) == candidate_name.lower(),
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail="An active combo with this name already exists")
+    if payload.items is not None:
+        _validate_combo_items(db, company_id, payload.items)
     try:
-        for field, value in payload.dict(exclude_unset=True, exclude={"items"}).items():
+        for field, value in fields.items():
             setattr(combo, field, value)
+        if "combo_name" in fields:
+            combo.combo_name = candidate_name
         combo.updated_by = user_id
         if payload.items is not None:
             db.query(models.ComboItem).filter(models.ComboItem.combo_id == combo_id).delete()
@@ -570,6 +956,9 @@ def update_combo(combo_id: int, payload: ComboUpdate, request: Request, db: Sess
         return {"status": "success", "message": "Combo updated"}
     except HTTPException:
         raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An active combo with this name already exists")
     except Exception as e:
         db.rollback()
         raise _server_error(e)

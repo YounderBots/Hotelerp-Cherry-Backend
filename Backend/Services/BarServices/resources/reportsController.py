@@ -36,7 +36,12 @@ def daily_sales(request: Request, report_date: Optional[date] = Query(None), db:
 
     bills = (
         db.query(models.BarBill)
-        .filter(models.BarBill.company_id == company_id, models.BarBill.bill_date == d, models.BarBill.bill_status != "Cancelled")
+        .filter(
+            models.BarBill.company_id == company_id,
+            models.BarBill.bill_date == d,
+            models.BarBill.status == STATUS,
+            models.BarBill.bill_status != "Cancelled",
+        )
         .all()
     )
     total_bills = len(bills)
@@ -80,7 +85,14 @@ def item_sales(request: Request, report_date: Optional[date] = Query(None), db: 
             func.sum(models.BarBillItem.amount).label("total_amount"),
         )
         .join(models.BarBill, models.BarBill.id == models.BarBillItem.bill_id)
-        .filter(models.BarBill.company_id == company_id, models.BarBill.bill_date == d, models.BarBill.bill_status != "Cancelled")
+        .filter(
+            models.BarBill.company_id == company_id,
+            models.BarBill.bill_date == d,
+            models.BarBill.status == STATUS,
+            models.BarBill.bill_status != "Cancelled",
+            models.BarBillItem.company_id == company_id,
+            models.BarBillItem.status == STATUS,
+        )
         .group_by(models.BarBillItem.menu_id, models.BarBillItem.item_name)
         .order_by(func.sum(models.BarBillItem.amount).desc())
         .all()
@@ -102,6 +114,9 @@ def payment_mode_report(request: Request, report_date: Optional[date] = Query(No
         .join(models.BarBillPayment, models.BarBillPayment.payment_method_id == models.BarPaymentMethod.id)
         .filter(
             models.BarBillPayment.company_id == company_id,
+            models.BarBillPayment.status == STATUS,
+            models.BarPaymentMethod.company_id == company_id,
+            models.BarPaymentMethod.status == STATUS,
             models.BarBillPayment.payment_date == d,
             models.BarBillPayment.payment_status == "Success",
         )
@@ -119,7 +134,11 @@ def staff_performance(request: Request, report_date: Optional[date] = Query(None
 
     shifts = (
         db.query(models.BarStaffAssignment)
-        .filter(models.BarStaffAssignment.company_id == company_id, models.BarStaffAssignment.shift_date == d)
+        .filter(
+            models.BarStaffAssignment.company_id == company_id,
+            models.BarStaffAssignment.status == STATUS,
+            models.BarStaffAssignment.shift_date == d,
+        )
         .all()
     )
     data = [
@@ -143,7 +162,12 @@ def cancelled_orders(request: Request, report_date: Optional[date] = Query(None)
 
     rows = (
         db.query(models.BarOrder)
-        .filter(models.BarOrder.company_id == company_id, models.BarOrder.order_date == d, models.BarOrder.order_status == "Cancelled")
+        .filter(
+            models.BarOrder.company_id == company_id,
+            models.BarOrder.status == STATUS,
+            models.BarOrder.order_date == d,
+            models.BarOrder.order_status == "Cancelled",
+        )
         .all()
     )
     return {"status": "success", "count": len(rows), "data": rows}
@@ -156,7 +180,11 @@ def station_performance(request: Request, report_date: Optional[date] = Query(No
 
     tickets = (
         db.query(models.BarOrderTicket)
-        .filter(models.BarOrderTicket.company_id == company_id, func.date(models.BarOrderTicket.created_at) == d)
+        .filter(
+            models.BarOrderTicket.company_id == company_id,
+            models.BarOrderTicket.status == STATUS,
+            func.date(models.BarOrderTicket.created_at) == d,
+        )
         .all()
     )
     by_station = {}
@@ -169,7 +197,17 @@ def station_performance(request: Request, report_date: Optional[date] = Query(No
                 entry["prep_seconds"].append((t.completed_at - t.acknowledged_at).total_seconds())
 
     station_ids = list(by_station.keys())
-    stations = db.query(models.BarStation).filter(models.BarStation.id.in_(station_ids)).all() if station_ids else []
+    stations = (
+        db.query(models.BarStation)
+        .filter(
+            models.BarStation.id.in_(station_ids),
+            models.BarStation.company_id == company_id,
+            models.BarStation.status == STATUS,
+        )
+        .all()
+        if station_ids
+        else []
+    )
     station_by_id = {s.id: s for s in stations}
 
     data = []
@@ -194,7 +232,12 @@ def table_turnover(request: Request, report_date: Optional[date] = Query(None), 
 
     rows = (
         db.query(models.BarOrder.table_code, func.count(models.BarOrder.id).label("orders_count"))
-        .filter(models.BarOrder.company_id == company_id, models.BarOrder.order_date == d, models.BarOrder.table_code.isnot(None))
+        .filter(
+            models.BarOrder.company_id == company_id,
+            models.BarOrder.status == STATUS,
+            models.BarOrder.order_date == d,
+            models.BarOrder.table_code.isnot(None),
+        )
         .group_by(models.BarOrder.table_code)
         .all()
     )

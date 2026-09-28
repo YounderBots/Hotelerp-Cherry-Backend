@@ -3,7 +3,10 @@ const findInChildren = (children, pathname, path) => {
     const child = children[i];
     const currentPath = [...path, i];
 
-    if (child.path && pathname === child.path) {
+    // Case-insensitive: the router matches `/Identification_Proof` to the
+    // `/identification_proof` route, so the sidebar has to highlight the same
+    // row rather than fall back to no highlight at all.
+    if (child.path && pathname === child.path.toLowerCase()) {
       return currentPath;
     }
 
@@ -29,11 +32,15 @@ const findInChildren = (children, pathname, path) => {
 const findMenuByPath = (menu, pathname) => {
   if (!Array.isArray(menu) || menu.length === 0) return null;
 
+  // Callers pass the raw `location.pathname`; every comparison below is against
+  // a canonical lower-case menu path, so normalise once here (C-081).
+  const target = (pathname || "").toLowerCase();
+
   // 1) Exact submenu leaf match.
   for (let i = 0; i < menu.length; i += 1) {
     const item = menu[i];
     if (Array.isArray(item.children) && item.children.length > 0) {
-      const childPath = findInChildren(item.children, pathname, []);
+      const childPath = findInChildren(item.children, target, []);
       if (childPath) {
         return { activeMenu: item, activePath: childPath };
       }
@@ -43,7 +50,7 @@ const findMenuByPath = (menu, pathname) => {
   // 2) Exact top-level match.
   for (let i = 0; i < menu.length; i += 1) {
     const item = menu[i];
-    if (item.path && pathname === item.path) {
+    if (item.path && target === item.path.toLowerCase()) {
       return { activeMenu: item, activePath: [] };
     }
   }
@@ -52,10 +59,11 @@ const findMenuByPath = (menu, pathname) => {
   //    `/foobar`).
   for (let i = 0; i < menu.length; i += 1) {
     const item = menu[i];
+    const itemPath = item.path ? item.path.toLowerCase() : "";
     if (
-      item.path &&
-      pathname.startsWith(item.path) &&
-      (pathname.length === item.path.length || pathname[item.path.length] === "/")
+      itemPath &&
+      target.startsWith(itemPath) &&
+      (target.length === itemPath.length || target[itemPath.length] === "/")
     ) {
       return { activeMenu: item, activePath: [] };
     }

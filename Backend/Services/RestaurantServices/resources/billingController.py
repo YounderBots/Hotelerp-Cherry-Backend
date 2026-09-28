@@ -6,8 +6,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from models import get_db, models
+from resources.orderController import _modifier_data, _totals_for_pricing, pricing_for_items
 from resources.utils import verify_authentication
 from configs.base_config import CommonWords
 
@@ -162,6 +164,7 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
     order = (
         db.query(models.RestaurantOrder)
         .filter(models.RestaurantOrder.id == order_id, models.RestaurantOrder.company_id == company_id)
+        .with_for_update()
         .first()
     )
     if not order:
@@ -193,7 +196,15 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
         )
 
     try:
-        sub_total = sum((i.price or 0) * (i.quantity or 0) for i in order_items)
+        # Use the same persisted price breakdown as the order endpoint.  The
+        # base item price is never changed to include a modifier, so billing it
+        # separately here would either omit the modifier or count it twice.
+        item_pricing = pricing_for_items(db, order_items)
+        sub_total, order_grand_total = _totals_for_pricing(order, item_pricing)
+        # Keep the order's persisted totals authoritative as well.  This also
+        # repairs orders written before modifier prices were included.
+        order.sub_total = sub_total
+        order.grand_total = order_grand_total
 
         cgst_amount = _round(sub_total * (payload.cgst_percentage or 0) / 100)
         sgst_amount = _round(sub_total * (payload.sgst_percentage or 0) / 100)
@@ -240,7 +251,8 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
 
         for i in order_items:
             menu = db.query(models.RestaurantMenu).filter(models.RestaurantMenu.id == i.menu_id).first()
-            amount = (i.price or 0) * (i.quantity or 0)
+            line_pricing = item_pricing[i.id]
+            amount = line_pricing["line_total"]
             db.add(
                 models.RestaurantBillItem(
                     bill_id=bill.id,
@@ -248,7 +260,9 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
                     menu_id=i.menu_id,
                     item_name=menu.item_name if menu else "Item",
                     quantity=i.quantity,
-                    rate=i.price,
+                    # The persisted rate is the effective per-unit rate; the
+                    # response also exposes the base and modifier components.
+                    rate=line_pricing["effective_rate"],
                     amount=amount,
                     tax_amount=_round(amount * ((payload.cgst_percentage or 0) + (payload.sgst_percentage or 0)) / 100),
                     created_by=user_id,
@@ -262,6 +276,9 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
         return {"status": "success", "data": {"id": bill.id, "bill_number": bill.bill_number, "grand_total": bill.grand_total}}
     except HTTPException:
         raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A bill already exists for this order")
     except Exception as e:
         db.rollback()
         raise _server_error(e)
@@ -298,6 +315,23 @@ def get_bill(bill_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
     items = db.query(models.RestaurantBillItem).filter(models.RestaurantBillItem.bill_id == bill_id).all()
     payments = db.query(models.RestaurantBillPayment).filter(models.RestaurantBillPayment.bill_id == bill_id).all()
+    for item in items:
+        modifiers = (
+            db.query(models.RestaurantOrderItemModifier)
+            .filter(models.RestaurantOrderItemModifier.order_item_id == item.order_item_id)
+            .order_by(models.RestaurantOrderItemModifier.id.asc())
+            .all()
+        )
+        modifier_total = _round(sum(float(modifier.price or 0) for modifier in modifiers))
+        # Keep returning the ORM rows (the endpoint historically did), while
+        # attaching the price breakdown for API consumers and direct callers.
+        item.modifier_ids = [modifier.modifier_id for modifier in modifiers]
+        item.modifier_names = [modifier.modifier_name for modifier in modifiers]
+        item.modifiers = [_modifier_data(modifier) for modifier in modifiers]
+        item.modifier_total = modifier_total
+        item.base_rate = _round((item.rate or 0) - modifier_total)
+        item.unit_price = item.rate
+        item.total_price = item.amount
     return {"status": "success", "data": {**bill.__dict__, "items": items, "payments": payments}}
 
 

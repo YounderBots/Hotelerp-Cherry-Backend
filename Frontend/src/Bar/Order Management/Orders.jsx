@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Plus, Send, XCircle } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
@@ -55,7 +55,11 @@ const Orders = () => {
   const [cancelRow, setCancelRow] = useState(null);
   const [removeItemRow, setRemoveItemRow] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [formError, setFormError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
   const [pick, setPick] = useState(emptyPick);
@@ -103,13 +107,14 @@ const Orders = () => {
   };
 
   const createOrder = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (formData.order_type === "At Table" && !formData.table_id) {
       setFormError("Select a table for an At Table order.");
       return;
     }
 
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     try {
       const res = await APICall.postT("/bar/order", {
@@ -122,18 +127,19 @@ const Orders = () => {
       showToast("Order created successfully", "success");
       setShowNewModal(false);
       setFormData(initialForm);
-      load();
+      await load();
       // Straight into the item picker: an order with no items is not useful.
       openDetail({ id: res?.data?.id });
     } catch (err) {
       setFormError(errMsg(err, "Failed to create order."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const addItem = async () => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
     if (!pick.menuId) {
       setFormError("Choose a menu item to add.");
       return;
@@ -144,6 +150,7 @@ const Orders = () => {
     }
 
     setFormError(null);
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.postT(`/bar/order/${detailOrder.id}/items`, {
@@ -162,25 +169,32 @@ const Orders = () => {
     } catch (err) {
       setFormError(errMsg(err, "Failed to add item."));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const confirmRemoveItem = async () => {
-    const item = removeItemRow;
-    setRemoveItemRow(null);
+    if (!removeItemRow || removing || busyRef.current) return;
+    setRemoving(true);
+    busyRef.current = true;
     try {
-      await APICall.deleteT(`/bar/order/item/${item.id}`);
+      await APICall.deleteT(`/bar/order/item/${removeItemRow.id}`);
       showToast("Item removed from order", "delete");
       await refreshDetail();
+      setRemoveItemRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to remove item."), "error");
+    } finally {
+      busyRef.current = false;
+      setRemoving(false);
     }
   };
 
   const sendToBar = async () => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
     setFormError(null);
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.postT(`/bar/order/${detailOrder.id}/confirm`, {});
@@ -189,13 +203,15 @@ const Orders = () => {
     } catch (err) {
       setFormError(errMsg(err, "Failed to send order to the bar."));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const markServed = async () => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
     setFormError(null);
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.putT(`/bar/order/${detailOrder.id}/status`, {
@@ -206,6 +222,7 @@ const Orders = () => {
     } catch (err) {
       setFormError(errMsg(err, "Failed to mark order as served."));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -213,16 +230,21 @@ const Orders = () => {
   // Cancelling used to happen on a single click of a red trash icon, with no
   // confirmation and no feedback — the row simply changed on the next reload.
   const confirmCancel = async () => {
-    const row = cancelRow;
-    setCancelRow(null);
+    if (!cancelRow || cancelling || busyRef.current) return;
+    setCancelling(true);
+    busyRef.current = true;
     try {
-      await APICall.putT(`/bar/order/${row.id}/status`, {
+      await APICall.putT(`/bar/order/${cancelRow.id}/status`, {
         order_status: "Cancelled",
       });
       showToast("Order cancelled", "delete");
-      load();
+      await load();
+      setCancelRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to cancel order."), "error");
+    } finally {
+      busyRef.current = false;
+      setCancelling(false);
     }
   };
 
@@ -550,10 +572,10 @@ const Orders = () => {
       {/* ================= CANCEL ORDER ================= */}
       <ConfirmModal
         isOpen={!!cancelRow}
-        onClose={() => setCancelRow(null)}
+        onClose={() => (cancelling ? null : setCancelRow(null))}
         onConfirm={confirmCancel}
         title="Cancel Order"
-        confirmText="Cancel order"
+        confirmText={cancelling ? "Cancelling…" : "Cancel order"}
         cancelText="Keep order"
         size="small"
         destructive
@@ -564,10 +586,10 @@ const Orders = () => {
       {/* ================= REMOVE ITEM ================= */}
       <ConfirmModal
         isOpen={!!removeItemRow}
-        onClose={() => setRemoveItemRow(null)}
+        onClose={() => (removing ? null : setRemoveItemRow(null))}
         onConfirm={confirmRemoveItem}
         title="Remove Item"
-        confirmText="Remove"
+        confirmText={removing ? "Removing…" : "Remove"}
         size="small"
         destructive
       >

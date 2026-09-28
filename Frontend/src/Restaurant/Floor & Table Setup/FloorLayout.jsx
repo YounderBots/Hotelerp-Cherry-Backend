@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { ToggleLeft, ToggleRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import TableTemplate from "../../stories/TableTemplate";
@@ -47,6 +47,10 @@ const FloorTable = () => {
   const [viewData, setViewData] = useState(null);
   const [deleteRow, setDeleteRow] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const busyRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [formError, setFormError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
@@ -89,13 +93,14 @@ const FloorTable = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.floor_name.trim() || formData.floor_number === "") {
       setFormError("Floor name and floor number are required.");
       return;
     }
 
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     const payload = {
       floor_name: formData.floor_name.trim(),
@@ -118,10 +123,11 @@ const FloorTable = () => {
       setShowModal(false);
       setEditId(null);
       setFormData(initialForm);
-      reload();
+      await reload();
     } catch (err) {
       setFormError(errMsg(err, "Failed to save floor."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -130,15 +136,17 @@ const FloorTable = () => {
   // a trip through the edit form, so it is guarded by `busyId` instead: a
   // double click used to fire two PUTs that raced to opposite values.
   const toggleOpen = async (row) => {
-    if (busyId) return;
+    if (busyId || busyRef.current) return;
+    busyRef.current = true;
     setBusyId(row.id);
     try {
       await APICall.putT(`/restaurant/floor/${row.id}`, { is_open: !row.is_open });
       showToast(row.is_open ? "Floor closed for service" : "Floor opened for service", "update");
-      reload();
+      await reload();
     } catch (err) {
       showToast(errMsg(err, "Failed to update floor status."), "error");
     } finally {
+      busyRef.current = false;
       setBusyId(null);
     }
   };
@@ -146,14 +154,19 @@ const FloorTable = () => {
   // Was wired straight to the trash icon with no confirmation, so one stray
   // click removed a floor — and every table on it — from service silently.
   const confirmDelete = async () => {
-    const row = deleteRow;
-    setDeleteRow(null);
+    if (!deleteRow || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/restaurant/floor/${row.id}`);
+      await APICall.deleteT(`/restaurant/floor/${deleteRow.id}`);
       showToast("Floor deactivated successfully", "delete");
-      reload();
+      await reload();
+      setDeleteRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to deactivate floor."), "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -240,7 +253,10 @@ const FloorTable = () => {
           {
             label: "Open floor plan",
             variant: "primary",
-            onClick: () => navigate("/view", { state: viewData }),
+            onClick: () =>
+              navigate(`/view?floorId=${encodeURIComponent(viewData.id)}`, {
+                state: viewData,
+              }),
           },
         ]}
       >
@@ -337,10 +353,10 @@ const FloorTable = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteRow}
-        onClose={() => setDeleteRow(null)}
+        onClose={() => (deleting ? null : setDeleteRow(null))}
         onConfirm={confirmDelete}
         title="Deactivate Floor"
-        confirmText="Deactivate"
+        confirmText={deleting ? "Deactivating…" : "Deactivate"}
         size="small"
         destructive
       >

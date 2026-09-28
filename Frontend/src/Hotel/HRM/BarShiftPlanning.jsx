@@ -10,7 +10,7 @@ import { readList } from "../../functions/apiHelpers";
 // decide this page may call them — keep them literal, not composed.
 const api = {
   readList,
-  listShifts: () => APICall.getT("/bar/staff_assignment"),
+  listShifts: (shiftDate) => APICall.getT("/bar/staff_assignment", { shift_date: shiftDate }),
   listEmployees: () => APICall.getT("/user/users"),
   listFloors: () => APICall.getT("/bar/floor"),
   createShift: (body) => APICall.postT("/bar/staff_assignment", body),

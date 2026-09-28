@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
@@ -65,6 +65,7 @@ const KitchenDisplay = ({ title, kitchenType }) => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [selectedKOT, setSelectedKOT] = useState(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   usePolling(reload, autoRefresh ? REFRESH_MS : null);
 
@@ -99,7 +100,8 @@ const KitchenDisplay = ({ title, kitchenType }) => {
   };
 
   const acknowledgeKot = async () => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.putT(`/restaurant/kot/${selectedKOT.id}/acknowledge`, {});
@@ -108,12 +110,14 @@ const KitchenDisplay = ({ title, kitchenType }) => {
     } catch (err) {
       showToast(errMsg(err, "Failed to acknowledge KOT."), "error");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const markItemReady = async (kotItemId) => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.putT(`/restaurant/kot/item/${kotItemId}/status`, {
@@ -124,12 +128,14 @@ const KitchenDisplay = ({ title, kitchenType }) => {
     } catch (err) {
       showToast(errMsg(err, "Failed to mark item ready."), "error");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const markAllReady = async () => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.putT(`/restaurant/kot/${selectedKOT.id}/status`, {
@@ -140,6 +146,7 @@ const KitchenDisplay = ({ title, kitchenType }) => {
     } catch (err) {
       showToast(errMsg(err, "Failed to mark KOT ready."), "error");
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };

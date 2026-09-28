@@ -40,6 +40,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("bar", "bot/item/{id}/status", "PUT"): ("/bar_station",),
     ("bar", "bot/{id}", "GET"): ("/bar_station",),
     ("bar", "bot/{id}/acknowledge", "PUT"): ("/bar_station",),
+    ("bar", "bot/{id}/print", "POST"): ("/bar_station",),
     ("bar", "bot/{id}/status", "PUT"): ("/bar_station",),
     ("bar", "floor", "GET"): ("/bar_floor_layout", "/bar_roster", "/bar_shift_planning", "/bar_table_master",),
     ("bar", "floor", "POST"): ("/bar_floor_layout",),
@@ -211,7 +212,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("restaurant", "combo", "POST"): ("/combo_deals",),
     ("restaurant", "combo/{id}", "DELETE"): ("/combo_deals",),
     ("restaurant", "combo/{id}", "PUT"): ("/combo_deals",),
-    ("restaurant", "floor", "GET"): ("/floor_layout", "/restaurant_roster", "/restaurant_shift_planning", "/table_master",),
+    ("restaurant", "floor", "GET"): ("/floor_layout", "/restaurant_roster", "/restaurant_shift_planning", "/table_master", "/view",),
     ("restaurant", "floor", "POST"): ("/floor_layout",),
     ("restaurant", "floor/{id}", "DELETE"): ("/floor_layout",),
     ("restaurant", "floor/{id}", "PUT"): ("/floor_layout",),
@@ -356,7 +357,6 @@ ACTION_OVERRIDES: dict[tuple[str, str, str], str] = {
 UNCALLED_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     # ---- bar ----
     ("bar", "bill/{id}/split", "POST"),
-    ("bar", "bot/{id}/print", "POST"),
     ("bar", "guest/{id}/address", "POST"),
     ("bar", "guest/{id}/feedback", "POST"),
     ("bar", "guest/{id}/loyalty", "POST"),

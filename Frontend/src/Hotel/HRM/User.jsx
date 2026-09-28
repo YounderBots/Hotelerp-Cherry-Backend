@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import Select from "../../stories/Form/Select";
 import Checkbox from "../../stories/Form/Checkbox";
 import Button from "../../stories/Button";
@@ -24,18 +24,31 @@ const PERMISSIONS = [
 
 const EMPTY_ROW = { view: false, add: false, edit: false, delete: false };
 
-/** The permissions endpoint returns rows keyed by menu; fold them into a map. */
+/** Fold either the legacy flat rows or the navigation-shaped response into a map. */
 const parsePermissions = (res) => {
-  const rows = readList(res);
+  // GET /user/role_permissions/{id} is also used to build the sidebar, so the
+  // service returns {data: {menus: [...]}} with nested permission objects,
+  // rather than the old flat [{menu_id, view_permission, ...}] rows. Accept
+  // both shapes while the page is the only consumer that needs a full matrix.
+  const payload = res?.data;
+  const rows = Array.isArray(payload) ? payload : Array.isArray(payload?.menus) ? payload.menus : [];
   const map = {};
-  for (const row of rows) {
-    map[row.menu_id] = {
-      view: Boolean(row.view_permission),
-      add: Boolean(row.create_permission),
-      edit: Boolean(row.edit_permission),
-      delete: Boolean(row.delete_permission),
-    };
-  }
+  const add = (node) => {
+    if (!node) return;
+    const id = node.menu_id ?? node.id;
+    if (id !== undefined && id !== null) {
+      const p = node.permissions || node;
+      map[String(id)] = {
+        permission_id: node.permission_id ?? (node.menu_id !== undefined ? node.id : undefined),
+        view: Boolean(p.view ?? p.view_permission),
+        add: Boolean(p.add ?? p.create_permission),
+        edit: Boolean(p.edit ?? p.edit_permission),
+        delete: Boolean(p.delete ?? p.delete_permission),
+      };
+    }
+    (node.children || []).forEach(add);
+  };
+  rows.forEach(add);
   return map;
 };
 
@@ -64,6 +77,7 @@ const User = () => {
   // to diff against.
   const [overrides, setOverrides] = useState({});
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const {
     data: saved,
@@ -71,7 +85,7 @@ const User = () => {
     error: matrixError,
     reload: reloadPermissions,
   } = useApiResource(
-    () => APICall.getT(`/user/role_permissions/${encodeURIComponent(selectedRoleId)}`),
+    () => APICall.getT(`/user/role_permissions/${encodeURIComponent(selectedRoleId)}?include_empty=true`),
     {
       select: parsePermissions,
       fallback: "Failed to load role permissions.",
@@ -103,10 +117,13 @@ const User = () => {
   };
 
   const toggleAll = (menuId, on) => {
-    setOverrides((prev) => ({
-      ...prev,
-      [menuId]: { view: on, add: on, edit: on, delete: on },
-    }));
+    setOverrides((prev) => {
+      const current = prev[menuId] || baseline[menuId] || EMPTY_ROW;
+      return {
+        ...prev,
+        [menuId]: { ...current, view: on, add: on, edit: on, delete: on },
+      };
+    });
   };
 
   const dirty = useMemo(
@@ -122,7 +139,7 @@ const User = () => {
   );
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!selectedRoleId) {
       showToast("Select a role first", "error");
       return;
@@ -132,10 +149,11 @@ const User = () => {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     // POST creates the row; a 409 means it already exists, so fall back to PUT.
     const results = await Promise.allSettled(
-      dirty.map(async ({ menu, after }) => {
+      dirty.map(async ({ menu, before, after }) => {
         const body = {
           role_id: Number(selectedRoleId),
           menu_id: Number(menu.id),
@@ -145,6 +163,7 @@ const User = () => {
           edit_permission: after.edit,
           delete_permission: after.delete,
         };
+        if (before.permission_id) body.id = before.permission_id;
         try {
           await APICall.postT("/user/role_permissions", body);
         } catch (err) {
@@ -156,13 +175,14 @@ const User = () => {
         }
       }),
     );
+    savingRef.current = false;
     setSaving(false);
 
     const failed = results.filter((r) => r.status === "rejected");
     if (failed.length === 0) {
       showToast(`Saved permissions for ${dirty.length} menu${dirty.length === 1 ? "" : "s"}`, "success");
       setOverrides({});
-      reloadPermissions();
+      await reloadPermissions();
     } else if (failed.length === dirty.length) {
       showToast(errMsg(failed[0].reason, "Failed to save role permissions"), "error");
     } else {

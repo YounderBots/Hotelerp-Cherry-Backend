@@ -54,7 +54,10 @@ check("discount: in list", len(got) == 1, f"{len(got)} matches")
 check("discount: percentage persisted", got and str(got[0].get("discount_percentage")) == "12.5",
       str(got[0].get("discount_percentage")) if got else "")
 
-for pct, want in ((0, 400), (-5, 400), (101, 400), ("abc", 400), (None, 400)):
+# 0% is a valid discount, not an error: the seeded "No Discount" row is 0%, so
+# the API and the screen accept the whole 0-100 range (C-073). The tidy-up block
+# below removes the 0% row this case creates.
+for pct, want in ((0, 201), (-5, 400), (101, 400), ("abc", 400), (None, 400)):
     s, b = req("POST", "/masterdata/discount", TOK,
                {"country_id": cid, "discount_name": f"ZZPct{pct}", "discount_percentage": pct})
     check(f"discount: percentage {pct!r} -> {want}", s == want, f"{s} {str(b)[:110]}")
@@ -96,6 +99,17 @@ check("tax: duplicate -> 409", s == 409, f"{s} {str(b)[:120]}")
 s, b = req("PUT", "/masterdata/tax", TOK,
            {"id": tid, "country_id": cid, "tax_name": "ZZTaxEdited", "tax_percentage": 9})
 check("tax: update -> 200", s == 200, f"{s} {str(b)[:160]}")
+
+# Same 0-100 rule as discount: the seeded "No Tax" row is 0% (C-074).
+for pct, want in ((0, 201), (-5, 400), (101, 400), ("abc", 400), (None, 400)):
+    s, b = req("POST", "/masterdata/tax", TOK,
+               {"country_id": cid, "tax_name": f"ZZTaxPct{pct}", "tax_percentage": pct})
+    check(f"tax: percentage {pct!r} -> {want}", s == want, f"{s} {str(b)[:110]}")
+
+s, b = req("POST", "/masterdata/tax", TOK,
+           {"country_id": 999999, "tax_name": "ZZTaxNoCountry", "tax_percentage": 5})
+check("tax: unknown country -> 404", s == 404, f"{s} {str(b)[:120]}")
+
 s, b = req("DELETE", f"/masterdata/tax/{tid}", TOK)
 check("tax: delete -> 200", s == 200, f"{s} {str(b)[:120]}")
 

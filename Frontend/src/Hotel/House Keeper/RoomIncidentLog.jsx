@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Paperclip } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import TableFilters, { FilterDate, FilterSelect } from "../../stories/TableFilters";
@@ -17,6 +17,7 @@ import { readList } from "../../functions/apiHelpers";
 import { useApiResources } from "../../hooks/useApiResource";
 import { usePagePermissions } from "../../hooks/usePagePermissions";
 import { useToast } from "../../hooks/useToast";
+import { formatDate, formatDateTime } from "../../functions/formatters";
 
 /**
  * Room Incident Log — what went wrong in a room and what was done about it.
@@ -100,31 +101,7 @@ const EMPTY_FILTERS = { severity: "", from: "", to: "" };
 
 const dayOf = (value) => String(value ?? "").slice(0, 10);
 
-const formatDate = (value) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-};
-
 const formatTime = (value) => (value ? String(value).slice(0, 5) : "—");
-
-const formatDateTime = (value) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
 
 const NoteCell = ({ value }) =>
   value ? (
@@ -151,6 +128,8 @@ const RoomIncidentLog = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [editingRow, setEditingRow] = useState(null);
@@ -366,12 +345,13 @@ const RoomIncidentLog = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!validate()) {
       showToast("Please correct the highlighted fields", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       // Branch on editId. This used to call create unconditionally, so every
@@ -392,12 +372,14 @@ const RoomIncidentLog = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget || deleting) return;
+    if (!deleteTarget || deleting || deletingRef.current) return;
+    deletingRef.current = true;
     setDeleting(true);
     try {
       await APICall.deleteT(`/hotel/roomincident_log/${deleteTarget.id}`);
@@ -407,6 +389,7 @@ const RoomIncidentLog = () => {
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
     } finally {
+      deletingRef.current = false;
       setDeleting(false);
     }
   };

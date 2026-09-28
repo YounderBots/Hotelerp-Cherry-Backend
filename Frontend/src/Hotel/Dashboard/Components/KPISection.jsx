@@ -11,7 +11,7 @@ const dateFmt = new Intl.DateTimeFormat(undefined, {
 });
 
 const initialsOf = (name) => {
-  if (!name || name === "back") return "★";
+  if (!name || name === "back") return "U";
   const parts = String(name).trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
@@ -25,7 +25,7 @@ const formatCurrency = (n) => {
 };
 
 const KPISection = ({
-  displayName = "back",
+  displayName = "User",
   kpis = {},
   loading = false,
   error = null,
@@ -45,7 +45,7 @@ const KPISection = ({
     { title: "Check-In (today)", value: loading ? "…" : formatCount(arrivingToday), type: "checkin" },
     { title: "Check-Out (today)", value: loading ? "…" : formatCount(departingToday), type: "checkout" },
     { title: "Rooms Available", value: loading ? "…" : formatCount(availableRooms), type: "available" },
-    { title: "Total Revenue", value: loading ? "…" : formatCurrency(totalRevenue), type: "revenue", note: "Sum of overall_amount across live reservations" },
+    { title: "Total Revenue", value: loading ? "…" : formatCurrency(totalRevenue), type: "revenue", note: "Dated sales report for today" },
   ];
 
   return (

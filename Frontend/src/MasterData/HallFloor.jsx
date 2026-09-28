@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -22,6 +22,9 @@ const HallFloor = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -35,7 +38,7 @@ const HallFloor = () => {
   const createHallFloor = async () => {
     await APICall.postT("/masterdata/hall_floor", { hall_name: formData.name.trim() });
     showToast("Hall / Floor added successfully", "success");
-    reload();
+    await reload();
   };
 
   const updateHallFloor = async () => {
@@ -44,7 +47,7 @@ const HallFloor = () => {
       hall_name: formData.name.trim(),
     });
     showToast("Hall / Floor updated successfully", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -70,12 +73,13 @@ const HallFloor = () => {
   const handleSave = async () => {
     // Guard plus the disabled Submit below: without both, a double click
     // posted twice and created a duplicate row.
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.name.trim()) {
       showToast("Hall / Floor Name is required", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       // Awaited, so a failed save leaves the modal open with the typed value
@@ -89,19 +93,25 @@ const HallFloor = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/masterdata/hall_floor/${id}`);
+      await APICall.deleteT(`/masterdata/hall_floor/${deleteId}`);
       showToast("Hall / Floor deleted successfully", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -197,10 +207,10 @@ const HallFloor = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Hall / Floor"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

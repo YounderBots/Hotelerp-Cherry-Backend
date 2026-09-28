@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Ban, CreditCard, Printer } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
@@ -74,6 +74,7 @@ const BarBillingPayments = () => {
   const [selectedBill, setSelectedBill] = useState(null);
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [cancelReason, setCancelReason] = useState("");
 
   const [genOrderId, setGenOrderId] = useState("");
@@ -160,12 +161,13 @@ const BarBillingPayments = () => {
   };
 
   const submitCancelBill = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!cancelReason.trim()) {
       setFormError("A reason is required to cancel a bill.");
       return;
     }
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     try {
       await APICall.putT(`/bar/bill/${selectedBill.id}/cancel`, {
@@ -174,16 +176,17 @@ const BarBillingPayments = () => {
       showToast("Bill cancelled", "delete");
       setActiveModal(null);
       setSelectedBill(null);
-      load();
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to cancel bill."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const generateBill = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!genOrderId) {
       setFormError("Select an order to bill.");
       return;
@@ -198,6 +201,7 @@ const BarBillingPayments = () => {
     }
 
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     try {
       await APICall.postT(`/bar/bill/generate/${genOrderId}`, {
@@ -209,16 +213,17 @@ const BarBillingPayments = () => {
       });
       showToast("Bill generated successfully", "success");
       setActiveModal(null);
-      load();
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to generate bill."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const submitPayment = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!payForm.payment_method_id || !payForm.paid_amount) {
       setFormError("Payment mode and amount are required.");
       return;
@@ -229,6 +234,7 @@ const BarBillingPayments = () => {
     }
 
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     try {
       await APICall.postT(`/bar/bill/${selectedBill.id}/payment`, {
@@ -240,10 +246,11 @@ const BarBillingPayments = () => {
       showToast("Payment recorded successfully", "success");
       setActiveModal(null);
       setSelectedBill(null);
-      load();
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to record payment."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

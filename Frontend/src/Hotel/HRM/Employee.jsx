@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -16,6 +16,7 @@ import { readList } from "../../functions/apiHelpers";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
 import { usePagePermissions } from "../../hooks/usePagePermissions";
+import { todayIso } from "../../functions/formatters";
 
 // Gender and marital status have no master-data table in this system, and
 // they are not business reference data an operator maintains — they stay
@@ -115,10 +116,13 @@ const Employee = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [deleteRow, setDeleteRow] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [formData, setFormData] = useState(initialForm);
 
   const lookup = (list, idKey, nameKey) => {
@@ -240,7 +244,7 @@ const Employee = () => {
     if (formData.password && formData.password.length < 6) {
       return "Password must be at least 6 characters";
     }
-    if (isoDay(formData.dob) > isoDay(new Date().toISOString())) {
+    if (isoDay(formData.dob) > todayIso()) {
       return "Date of birth cannot be in the future";
     }
     if (isoDay(formData.date_of_joining) < isoDay(formData.dob)) {
@@ -250,13 +254,14 @@ const Employee = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     const problem = validate();
     if (problem) {
       showToast(problem, "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -266,24 +271,32 @@ const Employee = () => {
         await APICall.postT("/user/users", buildCreateForm());
         showToast("Employee added", "success");
       }
-      reload();
+      await reload();
       closeModal();
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const row = deleteRow;
-    setDeleteRow(null);
+    if (!deleteRow || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/user/users/${row.id}`);
+      await APICall.deleteT(`/user/users/${deleteRow.id}`);
       showToast("Employee deleted", "delete");
-      reload();
+      await reload();
+      setDeleteRow(null);
     } catch (err) {
+      // Keep the confirmation open when the delete fails so the operator can
+      // retry or cancel without losing the target row.
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -608,10 +621,10 @@ const Employee = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteRow}
-        onClose={() => setDeleteRow(null)}
+        onClose={() => (deleting ? null : setDeleteRow(null))}
         onConfirm={confirmDelete}
         title="Delete Employee"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

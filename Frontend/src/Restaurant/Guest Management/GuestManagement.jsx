@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import RowActions from "../../stories/RowActions";
@@ -63,6 +63,9 @@ const GuestManagement = () => {
   const [viewData, setViewData] = useState(null);
   const [deleteRow, setDeleteRow] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
 
@@ -120,12 +123,13 @@ const GuestManagement = () => {
     // Guard plus the disabled Save below: without both, a double click posts
     // twice, and the server answers the second one with "a guest with this
     // mobile number already exists".
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.first_name.trim() || !formData.mobile.trim()) {
       setFormError("First name and mobile number are required.");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     setFormError(null);
     const payload = {
@@ -151,10 +155,11 @@ const GuestManagement = () => {
       setShowGuestModal(false);
       setEditId(null);
       setFormData(initialForm);
-      load();
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to save guest."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -162,14 +167,19 @@ const GuestManagement = () => {
   // DELETE deactivates rather than removing: the guest keeps their visit
   // history and bills, and simply drops out of the active directory.
   const confirmDelete = async () => {
-    const row = deleteRow;
-    setDeleteRow(null);
+    if (!deleteRow || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/restaurant/guest/${row.id}`);
+      await APICall.deleteT(`/restaurant/guest/${deleteRow.id}`);
       showToast("Guest deactivated successfully", "delete");
-      load();
+      await load();
+      setDeleteRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to deactivate guest."), "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -389,10 +399,10 @@ const GuestManagement = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteRow}
-        onClose={() => setDeleteRow(null)}
+        onClose={() => (deleting ? null : setDeleteRow(null))}
         onConfirm={confirmDelete}
         title="Deactivate Guest"
-        confirmText="Deactivate"
+        confirmText={deleting ? "Deactivating…" : "Deactivate"}
         size="small"
         destructive
       >

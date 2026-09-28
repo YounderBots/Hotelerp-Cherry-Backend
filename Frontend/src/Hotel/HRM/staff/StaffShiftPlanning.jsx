@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import TableTemplate from "../../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../../stories/Modal";
 import Input from "../../../stories/Form/Input";
@@ -54,21 +54,24 @@ const StaffShiftPlanning = ({
   pagePath,
   api,
 }) => {
+  const [shiftDate, setShiftDate] = useState(todayIso());
   const {
     data: [shifts, employees, floors],
     loading,
     error,
     reload,
   } = useApiResources([
-    { fetch: api.listShifts, select: api.readList, fallback: `Failed to load ${venueLabel.toLowerCase()} shifts.` },
+    { fetch: () => api.listShifts(shiftDate), select: api.readList, fallback: `Failed to load ${venueLabel.toLowerCase()} shifts.` },
     { fetch: api.listEmployees, select: api.readList },
     { fetch: api.listFloors, select: api.readList },
-  ]);
+  ], { deps: [shiftDate] });
 
   const permissions = usePagePermissions(pagePath);
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -79,7 +82,7 @@ const StaffShiftPlanning = ({
   const initialForm = {
     employee_id: "",
     role: roleOptions[0],
-    shift_date: todayIso(),
+    shift_date: shiftDate,
     shift_start: "09:00",
     shift_end: "17:00",
     floor_id: "",
@@ -87,6 +90,17 @@ const StaffShiftPlanning = ({
     sales_target: "",
   };
   const [formData, setFormData] = useState(initialForm);
+
+  const dateLabel = new Date(`${shiftDate}T00:00:00`).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const moveDate = (days) => {
+    const next = new Date(`${shiftDate}T00:00:00`);
+    next.setDate(next.getDate() + days);
+    setShiftDate(next.toISOString().slice(0, 10));
+  };
 
   const floorName = (id) => floors.find((f) => String(f.id) === String(id))?.floor_name || "—";
 
@@ -155,7 +169,7 @@ const StaffShiftPlanning = ({
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.employee_id) {
       showToast("Employee is required", "error");
       return;
@@ -173,7 +187,15 @@ const StaffShiftPlanning = ({
       showToast("Sales target must be zero or more", "error");
       return;
     }
+    if (!editId && shifts.some((shift) =>
+      String(shift.employee_id) === String(formData.employee_id)
+      && String(shift.shift_date).slice(0, 10) === formData.shift_date
+    )) {
+      showToast("This employee already has a shift on that date", "error");
+      return;
+    }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       // PUT accepts only the mutable subset — employee and date are fixed once
@@ -202,32 +224,41 @@ const StaffShiftPlanning = ({
         });
         showToast("Shift scheduled", "success");
       }
-      reload();
+      await reload();
       closeModal();
     } catch (err) {
       showToast(err?.message || "Failed to save shift", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deletingRef.current) return;
+    deletingRef.current = true;
     try {
-      await api.cancelShift(id);
+      await api.cancelShift(deleteId);
       showToast("Shift cancelled", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Failed to cancel shift", "error");
+    } finally {
+      deletingRef.current = false;
     }
   };
 
   const submitClock = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
+    const amount = clockAmount === "" ? null : Number(clockAmount);
+    if (amount !== null && (Number.isNaN(amount) || amount < 0)) {
+      showToast("Cash amount must be zero or more", "error");
+      return;
+    }
+    savingRef.current = true;
     setSaving(true);
     try {
-      const amount = clockAmount === "" ? null : Number(clockAmount);
       if (clock.direction === "in") {
         await api.clockIn(clock.row.id, { opening_cash_float: amount });
         showToast("Clocked in", "success");
@@ -236,10 +267,11 @@ const StaffShiftPlanning = ({
         showToast("Clocked out", "success");
       }
       setClock(null);
-      reload();
+      await reload();
     } catch (err) {
       showToast(err?.message || "Failed to record clock time", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -351,8 +383,24 @@ const StaffShiftPlanning = ({
     <>
       <ErrorAlert message={error} />
 
+      <div className="roster-date-controls" aria-label="Shift planning date navigation">
+        <button type="button" onClick={() => moveDate(-1)} aria-label="Previous planning day">Previous</button>
+        <label>
+          <span>Planning date</span>
+          <input
+            type="date"
+            value={shiftDate}
+            onChange={(e) => setShiftDate(e.target.value)}
+            aria-label="Planning date"
+          />
+        </label>
+        <button type="button" onClick={() => moveDate(1)} aria-label="Next planning day">Next</button>
+        <button type="button" onClick={() => setShiftDate(todayIso())}>Today</button>
+        <span className="roster-date-label">{dateLabel}</span>
+      </div>
+
       <TableTemplate
-        title={`${venueLabel} Shift Planning`}
+        title={`${venueLabel} Shift Planning — ${dateLabel}`}
         loading={loading}
         emptyMessage={`No ${venueLabel.toLowerCase()} shifts scheduled yet.`}
         hasActionButton={permissions.add}

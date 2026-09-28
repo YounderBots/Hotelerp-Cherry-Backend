@@ -29,7 +29,16 @@ def venue_flow(prefix, ticket_path, label, dine_in):
     s, b = req("GET", f"/{prefix}/table", TOK)
     tables = rows(b)
     check(f"{label}: tables load", s == 200 and len(tables) > 0, f"{s} {len(tables)}")
-    free = [t for t in tables if t.get("table_status") != "Occupied"] or tables
+    # Only an Available table may take a new order: the service refuses
+    # Occupied, Reserved and Cleaning tables with "Table is not available"
+    # (C-060). Picking "anything not Occupied" made this suite fail whenever a
+    # table was mid-clean, so state the real precondition and report it.
+    free = [t for t in tables if t.get("table_status") == "Available"]
+    check(f"{label}: an Available table exists", len(free) > 0,
+          f"statuses={sorted({t.get('table_status') for t in tables})}")
+    if not free:
+        print(f"  ---- {label} skipped: no Available table")
+        return
     table_id = free[0]["id"]
 
     s, b = req("GET", f"/{prefix}/menu", TOK)

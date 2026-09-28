@@ -62,10 +62,9 @@ Frontend/coverage/
 
 # Runtime media served from the services' static mounts.
 #
-# Everything under here is generated or uploaded, never authored: the seed
-# writes room, menu and staff imagery with fresh UUID filenames on every run
-# (Backend/tools/seed/images.py), and the upload endpoints write guest identity
-# proofs and incident photographs beside them.
+# The generated upload trees are NOT ignored any more (see the note at the end
+# of this block). What must never be committed from here is a REAL guest's
+# document: only the seeded SPECIMEN assets belong in this tree.
 #
 # This rule used to say `.../static/uploads/`, which matches nothing -- the
 # real directories are upload_image/, users/, identity_proofs/ and
@@ -74,12 +73,22 @@ Frontend/coverage/
 # and were orphans in every other clone. Worse, a guest identity document
 # uploaded while testing would have been committed too.
 #
-# The images that ARE meant to be in the repo live elsewhere and are not
-# covered by this rule:
+# The images that are meant to be in the repo:
 #   Backend/tools/seed/photos/     vendored source photographs, the seed input
 #   Backend/db/<release>/uploads/  a release export, restored by
 #                                  Backend/tools/restore_uploads.py
-Backend/Services/*/templates/static/
+#
+# CHANGED 2026-09-28: the per-service upload tree below is now TRACKED, at the
+# repository owner's request, so a clone carries the imagery a fresh install
+# displays. The trade-off the rule above was written to avoid is real and still
+# applies: every re-seed mints new UUID filenames
+# (Backend/tools/seed/images.py), so these files are tied to the database they
+# were generated beside. Committing them does NOT make them portable -- for a
+# release that has to match a specific database, use Backend/tools/export_release.py
+# and Backend/db/<release>/uploads/ instead, which is the path the release notes
+# and Backend/db/*/README.md already describe. A real guest's identity document
+# must never reach this tree: it is for the seeded SPECIMEN assets only.
+# Backend/Services/*/templates/static/
 
 # Standalone nested repo, not part of this project
 /hotelerp.in/

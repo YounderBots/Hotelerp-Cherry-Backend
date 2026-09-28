@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Plus, Send, XCircle } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
@@ -56,6 +56,10 @@ const Orders = () => {
   const [cancelRow, setCancelRow] = useState(null);
   const [removeItemRow, setRemoveItemRow] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const busyRef = useRef(false);
+  const removeRef = useRef(false);
+  const cancelRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
@@ -104,7 +108,7 @@ const Orders = () => {
   };
 
   const createOrder = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (formData.order_type === "Dine-In" && !formData.table_id) {
       setFormError("Select a table for a Dine-In order.");
       return;
@@ -115,6 +119,7 @@ const Orders = () => {
     }
 
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     try {
       const res = await APICall.postT("/restaurant/order", {
@@ -128,18 +133,19 @@ const Orders = () => {
       showToast("Order created successfully", "success");
       setShowNewModal(false);
       setFormData(initialForm);
-      load();
+      await load();
       // Straight into the item picker: an order with no items is not useful.
       openDetail({ id: res?.data?.id });
     } catch (err) {
       setFormError(errMsg(err, "Failed to create order."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const addItem = async () => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
     if (!pick.menuId) {
       setFormError("Choose a menu item to add.");
       return;
@@ -150,6 +156,7 @@ const Orders = () => {
     }
 
     setFormError(null);
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.postT(`/restaurant/order/${detailOrder.id}/items`, {
@@ -168,25 +175,30 @@ const Orders = () => {
     } catch (err) {
       setFormError(errMsg(err, "Failed to add item."));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const confirmRemoveItem = async () => {
-    const item = removeItemRow;
-    setRemoveItemRow(null);
+    if (!removeItemRow || removeRef.current) return;
+    removeRef.current = true;
     try {
-      await APICall.deleteT(`/restaurant/order/item/${item.id}`);
+      await APICall.deleteT(`/restaurant/order/item/${removeItemRow.id}`);
       showToast("Item removed from order", "delete");
       await refreshDetail();
+      setRemoveItemRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to remove item."), "error");
+    } finally {
+      removeRef.current = false;
     }
   };
 
   const sendToKitchen = async () => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
     setFormError(null);
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.postT(`/restaurant/order/${detailOrder.id}/confirm`, {});
@@ -195,13 +207,15 @@ const Orders = () => {
     } catch (err) {
       setFormError(errMsg(err, "Failed to send order to the kitchen."));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
 
   const markServed = async () => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
     setFormError(null);
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.putT(`/restaurant/order/${detailOrder.id}/status`, {
@@ -212,6 +226,7 @@ const Orders = () => {
     } catch (err) {
       setFormError(errMsg(err, "Failed to mark order as served."));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -219,16 +234,19 @@ const Orders = () => {
   // Cancelling used to happen on a single click of a red trash icon, with no
   // confirmation and no feedback — the row simply changed on the next reload.
   const confirmCancel = async () => {
-    const row = cancelRow;
-    setCancelRow(null);
+    if (!cancelRow || cancelRef.current) return;
+    cancelRef.current = true;
     try {
-      await APICall.putT(`/restaurant/order/${row.id}/status`, {
+      await APICall.putT(`/restaurant/order/${cancelRow.id}/status`, {
         order_status: "Cancelled",
       });
       showToast("Order cancelled", "delete");
-      load();
+      await load();
+      setCancelRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to cancel order."), "error");
+    } finally {
+      cancelRef.current = false;
     }
   };
 

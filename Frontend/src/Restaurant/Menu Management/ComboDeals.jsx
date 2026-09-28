@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import RowActions from "../../stories/RowActions";
@@ -47,6 +47,9 @@ const ComboDeals = () => {
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
 
   const [formData, setFormData] = useState(initialForm);
@@ -88,14 +91,19 @@ const ComboDeals = () => {
   // Was wired straight to the trash icon: one click deleted a combo with no
   // confirmation and no feedback.
   const confirmDelete = async () => {
-    const row = deleteRow;
-    setDeleteRow(null);
+    if (!deleteRow || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/restaurant/combo/${row.id}`);
+      await APICall.deleteT(`/restaurant/combo/${deleteRow.id}`);
       showToast("Combo deal deleted successfully", "delete");
-      load();
+      await load();
+      setDeleteRow(null);
     } catch (err) {
       showToast(errMsg(err, "Failed to delete combo deal."), "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -119,16 +127,45 @@ const ComboDeals = () => {
   const removeItemRow = (idx) => setItems((rows) => rows.filter((_, i) => i !== idx));
 
   const handleSave = async () => {
+    if (saving || savingRef.current) return;
     const cleanItems = items.filter((it) => it.menu_id);
+    const price = Number(formData.combo_price);
     if (!formData.combo_name.trim() || !formData.combo_price) {
       setFormError("Combo name and price are required.");
+      return;
+    }
+    if (!Number.isFinite(price) || price <= 0) {
+      setFormError("Combo price must be greater than zero.");
+      return;
+    }
+    if (formData.valid_from && formData.valid_to && formData.valid_from > formData.valid_to) {
+      setFormError("Valid-to must be on or after valid-from.");
       return;
     }
     if (cleanItems.length === 0) {
       setFormError("Add at least one menu item to the combo.");
       return;
     }
+    const menuIds = new Set();
+    for (const item of cleanItems) {
+      const quantity = Number(item.quantity);
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        setFormError("Every menu-item quantity must be a positive whole number.");
+        return;
+      }
+      const menuId = Number(item.menu_id);
+      if (!menuItems.some((menu) => Number(menu.id) === menuId)) {
+        setFormError("One of the selected menu items is no longer available. Refresh and try again.");
+        return;
+      }
+      if (menuIds.has(menuId)) {
+        setFormError("A menu item can appear only once in a combo.");
+        return;
+      }
+      menuIds.add(menuId);
+    }
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     const payload = {
       combo_name: formData.combo_name.trim(),
@@ -145,10 +182,11 @@ const ComboDeals = () => {
         await APICall.postT("/restaurant/combo", payload);
       }
       setShowModal(false);
-      load();
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to save combo deal."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -308,10 +346,10 @@ const ComboDeals = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteRow}
-        onClose={() => setDeleteRow(null)}
+        onClose={() => (deleting ? null : setDeleteRow(null))}
         onConfirm={confirmDelete}
         title="Delete Combo Deal"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
@@ -49,6 +49,7 @@ const BarStationDisplay = () => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [selectedBOT, setSelectedBOT] = useState(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   const { data: stations, error: stationsError } = useApiResource(
     () => APICall.getT("/bar/station"),
@@ -86,9 +87,21 @@ const BarStationDisplay = () => {
     }
   };
 
-  const closeItemsModal = () => {
+  const closeItemsModal = async () => {
     setSelectedBOT(null);
-    reload();
+    await reload();
+  };
+
+  const beginAction = () => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setBusy(true);
+    return true;
+  };
+
+  const endAction = () => {
+    busyRef.current = false;
+    setBusy(false);
   };
 
   const refreshBot = async (id) => {
@@ -97,8 +110,7 @@ const BarStationDisplay = () => {
   };
 
   const acknowledgeBot = async () => {
-    if (busy) return;
-    setBusy(true);
+    if (!beginAction()) return;
     try {
       await APICall.putT(`/bar/bot/${selectedBOT.id}/acknowledge`, {});
       showToast("BOT acknowledged", "update");
@@ -106,13 +118,12 @@ const BarStationDisplay = () => {
     } catch (err) {
       showToast(errMsg(err, "Failed to acknowledge BOT."), "error");
     } finally {
-      setBusy(false);
+      endAction();
     }
   };
 
   const markItemReady = async (botItemId) => {
-    if (busy) return;
-    setBusy(true);
+    if (!beginAction()) return;
     try {
       await APICall.putT(`/bar/bot/item/${botItemId}/status`, {
         preparation_status: "Ready",
@@ -122,21 +133,33 @@ const BarStationDisplay = () => {
     } catch (err) {
       showToast(errMsg(err, "Failed to mark item ready."), "error");
     } finally {
-      setBusy(false);
+      endAction();
     }
   };
 
   const markAllReady = async () => {
-    if (busy) return;
-    setBusy(true);
+    if (!beginAction()) return;
     try {
       await APICall.putT(`/bar/bot/${selectedBOT.id}/status`, { bot_status: "Completed" });
       showToast("BOT completed", "success");
-      closeItemsModal();
+      await closeItemsModal();
     } catch (err) {
       showToast(errMsg(err, "Failed to mark BOT ready."), "error");
     } finally {
-      setBusy(false);
+      endAction();
+    }
+  };
+
+  const printSelectedBot = async () => {
+    if (!selectedBOT || !beginAction()) return;
+    try {
+      const res = await APICall.postT(`/bar/bot/${selectedBOT.id}/print`, {});
+      showToast(`BOT queued for printing (${res?.data?.print_count ?? "updated"})`, "update");
+      await refreshBot(selectedBOT.id);
+    } catch (err) {
+      showToast(errMsg(err, "Failed to print BOT."), "error");
+    } finally {
+      endAction();
     }
   };
 
@@ -247,6 +270,16 @@ const BarStationDisplay = () => {
         showFooter
         actions={[
           { label: "Close", variant: "secondary", onClick: closeItemsModal },
+          ...(perms.edit
+            ? [
+                {
+                  label: "Print BOT",
+                  variant: "secondary",
+                  onClick: printSelectedBot,
+                  disabled: busy,
+                },
+              ]
+            : []),
           ...(selectedBOT?.bot_status === "New" && perms.edit
             ? [
                 {

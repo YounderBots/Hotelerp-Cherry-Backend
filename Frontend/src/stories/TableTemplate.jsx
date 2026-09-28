@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './TableTemplate.css';
 import InputField from './InputField'; // Assuming you have this component
 import Button from './Button';
@@ -124,6 +124,40 @@ const BadgeCell = ({ status, type = 'status' }) => {
   return <span className={`table-cell-badge ${badgeClass}`}>{label}</span>;
 };
 
+const formatCellValue = (value, colKey) => {
+  if (value === null || value === undefined) return '';
+
+  if (typeof value === 'object') {
+    if (colKey === 'user') {
+      return `${value.name} (${value.email})`;
+    }
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+};
+
+const resolveExportValue = (row, column) => {
+  const value = row[column.key];
+
+  if (column.exportValue) return column.exportValue(row);
+
+  switch (column.type) {
+    case 'avatar':
+      return value?.name || value?.email || '';
+    case 'badge': {
+      const shown = column.render ? column.render(row) : value;
+      return typeof shown === 'string'
+        ? shown.charAt(0).toUpperCase() + shown.slice(1)
+        : '';
+    }
+    case 'custom':
+      return formatCellValue(value, column.key);
+    default:
+      return formatCellValue(value, column.key);
+  }
+};
+
 /** Colour swatch cell — one definition instead of an inline-styled span
  *  re-implemented on each screen that stores a colour. */
 export const ColorSwatchCell = ({ color, label }) => (
@@ -234,18 +268,51 @@ const TableToolbar = ({
 };
 
 const FilterModal = ({ columns, visibleColumns, onColumnToggle, onClose, isOpen, onReset }) => {
+  const closeRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current?.();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    closeRef.current?.focus();
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
     <div className="filter-modal-overlay" onClick={onClose}>
-      <div className="filter-modal" onClick={e => e.stopPropagation()}>
+      <div
+        className="filter-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="column-visibility-title"
+        aria-describedby="column-visibility-description"
+        onClick={e => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="filter-modal-header">
           <div>
-            <h3>Column Visibility</h3>
-            <p>Select which columns should be visible</p>
+            <h3 id="column-visibility-title">Column Visibility</h3>
+            <p id="column-visibility-description">Select which columns should be visible</p>
           </div>
-          <button className="filter-modal-close" onClick={onClose}>
+          <button
+            type="button"
+            ref={closeRef}
+            className="filter-modal-close"
+            onClick={onClose}
+            aria-label="Close column visibility"
+          >
             ×
           </button>
         </div>
@@ -266,10 +333,10 @@ const FilterModal = ({ columns, visibleColumns, onColumnToggle, onClose, isOpen,
 
         {/* Footer */}
         <div className="filter-modal-footer">
-          <button className="btn-secondary" onClick={onReset}>
+          <button type="button" className="btn-secondary" onClick={onReset}>
             Reset
           </button>
-          <button className="btn-primary" onClick={onClose}>
+          <button type="button" className="btn-primary" onClick={onClose}>
             Apply
           </button>
         </div>
@@ -340,52 +407,6 @@ const TableTemplate = ({
     setTimeout(() => setCopyToast(null), 2000);
   };
   
-  const formatCellValue = (value, colKey) => {
-    if (value === null || value === undefined) return "";
-
-    // If object
-    if (typeof value === "object") {
-      // Special handling for known objects
-      if (colKey === "user") {
-        return `${value.name} (${value.email})`;
-      }
-
-      // Fallback for unknown objects
-      return JSON.stringify(value);
-    }
-
-    return String(value);
-  };
-  
-  const resolveExportValue = (row, column) => {
-    const value = row[column.key];
-
-    // Highest priority → column-controlled export
-    if (column.exportValue) {
-      return column.exportValue(row);
-    }
-
-    // Handle known column types
-    switch (column.type) {
-      case "avatar":
-        return value?.name || value?.email || "";
-
-      case "badge": {
-        const shown = column.render ? column.render(row) : value;
-        return typeof shown === "string"
-          ? shown.charAt(0).toUpperCase() + shown.slice(1)
-          : "";
-      }
-
-      case "custom":
-        // Custom JSX cannot be exported → fallback
-        return formatCellValue(value, column.key);
-
-      default:
-        return formatCellValue(value, column.key);
-    }
-  };
-
   // Filter data based on search term
   const filteredData = useMemo(() => {
     if (!searchTerm) return data;
@@ -572,6 +593,10 @@ const TableTemplate = ({
     if (!table) return;
 
     const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      flashCopyToast('error', 'Print blocked — allow pop-ups for this site.');
+      return;
+    }
     printWindow.document.write(`
       <html>
         <head>
@@ -693,28 +718,46 @@ const TableTemplate = ({
           <table className="table">
             <thead>
               <tr>
-                <th >  
+                <th scope="col">
                   S.No
                 </th>
-                {visibleColumnsData.map((column) => (
-                  <th
-                    key={column.key}
-                    className="sortable"
-                    onClick={() => handleSort(column.key)}
-                    style={{
-                      width: column.width,
-                      textAlign: column.align || 'left',
-                      cursor: 'pointer'
-                    }}  
-                  >
-                    {column.title}
-                    {sortConfig.key === column.key && (
-                      <span className={`sort-indicator ${sortConfig.direction}`}>
-                        {sortConfig.direction === 'asc' ? ' ↑' : ' ↓'}
-                      </span>
-                    )}
-                  </th>
-                ))}
+                {visibleColumnsData.map((column) => {
+                  const sortable = column.key !== 'actions' && column.sortable !== false;
+                  return (
+                    <th
+                      key={column.key}
+                      className={sortable ? "sortable" : undefined}
+                      scope="col"
+                      aria-sort={
+                        sortable && sortConfig.key === column.key
+                          ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending')
+                          : sortable ? 'none' : undefined
+                      }
+                      style={{
+                        width: column.width,
+                        textAlign: column.align || 'left',
+                      }}
+                    >
+                      {sortable ? (
+                        <button
+                          type="button"
+                          className="table-sort-button"
+                          onClick={() => handleSort(column.key)}
+                          aria-label={`Sort by ${column.title}`}
+                        >
+                          {column.title}
+                          {sortConfig.key === column.key && (
+                            <span className={`sort-indicator ${sortConfig.direction}`}>
+                              {sortConfig.direction === 'asc' ? ' ↑' : ' ↓'}
+                            </span>
+                          )}
+                        </button>
+                      ) : (
+                        column.title
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -792,6 +835,7 @@ const TableTemplate = ({
           </div>
           <div className="pagination-controls">
             <button
+              type="button"
               className="pagination-btn"
               onClick={() => setCurrentPage(1)}
               disabled={currentPage === 1}
@@ -799,6 +843,7 @@ const TableTemplate = ({
               First
             </button>
             <button
+              type="button"
               className="pagination-btn"
               onClick={() => setCurrentPage(currentPage - 1)}
               disabled={currentPage === 1}
@@ -819,9 +864,12 @@ const TableTemplate = ({
                 }
                 return (
                   <button
+                    type="button"
                     key={pageNum}
                     className={`pagination-page ${currentPage === pageNum ? 'active' : ''}`}
                     onClick={() => setCurrentPage(pageNum)}
+                    aria-label={`Go to page ${pageNum}`}
+                    aria-current={currentPage === pageNum ? 'page' : undefined}
                   >
                     {pageNum}
                   </button>
@@ -829,6 +877,7 @@ const TableTemplate = ({
               })}
             </div>
             <button
+              type="button"
               className="pagination-btn"
               onClick={() => setCurrentPage(currentPage + 1)}
               disabled={currentPage === totalPages}
@@ -836,6 +885,7 @@ const TableTemplate = ({
               Next
             </button>
             <button
+              type="button"
               className="pagination-btn"
               onClick={() => setCurrentPage(totalPages)}
               disabled={currentPage === totalPages}

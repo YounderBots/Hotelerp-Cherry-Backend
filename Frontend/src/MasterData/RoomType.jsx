@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import TableTemplate from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -48,6 +48,9 @@ const RoomType = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -89,13 +92,13 @@ const RoomType = () => {
   const createRoomType = async () => {
     await APICall.postT("/masterdata/room_types", payload());
     showToast("Room type added successfully", "success");
-    reload();
+    await reload();
   };
 
   const updateRoomType = async () => {
     await APICall.putT("/masterdata/room_types", { id: editId, ...payload() });
     showToast("Room type updated successfully", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -123,7 +126,7 @@ const RoomType = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.roomType.trim()) {
       showToast("Room type is required", "error");
       return;
@@ -138,6 +141,7 @@ const RoomType = () => {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -149,22 +153,28 @@ const RoomType = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
       // Literal, not `${ENDPOINT}`: build_rbac_map.py reads these call
       // sites to derive the gateway permission map, and cannot resolve a
       // variable — this row had dropped out of it.
-      await APICall.deleteT(`/masterdata/room_types/${id}`);
+      await APICall.deleteT(`/masterdata/room_types/${deleteId}`);
       showToast("Room type deleted successfully", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -333,10 +343,10 @@ const RoomType = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Room Type"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

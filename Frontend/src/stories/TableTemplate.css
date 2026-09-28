@@ -222,8 +222,43 @@
 }
 
 .table th.sortable {
+  padding: 0;
   cursor: pointer;
   transition: background-color var(--transition-fast);
+}
+
+/* The header itself is not a control: it is a table header. The actual sort
+   affordance is a real button so keyboard and assistive-technology users can
+   reach it, while the button still fills the header hit area for pointer users. */
+.table-sort-button {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  padding: 0.85rem var(--spacing-lg);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.table-sort-button:hover {
+  background: var(--primary-lightest);
+  color: var(--primary-color);
+}
+
+.table-sort-button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+
+.table th:last-child .table-sort-button {
+  padding-right: var(--table-inset);
 }
 
 .sort-indicator {
@@ -250,6 +285,15 @@
 .table th:last-child,
 .table td:last-child {
   padding-right: var(--table-inset);
+}
+
+/* Keep the sort control's own padding as the header padding. The generic
+   first/last-column rules above must not add a second inset to a sortable
+   header that already contains a full-width button. */
+.table th.sortable,
+.table th.sortable:first-child,
+.table th.sortable:last-child {
+  padding: 0;
 }
 
 .table tbody tr {

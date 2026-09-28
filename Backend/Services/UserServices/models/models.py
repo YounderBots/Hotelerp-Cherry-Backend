@@ -9,7 +9,6 @@ from sqlalchemy import (
     DateTime,
     Float,
     JSON,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
@@ -19,6 +18,22 @@ import bcrypt
 import uuid
 
 Base = declarative_base()
+
+# NO TABLE-LEVEL UniqueConstraint ON roles / department / designation / shift /
+# menus / submenus, ON PURPOSE (C-082)
+#
+# These models used to declare `UniqueConstraint("company_id", <name>)`. No such
+# index exists in the applied schema, so the declaration described an invariant
+# the database never enforced, and a `create_all()` or autogenerate would have
+# tried to add it. It was also the wrong invariant: these rows are soft-deleted,
+# so a hard unique would refuse to recreate a name whose previous row was
+# deleted. The enforced invariant -- unique among active rows per company, with
+# soft-deleted history allowed to repeat -- comes from migrations as a generated
+# column plus a unique index (`uq_department_active_company_name`,
+# `uq_designation_active_company_name`, `uq_roles_active_company_name`,
+# `uq_shift_active_company_name`). Menus and submenus are seeded reference data
+# with no duplicate-name check in the controller today; if one is added, follow
+# the same generated-column pattern rather than a table constraint.
 
 
 # =====================================================
@@ -85,9 +100,6 @@ class Users(Base):
 
 class Roles(Base):
     __tablename__ = "roles"
-    __table_args__ = (
-        UniqueConstraint("company_id", "role_name", name="uq_role_company_name"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     role_name = Column(String(100), nullable=False, index=True)
@@ -103,9 +115,6 @@ class Roles(Base):
 #Department
 class Department(Base):
     __tablename__ = "department"
-    __table_args__ = (
-        UniqueConstraint("company_id", "Department_Name", name="uq_department_company_name"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     Department_Name = Column(String(100), nullable=False, index=True)
@@ -120,9 +129,6 @@ class Department(Base):
 #Designation
 class Designation(Base):
     __tablename__ = "designation"
-    __table_args__ = (
-        UniqueConstraint("company_id", "Designation_Name", name="uq_designation_company_name"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     Designation_Name = Column(String(100), nullable=False, index=True)
@@ -137,9 +143,6 @@ class Designation(Base):
 # Shift
 class Shift(Base):
     __tablename__ = "shift"
-    __table_args__ = (
-        UniqueConstraint("company_id", "Shift_Name", name="uq_shift_company_name"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     Shift_Name = Column(String(100), nullable=False, index=True)
@@ -174,9 +177,6 @@ class RolePermissions(Base):
 
 class Menus(Base):
     __tablename__ = "menus"
-    __table_args__ = (
-        UniqueConstraint("company_id", "menu_name", name="uq_menu_company_name"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     menu_name = Column(String(100), nullable=False, index=True)
@@ -193,9 +193,6 @@ class Menus(Base):
     
 class Submenus(Base):
     __tablename__ = "submenus"
-    __table_args__ = (
-        UniqueConstraint("company_id", "menu_id", "submenu_name", name="uq_submenu_company_menu_name"),
-    )
 
     id = Column(Integer, primary_key=True, index=True)
     menu_id = Column(String(100), nullable=False, index=True)

@@ -1,6 +1,6 @@
 # Browser audits
 
-Four Playwright scripts that drive the SPA the way a client would. They need
+Six Playwright scripts that drive the SPA the way a client would. They need
 the **whole stack running** — the six services and a server for the frontend —
 and they sign in through the real login form.
 
@@ -13,6 +13,7 @@ node e2e/interact.mjs admin@cherryhotel.com admin   # drive the controls
 node e2e/perm_ui.mjs  rahul.nair@cherryhotel.com fd # controls vs permissions
 node e2e/perf.mjs     admin@cherryhotel.com admin   # load times, request shape
 node e2e/client_sim.mjs admin@cherryhotel.com        # one full round trip
+node e2e/auth_audit.mjs                              # public auth at 4 widths
 ```
 
 `PW_PASSWORD` sets the sign-in password when it is no longer the seeded one:
@@ -31,6 +32,21 @@ a JSON report beside itself.
 | `perm_ui.mjs` | For each page a role can open, the Add button and the row Edit/Delete icons match that role's own permissions. A control the gateway would answer 403 to must not be drawn. **Run it per role** — that is the whole point. |
 | `perf.mjs` | Time to DOM-ready and to a settled network per route, how many API calls each page issues, and whether any URL is requested twice in one load. |
 | `client_sim.mjs` | One complete round trip with nothing but mouse and keyboard: sign in, dashboard, add a record (empty submit refused, duplicate refused), edit it, reload, delete it with confirmation, sign out, then check a signed-out session cannot reach a page by URL. |
+| `auth_audit.mjs` | Public login, forgot-password, lock-screen, and request-access pages at 1440/1024/768/375 widths; checks overflow, images, console, page, and network errors before authentication. |
+| `reservation_pages_audit.mjs` | The focused sweep: 56 reservation/account/guest/HRM/restaurant/bar/master-data routes at all four widths, each with its Add dialog opened and cancelled so the modal layout is measured too. Read-only — it never submits a business form. |
+| `masterdata_rbac.mjs` | Five roles × the six master-data pages closed at the end of the sweep: Admin full, Front Office Manager view-only, Front Desk/Housekeeping/F&B denied. Read-only. |
+| `not_found_layout.mjs` | The `*` fallback: 0px overflow and a working "Go to dashboard" link at 1440/1024/768/375. |
+| `*_rbac.mjs` (per page) | One role matrix per page, so a regression is attributable to the page it happened on rather than to a single 30-page report. Same shape as `masterdata_rbac.mjs`, one page each. |
+
+### Why the sign-in block retries
+
+`audit.mjs`, `interact.mjs` and `reservation_pages_audit.mjs` watch the
+`/login_post` response, require a 200, and check `localStorage.AuthToken` before
+walking a single route — up to five attempts. The first click after a service
+restart can land before the form's submit handler is attached, and a run that
+trusted it reported every route as an access failure instead of saying "the
+login never happened". A report that cannot distinguish a broken login from a
+broken application is worse than no report.
 
 ## Run `perf.mjs` against the production build
 

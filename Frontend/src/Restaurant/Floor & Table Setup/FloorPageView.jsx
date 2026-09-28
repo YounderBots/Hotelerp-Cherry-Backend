@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import Tabs, { Tab } from "../../stories/Tabs";
 import TableTemplate from "../../stories/TableTemplate";
@@ -12,7 +12,7 @@ import ErrorAlert from "../../stories/ErrorAlert";
 import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
 import { formatCount, formatDate, formatPrecise, todayIso } from "../../functions/formatters";
-import { useApiResources } from "../../hooks/useApiResource";
+import { useApiResource, useApiResources } from "../../hooks/useApiResource";
 import "./FloorTable.css";
 
 /**
@@ -24,14 +24,30 @@ import "./FloorTable.css";
 const TERMINAL_ORDER_STATUSES = new Set(["Completed", "Cancelled"]);
 
 const ViewFloor = () => {
-  const { state: floor } = useLocation();
+  const { state: floorState } = useLocation();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const [viewTable, setViewTable] = useState(null);
   const [viewOrder, setViewOrder] = useState(null);
   const [viewStaff, setViewStaff] = useState(null);
 
-  const floorId = floor?.id;
+  // Navigation state is still used for an instant handoff, but the id is also
+  // placed in the URL. A refresh or a copied `/view?floorId=…` link can now
+  // resolve the floor again instead of rendering the state-only empty alert.
+  const floorId = floorState?.id || searchParams.get("floorId");
+  const { data: floorLookup, loading: floorLoading, error: floorError } =
+    useApiResource(
+      () => APICall.getT("/restaurant/floor"),
+      {
+        select: readList,
+        initial: [],
+        deps: [floorId],
+        enabled: !floorState?.id && Boolean(floorId),
+        fallback: "Failed to load the selected floor.",
+      },
+    );
+  const floor = floorState || floorLookup.find((item) => String(item.id) === String(floorId));
 
   const {
     data: [tables, orders, staff],
@@ -57,6 +73,10 @@ const ViewFloor = () => {
     ],
     { enabled: !!floorId, deps: [floorId] },
   );
+
+  if (!floor && floorLoading) {
+    return <div className="dashboard-empty" role="status">Loading floor…</div>;
+  }
 
   if (!floor) {
     return (
@@ -124,7 +144,7 @@ const ViewFloor = () => {
         <ArrowLeft size={16} aria-hidden="true" /> Back to Floor Layout
       </Button>
 
-      <ErrorAlert message={error} />
+      <ErrorAlert message={error || floorError} />
 
       {/* Was eleven `<input readOnly>` controls in a .floor-form grid — tab
           stops the user could focus but not change, with `is_open` printing

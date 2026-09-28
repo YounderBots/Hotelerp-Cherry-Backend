@@ -14,6 +14,7 @@ import { errMsg, readList } from "../../functions/apiHelpers";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
 import { usePagePermissions } from "../../hooks/usePagePermissions";
+import { todayIso } from "../../functions/formatters";
 import "./Reservation.css";
 
 /**
@@ -215,6 +216,8 @@ const Booking = () => {
       return "Departure date must be after arrival date.";
     if (!form.room_type.length) return "Pick at least one room type.";
     if (num(form.no_of_rooms) < 1) return "Number of rooms must be at least 1.";
+    if (form.room_type.length !== num(form.no_of_rooms))
+      return "Select exactly one room type for each room.";
     if (num(form.no_of_adults) < 1) return "Number of adults must be at least 1.";
     if (num(form.no_of_children) < 0) return "Children count cannot be negative.";
     return null;
@@ -489,7 +492,7 @@ const Booking = () => {
           onChange={(e) => setForm((prev) => ({ ...prev, room_type: e.target.value }))}
           options={roomTypeOptions}
           placeholder="Select room types…"
-          helperText="A request can name more than one type."
+          helperText="Select one room type for each room."
         />
         <Input
           label="Arrival Date"
@@ -497,7 +500,7 @@ const Booking = () => {
           type="date"
           value={form.arrival_date}
           onChange={setField("arrival_date")}
-          min={isoDay(new Date().toISOString())}
+          min={todayIso()}
         />
         <Input
           label="Departure Date"

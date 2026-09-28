@@ -424,11 +424,45 @@ def _sync_room_housekeeping(db: Session, md: MasterData, company_id, room_ids) -
 # =====================================================
 # UPLOADS
 # =====================================================
+def _sniff_family(data: bytes) -> str:
+    """The file family implied by the first bytes of `data`.
+
+    An extension is a claim the client makes; these bytes are what the server
+    actually received. Only the header is read, which is all that is needed to
+    tell an accepted family apart from a text file or a script wearing an
+    image's name.
+    """
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data.startswith(b"%PDF-"):
+        return "pdf"
+    return ""
+
+
+# `jpg` and `jpeg` are one family, so either extension is accepted for a JPEG
+# header and neither is accepted for anything else.
+_UPLOAD_EXT_FAMILY = {
+    "jpg": "jpeg", "jpeg": "jpeg",
+    "png": "png",
+    "gif": "gif",
+    "webp": "webp",
+    "pdf": "pdf",
+}
+
+
 def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
     """Validate and read an incoming attachment, or raise.
 
     Mirrors MasterDataServices._sanitize_upload so both services enforce the
-    same rule; only the extension set differs (PDF is allowed here).
+    same rule; only the extension set differs (PDF is allowed here). The bytes
+    are checked as well as the name, so a `.jpg` attachment cannot be a script
+    (C-085).
     """
     if not upload or not upload.filename:
         raise HTTPException(status_code=400, detail="File is required")
@@ -443,6 +477,13 @@ def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
         raise HTTPException(status_code=413, detail="Attachment exceeds the size limit")
     if not data:
         raise HTTPException(status_code=400, detail="Attachment is empty")
+    expected = _UPLOAD_EXT_FAMILY.get(ext)
+    if expected and _sniff_family(data) != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=("Attachment is not a valid PDF" if expected == "pdf"
+                    else f"Attachment is not a valid {expected.upper()} image"),
+        )
     return ext, data
 
 
@@ -812,9 +853,17 @@ async def create_roomincident_log(
         incident_room_id = _int(form, "room_id", "Room", required=True)
         _validate_room(md, incident_room_id)
 
+        incident_day = _date(incident_date, "Incident date", required=True)
+        report_day = _date(report_date, "Report date")
+        if report_day is not None and report_day < incident_day:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Report date cannot be before incident date",
+            )
+
         incident = models.HousekeeperRoomIncident(
             room_no=incident_room_id,
-            incident_date=_date(incident_date, "Incident date", required=True),
+            incident_date=incident_day,
             incident_time=_time(incident_time, "Incident time", required=True),
             incident_description=_required_text(form, "incident_description", "Description"),
             involved_staff=_text(form, "involved_staff"),
@@ -822,7 +871,7 @@ async def create_roomincident_log(
             witnesses=_text(form, "witnesses"),
             actions_taken=_text(form, "actions_taken"),
             reported_by=_text(form, "reported_by", max_len=NAME_MAX),
-            report_date=_date(report_date, "Report date"),
+            report_date=report_day,
             attachment_file=stored_path,
             status=CommonWords.STATUS,
             created_by=user_id,
@@ -942,8 +991,16 @@ async def update_roomincident_log(
 
         incident_room_id = _int(form, "room_id", "Room", required=True)
         _validate_room(md, incident_room_id)
+        incident_day = _date(incident_date, "Incident date", required=True)
+        report_day = _date(report_date, "Report date")
+        if report_day is not None and report_day < incident_day:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Report date cannot be before incident date",
+            )
+
         incident.room_no = incident_room_id
-        incident.incident_date = _date(incident_date, "Incident date", required=True)
+        incident.incident_date = incident_day
         incident.incident_time = _time(incident_time, "Incident time", required=True)
         incident.incident_description = _required_text(
             form, "incident_description", "Description"
@@ -953,7 +1010,7 @@ async def update_roomincident_log(
         incident.witnesses = _text(form, "witnesses")
         incident.actions_taken = _text(form, "actions_taken")
         incident.reported_by = _text(form, "reported_by", max_len=NAME_MAX)
-        incident.report_date = _date(report_date, "Report date")
+        incident.report_date = report_day
         incident.updated_by = user_id
 
         db.commit()

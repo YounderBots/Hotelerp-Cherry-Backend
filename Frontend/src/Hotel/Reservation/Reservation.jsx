@@ -18,6 +18,7 @@ import { formatAmount, isoDay, num } from "./reservationShared";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
 import { usePagePermissions } from "../../hooks/usePagePermissions";
+import { todayIso } from "../../functions/formatters";
 import "./Reservation.css";
 
 /**
@@ -723,7 +724,7 @@ const Reservation = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `reservations-${isoDay(new Date().toISOString())}.csv`;
+    a.download = `reservations-${todayIso()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -1,4 +1,6 @@
 import logging
+import math
+import re
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -6,8 +8,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from models import get_db, models
+from resources.orderController import _modifier_data, _totals_for_pricing, pricing_for_items
 from resources.utils import verify_authentication
 from configs.base_config import CommonWords
 
@@ -64,13 +68,17 @@ def _assert_billable_charges(payload, sub_total: float) -> float:
     """Validate the charge inputs and return the discount they imply."""
     for field in ("cgst_percentage", "sgst_percentage", "service_charge_percentage"):
         value = getattr(payload, field, 0) or 0
-        if value < 0 or value > MAX_PERCENT:
+        if not math.isfinite(float(value)) or value < 0 or value > MAX_PERCENT:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"{field} must be between 0 and {MAX_PERCENT:.0f}",
             )
 
     discount_value = payload.discount_value or 0
+    if not math.isfinite(float(discount_value)):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="discount_value must be finite")
+    if payload.discount_type not in (None, "", "Percentage", "Flat"):
+        raise HTTPException(status_code=400, detail="discount_type is invalid")
     if discount_value < 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -155,15 +163,38 @@ def list_payment_methods(request: Request, db: Session = Depends(get_db)):
 @router.post("/bill/generate/{order_id}", status_code=status.HTTP_201_CREATED)
 def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
-    order = db.query(models.BarOrder).filter(models.BarOrder.id == order_id, models.BarOrder.company_id == company_id).first()
+    order = (
+        db.query(models.BarOrder)
+        .filter(models.BarOrder.id == order_id, models.BarOrder.company_id == company_id, models.BarOrder.status == STATUS)
+        .with_for_update()
+        .first()
+    )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
 
-    existing = db.query(models.BarBill).filter(models.BarBill.order_id == order_id, models.BarBill.bill_status != "Cancelled").first()
+    existing = (
+        db.query(models.BarBill)
+        .filter(
+            models.BarBill.order_id == order_id,
+            models.BarBill.company_id == company_id,
+            models.BarBill.status == STATUS,
+            models.BarBill.bill_status != "Cancelled",
+        )
+        .first()
+    )
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A bill already exists for this order")
 
-    order_items = db.query(models.BarOrderItem).filter(models.BarOrderItem.order_id == order_id, models.BarOrderItem.status == STATUS).all()
+    order_items = (
+        db.query(models.BarOrderItem)
+        .filter(
+            models.BarOrderItem.order_id == order_id,
+            models.BarOrderItem.company_id == company_id,
+            models.BarOrderItem.status == STATUS,
+            models.BarOrderItem.item_status != "Cancelled",
+        )
+        .all()
+    )
     if not order_items:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Order has no billable items")
 
@@ -177,7 +208,15 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
         )
 
     try:
-        sub_total = sum((i.price or 0) * (i.quantity or 0) for i in order_items)
+        # Use the same persisted price breakdown as the order endpoint.  The
+        # base item price is never changed to include a modifier, so billing it
+        # separately here would either omit the modifier or count it twice.
+        item_pricing = pricing_for_items(db, order_items)
+        sub_total, order_grand_total = _totals_for_pricing(order, item_pricing)
+        # Keep the order's persisted totals authoritative as well.  This also
+        # repairs orders written before modifier prices were included.
+        order.sub_total = sub_total
+        order.grand_total = order_grand_total
 
         cgst_amount = _round(sub_total * (payload.cgst_percentage or 0) / 100)
         sgst_amount = _round(sub_total * (payload.sgst_percentage or 0) / 100)
@@ -222,8 +261,13 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
         db.flush()
 
         for i in order_items:
-            menu = db.query(models.BarMenuItem).filter(models.BarMenuItem.id == i.menu_id).first()
-            amount = (i.price or 0) * (i.quantity or 0)
+            menu = db.query(models.BarMenuItem).filter(
+                models.BarMenuItem.id == i.menu_id,
+                models.BarMenuItem.company_id == company_id,
+                models.BarMenuItem.status == STATUS,
+            ).first()
+            line_pricing = item_pricing[i.id]
+            amount = line_pricing["line_total"]
             db.add(
                 models.BarBillItem(
                     bill_id=bill.id,
@@ -231,7 +275,9 @@ def generate_bill(order_id: int, payload: BillGenerateIn, request: Request, db: 
                     menu_id=i.menu_id,
                     item_name=menu.item_name if menu else "Item",
                     quantity=i.quantity,
-                    rate=i.price,
+                    # The persisted rate is the effective per-unit rate; the
+                    # response also exposes the base and modifier components.
+                    rate=line_pricing["effective_rate"],
                     amount=amount,
                     tax_amount=_round(amount * ((payload.cgst_percentage or 0) + (payload.sgst_percentage or 0)) / 100),
                     created_by=user_id,
@@ -264,17 +310,72 @@ def list_bills(
     if table_id is not None:
         q = q.filter(models.BarBill.table_id == table_id)
     rows = q.order_by(models.BarBill.id.desc()).all()
-    return {"status": "success", "count": len(rows), "data": rows}
+    bill_ids = [bill.id for bill in rows]
+    payments = (
+        db.query(models.BarBillPayment)
+        .filter(
+            models.BarBillPayment.bill_id.in_(bill_ids),
+            models.BarBillPayment.company_id == company_id,
+            models.BarBillPayment.status == STATUS,
+            models.BarBillPayment.payment_status == "Success",
+        )
+        .all()
+        if bill_ids
+        else []
+    )
+    paid_by_bill = {}
+    for payment in payments:
+        paid_by_bill[payment.bill_id] = paid_by_bill.get(payment.bill_id, 0) + float(payment.paid_amount or 0)
+    data = []
+    for bill in rows:
+        item = dict(bill.__dict__)
+        paid = round(paid_by_bill.get(bill.id, 0), 2)
+        item["paid_amount"] = paid
+        item["outstanding_amount"] = round(max(float(bill.grand_total or 0) - paid, 0), 2)
+        data.append(item)
+    return {"status": "success", "count": len(data), "data": data}
 
 
 @router.get("/bill/{bill_id}", status_code=status.HTTP_200_OK)
 def get_bill(bill_id: int, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
-    bill = db.query(models.BarBill).filter(models.BarBill.id == bill_id, models.BarBill.company_id == company_id).first()
+    bill = db.query(models.BarBill).filter(
+        models.BarBill.id == bill_id,
+        models.BarBill.company_id == company_id,
+        models.BarBill.status == STATUS,
+    ).first()
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
-    items = db.query(models.BarBillItem).filter(models.BarBillItem.bill_id == bill_id).all()
-    payments = db.query(models.BarBillPayment).filter(models.BarBillPayment.bill_id == bill_id).all()
+    items = db.query(models.BarBillItem).filter(
+        models.BarBillItem.bill_id == bill_id,
+        models.BarBillItem.company_id == company_id,
+        models.BarBillItem.status == STATUS,
+    ).all()
+    payments = db.query(models.BarBillPayment).filter(
+        models.BarBillPayment.bill_id == bill_id,
+        models.BarBillPayment.company_id == company_id,
+        models.BarBillPayment.status == STATUS,
+    ).all()
+    for item in items:
+        modifiers = (
+            db.query(models.BarOrderItemModifier)
+            .filter(
+                models.BarOrderItemModifier.order_item_id == item.order_item_id,
+                models.BarOrderItemModifier.company_id == company_id,
+            )
+            .order_by(models.BarOrderItemModifier.id.asc())
+            .all()
+        )
+        modifier_total = _round(sum(float(modifier.price or 0) for modifier in modifiers))
+        # Keep returning the ORM rows (the endpoint historically did), while
+        # attaching the price breakdown for API consumers and direct callers.
+        item.modifier_ids = [modifier.modifier_id for modifier in modifiers]
+        item.modifier_names = [modifier.modifier_name for modifier in modifiers]
+        item.modifiers = [_modifier_data(modifier) for modifier in modifiers]
+        item.modifier_total = modifier_total
+        item.base_rate = _round((item.rate or 0) - modifier_total)
+        item.unit_price = item.rate
+        item.total_price = item.amount
     return {"status": "success", "data": {**bill.__dict__, "items": items, "payments": payments}}
 
 
@@ -284,12 +385,21 @@ def get_bill(bill_id: int, request: Request, db: Session = Depends(get_db)):
 @router.post("/bill/{bill_id}/payment", status_code=status.HTTP_201_CREATED)
 def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
-    bill = db.query(models.BarBill).filter(models.BarBill.id == bill_id, models.BarBill.company_id == company_id).first()
+    bill = (
+        db.query(models.BarBill)
+        .filter(
+            models.BarBill.id == bill_id,
+            models.BarBill.company_id == company_id,
+            models.BarBill.status == STATUS,
+        )
+        .with_for_update()
+        .first()
+    )
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
     if bill.bill_status == "Cancelled":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot pay a cancelled bill")
-    if payload.paid_amount <= 0:
+    if not math.isfinite(float(payload.paid_amount)) or payload.paid_amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="paid_amount must be greater than zero")
 
     # Overpayment guard. Without it this endpoint accepted any amount: paying
@@ -302,7 +412,12 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
     already_paid = sum(
         p.paid_amount or 0
         for p in db.query(models.BarBillPayment)
-        .filter(models.BarBillPayment.bill_id == bill.id, models.BarBillPayment.payment_status == "Success")
+        .filter(
+            models.BarBillPayment.bill_id == bill.id,
+            models.BarBillPayment.company_id == company_id,
+            models.BarBillPayment.status == STATUS,
+            models.BarBillPayment.payment_status == "Success",
+        )
         .all()
     )
     outstanding = (bill.grand_total or 0) - already_paid
@@ -360,7 +475,14 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
 
         total_paid = sum(
             p.paid_amount
-            for p in db.query(models.BarBillPayment).filter(models.BarBillPayment.bill_id == bill.id, models.BarBillPayment.payment_status == "Success").all()
+            for p in db.query(models.BarBillPayment)
+            .filter(
+                models.BarBillPayment.bill_id == bill.id,
+                models.BarBillPayment.company_id == company_id,
+                models.BarBillPayment.status == STATUS,
+                models.BarBillPayment.payment_status == "Success",
+            )
+            .all()
         )
 
         if total_paid >= bill.grand_total:
@@ -369,12 +491,27 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
         elif total_paid > 0:
             bill.payment_status = "Partial"
 
-        order = db.query(models.BarOrder).filter(models.BarOrder.id == bill.order_id).first()
+        order = (
+            db.query(models.BarOrder)
+            .filter(
+                models.BarOrder.id == bill.order_id,
+                models.BarOrder.company_id == company_id,
+                models.BarOrder.status == STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if order and order.order_status == "Cancelled":
+            raise HTTPException(status_code=400, detail="Cannot pay a bill for a cancelled order")
         if order and bill.payment_status == "Paid" and order.order_status != "Completed":
             order.payment_status = "Paid"
             order.order_status = "Completed"
-            if order.table_code:
-                table = db.query(models.BarTable).filter(models.BarTable.table_code == order.table_code, models.BarTable.company_id == company_id).first()
+            if order.table_id:
+                table = db.query(models.BarTable).filter(
+                    models.BarTable.id == order.table_id,
+                    models.BarTable.company_id == company_id,
+                    models.BarTable.status == STATUS,
+                ).with_for_update().first()
                 if table:
                     table.table_status = "Cleaning"
                     table.current_order_id = None
@@ -417,11 +554,22 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
 @router.put("/bill/{bill_id}/cancel", status_code=status.HTTP_200_OK)
 def cancel_bill(bill_id: int, payload: BillCancelIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
-    bill = db.query(models.BarBill).filter(models.BarBill.id == bill_id, models.BarBill.company_id == company_id).first()
+    bill = (
+        db.query(models.BarBill)
+        .filter(
+            models.BarBill.id == bill_id,
+            models.BarBill.company_id == company_id,
+            models.BarBill.status == STATUS,
+        )
+        .with_for_update()
+        .first()
+    )
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
     if bill.payment_status == "Paid":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot cancel a bill that is already paid")
+    if not str(payload.reason).strip() or len(str(payload.reason).strip()) > 255:
+        raise HTTPException(status_code=400, detail="reason must be 1-255 characters")
     bill.bill_status = "Cancelled"
     bill.remarks = f"Cancelled: {payload.reason}"
     bill.updated_by = user_id
@@ -435,10 +583,21 @@ def cancel_bill(bill_id: int, payload: BillCancelIn, request: Request, db: Sessi
 @router.post("/bill/{bill_id}/split", status_code=status.HTTP_201_CREATED)
 def split_bill_by_person(bill_id: int, payload: SplitByPersonIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
-    bill = db.query(models.BarBill).filter(models.BarBill.id == bill_id, models.BarBill.company_id == company_id).first()
+    bill = (
+        db.query(models.BarBill)
+        .filter(
+            models.BarBill.id == bill_id,
+            models.BarBill.company_id == company_id,
+            models.BarBill.status == STATUS,
+        )
+        .with_for_update()
+        .first()
+    )
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
-    if payload.number_of_people < 2:
+    if payload.split_type != "By Person":
+        raise HTTPException(status_code=400, detail="Only By Person splits are supported")
+    if payload.number_of_people < 2 or payload.number_of_people > 100:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="number_of_people must be at least 2")
     if bill.payment_status == "Paid":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bill is already paid")

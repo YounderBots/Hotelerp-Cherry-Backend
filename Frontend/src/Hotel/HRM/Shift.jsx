@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import Input from "../../stories/Form/Input";
@@ -35,6 +35,9 @@ const Shift = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -59,13 +62,13 @@ const Shift = () => {
   const createShift = async () => {
     await APICall.postT("/user/shifts", payload());
     showToast("Shift created", "success");
-    reload();
+    await reload();
   };
 
   const updateShift = async () => {
     await APICall.putT("/user/shifts", { id: editId, ...payload() });
     showToast("Shift updated", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -96,7 +99,7 @@ const Shift = () => {
   const handleSave = async () => {
     // Guard AND disabled Submit — the label alone used to change on `saving`,
     // so a double click created a duplicate shift.
-    if (saving) return;
+    if (saving || savingRef.current) return;
     const name = formData.shift_name.trim();
     if (!name) {
       showToast("Shift name is required", "error");
@@ -119,6 +122,7 @@ const Shift = () => {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       if (editId) {
@@ -130,19 +134,25 @@ const Shift = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/user/shifts/${id}`);
+      await APICall.deleteT(`/user/shifts/${deleteId}`);
       showToast("Shift deleted", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -275,10 +285,10 @@ const Shift = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Shift"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

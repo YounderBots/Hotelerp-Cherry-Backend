@@ -13,7 +13,7 @@ import { todayIso } from "../../functions/formatters";
 // generator as permissions this page needs.
 const api = {
   readList,
-  listShifts: () => APICall.getT("/restaurant/staff_assignment", { shift_date: todayIso() }),
+  listShifts: (shiftDate) => APICall.getT("/restaurant/staff_assignment", { shift_date: shiftDate || todayIso() }),
   listEmployees: () => APICall.getT("/user/users"),
   listFloors: () => APICall.getT("/restaurant/floor"),
   createShift: (body) => APICall.postT("/restaurant/staff_assignment", body),

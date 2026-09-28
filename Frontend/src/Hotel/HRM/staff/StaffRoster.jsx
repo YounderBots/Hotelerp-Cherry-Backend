@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../../stories/TableTemplate";
 import Modal from "../../../stories/Modal";
 import Input from "../../../stories/Form/Input";
@@ -24,6 +24,7 @@ import { todayIso } from "../../../functions/formatters";
  */
 
 const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, api }) => {
+  const [shiftDate, setShiftDate] = useState(todayIso());
   const {
     data: [employees, shifts, floors],
     loading,
@@ -31,14 +32,15 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, ap
     reload,
   } = useApiResources([
     { fetch: api.listEmployees, select: api.readList, fallback: "Failed to load the staff directory." },
-    { fetch: api.listShifts, select: api.readList },
+    { fetch: () => api.listShifts(shiftDate), select: api.readList },
     { fetch: api.listFloors, select: api.readList },
-  ]);
+  ], { deps: [shiftDate] });
 
   const permissions = usePagePermissions(pagePath);
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [showModal, setShowModal] = useState(false);
   const [viewRow, setViewRow] = useState(null);
 
@@ -51,6 +53,17 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, ap
     section: "",
   };
   const [formData, setFormData] = useState(initialForm);
+
+  const dateLabel = new Date(`${shiftDate}T00:00:00`).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+  const moveDate = (days) => {
+    const next = new Date(`${shiftDate}T00:00:00`);
+    next.setDate(next.getDate() + days);
+    setShiftDate(next.toISOString().slice(0, 10));
+  };
 
   const floorName = (id) => floors.find((f) => String(f.id) === String(id))?.floor_name || null;
 
@@ -98,7 +111,7 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, ap
   };
 
   const saveAssignment = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.employee_id) {
       showToast("Employee is required", "error");
       return;
@@ -107,7 +120,15 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, ap
       showToast("Start time is required", "error");
       return;
     }
+    if (shifts.some((shift) =>
+      String(shift.employee_id) === String(formData.employee_id)
+      && String(shift.shift_date).slice(0, 10) === shiftDate
+    )) {
+      showToast("This employee already has a shift today", "error");
+      return;
+    }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       const employee = employees.find((e) => String(e.id) === String(formData.employee_id));
@@ -117,18 +138,19 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, ap
           ? `${employee.first_name || ""} ${employee.last_name || ""}`.trim()
           : null,
         role: formData.role,
-        shift_date: todayIso(),
+        shift_date: shiftDate,
         shift_start: formData.shift_start,
         shift_end: formData.shift_end || null,
         floor_id: formData.floor_id ? Number(formData.floor_id) : null,
         ...(hasSection ? { section: formData.section || null } : {}),
       });
       showToast("Staff assigned for today", "success");
-      reload();
+      await reload();
       closeModal();
     } catch (err) {
       showToast(err?.message || "Failed to assign staff", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -139,8 +161,24 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, ap
     <>
       <ErrorAlert message={error} />
 
+      <div className="roster-date-controls" aria-label="Roster date navigation">
+        <button type="button" onClick={() => moveDate(-1)} aria-label="Previous roster day">Previous</button>
+        <label>
+          <span>Roster date</span>
+          <input
+            type="date"
+            value={shiftDate}
+            onChange={(e) => setShiftDate(e.target.value)}
+            aria-label="Roster date"
+          />
+        </label>
+        <button type="button" onClick={() => moveDate(1)} aria-label="Next roster day">Next</button>
+        <button type="button" onClick={() => setShiftDate(todayIso())}>Today</button>
+        <span className="roster-date-label">{dateLabel}</span>
+      </div>
+
       <TableTemplate
-        title={`${venueLabel} Roster — Today`}
+        title={`${venueLabel} Roster — ${dateLabel}`}
         loading={loading}
         emptyMessage="No employees in the directory yet."
         hasActionButton={permissions.add}

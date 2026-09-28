@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 import bcrypt
 import uuid
 import os
@@ -16,6 +17,18 @@ from configs.base_config import CommonWords
 import logging
 
 logger = logging.getLogger("userservice.controller")
+
+
+def _valid_shift_time(value) -> bool:
+    """Require the canonical 24-hour HH:MM form used by the time inputs."""
+    if not isinstance(value, str):
+        return False
+    try:
+        from datetime import datetime
+        parsed = datetime.strptime(value, "%H:%M")
+    except (TypeError, ValueError):
+        return False
+    return parsed.strftime("%H:%M") == value
 
 
 router = APIRouter()
@@ -1168,7 +1181,6 @@ async def create_role(
             )
             .first()
         )
-
         if exists:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -1187,7 +1199,14 @@ async def create_role(
         )
 
         db.add(role)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Role already exists",
+            )
         db.refresh(role)
 
         # -------------------------------------------------
@@ -1475,7 +1494,14 @@ async def update_role(
         role.description = description
         role.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Role already exists",
+            )
         db.refresh(role)
 
         # -------------------------------------------------
@@ -1536,6 +1562,15 @@ def delete_role(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid role_id"
+            )
+
+        # Do not allow an administrator to remove the role they are currently
+        # using; that can lock the tenant out of role administration. A
+        # separate administrator must perform the destructive change.
+        if str(role_id) == str(role):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot delete your own role",
             )
 
         # -------------------------------------------------
@@ -1889,6 +1924,7 @@ def get_all_role_permissions(
 def get_permissions_by_role(
     request: Request,
     role_id: int,
+    include_empty: bool = False,
     db: Session = Depends(get_db)
 ):
     try:
@@ -1928,8 +1964,11 @@ def get_permissions_by_role(
         menus: dict[int, dict] = {}
 
         for permission in permissions:
-            # 🔴 Skip if no permission at all
-            if not any([
+            # The login/navigation contract omits empty rows. The permission
+            # matrix asks for include_empty so an operator can re-enable a row
+            # after deliberately turning every flag off, and so PUT can address
+            # the existing permission id instead of attempting a duplicate POST.
+            if not include_empty and not any([
                 permission.view_permission,
                 permission.create_permission,
                 permission.edit_permission,
@@ -1954,6 +1993,7 @@ def get_permissions_by_role(
             if menu.id not in menus:
                 menus[menu.id] = {
                     "id": menu.id,
+                    "permission_id": permission.id,
                     "order_no": menu.order,
                     "label": menu.menu_name,
                     "path": menu.menu_link,
@@ -1982,6 +2022,7 @@ def get_permissions_by_role(
                 if submenu:
                     menus[menu.id]["children"].append({
                         "id": submenu.id,
+                        "permission_id": permission.id,
                         "label": submenu.submenu_name,
                         "path": submenu.submenu_link,
                         "order_no": submenu.order,
@@ -3478,7 +3519,18 @@ async def create_department(
         )
 
         db.add(department)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # A concurrent request can win the read-before-insert race even
+            # after the application-level duplicate check.  The active-name
+            # index is the final authority; expose the same client error rather
+            # than leaking a 500 from MySQL.
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Department already exists",
+            )
         db.refresh(department)
 
         # -------------------------------------------------
@@ -3686,7 +3738,14 @@ async def update_department(
         department.Department_Name = department_name
         department.updated_by = user_id if hasattr(department, "updated_by") else None
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Department name already exists",
+            )
         db.refresh(department)
         # -------------------------------------------------
         # RESPONSE
@@ -3939,7 +3998,14 @@ async def create_designation(
         )
 
         db.add(designation)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Designation already exists",
+            )
         db.refresh(designation)
 
         # -------------------------------------------------
@@ -4147,7 +4213,14 @@ async def update_designation(
         designation.Designation_Name = designation_name
         designation.updated_by = user_id if hasattr(designation, "updated_by") else None
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Designation name already exists",
+            )
         db.refresh(designation)
         # -------------------------------------------------
         # RESPONSE
@@ -4312,6 +4385,22 @@ async def create_shift(
                 detail="end_time is required"
             )
 
+        if not _valid_shift_time(start_time):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="start_time must be a valid HH:MM time"
+            )
+        if not _valid_shift_time(end_time):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="end_time must be a valid HH:MM time"
+            )
+        if start_time == end_time:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="start_time and end_time cannot be identical"
+            )
+
         if len(shift_name) > 100:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -4350,7 +4439,14 @@ async def create_shift(
         )
 
         db.add(shift)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Shift already exists",
+            )
         db.refresh(shift)
 
         # -------------------------------------------------
@@ -4586,6 +4682,22 @@ async def update_shift(
                 detail="end_time is required"
             )
 
+        if not _valid_shift_time(start_time):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="start_time must be a valid HH:MM time"
+            )
+        if not _valid_shift_time(end_time):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="end_time must be a valid HH:MM time"
+            )
+        if start_time == end_time:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="start_time and end_time cannot be identical"
+            )
+
         if len(shift_name) > 100:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -4639,7 +4751,14 @@ async def update_shift(
         shift.End_Time = end_time
         shift.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Shift already exists",
+            )
         db.refresh(shift)
 
         # -------------------------------------------------

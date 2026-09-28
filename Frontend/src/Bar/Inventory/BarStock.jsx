@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Activity } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
@@ -56,6 +56,7 @@ const BarStock = () => {
   const [movements, setMovements] = useState([]);
   const [movementsLoading, setMovementsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [formError, setFormError] = useState(null);
 
   const [adjustForm, setAdjustForm] = useState(emptyAdjust);
@@ -100,7 +101,7 @@ const BarStock = () => {
   };
 
   const saveNewItem = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!newItemForm.item_name.trim()) {
       setFormError("Item name is required.");
       return;
@@ -111,6 +112,7 @@ const BarStock = () => {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     setFormError(null);
     try {
@@ -121,17 +123,20 @@ const BarStock = () => {
         is_perishable: newItemForm.is_perishable,
       });
       showToast("Inventory item added successfully", "success");
-      closeModal();
-      load();
+      setSelectedItem(null);
+      setActiveModal(null);
+      setFormError(null);
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to create item."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const saveAdjustment = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     const qty = Number(adjustForm.quantity);
     // A blank or non-positive quantity used to be posted as-is. "Reduce 0" is
     // a no-op transaction in the ledger, and a negative typed into "Reduce"
@@ -141,6 +146,7 @@ const BarStock = () => {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     setFormError(null);
     try {
@@ -153,11 +159,14 @@ const BarStock = () => {
         remarks: adjustForm.remarks.trim() || null,
       });
       showToast("Stock adjusted successfully", "update");
-      closeModal();
-      load();
+      setSelectedItem(null);
+      setActiveModal(null);
+      setFormError(null);
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to adjust stock."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

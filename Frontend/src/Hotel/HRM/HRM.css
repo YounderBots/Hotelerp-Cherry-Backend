@@ -149,6 +149,54 @@
   gap: 0;
 }
 
+/* ---------- Roster date navigation ---------- */
+.roster-date-controls {
+  display: flex;
+  align-items: end;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
+}
+
+.roster-date-controls label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.roster-date-controls input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.roster-date-controls button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.roster-date-controls button:hover,
+.roster-date-controls button:focus-visible {
+  border-color: var(--primary-color);
+  outline: 2px solid color-mix(in srgb, var(--primary-color) 25%, transparent);
+  outline-offset: 1px;
+}
+
+.roster-date-label {
+  align-self: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
 /* ---------- Narrow screens ----------
    Six columns of checkboxes do not fit a phone. Each row becomes a card and
    each cell labels itself from data-label, matching how TableTemplate reflows

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate, { ColorSwatchCell } from "../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../stories/Modal";
 import Input from "../stories/Form/Input";
@@ -24,6 +24,9 @@ const HskTaskType = () => {
   const { toast, showToast } = useToast();
 
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
+  const [deleting, setDeleting] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [viewData, setViewData] = useState(null);
@@ -45,7 +48,7 @@ const HskTaskType = () => {
       color: formData.color,
     });
     showToast("Task Type added successfully", "success");
-    reload();
+    await reload();
   };
 
   const updateHskTaskType = async () => {
@@ -55,7 +58,7 @@ const HskTaskType = () => {
       color: formData.color,
     });
     showToast("Task Type updated successfully", "update");
-    reload();
+    await reload();
   };
 
   /* ================= HANDLERS ================= */
@@ -82,12 +85,13 @@ const HskTaskType = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (!formData.name.trim()) {
       showToast("Task Type is required", "error");
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       // Both branches are awaited and the list is reloaded once, inside the
@@ -103,19 +107,25 @@ const HskTaskType = () => {
     } catch (err) {
       showToast(err?.message || "Save failed", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const confirmDelete = async () => {
-    const id = deleteId;
-    setDeleteId(null);
+    if (!deleteId || deleting || deletingRef.current) return;
+    deletingRef.current = true;
+    setDeleting(true);
     try {
-      await APICall.deleteT(`/masterdata/task_type/${id}`);
+      await APICall.deleteT(`/masterdata/task_type/${deleteId}`);
       showToast("Task Type deleted successfully", "delete");
-      reload();
+      await reload();
+      setDeleteId(null);
     } catch (err) {
       showToast(err?.message || "Delete failed", "error");
+    } finally {
+      deletingRef.current = false;
+      setDeleting(false);
     }
   };
 
@@ -233,10 +243,10 @@ const HskTaskType = () => {
       {/* ================= DELETE ================= */}
       <ConfirmModal
         isOpen={!!deleteId}
-        onClose={() => setDeleteId(null)}
+        onClose={() => (deleting ? null : setDeleteId(null))}
         onConfirm={confirmDelete}
         title="Delete Task Type"
-        confirmText="Delete"
+        confirmText={deleting ? "Deleting…" : "Delete"}
         size="small"
         destructive
       >

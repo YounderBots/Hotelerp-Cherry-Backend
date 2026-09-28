@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Printer, Pencil, AlertCircle, RefreshCw } from "lucide-react";
 import APICall from "../../APICalls/APICalls";
 import { readList } from "../../functions/apiHelpers";
 import { printDocument, printHeading, printRow } from "../../functions/printDocument";
 import { useApiResource } from "../../hooks/useApiResource";
+import { usePagePermissions } from "../../hooks/usePagePermissions";
 import ViewSection from "../../stories/ViewSection";
 import DetailList, { DetailItem } from "../../stories/DetailList";
 import {
@@ -24,9 +25,18 @@ import "./Reservation.css";
 const ReservationModelView = () => {
   const [printBlocked, setPrintBlocked] = useState(false);
   const { state } = useLocation();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  // The detail route has no sidebar row, so it is intentionally ungated by
+  // RequirePage. Its actions still follow the owning reservation page's rights;
+  // otherwise a view-only role sees an Edit control that the gateway refuses.
+  const permissions = usePagePermissions("/reservation");
 
-  const reservationId = state?.reservationId;
+  // Keep the id in the URL as well as navigation state. State is lost on a
+  // refresh or when a detail link is pasted/shared; the query parameter makes
+  // the hidden detail route genuinely addressable without changing its route
+  // name or weakening API authorization.
+  const reservationId = state?.reservationId || searchParams.get("reservationId");
 
   // WHAT THIS REPLACES
   //   Seven useState hooks, two hand-written effects and a `mounted` ref
@@ -236,7 +246,7 @@ const ReservationModelView = () => {
             <Printer size={16} aria-hidden="true" />
             <span>Print</span>
           </button>
-          {reservation && !isLocked && (
+          {reservation && !isLocked && permissions.edit && (
             <button
               type="button"
               className="rmv-toolbar-btn primary"

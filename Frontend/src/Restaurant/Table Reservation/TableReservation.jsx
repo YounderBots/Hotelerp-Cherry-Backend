@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Check, CheckCheck, XCircle } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
@@ -85,6 +85,9 @@ const TableReservation = () => {
   const [viewData, setViewData] = useState(null);
   const [pendingMove, setPendingMove] = useState(null); // { row, status }
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const busyRef = useRef(false);
+  const moveRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
@@ -110,7 +113,7 @@ const TableReservation = () => {
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     if (
       !formData.table_id ||
       !formData.guest_name.trim() ||
@@ -134,6 +137,7 @@ const TableReservation = () => {
     }
 
     setFormError(null);
+    savingRef.current = true;
     setSaving(true);
     try {
       await APICall.postT("/restaurant/table_reservation", {
@@ -152,24 +156,29 @@ const TableReservation = () => {
       showToast("Reservation added successfully", "success");
       setShowModal(false);
       setFormData(initialForm);
-      load();
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to create reservation."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const applyStatus = async (row, reservation_status) => {
-    if (busy) return;
+    if (busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       await APICall.putT(`/restaurant/table_reservation/${row.id}`, { reservation_status });
       showToast(`Reservation marked ${reservation_status.toLowerCase()}`, "update");
-      load();
+      await load();
+      return true;
     } catch (err) {
       showToast(errMsg(err, "Failed to update reservation."), "error");
+      return false;
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -184,10 +193,18 @@ const TableReservation = () => {
   };
 
   const confirmMove = async () => {
+    if (!pendingMove || moveRef.current) return;
+    moveRef.current = true;
     const move = pendingMove;
-    setPendingMove(null);
-    setViewData(null);
-    await applyStatus(move.row, move.status);
+    try {
+      const updated = await applyStatus(move.row, move.status);
+      if (updated) {
+        setPendingMove(null);
+        setViewData(null);
+      }
+    } finally {
+      moveRef.current = false;
+    }
   };
 
   /* ================= UI ================= */

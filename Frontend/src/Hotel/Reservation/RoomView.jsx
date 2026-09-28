@@ -71,6 +71,9 @@ const RoomView = () => {
 
   const [activeTab, setActiveTab] = useState("all");
   const [activeRoom, setActiveRoom] = useState(null);
+  const roomCloseRef = useRef(null);
+  const roomDialogRef = useRef(null);
+  const roomReturnFocusRef = useRef(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -114,6 +117,19 @@ const RoomView = () => {
     const original = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = original; };
+  }, [activeRoom]);
+
+  // The room dialog predates the shared Modal component. Give it the same
+  // keyboard contract explicitly: move focus to the close control, keep Tab
+  // inside the one-action dialog, and return focus to the room card on close.
+  useEffect(() => {
+    if (!activeRoom) return undefined;
+    roomReturnFocusRef.current = document.activeElement;
+    const frame = requestAnimationFrame(() => roomCloseRef.current?.focus());
+    return () => {
+      cancelAnimationFrame(frame);
+      roomReturnFocusRef.current?.focus?.();
+    };
   }, [activeRoom]);
 
   const roomTypeName = useCallback(
@@ -275,14 +291,23 @@ const RoomView = () => {
 
       {activeRoom && (
         <div
+          ref={roomDialogRef}
           className="room-image-overlay"
           role="dialog"
           aria-modal="true"
           aria-labelledby="rvw-modal-title"
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            if (e.key === "Tab") {
+              e.preventDefault();
+              roomCloseRef.current?.focus();
+            }
+          }}
           onClick={(e) => { if (e.target === e.currentTarget) setActiveRoom(null); }}
         >
           <div className="room-image-modal">
             <button
+              ref={roomCloseRef}
               type="button"
               className="room-image-close"
               onClick={() => setActiveRoom(null)}

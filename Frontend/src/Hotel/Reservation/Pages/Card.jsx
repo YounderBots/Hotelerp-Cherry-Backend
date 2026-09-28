@@ -5,10 +5,13 @@ const RoomCard = ({ room, isSelected, onSelect, unavailable = false, unavailable
   if (!room) return null;
 
   return (
-    <div
+    <button
+      type="button"
       className={`room-card ${isSelected ? "selected" : ""} ${unavailable ? "unavailable" : ""}`}
       onClick={() => { if (!unavailable) onSelect(room); }}
-      aria-disabled={unavailable || undefined}
+      disabled={unavailable}
+      aria-pressed={isSelected}
+      aria-label={`Room ${room.room_no}, ${unavailable ? unavailableReason || "unavailable" : isSelected ? "selected" : "available"}`}
       title={unavailable ? unavailableReason || "Unavailable" : undefined}
     >
       <div className="room-card-header">
@@ -29,7 +32,7 @@ const RoomCard = ({ room, isSelected, onSelect, unavailable = false, unavailable
         <span>Adult : {room.max_adult}</span>
         <span>Child : {room.max_child}</span>
       </div>
-    </div>
+    </button>
   );
 };
 

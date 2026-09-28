@@ -1,11 +1,13 @@
 import logging
+import math
 import uuid
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 
 from models import get_db, models
 from resources.utils import verify_authentication
@@ -82,6 +84,13 @@ class OrderItemIn(BaseModel):
     quantity: int
     special_instructions: Optional[str] = None
 
+    @field_validator("quantity")
+    @classmethod
+    def quantity_must_be_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("quantity must be at least 1")
+        return value
+
 
 class OrderItemsIn(BaseModel):
     items: List[OrderItemIn]
@@ -90,6 +99,13 @@ class OrderItemsIn(BaseModel):
 class OrderItemUpdate(BaseModel):
     quantity: Optional[int] = None
     item_status: Optional[str] = None
+
+    @field_validator("quantity")
+    @classmethod
+    def quantity_must_be_positive(cls, value: Optional[int]) -> Optional[int]:
+        if value is not None and value < 1:
+            raise ValueError("quantity must be at least 1")
+        return value
 
 
 class OrderConfirmIn(BaseModel):
@@ -132,15 +148,146 @@ def _resolve_price_and_kitchen(db: Session, company_id: str, created_by: str, it
     return menu, price, kitchen, variant
 
 
-def _recalculate_totals(db: Session, order: models.RestaurantOrder):
+def _finite_number(value, field: str) -> float:
+    """Return a database numeric as a finite float for authoritative arithmetic."""
+    if value is None:
+        return 0.0
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be numeric") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"{field} must be finite")
+    return number
+
+
+def _money(value) -> float:
+    return round(_finite_number(value, "amount"), 2)
+
+
+def _modifier_rows_by_item(db: Session, items: List[models.RestaurantOrderItem]):
+    """Load the persisted modifier snapshots once for a set of order lines.
+
+    The order item's ``price`` is the menu/variant price.  Modifier prices live
+    on the child rows, so pricing has to read those rows explicitly rather than
+    trusting a client-provided total (or adding them to ``price`` and risking a
+    second addition in billing).
+    """
+    item_ids = [item.id for item in items if item.id is not None]
+    rows_by_item: Dict[int, List[models.RestaurantOrderItemModifier]] = {
+        item.id: [] for item in items if item.id is not None
+    }
+    if not item_ids:
+        return rows_by_item
+    rows = (
+        db.query(models.RestaurantOrderItemModifier)
+        .filter(models.RestaurantOrderItemModifier.order_item_id.in_(item_ids))
+        .order_by(models.RestaurantOrderItemModifier.id.asc())
+        .all()
+    )
+    for row in rows:
+        rows_by_item.setdefault(row.order_item_id, []).append(row)
+    return rows_by_item
+
+
+def pricing_for_items(db: Session, items: List[models.RestaurantOrderItem]):
+    """Return the one server-side price breakdown used by orders and bills."""
+    rows_by_item = _modifier_rows_by_item(db, items)
+    pricing = {}
+    for item in items:
+        quantity = _finite_number(item.quantity, "quantity")
+        if quantity <= 0:
+            raise ValueError("quantity must be greater than zero")
+        base_rate = _finite_number(item.price, "price")
+        modifiers = rows_by_item.get(item.id, [])
+        modifier_total = _money(
+            sum(_finite_number(modifier.price, "modifier price") for modifier in modifiers)
+        )
+        effective_rate = _money(base_rate + modifier_total)
+        base_total = _money(base_rate * quantity)
+        # Derive the final amount from the same rounded effective rate used by
+        # the bill.  This keeps rate * quantity and the authoritative line
+        # amount add up even when a fractional unit price is configured.
+        line_total = _money(effective_rate * quantity)
+        pricing[item.id] = {
+            "modifiers": modifiers,
+            "modifier_total": modifier_total,
+            "base_rate": _money(base_rate),
+            "base_total": base_total,
+            "effective_rate": effective_rate,
+            "line_total": line_total,
+        }
+    return pricing
+
+
+def _modifier_total_for_items(items: List[models.RestaurantOrderItem], pricing: dict):
+    return _money(
+        sum(
+            pricing[item.id]["modifier_total"] * _finite_number(item.quantity, "quantity")
+            for item in items
+        )
+    )
+
+
+def _totals_for_pricing(order: models.RestaurantOrder, pricing: dict):
+    sub_total = _money(sum(row["line_total"] for row in pricing.values()))
+    grand_total = _money(
+        sub_total
+        + _finite_number(order.tax_amount, "tax_amount")
+        + _finite_number(order.service_charge, "service_charge")
+        - _finite_number(order.discount_amount, "discount_amount")
+    )
+    return sub_total, grand_total
+
+
+def calculate_order_totals(db: Session, order: models.RestaurantOrder):
+    """Calculate an order from persisted base prices and modifier snapshots."""
     items = (
         db.query(models.RestaurantOrderItem)
         .filter(models.RestaurantOrderItem.order_id == order.id, models.RestaurantOrderItem.status == STATUS)
         .all()
     )
-    sub_total = sum((i.price or 0) * (i.quantity or 0) for i in items)
+    pricing = pricing_for_items(db, items)
+    return _totals_for_pricing(order, pricing)
+
+
+def _recalculate_totals(db: Session, order: models.RestaurantOrder):
+    sub_total, grand_total = calculate_order_totals(db, order)
     order.sub_total = sub_total
-    order.grand_total = sub_total + (order.tax_amount or 0) + (order.service_charge or 0) - (order.discount_amount or 0)
+    order.grand_total = grand_total
+    return sub_total, grand_total
+
+
+def _modifier_data(modifier: models.RestaurantOrderItemModifier):
+    return {
+        "id": modifier.id,
+        "order_item_id": modifier.order_item_id,
+        "modifier_id": modifier.modifier_id,
+        "modifier_name": modifier.modifier_name,
+        "price": _finite_number(modifier.price, "modifier price"),
+    }
+
+
+def _order_item_data(item: models.RestaurantOrderItem, item_name: Optional[str], item_pricing: dict):
+    modifiers = item_pricing["modifiers"]
+    return {
+        **item.__dict__,
+        # ``price`` is the persisted menu/variant base.  The explicit
+        # unit/effective fields below are the amount that includes modifiers.
+        "item_name": item_name,
+        "modifier_ids": [modifier.modifier_id for modifier in modifiers],
+        "modifier_names": [modifier.modifier_name for modifier in modifiers],
+        "modifiers": [_modifier_data(modifier) for modifier in modifiers],
+        "modifier_total": item_pricing["modifier_total"],
+        "base_total": item_pricing["base_total"],
+        "base_rate": item_pricing["base_rate"],
+        "base_unit_price": item_pricing["base_rate"],
+        "unit_price": item_pricing["effective_rate"],
+        "effective_rate": item_pricing["effective_rate"],
+        "effective_unit_price": item_pricing["effective_rate"],
+        "line_total": item_pricing["line_total"],
+        "total_price": item_pricing["line_total"],
+    }
 
 
 # =====================================================
@@ -162,6 +309,7 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
         table = (
             db.query(models.RestaurantTable)
             .filter(models.RestaurantTable.id == payload.table_id, models.RestaurantTable.company_id == company_id)
+            .with_for_update()
             .first()
         )
         if not table:
@@ -206,6 +354,17 @@ def create_order(payload: OrderIn, request: Request, db: Session = Depends(get_d
         return {"status": "success", "data": {"id": order.id, "order_number": order.order_number, "token": order.token}}
     except HTTPException:
         raise
+    except OperationalError as e:
+        db.rollback()
+        # A concurrent create for the same table can deadlock if both callers
+        # read the available row before either writes the order/table pair.
+        # The row lock above serializes the normal path; translate a residual
+        # lock timeout/deadlock to a deterministic client conflict rather than
+        # leaking a 500.
+        mysql_code = e.orig.args[0] if getattr(e, "orig", None) and e.orig.args else None
+        if mysql_code in (1205, 1213):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Table already has an active order")
+        raise _server_error(e)
     except Exception as e:
         db.rollback()
         raise _server_error(e)
@@ -266,9 +425,12 @@ def list_orders(
     data = []
     for r in rows:
         table = table_by_id.get(r.table_id)
+        sub_total, grand_total = calculate_order_totals(db, r)
         data.append(
             {
                 **r.__dict__,
+                "sub_total": sub_total,
+                "grand_total": grand_total,
                 "table_name": table.table_name if table else None,
                 "table_code": table.table_code if table else None,
                 # One label for the "where" column, whichever kind of order it
@@ -306,15 +468,31 @@ def get_order(order_id: int, request: Request, db: Session = Depends(get_db)):
     # separately-fetched menu list and printing "#42" whenever that missed.
     menu_ids = {i.menu_id for i in items if i.menu_id}
     menus = (
-        db.query(models.RestaurantMenu).filter(models.RestaurantMenu.id.in_(menu_ids)).all()
+        db.query(models.RestaurantMenu)
+        .filter(models.RestaurantMenu.id.in_(menu_ids), models.RestaurantMenu.company_id == company_id)
+        .all()
         if menu_ids
         else []
     )
     menu_name_by_id = {m.id: m.item_name for m in menus}
+    item_pricing = pricing_for_items(db, items)
+    sub_total, grand_total = _totals_for_pricing(order, item_pricing)
+    modifier_total = _modifier_total_for_items(items, item_pricing)
     item_data = [
-        {**i.__dict__, "item_name": menu_name_by_id.get(i.menu_id)} for i in items
+        _order_item_data(i, menu_name_by_id.get(i.menu_id), item_pricing[i.id]) for i in items
     ]
-    return {"status": "success", "data": {**order.__dict__, "items": item_data}}
+    # Return the same values used by the calculator, even for an order created
+    # before modifier pricing was fixed and still carrying an old stored total.
+    return {
+        "status": "success",
+        "data": {
+            **order.__dict__,
+            "sub_total": sub_total,
+            "modifier_total": modifier_total,
+            "grand_total": grand_total,
+            "items": item_data,
+        },
+    }
 
 
 @router.post("/order/{order_id}/items", status_code=status.HTTP_201_CREATED)

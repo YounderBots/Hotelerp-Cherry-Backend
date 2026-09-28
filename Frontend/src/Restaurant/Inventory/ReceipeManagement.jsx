@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import RowActions from "../../stories/RowActions";
@@ -49,6 +49,7 @@ const ReceipeManagement = () => {
   const [selectedMenu, setSelectedMenu] = useState(null);
   const [rows, setRows] = useState([]);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [formError, setFormError] = useState(null);
 
   const recipeCounts = recipeCountRows || {};
@@ -113,7 +114,7 @@ const ReceipeManagement = () => {
   const removeRow = (idx) => setRows((prev) => prev.filter((_, i) => i !== idx));
 
   const saveRecipe = async () => {
-    if (saving) return;
+    if (saving || savingRef.current) return;
     const valid = rows.filter((r) => r.inventory_item_id && r.quantity_required);
     if (valid.length === 0) {
       setFormError("Add at least one ingredient with a quantity.");
@@ -131,6 +132,7 @@ const ReceipeManagement = () => {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     setFormError(null);
     try {
@@ -142,11 +144,14 @@ const ReceipeManagement = () => {
         })),
       });
       showToast("Recipe saved successfully", "update");
-      closeModal();
-      load();
+      setActiveModal(null);
+      setSelectedMenu(null);
+      setRows([]);
+      await load();
     } catch (err) {
       setFormError(errMsg(err, "Failed to save recipe."));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };

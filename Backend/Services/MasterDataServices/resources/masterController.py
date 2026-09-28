@@ -1,5 +1,7 @@
 import logging
+import math
 import os
+import re
 import uuid
 
 from fastapi import (
@@ -15,6 +17,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from sqlalchemy import Integer, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from typing import Optional
 
@@ -31,12 +34,145 @@ os.makedirs(UPLOAD_PATH, exist_ok=True)
 ALLOWED_UPLOAD_EXTS = BaseConfig.UPLOAD_ALLOWED_EXTENSIONS
 UPLOAD_MAX_BYTES = BaseConfig.UPLOAD_MAX_BYTES
 
+ROOM_RATE_FIELDS = (
+    "room_cost",
+    "bed_cost",
+    "daily_rate",
+    "weekly_rate",
+    "bed_only_rate",
+    "bed_breakfast_rate",
+    "half_board_rate",
+    "full_board_rate",
+)
+
+
+def _validate_room_type_values(db: Session, company_id: str, payload: dict) -> dict:
+    type_name = str(payload.get("type_name", "") or "").strip()
+    if not type_name or len(type_name) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="type_name must be 1-100 characters",
+        )
+
+    values = {"type_name": type_name}
+    for field in ROOM_RATE_FIELDS:
+        value = payload.get(field)
+        if field in ("room_cost", "bed_cost") and value is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{field} is required",
+            )
+        if value is not None:
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"{field} must be a number")
+            if not math.isfinite(number) or number < 0:
+                raise HTTPException(status_code=400, detail=f"{field} must be zero or greater")
+            values[field] = number
+
+    complementry = str(payload.get("complementry", "") or "").strip()
+    if not complementry:
+        raise HTTPException(status_code=400, detail="complementry is required")
+    complementary = db.query(models.Room_Complementry).filter(
+        models.Room_Complementry.id == complementry,
+        models.Room_Complementry.company_id == company_id,
+        models.Room_Complementry.status == CommonWords.STATUS,
+    ).first()
+    if not complementary:
+        raise HTTPException(status_code=400, detail="complementry does not reference an active company value")
+    values["complementry"] = str(complementary.id)
+    return values
+
+
+def _validate_bed_type_value(payload: dict) -> str:
+    bed_type = str(payload.get("bed_type", "") or "").strip()
+    if not bed_type or len(bed_type) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="bed_type must be 1-100 characters",
+        )
+    return bed_type
+
+
+def _validate_hall_name(payload: dict) -> str:
+    hall_name = str(payload.get("hall_name", "") or "").strip()
+    if not hall_name or len(hall_name) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="hall_name must be 1-255 characters",
+        )
+    return hall_name
+
+
+ROOM_CONDITIONS = ("Blocking", "UnBlocking")
+
+
+def _validate_room_values(db: Session, company_id: str, *, room_no, room_name, room_type_id, bed_type_id, telephone, max_adult, max_child):
+    room_no = str(room_no or "").strip()
+    room_name = str(room_name or "").strip()
+    if not room_no or len(room_no) > 100:
+        raise HTTPException(status_code=400, detail="room_no must be 1-100 characters")
+    if not room_name or len(room_name) > 100:
+        raise HTTPException(status_code=400, detail="room_name must be 1-100 characters")
+    if telephone is not None and len(str(telephone).strip()) > 100:
+        raise HTTPException(status_code=400, detail="telephone must not exceed 100 characters")
+    if max_adult < 0 or max_child < 0:
+        raise HTTPException(status_code=400, detail="max_adult and max_child must be non-negative")
+    if not db.query(models.Room_Type).filter(models.Room_Type.id == room_type_id, models.Room_Type.company_id == company_id, models.Room_Type.status == CommonWords.STATUS).first():
+        raise HTTPException(status_code=400, detail="room_type_id does not reference an active company value")
+    if not db.query(models.Bed_Type).filter(models.Bed_Type.id == bed_type_id, models.Bed_Type.company_id == company_id, models.Bed_Type.status == CommonWords.STATUS).first():
+        raise HTTPException(status_code=400, detail="bed_type_id does not reference an active company value")
+    return room_no, room_name, str(telephone or "").strip()
+
+
+def _sniff_family(data: bytes) -> str:
+    """The file family implied by the first bytes of `data`.
+
+    An extension is a claim a client makes; these bytes are what the server
+    actually received. Only the header is read, which is all that is needed to
+    tell the families this application accepts apart from a text file, a script,
+    or an archive wearing an image's name.
+    """
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    if data.startswith(b"%PDF-"):
+        return "pdf"
+    return ""
+
+
+# Extensions grouped by the family that must be proven by the file's bytes.
+# `jpg` and `jpeg` are the same family, so either extension is accepted for a
+# JPEG header and neither is accepted for anything else.
+_UPLOAD_EXT_FAMILY = {
+    "jpg": "jpeg", "jpeg": "jpeg",
+    "png": "png",
+    "gif": "gif",
+    "webp": "webp",
+    "pdf": "pdf",
+}
+
 
 def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
     """Validate and read an incoming UploadFile.
 
     Returns ``(safe_extension, raw_bytes)``. Raises HTTPException on any
-    violation (bad extension, oversized payload, unreadable filename).
+    violation (bad extension, content that is not that type of file, oversized
+    payload, unreadable filename).
+
+    Checking the extension alone accepted an HTML document containing a
+    ``<script>`` tag and a shell script as long as the name ended in ``.png``
+    (C-085). Serving them back as ``image/png`` with ``nosniff`` meant the
+    browser would not execute them, so this was never a working stored-XSS --
+    but the property was storing files that are not the pictures its screens
+    claim they are, and a payload delivered through "upload a room photo" is not
+    a channel to leave open.
     """
     if not upload or not upload.filename:
         raise HTTPException(status_code=400, detail="File is required")
@@ -46,6 +182,12 @@ def _sanitize_upload(upload: UploadFile) -> tuple[str, bytes]:
     data = upload.file.read(UPLOAD_MAX_BYTES + 1)
     if len(data) > UPLOAD_MAX_BYTES:
         raise HTTPException(status_code=413, detail="File exceeds size limit")
+    expected = _UPLOAD_EXT_FAMILY.get(ext)
+    if expected and _sniff_family(data) != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File content is not a valid {expected.upper()} image",
+        )
     return ext, data
 
 
@@ -205,7 +347,14 @@ async def create_facility(
         )
 
         db.add(facility)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Facility already exists",
+            )
         db.refresh(facility)
 
         # -------------------------------------------------
@@ -366,6 +515,23 @@ async def update_facility(
                 detail="facility_name must not exceed 100 characters"
             )
 
+        # Lock the target before checking the company-wide name invariant.
+        facility = (
+            db.query(models.Facility)
+            .filter(
+                models.Facility.id == facility_id,
+                models.Facility.company_id == company_id,
+                models.Facility.status == CommonWords.STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not facility:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Facility not found"
+            )
+
         # -------------------------------------------------
         # DUPLICATE NAME CHECK (CASE-INSENSITIVE)
         # -------------------------------------------------
@@ -387,31 +553,19 @@ async def update_facility(
             )
 
         # -------------------------------------------------
-        # FETCH FACILITY
-        # -------------------------------------------------
-        facility = (
-            db.query(models.Facility)
-            .filter(
-                models.Facility.id == facility_id,
-                models.Facility.company_id == company_id,
-                models.Facility.status == CommonWords.STATUS,
-            )
-            .first()
-        )
-
-        if not facility:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Facility not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE FACILITY
         # -------------------------------------------------
         facility.Facility_Name = facility_name
         facility.updated_by = user_id if hasattr(facility, "updated_by") else None
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Facility name already exists",
+            )
         db.refresh(facility)
 
         # -------------------------------------------------
@@ -480,6 +634,7 @@ def delete_facility(
                 models.Facility.company_id == company_id,
                 models.Facility.status == CommonWords.STATUS,
             )
+            .with_for_update()
             .first()
         )
 
@@ -629,44 +784,18 @@ async def create_room_type(
                 detail="Invalid JSON body"
             )
 
-        type_name = payload.get("type_name", "").strip()
-        room_cost = payload.get("room_cost")
-        bed_cost = payload.get("bed_cost")
-        complementry = payload.get("complementry")
+        values = _validate_room_type_values(db, company_id, payload)
+        type_name = values["type_name"]
+        room_cost = values["room_cost"]
+        bed_cost = values["bed_cost"]
+        complementry = values["complementry"]
 
-        daily_rate = payload.get("daily_rate")
-        weekly_rate = payload.get("weekly_rate")
-        bed_only_rate = payload.get("bed_only_rate")
-        bed_breakfast_rate = payload.get("bed_breakfast_rate")
-        half_board_rate = payload.get("half_board_rate")
-        full_board_rate = payload.get("full_board_rate")
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
-        if not type_name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="type_name is required"
-            )
-
-        if len(type_name) > 100:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="type_name must not exceed 100 characters"
-            )
-
-        if room_cost is None or bed_cost is None or complementry is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_cost, bed_cost and complementry are required"
-            )
-
-        if room_cost < 0 or bed_cost < 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_cost and bed_cost must be non-negative"
-            )
+        daily_rate = values.get("daily_rate")
+        weekly_rate = values.get("weekly_rate")
+        bed_only_rate = values.get("bed_only_rate")
+        bed_breakfast_rate = values.get("bed_breakfast_rate")
+        half_board_rate = values.get("half_board_rate")
+        full_board_rate = values.get("full_board_rate")
 
         # -------------------------------------------------
         # DUPLICATE CHECK (CASE-INSENSITIVE)
@@ -707,7 +836,14 @@ async def create_room_type(
         )
 
         db.add(room_type)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Room type already exists",
+            )
         db.refresh(room_type)
 
         # -------------------------------------------------
@@ -853,49 +989,39 @@ async def update_room_type(
             )
 
         room_type_id = payload.get("id")
-        type_name = payload.get("type_name", "").strip()
-        room_cost = payload.get("room_cost")
-        bed_cost = payload.get("bed_cost")
-        complementry = payload.get("complementry")
-
-        daily_rate = payload.get("daily_rate")
-        weekly_rate = payload.get("weekly_rate")
-        bed_only_rate = payload.get("bed_only_rate")
-        bed_breakfast_rate = payload.get("bed_breakfast_rate")
-        half_board_rate = payload.get("half_board_rate")
-        full_board_rate = payload.get("full_board_rate")
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
         if not room_type_id or not isinstance(room_type_id, int) or room_type_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Valid room type id is required"
             )
+        values = _validate_room_type_values(db, company_id, payload)
+        type_name = values["type_name"]
+        room_cost = values["room_cost"]
+        bed_cost = values["bed_cost"]
+        complementry = values["complementry"]
 
-        if not type_name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="type_name is required"
+        daily_rate = values.get("daily_rate")
+        weekly_rate = values.get("weekly_rate")
+        bed_only_rate = values.get("bed_only_rate")
+        bed_breakfast_rate = values.get("bed_breakfast_rate")
+        half_board_rate = values.get("half_board_rate")
+        full_board_rate = values.get("full_board_rate")
+
+        # Lock the target before checking the company-wide name invariant.
+        room_type = (
+            db.query(models.Room_Type)
+            .filter(
+                models.Room_Type.id == room_type_id,
+                models.Room_Type.company_id == company_id,
+                models.Room_Type.status == CommonWords.STATUS,
             )
-
-        if len(type_name) > 100:
+            .with_for_update()
+            .first()
+        )
+        if not room_type:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="type_name must not exceed 100 characters"
-            )
-
-        if room_cost is None or bed_cost is None or complementry is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_cost, bed_cost and complementry are required"
-            )
-
-        if room_cost < 0 or bed_cost < 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_cost and bed_cost must be non-negative"
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Room type not found"
             )
 
         # -------------------------------------------------
@@ -919,25 +1045,6 @@ async def update_room_type(
             )
 
         # -------------------------------------------------
-        # FETCH ROOM TYPE
-        # -------------------------------------------------
-        room_type = (
-            db.query(models.Room_Type)
-            .filter(
-                models.Room_Type.id == room_type_id,
-                models.Room_Type.company_id == company_id,
-                models.Room_Type.status == CommonWords.STATUS,
-            )
-            .first()
-        )
-
-        if not room_type:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Room type not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE ROOM TYPE
         # -------------------------------------------------
         room_type.Type_Name = type_name
@@ -952,7 +1059,14 @@ async def update_room_type(
         room_type.Full_Board_Rate = full_board_rate
         room_type.updated_by = user_id if hasattr(room_type, "updated_by") else None
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Room type name already exists",
+            )
         db.refresh(room_type)
 
         # -------------------------------------------------
@@ -1024,6 +1138,7 @@ def delete_room_type(
                 models.Room_Type.company_id == company_id,
                 models.Room_Type.status == CommonWords.STATUS,
             )
+            .with_for_update()
             .first()
         )
 
@@ -1159,22 +1274,7 @@ async def create_bed_type(
                 detail="Invalid JSON body"
             )
 
-        bed_type_name = payload.get("bed_type", "").strip()
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
-        if not bed_type_name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="bed_type is required"
-            )
-
-        if len(bed_type_name) > 100:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="bed_type must not exceed 100 characters"
-            )
+        bed_type_name = _validate_bed_type_value(payload)
 
         # -------------------------------------------------
         # DUPLICATE CHECK (CASE-INSENSITIVE)
@@ -1206,7 +1306,11 @@ async def create_bed_type(
         )
 
         db.add(bed_type)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Bed type already exists")
         db.refresh(bed_type)
 
         # -------------------------------------------------
@@ -1340,28 +1444,25 @@ async def update_bed_type(
             )
 
         bed_type_id = payload.get("id")
-        bed_type_name = payload.get("bed_type", "").strip()
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
         if not bed_type_id or not isinstance(bed_type_id, int) or bed_type_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Valid bed type id is required"
             )
+        bed_type_name = _validate_bed_type_value(payload)
 
-        if not bed_type_name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="bed_type is required"
+        bed_type = (
+            db.query(models.Bed_Type)
+            .filter(
+                models.Bed_Type.id == bed_type_id,
+                models.Bed_Type.company_id == company_id,
+                models.Bed_Type.status == CommonWords.STATUS,
             )
-
-        if len(bed_type_name) > 100:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="bed_type must not exceed 100 characters"
-            )
+            .with_for_update()
+            .first()
+        )
+        if not bed_type:
+            raise HTTPException(status_code=404, detail="Bed type not found")
 
         # -------------------------------------------------
         # DUPLICATE CHECK (CASE-INSENSITIVE)
@@ -1384,31 +1485,16 @@ async def update_bed_type(
             )
 
         # -------------------------------------------------
-        # FETCH BED TYPE
-        # -------------------------------------------------
-        bed_type = (
-            db.query(models.Bed_Type)
-            .filter(
-                models.Bed_Type.id == bed_type_id,
-                models.Bed_Type.company_id == company_id,
-                models.Bed_Type.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not bed_type:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Bed type not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE BED TYPE
         # -------------------------------------------------
         bed_type.Type_Name = bed_type_name
         bed_type.updated_by = user_id if hasattr(bed_type, "updated_by") else None
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Bed type name already exists")
         db.refresh(bed_type)
 
         # -------------------------------------------------
@@ -1475,6 +1561,7 @@ def delete_bed_type(
                 models.Bed_Type.company_id == company_id,
                 models.Bed_Type.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -1610,22 +1697,7 @@ async def create_hall_floor(
                 detail="Invalid JSON body"
             )
 
-        hall_name = payload.get("hall_name", "").strip()
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
-        if not hall_name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="hall_name is required"
-            )
-
-        if len(hall_name) > 100:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="hall_name must not exceed 100 characters"
-            )
+        hall_name = _validate_hall_name(payload)
 
         # -------------------------------------------------
         # DUPLICATE CHECK (CASE-INSENSITIVE)
@@ -1657,7 +1729,11 @@ async def create_hall_floor(
         )
 
         db.add(hall)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Hall / Floor already exists")
         db.refresh(hall)
 
         # -------------------------------------------------
@@ -1791,28 +1867,25 @@ async def update_hall_floor(
             )
 
         hall_id = payload.get("id")
-        hall_name = payload.get("hall_name", "").strip()
-
-        # -------------------------------------------------
-        # VALIDATION
-        # -------------------------------------------------
         if not hall_id or not isinstance(hall_id, int) or hall_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Valid hall id is required"
             )
+        hall_name = _validate_hall_name(payload)
 
-        if not hall_name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="hall_name is required"
+        hall = (
+            db.query(models.TableHallNames)
+            .filter(
+                models.TableHallNames.id == hall_id,
+                models.TableHallNames.company_id == company_id,
+                models.TableHallNames.status == CommonWords.STATUS,
             )
-
-        if len(hall_name) > 100:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="hall_name must not exceed 100 characters"
-            )
+            .with_for_update()
+            .first()
+        )
+        if not hall:
+            raise HTTPException(status_code=404, detail="Hall / Floor not found")
 
         # -------------------------------------------------
         # DUPLICATE NAME CHECK (CASE-INSENSITIVE)
@@ -1835,31 +1908,16 @@ async def update_hall_floor(
             )
 
         # -------------------------------------------------
-        # FETCH HALL / FLOOR
-        # -------------------------------------------------
-        hall = (
-            db.query(models.TableHallNames)
-            .filter(
-                models.TableHallNames.id == hall_id,
-                models.TableHallNames.company_id == company_id,
-                models.TableHallNames.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not hall:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Hall / Floor not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         hall.hall_name = hall_name
         hall.updated_by = user_id if hasattr(hall, "updated_by") else None
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Hall / Floor name already exists")
         db.refresh(hall)
 
         # -------------------------------------------------
@@ -1926,6 +1984,7 @@ def delete_hall_floor(
                 models.TableHallNames.company_id == company_id,
                 models.TableHallNames.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -2082,17 +2141,17 @@ async def create_room(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
-        if not room_no or not room_name:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="room_no and room_name are required"
-            )
-
-        if max_adult < 0 or max_child < 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="max_adult and max_child must be non-negative"
-            )
+        room_no, room_name, room_telephone = _validate_room_values(
+            db,
+            company_id,
+            room_no=room_no,
+            room_name=room_name,
+            room_type_id=room_type_id,
+            bed_type_id=bed_type_id,
+            telephone=room_telephone,
+            max_adult=max_adult,
+            max_child=max_child,
+        )
 
         # -------------------------------------------------
         # DUPLICATE ROOM CHECK
@@ -2122,10 +2181,10 @@ async def create_room(
             ext, data = _sanitize_upload(upload)
             return _write_upload(data, ext)
 
-        img1 = save_image(image_1)
-        img2 = save_image(image_2)
-        img3 = save_image(image_3)
-        img4 = save_image(image_4)
+        img1 = save_image(image_1) or ""
+        img2 = save_image(image_2) or ""
+        img3 = save_image(image_3) or ""
+        img4 = save_image(image_4) or ""
 
         # -------------------------------------------------
         # CREATE ROOM
@@ -2154,7 +2213,11 @@ async def create_room(
         )
 
         db.add(room)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Room number already exists")
         db.refresh(room)
 
         # -------------------------------------------------
@@ -2320,11 +2383,32 @@ async def update_room(
                 detail="Invalid room_id"
             )
 
-        if max_adult < 0 or max_child < 0:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="max_adult and max_child must be non-negative"
+        room_no, room_name, tele_no = _validate_room_values(
+            db,
+            company_id,
+            room_no=room_no,
+            room_name=room_name,
+            room_type_id=room_type_id,
+            bed_type_id=bed_type_id,
+            telephone=tele_no,
+            max_adult=max_adult,
+            max_child=max_child,
+        )
+        if room_condition not in ROOM_CONDITIONS:
+            raise HTTPException(status_code=400, detail="room_condition must be Blocking or UnBlocking")
+
+        room = (
+            db.query(models.Room)
+            .filter(
+                models.Room.id == room_id,
+                models.Room.company_id == company_id,
+                models.Room.status == CommonWords.STATUS,
             )
+            .with_for_update()
+            .first()
+        )
+        if not room:
+            raise HTTPException(status_code=404, detail="Room not found")
 
         # -------------------------------------------------
         # DUPLICATE ROOM NO CHECK
@@ -2344,25 +2428,6 @@ async def update_room(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Room number already exists"
-            )
-
-        # -------------------------------------------------
-        # FETCH ROOM
-        # -------------------------------------------------
-        room = (
-            db.query(models.Room)
-            .filter(
-                models.Room.id == room_id,
-                models.Room.company_id == company_id,
-                models.Room.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not room:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Room not found"
             )
 
         # -------------------------------------------------
@@ -2398,7 +2463,11 @@ async def update_room(
         room.Room_Status = room_condition
         room.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Room number already exists")
         db.refresh(room)
 
         # -------------------------------------------------
@@ -2468,6 +2537,7 @@ def delete_room(
                 models.Room.company_id == company_id,
                 models.Room.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -2649,10 +2719,10 @@ async def create_discount(
                 detail="discount_percentage must be a number"
             )
 
-        if not (0 < discount_percentage <= 100):
+        if not (0 <= discount_percentage <= 100):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="discount_percentage must be between 1 and 100"
+                detail="discount_percentage must be between 0 and 100"
             )
 
         # -------------------------------------------------
@@ -2707,7 +2777,11 @@ async def create_discount(
         )
 
         db.add(discount)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Discount already exists for this country")
         db.refresh(discount)
 
         # -------------------------------------------------
@@ -2895,10 +2969,10 @@ async def update_discount(
                 detail="discount_percentage must be a number"
             )
 
-        if not (0 < discount_percentage <= 100):
+        if not (0 <= discount_percentage <= 100):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="discount_percentage must be between 1 and 100"
+                detail="discount_percentage must be between 0 and 100"
             )
 
         # -------------------------------------------------
@@ -2914,6 +2988,7 @@ async def update_discount(
                 models.Discount_Data.company_id == company_id,
                 models.Discount_Data.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -2971,7 +3046,11 @@ async def update_discount(
         discount.Discount_Percentage = str(discount_percentage)
         discount.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Discount already exists for this country")
         db.refresh(discount)
 
         # -------------------------------------------------
@@ -3041,6 +3120,7 @@ def delete_discount(
                 models.Discount_Data.company_id == company_id,
                 models.Discount_Data.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -3229,10 +3309,10 @@ async def create_tax(
                 detail="tax_percentage must be a number"
             )
 
-        if not (0 < tax_percentage <= 100):
+        if not (0 <= tax_percentage <= 100):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="tax_percentage must be between 1 and 100"
+                detail="tax_percentage must be between 0 and 100"
             )
 
         # -------------------------------------------------
@@ -3288,7 +3368,11 @@ async def create_tax(
         )
 
         db.add(tax)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Tax already exists for this country")
         db.refresh(tax)
 
         # -------------------------------------------------
@@ -3486,10 +3570,10 @@ async def update_tax(
                 detail="tax_percentage must be a number"
             )
 
-        if not (0 < tax_percentage <= 100):
+        if not (0 <= tax_percentage <= 100):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="tax_percentage must be between 1 and 100"
+                detail="tax_percentage must be between 0 and 100"
             )
 
         # -------------------------------------------------
@@ -3510,6 +3594,19 @@ async def update_tax(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Country not found"
             )
+
+        tax = (
+            db.query(models.Tax_type)
+            .filter(
+                models.Tax_type.id == tax_id,
+                models.Tax_type.company_id == company_id,
+                models.Tax_type.status == CommonWords.STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not tax:
+            raise HTTPException(status_code=404, detail="Tax not found")
 
         # -------------------------------------------------
         # DUPLICATE CHECK
@@ -3533,25 +3630,6 @@ async def update_tax(
             )
 
         # -------------------------------------------------
-        # FETCH TAX
-        # -------------------------------------------------
-        tax = (
-            db.query(models.Tax_type)
-            .filter(
-                models.Tax_type.id == tax_id,
-                models.Tax_type.company_id == company_id,
-                models.Tax_type.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not tax:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Tax not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         tax.Country_ID = str(country_id)
@@ -3559,7 +3637,11 @@ async def update_tax(
         tax.Tax_Percentage = str(tax_percentage)
         tax.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Tax already exists for this country")
         db.refresh(tax)
 
         # -------------------------------------------------
@@ -3628,6 +3710,7 @@ def delete_tax(
                 models.Tax_type.company_id == company_id,
                 models.Tax_type.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -3811,7 +3894,11 @@ async def create_payment_method(
         )
 
         db.add(payment)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Payment method already exists")
         db.refresh(payment)
 
         # -------------------------------------------------
@@ -3970,6 +4057,19 @@ async def update_payment_method(
                 detail="payment_method must not exceed 100 characters"
             )
 
+        payment = (
+            db.query(models.Payment_Methods)
+            .filter(
+                models.Payment_Methods.id == payment_id,
+                models.Payment_Methods.company_id == company_id,
+                models.Payment_Methods.status == CommonWords.STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment method not found")
+
         # -------------------------------------------------
         # DUPLICATE CHECK
         # -------------------------------------------------
@@ -3992,31 +4092,16 @@ async def update_payment_method(
             )
 
         # -------------------------------------------------
-        # FETCH PAYMENT METHOD
-        # -------------------------------------------------
-        payment = (
-            db.query(models.Payment_Methods)
-            .filter(
-                models.Payment_Methods.id == payment_id,
-                models.Payment_Methods.company_id == company_id,
-                models.Payment_Methods.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not payment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment method not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         payment.payment_method = payment_method
         payment.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Payment method already exists")
         db.refresh(payment)
 
         # -------------------------------------------------
@@ -4084,6 +4169,7 @@ def delete_payment_method(
                 models.Payment_Methods.company_id == company_id,
                 models.Payment_Methods.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -4271,7 +4357,11 @@ async def create_identity_proof(
         )
 
         db.add(proof)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Identity proof already exists")
         db.refresh(proof)
 
         # -------------------------------------------------
@@ -4430,6 +4520,19 @@ async def update_identity_proof(
                 detail="proof_name must not exceed 100 characters"
             )
 
+        proof = (
+            db.query(models.Identity_Proofs)
+            .filter(
+                models.Identity_Proofs.id == proof_id,
+                models.Identity_Proofs.company_id == company_id,
+                models.Identity_Proofs.status == CommonWords.STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not proof:
+            raise HTTPException(status_code=404, detail="Identity proof not found")
+
         # -------------------------------------------------
         # DUPLICATE CHECK (CASE INSENSITIVE)
         # -------------------------------------------------
@@ -4451,31 +4554,16 @@ async def update_identity_proof(
             )
 
         # -------------------------------------------------
-        # FETCH IDENTITY PROOF
-        # -------------------------------------------------
-        proof = (
-            db.query(models.Identity_Proofs)
-            .filter(
-                models.Identity_Proofs.id == proof_id,
-                models.Identity_Proofs.company_id == company_id,
-                models.Identity_Proofs.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not proof:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Identity proof not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         proof.Proof_Name = proof_name
         proof.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Identity proof already exists")
         db.refresh(proof)
 
         # -------------------------------------------------
@@ -4545,6 +4633,7 @@ def delete_identity_proof(
                 models.Identity_Proofs.company_id == company_id,
                 models.Identity_Proofs.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -4762,7 +4851,11 @@ async def create_country_currency(
         )
 
         db.add(country_currency)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Country already exists")
         db.refresh(country_currency)
 
         # -------------------------------------------------
@@ -4953,6 +5046,19 @@ async def update_country_currency(
         currency_name = currency_name.strip()
         symbol = symbol.strip()
 
+        country = (
+            db.query(models.Country_Currency)
+            .filter(
+                models.Country_Currency.id == country_id,
+                models.Country_Currency.company_id == company_id,
+                models.Country_Currency.status == CommonWords.STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not country:
+            raise HTTPException(status_code=404, detail="Country not found")
+
         # -------------------------------------------------
         # DUPLICATE CHECK
         # -------------------------------------------------
@@ -4975,25 +5081,6 @@ async def update_country_currency(
             )
 
         # -------------------------------------------------
-        # FETCH RECORD
-        # -------------------------------------------------
-        country = (
-            db.query(models.Country_Currency)
-            .filter(
-                models.Country_Currency.id == country_id,
-                models.Country_Currency.company_id == company_id,
-                models.Country_Currency.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not country:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Country not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         country.Country_Name = country_name
@@ -5001,7 +5088,11 @@ async def update_country_currency(
         country.Symbol = symbol
         country.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Country already exists")
         db.refresh(country)
 
         # -------------------------------------------------
@@ -5071,6 +5162,7 @@ def delete_country_currency(
                 models.Country_Currency.company_id == company_id,
                 models.Country_Currency.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -5230,6 +5322,12 @@ async def create_task_type(
                 detail="color is required"
             )
 
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color must be a hex value such as #22c55e"
+            )
+
         if len(task_name) > 100:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -5267,7 +5365,11 @@ async def create_task_type(
         )
 
         db.add(task_type)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Task type already exists")
         db.refresh(task_type)
 
         # -------------------------------------------------
@@ -5431,11 +5533,30 @@ async def update_task_type(
                 detail="color is required"
             )
 
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color must be a hex value such as #22c55e"
+            )
+
         if len(task_name) > 100:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="task_name must not exceed 100 characters"
             )
+
+        task_type = (
+            db.query(models.Task_Type)
+            .filter(
+                models.Task_Type.id == task_type_id,
+                models.Task_Type.company_id == company_id,
+                models.Task_Type.status == CommonWords.STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not task_type:
+            raise HTTPException(status_code=404, detail="Task type not found")
 
         # -------------------------------------------------
         # DUPLICATE CHECK (CASE INSENSITIVE)
@@ -5458,32 +5579,17 @@ async def update_task_type(
             )
 
         # -------------------------------------------------
-        # FETCH TASK TYPE
-        # -------------------------------------------------
-        task_type = (
-            db.query(models.Task_Type)
-            .filter(
-                models.Task_Type.id == task_type_id,
-                models.Task_Type.company_id == company_id,
-                models.Task_Type.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not task_type:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task type not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         task_type.Type_Name = task_name
         task_type.Color = color
         task_type.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Task type already exists")
         db.refresh(task_type)
 
         # -------------------------------------------------
@@ -5554,6 +5660,7 @@ def delete_task_type(
                 models.Task_Type.company_id == company_id,
                 models.Task_Type.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -5754,7 +5861,11 @@ async def create_room_complementry(
         )
 
         db.add(complementry)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Room complementary already exists")
         db.refresh(complementry)
 
         # -------------------------------------------------
@@ -5930,6 +6041,19 @@ async def update_room_complementry(
                 detail="description must not exceed 255 characters"
             )
 
+        complementry = (
+            db.query(models.Room_Complementry)
+            .filter(
+                models.Room_Complementry.id == complementry_id,
+                models.Room_Complementry.company_id == company_id,
+                models.Room_Complementry.status == CommonWords.STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not complementry:
+            raise HTTPException(status_code=404, detail="Room complementary not found")
+
         # -------------------------------------------------
         # DUPLICATE CHECK
         # -------------------------------------------------
@@ -5952,32 +6076,17 @@ async def update_room_complementry(
             )
 
         # -------------------------------------------------
-        # FETCH COMPLEMENTARY
-        # -------------------------------------------------
-        complementry = (
-            db.query(models.Room_Complementry)
-            .filter(
-                models.Room_Complementry.id == complementry_id,
-                models.Room_Complementry.company_id == company_id,
-                models.Room_Complementry.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not complementry:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Room complementary not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         complementry.Complementry_Name = complementry_name.strip()
         complementry.Description = description.strip()
         complementry.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Room complementary already exists")
         db.refresh(complementry)
 
         # -------------------------------------------------
@@ -6048,6 +6157,7 @@ def delete_room_complementry(
                 models.Room_Complementry.company_id == company_id,
                 models.Room_Complementry.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 
@@ -6209,6 +6319,12 @@ async def create_reservation_status(
                 detail="color is required"
             )
 
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color must be a hex value such as #22c55e"
+            )
+
         if len(status_name) > 100:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -6247,7 +6363,11 @@ async def create_reservation_status(
         )
 
         db.add(reservation_status)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Reservation status already exists")
         db.refresh(reservation_status)
 
         # -------------------------------------------------
@@ -6409,11 +6529,30 @@ async def update_reservation_status(
                 detail="color is required"
             )
 
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="color must be a hex value such as #22c55e"
+            )
+
         if len(status_name) > 100:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="status_name must not exceed 100 characters"
             )
+
+        reservation_status = (
+            db.query(models.Reservation_Status)
+            .filter(
+                models.Reservation_Status.id == status_id,
+                models.Reservation_Status.company_id == company_id,
+                models.Reservation_Status.status == CommonWords.STATUS,
+            )
+            .with_for_update()
+            .first()
+        )
+        if not reservation_status:
+            raise HTTPException(status_code=404, detail="Reservation status not found")
 
         # -------------------------------------------------
         # DUPLICATE CHECK (CASE INSENSITIVE)
@@ -6437,32 +6576,17 @@ async def update_reservation_status(
             )
 
         # -------------------------------------------------
-        # FETCH RESERVATION STATUS
-        # -------------------------------------------------
-        reservation_status = (
-            db.query(models.Reservation_Status)
-            .filter(
-                models.Reservation_Status.id == status_id,
-                models.Reservation_Status.company_id == company_id,
-                models.Reservation_Status.status == CommonWords.STATUS
-            )
-            .first()
-        )
-
-        if not reservation_status:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Reservation status not found"
-            )
-
-        # -------------------------------------------------
         # UPDATE
         # -------------------------------------------------
         reservation_status.Reservation_Status = status_name
         reservation_status.Color = color
         reservation_status.updated_by = user_id
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Reservation status already exists")
         db.refresh(reservation_status)
 
         # -------------------------------------------------
@@ -6533,6 +6657,7 @@ def delete_reservation_status(
                 models.Reservation_Status.company_id == company_id,
                 models.Reservation_Status.status == CommonWords.STATUS
             )
+            .with_for_update()
             .first()
         )
 

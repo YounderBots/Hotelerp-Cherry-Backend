@@ -139,6 +139,20 @@ def book(room, phone, **over):
                           {"identity_file": ("id-proof.png", PNG, "image/png")}, TOK)
 
 
+# ---------------------------------------------------------- proof content -----
+# The name and the declared content type are both chosen by the client, so a
+# booking must be refused when the bytes are not the document they claim -- a
+# `.png` name is not a passport photograph (C-085).
+s, b = post_multipart("/hotel/room_reservation", booking_fields(room_id, next_phone()),
+                      {"identity_file": ("id-proof.png", b"<html><script>alert(1)</script></html>",
+                                         "image/png")}, TOK)
+check("identity proof that is not an image -> 400", s == 400, f"{s} {str(b)[:200]}")
+
+s, b = post_multipart("/hotel/room_reservation", booking_fields(room_id, next_phone()),
+                      {"identity_file": ("id-proof.pdf", PNG, "image/png")}, TOK)
+check("identity proof whose type does not match its name -> 400", s == 400, f"{s} {str(b)[:200]}")
+
+
 # ------------------------------------------------------------------- create ---
 main_phone = next_phone()
 s, b = book(room_id, main_phone)

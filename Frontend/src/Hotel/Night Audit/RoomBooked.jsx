@@ -160,7 +160,7 @@ const RoomBooked = () => {
                 <div className="na-stat na-stat--primary">
                     <span className="na-stat__label">Rooms sold</span>
                     <strong className="na-stat__value">
-                        {formatCount(occupancy.rooms_occupied)}
+                        {formatCount(occupancy.rooms_sold)}
                     </strong>
                     <span className="na-stat__hint">
                         {formatCount(occupancy.room_nights)} room nights
