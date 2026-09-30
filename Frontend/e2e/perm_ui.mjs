@@ -15,7 +15,7 @@ const BASE = process.env.BASE || "http://127.0.0.1:5173";
 const GW = process.env.GW || "http://127.0.0.1:8000";
 const EMAIL = process.argv[2];
 const LABEL = process.argv[3] || "run";
-const PASSWORD = process.env.PW_PASSWORD || "Hotel@2026";
+const PASSWORD = process.env.PW_PASSWORD;
 
 // Pages whose Add control is not a create: an export button, a read-only board.
 const NOT_A_CREATE = new Set(["/reservation"]);

@@ -15,7 +15,7 @@ const BASE = process.env.BASE || "http://127.0.0.1:5173";
 const API = process.env.API || "http://127.0.0.1:8000";
 const EMAIL = process.argv[2];
 const LABEL = process.argv[3] || "run";
-const PASSWORD = process.env.PW_PASSWORD || "Hotel@2026";
+const PASSWORD = process.env.PW_PASSWORD;
 
 const ROUTES = [
   "/dashboard", "/reservation", "/add_new_reservation", "/booking", "/room_view",

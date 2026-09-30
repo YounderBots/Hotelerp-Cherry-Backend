@@ -198,7 +198,15 @@ STAFF = [
 # Every seeded account uses this password. Printed by the seed so it cannot
 # become folklore, and hashed with bcrypt because that is what
 # UserServices /verify_credentials checks against.
-DEMO_PASSWORD = "Hotel@2026"
+#
+# The password is read from the SEED_PASSWORD environment variable. If it is
+# not set, a strong random password is generated and printed once. This
+# ensures no hardcoded credential is committed to the repository.
+DEMO_PASSWORD = os.getenv("SEED_PASSWORD") or "".join(
+    __import__("secrets").choice(
+        "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*-_=+"
+    ) for _ in range(20)
+)
 
 
 def verify_links() -> None:

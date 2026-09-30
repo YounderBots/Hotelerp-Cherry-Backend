@@ -11,6 +11,7 @@ import Select from "../../stories/Form/Select";
 import Textarea from "../../stories/Form/Textarea";
 import ErrorAlert from "../../stories/ErrorAlert";
 import Toast from "../../stories/Toast";
+import Button from "../../stories/Button";
 import APICall from "../../APICalls/APICalls";
 import { errMsg, readList } from "../../functions/apiHelpers";
 import { formatCount, formatDate, formatPrecise } from "../../functions/formatters";
@@ -75,6 +76,17 @@ const BarGuestManagement = () => {
   const [formError, setFormError] = useState(null);
   const [phoneError, setPhoneError] = useState(null);
   const [formData, setFormData] = useState(initialForm);
+
+  // C-066: Address, feedback, and loyalty management
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showLoyaltyModal, setShowLoyaltyModal] = useState(false);
+  const [addressForm, setAddressForm] = useState({ address: "", city: "", state: "", country: "", postal_code: "" });
+  const [feedbackForm, setFeedbackForm] = useState({ rating: 5, comments: "" });
+  const [loyaltyForm, setLoyaltyForm] = useState({ points: "", reason: "" });
+  const [actionError, setActionError] = useState(null);
+  const [actionSaving, setActionSaving] = useState(false);
+  const actionSavingRef = useRef(false);
 
   /* ================= HANDLERS ================= */
 
@@ -198,6 +210,89 @@ const BarGuestManagement = () => {
     } finally {
       deletingRef.current = false;
       setDeleting(false);
+    }
+  };
+
+  // C-066: Address management
+  const openAddressModal = () => {
+    setAddressForm({ address: "", city: "", state: "", country: "", postal_code: "" });
+    setActionError(null);
+    setShowAddressModal(true);
+  };
+
+  const saveAddress = async () => {
+    if (actionSaving || actionSavingRef.current) return;
+    actionSavingRef.current = true;
+    setActionSaving(true);
+    setActionError(null);
+    try {
+      await APICall.postT(`/bar/guest/${viewData.id}/address`, addressForm);
+      showToast("Address added successfully", "success");
+      setShowAddressModal(false);
+      // Refresh the view data to show the new address
+      const res = await APICall.getT(`/bar/guest/${viewData.id}`);
+      setViewData(res?.data || viewData);
+    } catch (err) {
+      setActionError(errMsg(err, "Failed to add address."));
+    } finally {
+      actionSavingRef.current = false;
+      setActionSaving(false);
+    }
+  };
+
+  // C-066: Feedback management
+  const openFeedbackModal = () => {
+    setFeedbackForm({ rating: 5, comments: "" });
+    setActionError(null);
+    setShowFeedbackModal(true);
+  };
+
+  const saveFeedback = async () => {
+    if (actionSaving || actionSavingRef.current) return;
+    actionSavingRef.current = true;
+    setActionSaving(true);
+    setActionError(null);
+    try {
+      await APICall.postT(`/bar/guest/${viewData.id}/feedback`, feedbackForm);
+      showToast("Feedback added successfully", "success");
+      setShowFeedbackModal(false);
+    } catch (err) {
+      setActionError(errMsg(err, "Failed to add feedback."));
+    } finally {
+      actionSavingRef.current = false;
+      setActionSaving(false);
+    }
+  };
+
+  // C-066: Loyalty management
+  const openLoyaltyModal = () => {
+    setLoyaltyForm({ points: "", reason: "" });
+    setActionError(null);
+    setShowLoyaltyModal(true);
+  };
+
+  const saveLoyalty = async () => {
+    if (actionSaving || actionSavingRef.current) return;
+    const points = parseFloat(loyaltyForm.points);
+    if (!Number.isFinite(points) || points === 0) {
+      setActionError("Points must be a non-zero number.");
+      return;
+    }
+    actionSavingRef.current = true;
+    setActionSaving(true);
+    setActionError(null);
+    try {
+      await APICall.postT(`/bar/guest/${viewData.id}/loyalty`, { points, reason: loyaltyForm.reason || null });
+      showToast("Loyalty points updated successfully", "success");
+      setShowLoyaltyModal(false);
+      // Refresh the view data to show updated points
+      const res = await APICall.getT(`/bar/guest/${viewData.id}`);
+      setViewData(res?.data || viewData);
+    } catch (err) {
+      setActionError(errMsg(err, "Failed to update loyalty points."));
+    } finally {
+      actionSavingRef.current = false;
+      setActionSaving(false);
     }
   };
 
@@ -350,7 +445,12 @@ const BarGuestManagement = () => {
         size="large"
         viewMode
         showFooter
-        actions={[{ label: "Close", variant: "secondary", onClick: () => setViewData(null) }]}
+        actions={[
+          { label: "Close", variant: "secondary", onClick: () => setViewData(null) },
+          { label: "Add Address", variant: "secondary", onClick: openAddressModal },
+          { label: "Add Feedback", variant: "secondary", onClick: openFeedbackModal },
+          { label: "Adjust Loyalty", variant: "secondary", onClick: openLoyaltyModal },
+        ]}
       >
         <ViewSection title="Guest">
           <DetailList columns={3}>
@@ -405,6 +505,94 @@ const BarGuestManagement = () => {
             </DetailList>
           )}
         </ViewSection>
+      </Modal>
+
+      {/* ================= ADDRESS MODAL ================= */}
+      <Modal
+        isOpen={showAddressModal}
+        title="Add Address"
+        onClose={() => setShowAddressModal(false)}
+        size="medium"
+        showFooter
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: () => setShowAddressModal(false), disabled: actionSaving },
+          { label: actionSaving ? "Saving…" : "Save", variant: "primary", onClick: saveAddress, disabled: actionSaving },
+        ]}
+      >
+        <ErrorAlert message={actionError} className="field-full" />
+        <Input label="Address" name="address" placeholder="Street address" value={addressForm.address} onChange={(e) => setAddressForm((p) => ({ ...p, address: e.target.value }))} />
+        <Input label="City" name="city" placeholder="City" value={addressForm.city} onChange={(e) => setAddressForm((p) => ({ ...p, city: e.target.value }))} />
+        <Input label="State" name="state" placeholder="State" value={addressForm.state} onChange={(e) => setAddressForm((p) => ({ ...p, state: e.target.value }))} />
+        <Input label="Country" name="country" placeholder="Country" value={addressForm.country} onChange={(e) => setAddressForm((p) => ({ ...p, country: e.target.value }))} />
+        <Input label="Postal Code" name="postal_code" placeholder="Postal code" value={addressForm.postal_code} onChange={(e) => setAddressForm((p) => ({ ...p, postal_code: e.target.value }))} />
+      </Modal>
+
+      {/* ================= FEEDBACK MODAL ================= */}
+      <Modal
+        isOpen={showFeedbackModal}
+        title="Add Feedback"
+        onClose={() => setShowFeedbackModal(false)}
+        size="medium"
+        showFooter
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: () => setShowFeedbackModal(false), disabled: actionSaving },
+          { label: actionSaving ? "Saving…" : "Save", variant: "primary", onClick: saveFeedback, disabled: actionSaving },
+        ]}
+      >
+        <ErrorAlert message={actionError} className="field-full" />
+        <Select
+          label="Rating"
+          name="rating"
+          value={feedbackForm.rating}
+          onChange={(e) => setFeedbackForm((p) => ({ ...p, rating: parseInt(e.target.value, 10) }))}
+          options={[
+            { value: 5, label: "5 - Excellent" },
+            { value: 4, label: "4 - Good" },
+            { value: 3, label: "3 - Average" },
+            { value: 2, label: "2 - Poor" },
+            { value: 1, label: "1 - Terrible" },
+          ]}
+        />
+        <div className="field-full">
+          <Textarea
+            label="Comments"
+            name="comments"
+            rows={3}
+            placeholder="Optional comments about the guest's experience"
+            value={feedbackForm.comments}
+            onChange={(e) => setFeedbackForm((p) => ({ ...p, comments: e.target.value }))}
+          />
+        </div>
+      </Modal>
+
+      {/* ================= LOYALTY MODAL ================= */}
+      <Modal
+        isOpen={showLoyaltyModal}
+        title="Adjust Loyalty Points"
+        onClose={() => setShowLoyaltyModal(false)}
+        size="medium"
+        showFooter
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: () => setShowLoyaltyModal(false), disabled: actionSaving },
+          { label: actionSaving ? "Saving…" : "Save", variant: "primary", onClick: saveLoyalty, disabled: actionSaving },
+        ]}
+      >
+        <ErrorAlert message={actionError} className="field-full" />
+        <Input
+          label="Points (positive to earn, negative to redeem)"
+          name="points"
+          type="number"
+          placeholder="e.g. 100 or -50"
+          value={loyaltyForm.points}
+          onChange={(e) => setLoyaltyForm((p) => ({ ...p, points: e.target.value }))}
+        />
+        <Input
+          label="Reason (optional)"
+          name="reason"
+          placeholder="e.g. Stay reward, Redemption"
+          value={loyaltyForm.reason}
+          onChange={(e) => setLoyaltyForm((p) => ({ ...p, reason: e.target.value }))}
+        />
       </Modal>
 
       {/* ================= DELETE ================= */}

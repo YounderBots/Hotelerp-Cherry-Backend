@@ -103,4 +103,47 @@ def healthz():
     return {"status": "ok"}
 
 
+@app.get("/readyz")
+def readyz():
+    """Readiness probe for the gateway.
+
+    Checks that all five operational services are reachable. Returns 503 if
+    any are unreachable, so a load balancer can stop sending traffic here.
+    """
+    import httpx
+    from configs.base_config import ServiceURL
+
+    services = {
+        "user": ServiceURL.USER_SERVICE_URL,
+        "masterdata": ServiceURL.MASTER_SERVICE_URL,
+        "hotel": ServiceURL.HOTEL_SERVICE_URL,
+        "restaurant": ServiceURL.RESTAURANT_SERVICE_URL,
+        "bar": ServiceURL.BAR_SERVICE_URL,
+    }
+
+    degraded = {}
+    for name, url in services.items():
+        try:
+            resp = httpx.get(f"{url}/healthz", timeout=5.0)
+            if resp.status_code != 200:
+                degraded[name] = f"status {resp.status_code}"
+        except Exception as exc:
+            degraded[name] = str(exc)
+
+    if degraded:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "degraded",
+                "degraded": list(degraded.keys()),
+                "checks": {k: {"ok": False, "detail": v} for k, v in degraded.items()},
+            },
+        )
+
+    return {
+        "status": "ready",
+        "checks": {name: {"ok": True, "detail": "reachable"} for name in services},
+    }
+
+
 app.include_router(router, prefix="")

@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 
 BASE = os.getenv("BASE") or "http://127.0.0.1:8000"
-PASSWORD = os.getenv("PW_PASSWORD") or "Hotel@2026"
+PASSWORD = os.getenv("PW_PASSWORD", "")
 
 
 def call(method, path, payload=None, token=None):

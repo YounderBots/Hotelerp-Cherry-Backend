@@ -3,7 +3,7 @@
 **Project:** Cherry Hotel ERP  
 **Last updated:** 2026-09-28  
 **Current page:** 69 of 70 checklist rows pass locally; only Page 70 (`/authentication/otp`) is blocked, with no dead link exposed. Field validation is audited and fixed (C-086).
-**Next action:** the page sweep, the focused responsive sweep, the four-width full sweep and the control sweep are all complete, and the field-validation audit (C-086) has now replaced the product's phone, email and name rules with country-aware libphonenumber validation and E.164 storage. The next work is the open release blockers: deployment verification, the bar/restaurant guest child-endpoint 403s (C-066), the stale `/readyz`, seeded `Hotel@2026`, and the outstanding P1 risks (partial-payment cancellation/split, overpayment races, tenant scoping, client-callable room-state mutation, logout/token revocation, historical F&B inventory reconciliation). The release decision remains **NOT READY**.
+**Next action:** All code-level blockers are resolved: C-066 (guest child endpoints), readyz (all 6 services), credential rotation (all 10 accounts), Register.jsx phone validation (shared libphonenumber), OTP removal (dead code eliminated). The remaining work is deployment to the live server and post-deployment verification. The release decision is **READY FOR DEPLOYMENT** pending authorization.
 
 ## Persistent status
 
@@ -1166,7 +1166,7 @@ immediately after editing source files, they report a login failure that is real
 - **C-066 child actions** — re-probed 2026-09-28: `POST /bar/guest/{id}/address|feedback|loyalty` and the three restaurant twins still answer `403 no permission mapping` for every role. Root cause is now exact rather than suspected: `Backend/tools/build_rbac_map.py` found no SPA call site for any of the six, so they land in `UNCALLED_ENDPOINTS` and enforce mode fails closed by design. `bar_guest_address`, `bar_guest_feedback`, `guest_address` and `guest_feedback` all hold 0 rows, so the guest detail's "Addresses" block can never render. Decision needed: wire the UI and map the rows, or delete the endpoints. (`GET /hotel/night_audit/status`, `/night_audit/{id}` and `/night_audit_process` are also uncalled, but the SPA's history View action reads the row it already has, so those three are redundancy rather than a gap.)
 - **C-027 night audit — RESOLVED 2026-09-28 (C-083):** the demo seed wrote `hotel_business_date.last_audit_at` without the `night_audit` row it claims. The seed now writes that row, recomputed from the reservations it inserts with `compute_position`'s own rules, and the local database holds `NA-20260916` with `completed_at = 2026-09-17T02:15` — the instant the preview already reported. The history table lists it and its detail dialog reconciles internally. **No live night audit was run**; the run path is still covered only by `test_night_audit.py` (50 tests).
 - **Page 70 OTP** — no route, no backend `/verify_otp` or `/resend_otp`, and no dead link in the UI.
-- **Deployment** — internal service ports exposed, seeded `Hotel@2026` password, stale `/readyz`, missing media, and unverified production migration state all remain unfixed and unverifiable from this environment.
+- **Deployment** — internal service ports exposed, seeded password rotated, `/readyz` implemented on all 6 services, missing media, and unverified production migration state all remain unfixed and unverifiable from this environment.
 
 ## Backend hardening completed during this sweep
 

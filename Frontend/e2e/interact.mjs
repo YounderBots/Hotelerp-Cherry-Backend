@@ -12,7 +12,7 @@ import { mkdirSync, writeFileSync } from "fs";
 const BASE = process.env.BASE || "http://127.0.0.1:5173";
 const EMAIL = process.argv[2];
 const LABEL = process.argv[3] || "run";
-const PASSWORD = process.env.PW_PASSWORD || "Hotel@2026";
+const PASSWORD = process.env.PW_PASSWORD;
 const OUT = process.env.OUT || `./e2e-reports/interact-${LABEL}`;
 
 // Every screen built on TableTemplate, i.e. every screen with the same set of

@@ -72,7 +72,7 @@ passes every suite and all 34 invariants.
 | 2 | every stored image 404s — all 88 paths | `python Backend/tools/restore_uploads.py --release 15-Sept-2026` |
 | 3 | RBAC in audit: every role reaches every endpoint | `RBAC_GATEWAY_MODE=enforce` |
 | 4 | all five internal services reachable from the internet | bind `SERVICE_HOST=127.0.0.1`, or firewall |
-| 5 | seeded password `Hotel@2026` still signs in as admin | `python Backend/tools/rotate_passwords.py --confirm` |
+| 5 | seeded password still signs in as admin | `python Backend/tools/rotate_passwords.py --confirm` |
 | 6 | `/readyz` 404s, `/healthz` returns the old flat body | deploy current `main` and restart |
 
 **Row 1 has two traps, and the log only shows one of them.** The error reads

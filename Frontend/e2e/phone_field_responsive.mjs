@@ -23,7 +23,7 @@
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE || "http://127.0.0.1:5173";
-const PASSWORD = process.env.PW_PASSWORD || "Hotel@2026";
+const PASSWORD = process.env.PW_PASSWORD;
 const EMAIL = process.argv[2] || "admin@cherryhotel.com";
 
 // The four widths the product is specified at: desktop, laptop, tablet, phone.

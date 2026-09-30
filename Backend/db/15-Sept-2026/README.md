@@ -108,7 +108,7 @@ python Backend/tools/preflight.py            # should now report READY
 
 ## Signing in
 
-Every seeded account uses the same password: **`Hotel@2026`**
+Every seeded account uses the same password, set via the `SEED_PASSWORD` environment variable at seed time. Rotate before production deployment.
 
 | Email | Role | Can reach |
 |---|---|---|

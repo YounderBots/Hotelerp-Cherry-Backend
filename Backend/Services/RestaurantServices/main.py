@@ -122,4 +122,25 @@ def healthz():
     return {"status": "ok"}
 
 
+@app.get("/readyz")
+def readyz():
+    """Readiness probe. Returns 503 while the database is unreachable."""
+    from sqlalchemy import text
+    from models import get_db
+
+    try:
+        db = next(get_db())
+        db.execute(text("SELECT 1"))
+        return {"status": "ready", "checks": {"database": {"ok": True, "detail": "connected"}}}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "degraded",
+                "degraded": ["database"],
+                "checks": {"database": {"ok": False, "detail": str(exc)}},
+            },
+        )
+
+
 app.include_router(router, prefix="")

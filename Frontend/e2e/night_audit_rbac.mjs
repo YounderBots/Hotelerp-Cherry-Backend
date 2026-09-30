@@ -6,7 +6,7 @@
 import { chromium } from "playwright";
 
 const BASE = process.env.BASE || "http://127.0.0.1:5173";
-const PASSWORD = process.env.PW_PASSWORD || "Hotel@2026";
+const PASSWORD = process.env.PW_PASSWORD;
 const ROLES = [
   ["admin", "admin@cherryhotel.com"],
   ["front-office-manager", "priya.menon@cherryhotel.com"],

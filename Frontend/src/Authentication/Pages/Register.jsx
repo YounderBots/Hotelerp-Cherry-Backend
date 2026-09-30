@@ -5,6 +5,7 @@ import { FaCheckCircle, FaExclamationCircle, FaSpinner } from "react-icons/fa";
 import "./Register.css";
 import logo from "../../assets/layout/Cherry.png";
 import { useAuth } from "../../Context/AuthContext";
+import { validatePhone, storedExample } from "../../stories/Form/phone";
 
 // Where an access request is sent. There is no self-service sign-up: a staff
 // account is created in HRM by somebody who already has one, so this form
@@ -32,13 +33,13 @@ const PolicyLink = ({ href, children }) =>
   );
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_RE = /^[+\d][\d\s\-()]{6,19}$/;
 
 const initialForm = {
   fullName: "",
   workEmail: "",
   companyName: "",
   phone: "",
+  phoneRegion: "IN",
   notes: "",
   agree: false,
 };
@@ -65,9 +66,14 @@ const validate = (form) => {
     errors.companyName = "Hotel/company name must be under 120 characters.";
   }
 
+  // Country-aware phone validation using the shared libphonenumber module.
+  // This is the same rule every other phone field in the application uses.
   const phone = form.phone.trim();
-  if (phone && !PHONE_RE.test(phone)) {
-    errors.phone = "Enter a valid phone number, digits and + - ( ) only.";
+  if (phone) {
+    const result = validatePhone(phone, form.phoneRegion);
+    if (!result.ok && !result.incomplete) {
+      errors.phone = result.message;
+    }
   }
 
   if (form.notes.length > 1000) {
@@ -280,9 +286,22 @@ const Register = () => {
               type="tel"
               autoComplete="tel"
               inputMode="tel"
-              placeholder="+91 98765 43210"
+              placeholder={storedExample(form.phoneRegion)}
               value={form.phone}
-              onChange={setField("phone")}
+              onChange={(e) => {
+                setField("phone")(e);
+                // Re-validate with the current region when the user types
+                if (errors.phone) {
+                  const result = validatePhone(e.target.value, form.phoneRegion);
+                  if (result.ok || result.incomplete) {
+                    setErrors((prev) => {
+                      const next = { ...prev };
+                      delete next.phone;
+                      return next;
+                    });
+                  }
+                }
+              }}
               disabled={disabled}
               maxLength={20}
               aria-invalid={Boolean(errors.phone)}

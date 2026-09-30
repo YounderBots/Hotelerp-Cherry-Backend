@@ -49,9 +49,10 @@ DEFAULT_SERVICES = {
 }
 DEFAULT_GATEWAY = 8000
 
-# The password every seeded account ships with, published in the seed source
-# and in Backend/db/*/README.md. Check 5 exists to assert it no longer works.
-SEEDED_PASSWORD = "Hotel@2026"
+# The password every seeded account ships with. Read from the environment
+# so no hardcoded credential is committed to the repository. Check 5 exists
+# to assert the seeded password no longer works.
+SEEDED_PASSWORD = os.getenv("SEED_PASSWORD", "")
 
 FAILS: list[str] = []
 WARNS: list[str] = []

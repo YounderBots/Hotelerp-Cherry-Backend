@@ -11,7 +11,7 @@ GW = os.environ.get("E2E_GATEWAY", "http://127.0.0.1:8000")
 # The seeded password. Once Backend/tools/rotate_passwords.py has replaced it --
 # which every production deployment must do -- point these suites at the new one
 # with E2E_PASSWORD, or run them against a freshly seeded demo database.
-PW = os.environ.get("E2E_PASSWORD", "Hotel@2026")
+PW = os.environ.get("E2E_PASSWORD", "")
 
 
 def req(method, path, tok=None, body=None, raw=False):

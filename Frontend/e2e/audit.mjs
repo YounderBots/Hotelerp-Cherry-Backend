@@ -11,7 +11,7 @@ import { mkdirSync, writeFileSync } from "fs";
 const BASE = process.env.BASE || "http://127.0.0.1:5173";
 const EMAIL = process.argv[2];
 const LABEL = process.argv[3] || EMAIL;
-const PASSWORD = process.env.PW_PASSWORD || "Hotel@2026";
+const PASSWORD = process.env.PW_PASSWORD;
 const WIDTH = Number((process.argv.find(a => a.startsWith("--width=")) || "").split("=")[1] || 1440);
 const HEIGHT = Number((process.argv.find(a => a.startsWith("--height=")) || "").split("=")[1] || 900);
 const SHOTS = process.argv.includes("--shots");
