@@ -50,7 +50,54 @@ def include_object(obj, name, type_, reflected, compare_to):
     """Keep Alembic's own bookkeeping table out of autogenerate."""
     if type_ == "table" and name == "alembic_version":
         return False
+    # The `active_*` generated columns -- and the `uq_*` unique indexes over
+    # them -- exist ONLY in the database. The models deliberately do not
+    # declare them: see the C-082 note at the top of each service's
+    # models/models.py. Autogenerating a revision while they are visible would
+    # emit DROP COLUMN / DROP INDEX operations that destroy the very
+    # invariants the schema is enforcing (active names are unique per company,
+    # soft-deleted history may repeat). Nothing may ever drop them, so they are
+    # not part of the comparison at all.
+    if reflected and compare_to is None:
+        if type_ == "column" and name.startswith("active_"):
+            return False
+        if type_ == "index" and "active_" in name:
+            return False
     return True
+
+
+def _now_like(text) -> bool:
+    """Is this rendered server default some spelling of "the current time"?
+
+    The rendered forms are strings: the hand-built schemas store
+    `DEFAULT now()` (or `CURRENT_TIMESTAMP`) as text, the models render
+    `func.now()` as `CURRENT_TIMESTAMP`. All of them are the same rule.
+    """
+    if text is None:
+        return False
+    return "now()" in text.lower() or "current_timestamp" in text.lower()
+
+
+def compare_server_default(migration_context, inspected_column, metadata_column,
+                           rendered_inspected_default, metadata_default,
+                           rendered_metadata_default):
+    """Do NOT report a difference between two spellings of now().
+
+    With `compare_server_default=True`, Alembic reported 120 phantom
+    `modify_default` operations across the five databases -- every
+    `created_at` in every schema -- because the database spells the default
+    `now()` and the model spells it `func.now()`. That noise is what hid the
+    one real drift (a column type and two index mismatches) inside a wall of
+    120 false positives, and it meant `migrate.py check` could never pass.
+
+    Returning False means "these are the same"; returning None defers to
+    Alembic's own dialect comparison, so a genuinely different default is
+    still reported.
+    """
+    if (_now_like(rendered_inspected_default)
+            and _now_like(rendered_metadata_default)):
+        return False
+    return None
 
 
 def run_migrations_offline() -> None:
@@ -60,7 +107,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        compare_server_default=True,
+        compare_server_default=compare_server_default,
         include_object=include_object,
     )
     with context.begin_transaction():
@@ -78,7 +125,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
-            compare_server_default=True,
+            compare_server_default=compare_server_default,
             include_object=include_object,
         )
         with context.begin_transaction():

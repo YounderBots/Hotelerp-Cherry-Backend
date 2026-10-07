@@ -155,3 +155,57 @@ def require_permission(
             page_link, company_id, role_id, action,
         )
         raise _forbidden(page_link, action)
+
+
+def require_any_permission(
+    db: Session,
+    role_id,
+    company_id,
+    page_links,
+    action: str,
+) -> None:
+    """Raises 403 unless `role_id` may perform `action` on ANY of `page_links`.
+
+    Endpoints are not always owned by one screen: `GET /users` is the staff
+    directory the Employee page reads, but also the name picker behind the
+    rosters, shift planning, the room incident log and task assignment. The
+    gateway's map already expresses that as a list of pages (see ROUTE_PERMISSIONS
+    in LoginServices/resources/rbac_map.py), so the service-side check has to
+    agree with it or the two layers would answer differently for the same
+    request.
+
+    Fail-closed rule: only when *every* page is unknown to this tenant does the
+    caller get the "not configured" error -- one unconfigured page must not
+    turn into an allow when another page in the list is a real denial.
+    """
+    if not ENFORCE:
+        return
+
+    page_links = tuple(page_links)
+    if not page_links:
+        raise ValueError("require_any_permission needs at least one page")
+
+    results = [has_permission(db, role_id, company_id, page, action) for page in page_links]
+
+    if any(r is True for r in results):
+        return
+
+    if all(r is None for r in results):
+        logger.error(
+            "rbac_page_not_configured pages=%s company=%s role=%s action=%s",
+            ",".join(page_links), company_id, role_id, action,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Pages {', '.join(page_links)} are not configured for this "
+                "company, so permissions for them cannot be resolved. Add them "
+                "under Menus / Submenus and grant the role access."
+            ),
+        )
+
+    logger.info(
+        "rbac_denied pages=%s company=%s role=%s action=%s",
+        ",".join(page_links), company_id, role_id, action,
+    )
+    raise _forbidden(", ".join(page_links), action)

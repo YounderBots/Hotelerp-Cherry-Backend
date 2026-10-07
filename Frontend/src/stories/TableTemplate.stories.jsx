@@ -169,7 +169,8 @@ AdvancedWithAction.args = {
   pageSize: 3,
   hasActionButton: true,
   actionButton: {
-    onClick: () => console.log('Export team data'),
+    // No handler on purpose: this story shows where the button sits, and the
+    // screens that wire it up pass their own onClick.
     label: 'Export Team',
     icon: <Download size={18} />,
     variant: 'outline',
@@ -194,7 +195,7 @@ LargeDatasetWithAction.args = {
   pageSize: 10,
   hasActionButton: true,
   actionButton: {
-    onClick: () => console.log('Bulk edit users'),
+    // No handler on purpose — this story shows the control, not a workflow.
     label: 'Bulk Edit',
     icon: <Edit size={18} />,
     variant: 'secondary',

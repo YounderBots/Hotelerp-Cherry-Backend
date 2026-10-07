@@ -153,6 +153,10 @@ class WaitlistUpdate(BaseModel):
     table_id: Optional[int] = None
 
 
+# Mirrors `waitlist_status_enum` in models.py.
+WAITLIST_STATUSES = ("Waiting", "Notified", "Seated", "Cancelled")
+
+
 def _auth(request: Request):
     user_id, role_id, company_id, token = verify_authentication(request)
     if not company_id:
@@ -860,12 +864,43 @@ def update_waitlist(waitlist_id: int, payload: WaitlistUpdate, request: Request,
     elif payload.waitlist_status == "Seated":
         entry.seated_at = datetime.now()
         if payload.table_id:
-            table = db.query(models.RestaurantTable).filter(models.RestaurantTable.id == payload.table_id).first()
-            if table:
-                table.table_status = "Occupied"
-                table.updated_by = user_id
+            # Scoped to this tenant. Unscoped, a caller could seat their party
+            # on another property's table id and flip it to Occupied -- a write
+            # into a different company's floor plan, from an id they can guess.
+            table = (
+                db.query(models.RestaurantTable)
+                .filter(
+                    models.RestaurantTable.id == payload.table_id,
+                    models.RestaurantTable.company_id == company_id,
+                )
+                .first()
+            )
+            if not table:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Table not found",
+                )
+            if table.table_status == "Occupied":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="That table is already occupied",
+                )
+            table.table_status = "Occupied"
+            table.updated_by = user_id
+            entry.table_id = table.id
 
     for field, value in payload.dict(exclude_unset=True).items():
+        if field == "table_id":
+            # Written above, only against a table that exists in this tenant.
+            continue
+        if field == "waitlist_status" and value is not None:
+            # The column is an ENUM; an unknown value reaches MySQL and comes
+            # back as "Data truncated for column" -- a 500 for a bad request.
+            if value not in WAITLIST_STATUSES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"waitlist_status must be one of: {', '.join(WAITLIST_STATUSES)}",
+                )
         setattr(entry, field, value)
     entry.updated_by = user_id
     db.commit()

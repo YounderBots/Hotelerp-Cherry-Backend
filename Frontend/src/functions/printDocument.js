@@ -71,8 +71,18 @@ export const printHeading = (text) => `<h3>${escapeHtml(text)}</h3>`;
  * @returns {boolean} false when the pop-up was blocked, so the caller can say so
  */
 export const printDocument = ({ title, heading, subtitle = "", body = "" }) => {
-    const win = window.open("", "_blank", "noopener,noreferrer");
+    // NOT "noopener,noreferrer" — that combination is exactly what broke this.
+    //
+    // The spec makes `noopener` a *return-null* feature: window.open hands back
+    // null when it is present, so the guard below tripped on every single call.
+    // The window opened, sat there blank, and the caller told the user the
+    // pop-up was blocked — the print button never printed anything.
+    //
+    // `noopener`'s actual purpose (the printed page cannot script back into the
+    // app) is kept by severing the link by hand, right after the handle arrives.
+    const win = window.open("", "_blank");
     if (!win) return false;
+    win.opener = null;
 
     win.document.write(
         `<!doctype html><html><head><meta charset="utf-8" />` +

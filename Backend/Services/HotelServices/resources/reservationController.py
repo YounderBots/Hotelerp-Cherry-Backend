@@ -55,6 +55,37 @@ def _booking_bad_request(detail: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
+async def _json_object(request: Request, *, optional: bool = False) -> dict:
+    """Read the body as a JSON object, or 400.
+
+    `request.json()` decodes whatever is there: `[1,2]`, `"x"`, `7`, `null`.
+    Every caller then does `payload.get(...)`, so a JSON array body used to
+    raise `'list' object has no attribute 'get'` and surface as a 500 for what
+    is a malformed request. The contract on these endpoints is an object.
+
+    `optional=True` is for endpoints whose body may legitimately be absent
+    (check-out, cancel): a missing or unparseable body reads as `{}` so the
+    caller can fail on the reason it actually cares about, but a body that
+    parses to a non-object is still a 400.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        if optional:
+            return {}
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON body"
+        )
+    if payload is None and optional:
+        return {}
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="JSON body must be an object",
+        )
+    return payload
+
+
 def _booking_date(value, field: str) -> date:
     """Parse an ISO date and turn malformed input into a useful 400."""
     if not isinstance(value, str) or not value.strip():
@@ -223,12 +254,7 @@ async def create_room_booking(request: Request, db: Session = Depends(get_db)):
         # -------------------------------------------------
         # REQUEST BODY (JSON)
         # -------------------------------------------------
-        try:
-            payload = await request.json()
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON body"
-            )
+        payload = await _json_object(request)
 
         # Validate at the service boundary as well as in the browser. The
         # endpoint is callable directly, and malformed values must not become
@@ -464,12 +490,7 @@ async def update_room_booking(request: Request, db: Session = Depends(get_db)):
         # -------------------------------------------------
         # REQUEST BODY (JSON)
         # -------------------------------------------------
-        try:
-            payload = await request.json()
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON body"
-            )
+        payload = await _json_object(request)
 
         # Validate the same canonical fields on update. A PUT is not allowed
         # to bypass the relationship and boundary checks that guard POST.
@@ -1466,10 +1487,7 @@ async def quote_reservation(request: Request):
         raise HTTPException(status_code=401, detail="Invalid authentication token")
     md = MasterData.for_token(token)
 
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    payload = await _json_object(request)
 
     try:
         arrival = _coerce_date(payload.get("arrival_date"), "arrival_date")
@@ -2473,41 +2491,47 @@ def delete_room_reservation(
 # =====================================================
 # STATUS TRANSITIONS
 # =====================================================
-def _load_by_token(db: Session, company_id, token: str):
-    reservation = (
-        db.query(models.RoomReservation)
-        .filter(
-            models.RoomReservation.token == token,
-            models.RoomReservation.company_id == str(company_id),
-            models.RoomReservation.status == STATUS,
-        )
-        .first()
+def _load_by_token(db: Session, company_id, token: str, *, for_update: bool = False):
+    query = db.query(models.RoomReservation).filter(
+        models.RoomReservation.token == token,
+        models.RoomReservation.company_id == str(company_id),
+        models.RoomReservation.status == STATUS,
     )
+    if for_update:
+        # Money endpoints only. The read paths (list, detail, payment history)
+        # must never lock the row they are merely displaying.
+        query = query.with_for_update()
+    reservation = query.first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Reservation not found")
     return reservation
 
 
-def _load_by_id_or_token(db: Session, company_id, key: str):
+def _load_by_id_or_token(db: Session, company_id, key: str, *, for_update: bool = False):
     """Accept either the numeric id or the token.
 
     Check-in was keyed by id and check-out by token, for no reason anyone
     recorded. Both work on both now so a caller does not have to remember
     which endpoint wants which.
+
+    `for_update=True` takes a row lock, which is what turns two simultaneous
+    payments into two sequential ones. Without it both requests read the same
+    balance, each subtracts its own amount, and the second commit silently
+    erases the first: the guest is credited once for money the property took
+    twice. Only the payment and refund endpoints set it.
     """
     if str(key).isdigit():
-        reservation = (
-            db.query(models.RoomReservation)
-            .filter(
-                models.RoomReservation.id == int(key),
-                models.RoomReservation.company_id == str(company_id),
-                models.RoomReservation.status == STATUS,
-            )
-            .first()
+        query = db.query(models.RoomReservation).filter(
+            models.RoomReservation.id == int(key),
+            models.RoomReservation.company_id == str(company_id),
+            models.RoomReservation.status == STATUS,
         )
+        if for_update:
+            query = query.with_for_update()
+        reservation = query.first()
         if reservation:
             return reservation
-    return _load_by_token(db, company_id, key)
+    return _load_by_token(db, company_id, key, for_update=for_update)
 
 
 def _apply_status(md: MasterData, reservation, user_id, target: str):
@@ -2731,10 +2755,7 @@ async def reservation_checkout(
             raise HTTPException(status_code=401, detail="Invalid authentication token")
         md = MasterData.for_token(token)
 
-        try:
-            payload = await request.json()
-        except Exception:
-            payload = {}
+        payload = await _json_object(request, optional=True)
         adjust_stay = bool((payload or {}).get("adjust_stay", False))
 
         reservation = _load_by_id_or_token(db, company_id, key)
@@ -2852,10 +2873,7 @@ async def reservation_cancel(key: str, request: Request, db: Session = Depends(g
 
         # Body is optional on the wire so a malformed request fails on the
         # reason check below with a useful message, not on JSON parsing.
-        try:
-            payload = await request.json()
-        except Exception:
-            payload = {}
+        payload = await _json_object(request, optional=True)
 
         reason = str((payload or {}).get("cancellation_reason") or "").strip()
         if not reason:
@@ -2977,10 +2995,7 @@ async def reservation_pay_due_amount(
             raise HTTPException(status_code=401, detail="Invalid authentication token")
         md = MasterData.for_token(token)
 
-        try:
-            payload = await request.json()
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        payload = await _json_object(request)
 
         payment_method = (payload.get("payment_method") or "").strip()
         if not payment_method:
@@ -2997,14 +3012,17 @@ async def reservation_pay_due_amount(
                 status_code=400, detail="Paying amount must be greater than 0"
             )
 
-        reservation = _load_by_id_or_token(db, company_id, key)
+        reservation = _load_by_id_or_token(db, company_id, key, for_update=True)
 
-        if rules.normalise_status(reservation.reservation_status) in {
-            rules.normalise_status(rules.CANCELLED)
-        }:
+        current_status = rules.normalise_status(reservation.reservation_status)
+        if current_status in {rules.normalise_status(s) for s in rules.TERMINAL}:
             raise HTTPException(
                 status_code=409,
-                detail="This reservation is cancelled; no further payment can be taken.",
+                detail=(
+                    "This reservation is already "
+                    f"{reservation.reservation_status}; no further payment can "
+                    "be taken."
+                ),
             )
 
         balance = rules.money(reservation.balance_amount)
@@ -3072,10 +3090,7 @@ async def reservation_refund_extra_amount(
             raise HTTPException(status_code=401, detail="Invalid authentication token")
         md = MasterData.for_token(token)
 
-        try:
-            payload = await request.json()
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        payload = await _json_object(request)
 
         refund_method = (payload.get("refund_method") or "").strip()
         if not refund_method:
@@ -3092,7 +3107,7 @@ async def reservation_refund_extra_amount(
                 status_code=400, detail="Refund amount must be greater than 0"
             )
 
-        reservation = _load_by_id_or_token(db, company_id, key)
+        reservation = _load_by_id_or_token(db, company_id, key, for_update=True)
 
         refundable = rules.money(reservation.extra_amount)
         if refund_amount > refundable:
@@ -3157,6 +3172,7 @@ def get_reservation_payment_history(
                 models.ReservationAmountPaidHistory.reservation_id.in_(
                     _history_keys(reservation)
                 ),
+                models.ReservationAmountPaidHistory.company_id == str(company_id),
                 models.ReservationAmountPaidHistory.status == STATUS,
             )
             .order_by(

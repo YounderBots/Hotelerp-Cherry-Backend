@@ -129,9 +129,15 @@ const ReservationModelView = () => {
 
   const handleBack = () => navigate("/reservation");
   const handleEdit = () => {
-    // The list owns editing -- it opens a modal from a row action rather than
-    // routing to a screen. Handing the user back to it is the correct hand-off.
-    navigate("/reservation");
+    // The list owns editing — it opens a modal from a row action rather than
+    // routing to a screen — so the hand-off is the row's id in navigation
+    // state, and the list opens that modal. Returning with nothing but the
+    // URL is what made this button useless: it dropped the operator at the
+    // top of a list they then had to search to find the reservation they were
+    // already looking at (and, with filters on, possibly not find).
+    navigate("/reservation", {
+      state: { editReservationId: reservation?.id ?? reservationId },
+    });
   };
 
   const handlePrint = () => {

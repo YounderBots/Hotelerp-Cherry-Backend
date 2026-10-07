@@ -54,6 +54,21 @@ def _auth(request: Request):
 ORDER_TYPES = ("Dine-In", "Takeaway", "Delivery", "Room Service")
 ORDER_STATUSES = ("New", "In Progress", "Ready", "Served", "Completed", "Cancelled")
 
+# Where each status may go next. The two terminal states are absent on purpose:
+# a Completed or Cancelled order is a closed financial record (billing has
+# already read its totals), and letting the generic status endpoint rewrite it
+# afterwards desynchronised the order from the bill raised against it. Repeating
+# the current status is allowed and treated as a no-op, so a double-click on
+# "Mark served" does not turn into an error.
+ORDER_TRANSITIONS = {
+    "New": ("In Progress", "Ready", "Served", "Cancelled"),
+    "In Progress": ("Ready", "Served", "Completed", "Cancelled"),
+    "Ready": ("In Progress", "Served", "Completed", "Cancelled"),
+    "Served": ("Completed", "Cancelled"),
+    "Completed": (),
+    "Cancelled": (),
+}
+
 
 def _assert_in(value, allowed, field):
     if value not in allowed:
@@ -631,6 +646,15 @@ def confirm_order(order_id: int, payload: OrderConfirmIn, request: Request, db: 
     )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    # `confirm_order` ends by writing order_status = "In Progress", so without
+    # this check a Completed or Cancelled order -- one a bill may already have
+    # been raised against -- was quietly re-opened and sent back to the
+    # kitchen. add_order_items refuses the same two states.
+    if order.order_status in ("Completed", "Cancelled"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot send items to the kitchen for a {order.order_status} order",
+        )
 
     items = (
         db.query(models.RestaurantOrderItem)
@@ -700,15 +724,37 @@ def confirm_order(order_id: int, payload: OrderConfirmIn, request: Request, db: 
 @router.put("/order/{order_id}/status", status_code=status.HTTP_200_OK)
 def update_order_status(order_id: int, payload: OrderStatusIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
+    # Row lock: two status writes at once would otherwise both read the old
+    # status, both pass the transition check below, and both commit -- so a
+    # Cancel could be accepted for an order that a concurrent request had just
+    # Completed, with neither caller told anything was wrong.
     order = (
         db.query(models.RestaurantOrder)
         .filter(models.RestaurantOrder.id == order_id, models.RestaurantOrder.company_id == company_id)
+        .with_for_update()
         .first()
     )
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
 
     _assert_in(payload.order_status, ORDER_STATUSES, "order_status")
+
+    current = order.order_status
+    if payload.order_status == current:
+        # Idempotent repeat of the current status: nothing to write.
+        return {"status": "success", "message": "Order status updated"}
+    if payload.order_status not in ORDER_TRANSITIONS.get(current, ()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"An order that is {current} cannot become {payload.order_status}"
+                + (
+                    "; it is closed."
+                    if current in ("Completed", "Cancelled")
+                    else "."
+                )
+            ),
+        )
 
     order.order_status = payload.order_status
     order.updated_by = user_id

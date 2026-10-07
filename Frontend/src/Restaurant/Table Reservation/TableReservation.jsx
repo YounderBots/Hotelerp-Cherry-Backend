@@ -218,7 +218,25 @@ const TableReservation = () => {
 
   /* ================= UI ================= */
 
-  const tableOptions = tables.map((t) => ({
+  // THE FLOOR ONLY OFFERS TABLES IT CAN ACTUALLY SEAT AT.
+  //
+  // This used to list every row from /restaurant/table, so the picker offered
+  // tables the booking API then refused: create_reservation rejects an
+  // Occupied or Reserved table outright (tableController), which made picking
+  // one a guaranteed failure the guest only learned about on Submit. A
+  // Blocked or Disabled table is not selectable either. The filter mirrors
+  // that contract; a row with no status on it is left selectable rather than
+  // silently hidden.
+  const UNAVAILABLE_TABLE_STATUSES = ["occupied", "reserved", "blocked", "disabled"];
+  const isTableAvailable = (t) => {
+    const status = String(t?.table_status ?? t?.status ?? "").trim().toLowerCase();
+    return status === "" || !UNAVAILABLE_TABLE_STATUSES.includes(status);
+  };
+
+  const availableTables = tables.filter(isTableAvailable);
+  const hiddenTableCount = tables.length - availableTables.length;
+
+  const tableOptions = availableTables.map((t) => ({
     value: t.id,
     label: `${t.table_name} (${t.table_code})`,
   }));
@@ -397,6 +415,13 @@ const TableReservation = () => {
           onChange={handleChange}
           placeholder="— select —"
           options={tableOptions}
+          helperText={
+            hiddenTableCount > 0
+              ? `${hiddenTableCount} table${hiddenTableCount === 1 ? "" : "s"} in use or blocked ${
+                  hiddenTableCount === 1 ? "is" : "are"
+                } not offered here.`
+              : undefined
+          }
         />
         <Input
           label="Guest Name"

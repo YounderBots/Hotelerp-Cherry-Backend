@@ -396,7 +396,22 @@ const TableTemplate = ({
     setSearchTerm(term);
     setCurrentPage(1);
   };
-  const [visibleColumns, setVisibleColumns] = useState(columns.map(col => col.key));
+  // COLUMN VISIBILITY IS DERIVED, NOT SNAPSHOTTED.
+  //
+  // This used to be `useState(columns.map(col => col.key))` — a snapshot of
+  // whatever `columns` happened to be on the FIRST render. Screens that build
+  // their column list after data arrives (a column keyed off a permission, a
+  // label resolved from a fetch, an actions column appended once the rows are
+  // known) therefore started with a stale key list that no longer matched the
+  // columns actually being rendered: the header/body filter came out empty or
+  // out of date and toggling a checkbox in the visibility dialog made the
+  // table vanish instead of hiding one column.
+  //
+  // What is stored is only the set of keys the user has HIDDEN. The visible
+  // rows are then recomputed during render from the current `columns`, so a
+  // column list that changes after mount — including one that arrives late —
+  // is always rendered, and every toggle re-renders the table immediately.
+  const [hiddenColumnKeys, setHiddenColumnKeys] = useState([]);
   const [showFilterModal, setShowFilterModal] = useState(false);
   // Transient feedback for the "Copy as JSON" action (this component has no
   // shared Toast of its own).
@@ -597,6 +612,9 @@ const TableTemplate = ({
       flashCopyToast('error', 'Print blocked — allow pop-ups for this site.');
       return;
     }
+    // The printed copy has no business scripting back into the app; the print
+    // helper that the Billing screens use does the same by hand.
+    printWindow.opener = null;
     printWindow.document.write(`
       <html>
         <head>
@@ -625,7 +643,7 @@ const TableTemplate = ({
   };
 
   const handleColumnToggle = (columnKey) => {
-    setVisibleColumns(prev =>
+    setHiddenColumnKeys(prev =>
       prev.includes(columnKey)
         ? prev.filter(key => key !== columnKey)
         : [...prev, columnKey]
@@ -634,7 +652,7 @@ const TableTemplate = ({
 
   // Reset column visibility to the default: every column visible.
   const handleResetColumns = () => {
-    setVisibleColumns(columns.map(col => col.key));
+    setHiddenColumnKeys([]);
   };
 
   // Render cell content based on column type
@@ -659,8 +677,15 @@ const TableTemplate = ({
     }
   };
 
-  // Filter visible columns
-  const visibleColumnsData = columns.filter(col => visibleColumns.includes(col.key));
+  // Filter visible columns — derived during render from the current `columns`
+  // and the keys the user hid, never from a value captured on first render.
+  const visibleColumnsData = useMemo(
+    () => columns.filter(col => !hiddenColumnKeys.includes(col.key)),
+    [columns, hiddenColumnKeys]
+  );
+  // The keys the dialog's checkboxes are checked against, kept in step with
+  // what the table is actually rendering.
+  const visibleColumnKeys = visibleColumnsData.map(col => col.key);
 
   // Columns that carry no data worth exporting — the render-only Actions
   // column above all — opt out with `excludeFromExport`. Without it every
@@ -899,7 +924,7 @@ const TableTemplate = ({
       {/* Filter Modal */}
       <FilterModal
         columns={columns}
-        visibleColumns={visibleColumns}
+        visibleColumns={visibleColumnKeys}
         onColumnToggle={handleColumnToggle}
         onClose={() => setShowFilterModal(false)}
         onReset={handleResetColumns}

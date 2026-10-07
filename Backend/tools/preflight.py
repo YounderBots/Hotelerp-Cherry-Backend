@@ -284,7 +284,13 @@ def main() -> int:
     low = login(host, args.gateway, args.low_email, args.low_password)
     if "_error" in low:
         detail = f"{low['_error']} {low.get('_body','')}"
-        if args.low_password == SEEDED_PASSWORD:
+        if not args.low_password:
+            # An empty password is not a rotated password: it means nothing was
+            # configured, and saying "rotated (good)" here would report a pass
+            # for an account that was never tried.
+            detail += (" -- no password was supplied, so nothing was tried. "
+                       "Pass --low-password, or export PREFLIGHT_LOW_PASSWORD.")
+        elif args.low_password == SEEDED_PASSWORD:
             detail += (" -- the seeded password has been rotated (good). Pass "
                        "--low-password, or export PREFLIGHT_LOW_PASSWORD, so "
                        "this check can run.")
@@ -335,9 +341,21 @@ def main() -> int:
 
     # -- 5. the shipped demo password -------------------------------------
     print("\n=== 5. the seeded demo password ===")
-    admin = login(host, args.gateway, args.admin_email, args.admin_password)
+    if not args.admin_password:
+        # Defaulting to "" and then reporting "the seeded password no longer
+        # works" would be a pass produced by signing in with an empty password
+        # -- which is refused for every account on every deployment ever, and
+        # therefore proves nothing about rotation.
+        warn("could not check the seeded password",
+             "no password was supplied (SEED_PASSWORD unset, --admin-password "
+             "not passed), so the probe signed in with an empty password. Pass "
+             "--admin-password, or export SEED_PASSWORD, to evaluate this.")
+        admin = {"_error": "not evaluated"}
+    else:
+        admin = login(host, args.gateway, args.admin_email, args.admin_password)
     if "_error" in admin:
-        ok("the seeded admin password no longer works")
+        if args.admin_password:
+            ok("the seeded admin password no longer works")
     else:
         # A failure, but it does hand check 6 a token that can read every
         # module -- so the images get checked on exactly the deployments that

@@ -6,10 +6,12 @@ from sqlalchemy.exc import IntegrityError
 import bcrypt
 import uuid
 import os
+import time
 import uuid
 import bcrypt
+from collections import defaultdict, deque
 from fastapi import Form, UploadFile, File
-from resources.authorization import require_permission
+from resources.authorization import has_permission, require_permission, require_any_permission
 from resources.utils import verify_authentication
 from resources.validation import normalize_email, normalize_phone, validate_email
 from models import models
@@ -18,6 +20,52 @@ from configs.base_config import CommonWords
 import logging
 
 logger = logging.getLogger("userservice.controller")
+
+
+# ---------------------------------------------------------------------------
+# Rate limit for POST /verify_credentials
+# ---------------------------------------------------------------------------
+# This endpoint checks a password and is not authenticated -- by design, since
+# the login gateway has no token yet when it calls. The gateway rate-limits
+# /login_post, but that limiter is keyed on the peer address and sits in front
+# of a different route: a caller who posts straight to /user/verify_credentials
+# gets unlimited guesses at a bcrypt hash-adjacent oracle, and under
+# RBAC_GATEWAY_MODE=audit (the default) the route is reachable.
+#
+# Keyed on the target account rather than the peer address, because behind the
+# proxy every request arrives from the gateway's own address -- a per-peer
+# limit here would be one shared bucket for the whole property.
+_verify_hits = defaultdict(deque)
+VERIFY_RATE_LIMIT_PER_MINUTE = int(os.getenv("VERIFY_RATE_LIMIT_PER_MINUTE", "10"))
+_VERIFY_WINDOW_SECONDS = 60.0
+
+
+def _rate_limit_verify(request: Request, email: str) -> None:
+    peer = request.client.host if request.client else "unknown"
+    key = f"{peer}|{email.lower()}"
+    now = time.monotonic()
+    hits = _verify_hits[key]
+    while hits and (now - hits[0]) > _VERIFY_WINDOW_SECONDS:
+        hits.popleft()
+    if len(hits) >= VERIFY_RATE_LIMIT_PER_MINUTE:
+        logger.warning(
+            "verify_credentials_rate_limit_hit peer=%s email=%s", peer, email
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts. Try again later.",
+        )
+    hits.append(now)
+
+
+def _clear_verify_hits(email: str, request: Request) -> None:
+    """A successful check empties the account's window.
+
+    Otherwise a user who mistyped twice and then got it right would still be
+    counted against the limit on their next legitimate sign-in.
+    """
+    peer = request.client.host if request.client else "unknown"
+    _verify_hits.pop(f"{peer}|{email.lower()}", None)
 
 
 def _valid_shift_time(value) -> bool:
@@ -30,6 +78,243 @@ def _valid_shift_time(value) -> bool:
     except (TypeError, ValueError):
         return False
     return parsed.strftime("%H:%M") == value
+
+
+# Column widths of the `users` table, keyed by the name the API uses. A longer
+# value reaching MySQL comes back as a driver "Data too long" error, which the
+# generic handler turns into a 500 that says nothing about which field was
+# wrong. Checked here so the answer is a 400 naming the field.
+_STAFF_FIELD_LIMITS = {
+    "username": 100,
+    "first_name": 100,
+    "last_name": 100,
+    "dob": 20,
+    "gender": 20,
+    "marital_status": 50,
+    "address": 255,
+    "city": 100,
+    "state": 100,
+    "postal_code": 20,
+    "country": 100,
+    "experience": 50,
+    "salary_details": 100,
+    "register_code": 100,
+    "emergency_name": 100,
+    "emergency_relationship": 50,
+}
+
+
+def _staff_text(value, field: str, *, required: bool = False):
+    """Trim one free-text staff field and enforce its column width.
+
+    Returns the cleaned value (or None when absent and not required) so both
+    the create and the update path can assign it directly.
+    """
+    if value is None:
+        if required:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{field.replace('_', ' ').capitalize()} is required",
+            )
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field.replace('_', ' ').capitalize()} must be text",
+        )
+    cleaned = value.strip()
+    if not cleaned:
+        if required:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{field.replace('_', ' ').capitalize()} is required",
+            )
+        return None
+    limit = _STAFF_FIELD_LIMITS.get(field)
+    if limit and len(cleaned) > limit:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field.replace('_', ' ').capitalize()} must not exceed {limit} characters",
+        )
+    return cleaned
+
+
+def _staff_text_in(payload: dict) -> dict:
+    """Clean every free-text staff field the caller actually sent (update path).
+
+    Absent keys stay absent so `payload.get(field, current)` keeps working for
+    a partial update; a key present but empty is rejected the same way create
+    rejects it.
+    """
+    cleaned = {}
+    for field in _STAFF_FIELD_LIMITS:
+        if field in payload:
+            cleaned[field] = _staff_text(payload[field], field, required=True)
+    return cleaned
+
+
+def _text(payload: dict, key: str, default: str = "") -> str:
+    """Read one free-text field out of a JSON body, tolerating `null`.
+
+    `payload.get(key, default)` only falls back when the key is ABSENT. A body
+    that carries `"description": null` -- which a form sends the moment a field
+    is optional and untouched -- returns None, and `.strip()` on None raises
+    AttributeError, which the generic handler turns into a 500 for what is
+    ordinary input. JSON `null` means "no value", so it reads as the default.
+    """
+    value = payload.get(key, default)
+    if value is None:
+        value = default
+    if isinstance(value, (dict, list)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{key.replace('_', ' ').capitalize()} must be text",
+        )
+    return str(value).strip()
+
+
+# Pages that read the staff directory. The list is not this file's invention:
+# it is ROUTE_PERMISSIONS[("user", "users", "GET")] in
+# Services/LoginServices/resources/rbac_map.py, and the two have to stay equal
+# or the gateway and the service would answer the same request differently --
+# one denying a roster screen the other allows.
+USER_DIRECTORY_PAGES = (
+    "/bar_roster",
+    "/bar_shift_planning",
+    "/employee",
+    "/restaurant_roster",
+    "/restaurant_shift_planning",
+    "/room_incident_log",
+    "/task_assign",
+)
+
+
+def _may_read_salary(db: Session, role_id, company_id) -> bool:
+    """Salary is shown on the Employee screen, so it is gated on that page.
+
+    The directory itself is needed by the rosters and the pickers, but a name
+    picker has no business carrying what someone is paid. `edit` counts as
+    well as `view`: a role that may change a salary may read the one it is
+    changing, and refusing it would leave the required field blank on submit.
+    """
+    return (
+        has_permission(db, role_id, company_id, "/employee", "view") is True
+        or has_permission(db, role_id, company_id, "/employee", "edit") is True
+    )
+
+
+def _assert_tenant_role(db: Session, company_id: str, role_id: int) -> None:
+    """Refuse a role id this tenant does not own."""
+    owned = (
+        db.query(models.Roles.id)
+        .filter(models.Roles.id == role_id, models.Roles.company_id == company_id)
+        .first()
+    )
+    if not owned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="role_id does not belong to this company",
+        )
+
+
+def _assert_tenant_menu(db: Session, company_id: str, menu_id: int) -> None:
+    owned = (
+        db.query(models.Menus.id)
+        .filter(models.Menus.id == menu_id, models.Menus.company_id == company_id)
+        .first()
+    )
+    if not owned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="menu_id does not belong to this company",
+        )
+
+
+def _assert_tenant_submenu(
+    db: Session, company_id: str, submenu_id: int, menu_id: int
+) -> None:
+    """Submenu must belong to the tenant AND hang off the menu just checked.
+
+    Checking only that the submenu exists would let a caller file a
+    permission under menu A for a submenu of menu B, which is how the matrix
+    ends up with rows nothing can render.
+    """
+    row = (
+        db.query(models.Submenus.id, models.Submenus.menu_id)
+        .filter(
+            models.Submenus.id == submenu_id,
+            models.Submenus.company_id == company_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="submenu_id does not belong to this company",
+        )
+    if str(row.menu_id) != str(menu_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="submenu_id does not belong to menu_id",
+        )
+
+
+# Staff photos: 5 MB and two formats, both checked against the bytes rather
+# than the filename.
+MAX_PHOTO_BYTES = int(os.getenv("MAX_PHOTO_BYTES", str(5 * 1024 * 1024)))
+_ALLOWED_PHOTOS = {
+    "image/jpeg": (".jpg", b"\xff\xd8\xff"),
+    "image/png": (".png", b"\x89PNG\r\n\x1a\n"),
+}
+
+
+async def _save_staff_photo(photo: UploadFile) -> str:
+    """Store an uploaded photo under a name this service chose, or refuse it.
+
+    What used to happen: the client's own extension was taken off
+    `photo.filename` and appended to a generated name. A file called
+    `x.svg` (or `.html`, or `.php`) with `Content-Type: image/png` passed the
+    content-type check and was written with the dangerous extension, and the
+    static mount then served it back to a browser as markup -- stored XSS off
+    an avatar upload. The bytes were also never looked at, so anything could be
+    stored as a "photo", and `photo.read()` loaded the whole body into memory
+    before anyone counted it.
+
+    So: the extension comes from the declared type, the declared type has to
+    match a magic-number signature, and the body is read with a ceiling.
+    """
+    content_type = (photo.content_type or "").lower()
+    if content_type not in _ALLOWED_PHOTOS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPG and PNG images are allowed",
+        )
+
+    body = await photo.read(MAX_PHOTO_BYTES + 1)
+    if len(body) > MAX_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Photo must be {MAX_PHOTO_BYTES // (1024 * 1024)} MB or smaller",
+        )
+    if not body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded photo is empty",
+        )
+
+    ext, signature = _ALLOWED_PHOTOS[content_type]
+    if not body.startswith(signature):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is not a valid JPG or PNG image",
+        )
+
+    filename = f"user_{uuid.uuid4().hex}{ext}"
+    save_path = os.path.join(UPLOAD_DIR, filename)
+    with open(save_path, "wb") as buffer:
+        buffer.write(body)
+
+    return f"/templates/static/users/{filename}"
 
 
 router = APIRouter()
@@ -145,7 +430,12 @@ async def create_user(
             )
 
 
-        require_permission(db, auth_role, company_id, "/user", "create")
+        # The Employee screen (page /employee) is what creates staff -- see
+        # Employee.jsx and ROUTE_PERMISSIONS[("user","users","POST")] in
+        # LoginServices/resources/rbac_map.py. Gating on /user instead meant a
+        # role the SPA showed an "Add" button to could still be refused here,
+        # and the two layers disagreed about who may create a staff record.
+        require_permission(db, auth_role, company_id, "/employee", "create")
         # -------------------------------------------------
         # NORMALIZATION
         # -------------------------------------------------
@@ -178,6 +468,40 @@ async def create_user(
         alternative_mobile = normalize_phone(
             alternative_mobile, field="alternative_mobile", default_region=phone_region
         )
+        # The emergency number is stored in the same 20-character column and read
+        # by the same screens, so it gets the same rule. Left unvalidated it could
+        # be any string at all, and anything past 20 characters failed at the
+        # driver as "Data too long" -- a 500 for a form field.
+        emergency_contact = normalize_phone(
+            emergency_contact, field="emergency_contact", default_region=phone_region
+        )
+        if not emergency_contact:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Emergency contact is required",
+            )
+
+        # -------------------------------------------------
+        # FREE TEXT (trimmed, width-checked against its column)
+        # -------------------------------------------------
+        username = _staff_text(username, "username", required=True)
+        first_name = _staff_text(first_name, "first_name", required=True)
+        last_name = _staff_text(last_name, "last_name", required=True)
+        dob = _staff_text(dob, "dob", required=True)
+        gender = _staff_text(gender, "gender", required=True)
+        marital_status = _staff_text(marital_status, "marital_status", required=True)
+        address = _staff_text(address, "address", required=True)
+        city = _staff_text(city, "city", required=True)
+        state = _staff_text(state, "state", required=True)
+        postal_code = _staff_text(postal_code, "postal_code", required=True)
+        country = _staff_text(country, "country", required=True)
+        experience = _staff_text(experience, "experience", required=True)
+        salary_details = _staff_text(salary_details, "salary_details", required=True)
+        register_code = _staff_text(register_code, "register_code", required=True)
+        emergency_name = _staff_text(emergency_name, "emergency_name", required=True)
+        emergency_relationship = _staff_text(
+            emergency_relationship, "emergency_relationship", required=True
+        )
 
         # -------------------------------------------------
         # DUPLICATE CHECKS
@@ -203,6 +527,19 @@ async def create_user(
             )
 
         # -------------------------------------------------
+        # PASSWORD POLICY
+        # -------------------------------------------------
+        # The self-service change endpoint already enforced a minimum; an
+        # administrator creating or resetting an account did not, so a staff
+        # account could be given a one-character password while the same rule
+        # refused it to the account's owner.
+        if not isinstance(password, str) or len(password) < PASSWORD_MIN_LENGTH:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"The password must be at least {PASSWORD_MIN_LENGTH} characters",
+            )
+
+        # -------------------------------------------------
         # PASSWORD HASH
         # -------------------------------------------------
         hashed_password = bcrypt.hashpw(
@@ -213,23 +550,11 @@ async def create_user(
         # -------------------------------------------------
         # PHOTO UPLOAD
         # -------------------------------------------------
+        # Extension, type and size are decided here, not by the client --
+        # see _save_staff_photo.
         photo_path = None
-        if photo:
-            if photo.content_type not in ["image/jpeg", "image/png"]:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Only JPG and PNG images are allowed"
-                )
         if photo and photo.filename:
-
-            ext = photo.filename.split(".")[-1]
-            filename = f"user_{uuid.uuid4().hex}.{ext}"
-            save_path = os.path.join(UPLOAD_DIR, filename)
-
-            with open(save_path, "wb") as buffer:
-                buffer.write(await photo.read())
-
-            photo_path = f"/templates/static/users/{filename}"
+            photo_path = await _save_staff_photo(photo)
 
         # -------------------------------------------------
         # USER CODE
@@ -325,6 +650,15 @@ def get_all_users(
                 detail="Invalid authentication token"
             )
 
+        # The staff directory is not a public list: it carries salary, home
+        # address and emergency contacts. Authentication alone used to be
+        # enough to read it, so any signed-in role could enumerate the whole
+        # property's staff. The gate mirrors the gateway's route map.
+        require_any_permission(
+            db, auth_role, company_id, USER_DIRECTORY_PAGES, "view"
+        )
+        read_salary = _may_read_salary(db, auth_role, company_id)
+
         # -------------------------------------------------
         # FETCH USERS
         # -------------------------------------------------
@@ -373,7 +707,9 @@ def get_all_users(
 
                     "date_of_joining": user.Date_Of_Joining,
                     "experience": user.Experience,
-                    "salary_details": user.Salary_Details,
+                    # Only the Employee page's readers see pay; a roster's name
+                    # picker gets the rest of the record but not this.
+                    **({"salary_details": user.Salary_Details} if read_salary else {}),
                     "register_code": user.Register_Code,
                     "emergency_name": user.Emergency_Name,
                     "emergency_contact": user.Emergency_Contact,
@@ -422,6 +758,14 @@ def get_user_by_id(
         # -------------------------------------------------
         # VALIDATION
         # -------------------------------------------------
+        # Same gate as the list: one user's full record is the directory's
+        # payload, not something a caller is entitled to merely because they
+        # know the id.
+        require_any_permission(
+            db, auth_role, company_id, USER_DIRECTORY_PAGES, "view"
+        )
+        read_salary = _may_read_salary(db, auth_role, company_id)
+
         if user_id <= 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -483,7 +827,9 @@ def get_user_by_id(
 
                 "date_of_joining": user.Date_Of_Joining,
                 "experience": user.Experience,
-                "salary_details": user.Salary_Details,
+                # Omitted, not nulled: absent means the caller's role cannot
+                # see pay, which is different from "this role is paid nothing".
+                **({"salary_details": user.Salary_Details} if read_salary else {}),
                 "register_code": user.Register_Code,
 
                 "emergency_name": user.Emergency_Name,
@@ -520,7 +866,7 @@ def get_user_by_id(
 # This variant accepts {email, password} and returns only the identity
 # fields the auth gateway needs. Password never leaves this service.
 @router.post("/verify_credentials", status_code=status.HTTP_200_OK)
-def verify_credentials(payload: dict, db: Session = Depends(get_db)):
+def verify_credentials(payload: dict, request: Request, db: Session = Depends(get_db)):
     try:
         email = (payload.get("email") or "").strip().lower()
         password = payload.get("password") or ""
@@ -528,6 +874,10 @@ def verify_credentials(payload: dict, db: Session = Depends(get_db)):
         if not email or "@" not in email or not password:
             # Unified 401 — never disclose which field was wrong.
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+        # Throttled before the bcrypt work, not after: the comparison is the
+        # expensive part and it is exactly what an attacker wants to run.
+        _rate_limit_verify(request, email)
 
         user = (
             db.query(models.Users)
@@ -547,6 +897,8 @@ def verify_credentials(payload: dict, db: Session = Depends(get_db)):
 
         if not ok:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+        _clear_verify_hits(email, request)
 
         role = (
             db.query(models.Roles)
@@ -980,6 +1332,22 @@ async def update_user(
                 payload["alternative_mobile"], field="alternative_mobile",
                 default_region=phone_region,
             )
+        if "emergency_contact" in payload:
+            payload["emergency_contact"] = normalize_phone(
+                payload["emergency_contact"], field="emergency_contact",
+                default_region=phone_region,
+            )
+            if not payload["emergency_contact"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Emergency contact is required",
+                )
+
+        # Free-text fields: trimmed and width-checked before they reach the
+        # column, so an over-long value is a 400 naming the field rather than
+        # a driver-level "Data too long" 500.
+        cleaned_text = _staff_text_in(payload)
+        payload.update(cleaned_text)
 
         # -------------------------------------------------
         # UPDATE FIELDS (SAFE)
@@ -1000,6 +1368,11 @@ async def update_user(
 
         new_password = payload.get("password")
         if new_password and new_password.strip() != "":
+            if len(new_password) < PASSWORD_MIN_LENGTH:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"The password must be at least {PASSWORD_MIN_LENGTH} characters",
+                )
             hashed_password = bcrypt.hashpw(
                 new_password.encode("utf-8"),
                 bcrypt.gensalt()
@@ -1192,8 +1565,8 @@ async def create_role(
                 detail="Invalid JSON body"
             )
 
-        role_name = payload.get("role_name", "").strip()
-        description = payload.get("description", "").strip()
+        role_name = _text(payload, "role_name")
+        description = _text(payload, "description")
 
         # -------------------------------------------------
         # VALIDATION
@@ -1204,12 +1577,10 @@ async def create_role(
                 detail="role_name is required"
             )
 
-        if not description:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="description is required"
-            )
-
+        # `description` is nullable in the model and optional in the form: an
+        # untouched optional field arrives as null (or not at all), and
+        # refusing it turned "create a role without a note" into a 400.
+        # The width check still applies to whatever was typed.
         if len(role_name) > 100:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1471,8 +1842,8 @@ async def update_role(
             )
 
         role_id_payload = payload.get("id")
-        role_name = payload.get("role_name", "").strip()
-        description = payload.get("description", "").strip()
+        role_name = _text(payload, "role_name")
+        description = _text(payload, "description")
 
         # -------------------------------------------------
         # VALIDATION
@@ -1694,7 +2065,13 @@ async def create_role_permission(
             )
 
 
-        require_permission(db, role_id, company_id, "/roles", "create")
+        # The permission matrix is drawn and saved on the /user screen (see
+        # User.jsx and ROUTE_PERMISSIONS[("user","role_permissions","POST")]),
+        # so it is /user's create bit that gates it -- /roles owns the role
+        # records themselves. `role_id` here is the CALLER's role from the
+        # token; the target role arrives in the body as `role_id_payload`.
+        require_permission(db, role_id, company_id, "/user", "create")
+
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -1735,6 +2112,21 @@ async def create_role_permission(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid submenu_id"
             )
+
+        # -------------------------------------------------
+        # TENANT OWNERSHIP (C-089)
+        # -------------------------------------------------
+        # Every id in this body belongs to this company or it is refused. The
+        # row was written with the caller's company_id anyway, so a foreign id
+        # did not grant the other tenant anything -- but it did create a
+        # permission row pointing at a role/menu this tenant cannot see, which
+        # shows up as an unresolvable row in the matrix and in
+        # `verify_seed.py`'s dangling-reference check. Checked here so it is a
+        # 400 naming the field rather than silent corruption.
+        _assert_tenant_role(db, company_id, role_id_payload)
+        _assert_tenant_menu(db, company_id, menu_id)
+        if submenu_id is not None:
+            _assert_tenant_submenu(db, company_id, submenu_id, menu_id)
 
         # -------------------------------------------------
         # DUPLICATE CHECK
@@ -1939,9 +2331,9 @@ def get_all_role_permissions(
             menus_list = list(role_data["menus"].values())
 
             for menu in menus_list:
-                menu["children"].sort(key=lambda x: x.get("order_no", 0))
+                menu["children"].sort(key=lambda x: x.get("order_no") or 0)
 
-            menus_list.sort(key=lambda x: x.get("order_no", 0))
+            menus_list.sort(key=lambda x: x.get("order_no") or 0)
 
             result.append({
                 "role_id": role_data["role_id"],
@@ -2089,9 +2481,9 @@ def get_permissions_by_role(
 
         # ------------------ SORT MENUS & SUBMENUS ------------------
         for menu in menus.values():
-            menu["children"].sort(key=lambda x: x.get("order_no", 0))
+            menu["children"].sort(key=lambda x: x.get("order_no") or 0)
 
-        sorted_menus = sorted(menus.values(), key=lambda x: x.get("order_no", 0))
+        sorted_menus = sorted(menus.values(), key=lambda x: x.get("order_no") or 0)
 
         # -------------------------------------------------
         # RESPONSE
@@ -2137,7 +2529,10 @@ async def update_role_permission(
             )
 
 
-        require_permission(db, user_role, company_id, "/roles", "edit")
+        # The permission matrix is drawn and saved on the /user screen; matches
+        # ROUTE_PERMISSIONS[("user","role_permissions","PUT")]. /roles owns the
+        # role records, not the matrix.
+        require_permission(db, user_role, company_id, "/user", "edit")
         # -------------------------------------------------
         # REQUEST BODY (SAFE JSON)
         # -------------------------------------------------
@@ -2361,9 +2756,9 @@ async def create_menu(
                 detail="Invalid JSON body"
             )
 
-        menu_name = payload.get("menu_name", "").strip()
-        menu_link = payload.get("menu_link", "").strip()
-        menu_icon = payload.get("menu_icon", "").strip()
+        menu_name = _text(payload, "menu_name")
+        menu_link = _text(payload, "menu_link")
+        menu_icon = _text(payload, "menu_icon")
         order_no = payload.get("order_no")
 
         # -------------------------------------------------
@@ -2644,9 +3039,9 @@ async def update_menu(
             )
 
         menu_id = payload.get("id")
-        menu_name = payload.get("menu_name", "").strip()
-        menu_link = payload.get("menu_link", "").strip()
-        menu_icon = payload.get("menu_icon", "").strip()
+        menu_name = _text(payload, "menu_name")
+        menu_link = _text(payload, "menu_link")
+        menu_icon = _text(payload, "menu_icon")
         order_no = payload.get("order_no")
 
         # -------------------------------------------------
@@ -2876,8 +3271,8 @@ async def create_submenu(
             )
 
         menu_id = payload.get("menu_id")
-        submenu_name = payload.get("submenu_name", "").strip()
-        submenu_link = payload.get("submenu_link", "").strip()
+        submenu_name = _text(payload, "submenu_name")
+        submenu_link = _text(payload, "submenu_link")
         order_no = payload.get("order_no")
 
         # -------------------------------------------------
@@ -3208,8 +3603,8 @@ async def update_submenu(
 
         submenu_id = payload.get("id")
         menu_id = payload.get("menu_id")
-        submenu_name = payload.get("submenu_name", "").strip()
-        submenu_link = payload.get("submenu_link", "").strip()
+        submenu_name = _text(payload, "submenu_name")
+        submenu_link = _text(payload, "submenu_link")
         order_no = payload.get("order_no")
 
         # -------------------------------------------------
@@ -3525,7 +3920,7 @@ async def create_department(
                 detail="Invalid JSON body"
             )
 
-        department_name = payload.get("department_name", "").strip()
+        department_name = _text(payload, "department_name")
 
         # -------------------------------------------------
         # VALIDATION
@@ -3723,7 +4118,7 @@ async def update_department(
             )
 
         department_id = payload.get("id")
-        department_name = payload.get("department_name", "").strip()
+        department_name = _text(payload, "department_name")
 
         # -------------------------------------------------
         # VALIDATION
@@ -4004,7 +4399,7 @@ async def create_designation(
                 detail="Invalid JSON body"
             )
 
-        designation_name = payload.get("designation_name", "").strip()
+        designation_name = _text(payload, "designation_name")
 
         # -------------------------------------------------
         # VALIDATION
@@ -4198,7 +4593,7 @@ async def update_designation(
             )
 
         designation_id = payload.get("id")
-        designation_name = payload.get("designation_name", "").strip()
+        designation_name = _text(payload, "designation_name")
 
         # -------------------------------------------------
         # VALIDATION
@@ -4413,9 +4808,9 @@ async def create_shift(
                 detail="Invalid JSON body"
             )
 
-        shift_name = payload.get("shift_name", "").strip()
-        start_time = payload.get("start_time", "").strip()
-        end_time = payload.get("end_time", "").strip()
+        shift_name = _text(payload, "shift_name")
+        start_time = _text(payload, "start_time")
+        end_time = _text(payload, "end_time")
 
         # -------------------------------------------------
         # VALIDATION
@@ -4704,9 +5099,9 @@ async def update_shift(
             )
 
         shift_id = payload.get("id")
-        shift_name = payload.get("shift_name", "").strip()
-        start_time = payload.get("start_time", "").strip()
-        end_time = payload.get("end_time", "").strip()
+        shift_name = _text(payload, "shift_name")
+        start_time = _text(payload, "start_time")
+        end_time = _text(payload, "end_time")
 
         # -------------------------------------------------
         # VALIDATION

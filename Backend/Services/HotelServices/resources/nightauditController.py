@@ -599,6 +599,7 @@ async def export_settlement_summary(request: Request,
     data = []
     total_paid = 0
     total_overall = 0
+    total_balance = 0
 
     for row in settlement_data:
         paid_amount = row.paid_amount or 0
@@ -606,6 +607,11 @@ async def export_settlement_summary(request: Request,
 
         total_paid += paid_amount
         total_overall += overall_amount
+        # Summed from the same column the rows display. The total used to be
+        # recomputed as overall - paid, which disagrees with the rows above it
+        # whenever a balance is floored at zero (an overpaid or fully refunded
+        # folio): the Balance column then did not add up to its own total.
+        total_balance += row.balance_amount or 0
 
         data.append({
             "Room Reservation ID": row.room_reservation_id,
@@ -626,7 +632,7 @@ async def export_settlement_summary(request: Request,
         "Name": "",
         "Overall Amount": total_overall,
         "Paid Amount": total_paid,
-        "Balance Amount": total_overall - total_paid,
+        "Balance Amount": total_balance,
         "Arrival Date": "",
         "Departure Date": "",
         "Reservation Status": ""
@@ -913,7 +919,16 @@ async def night_audit_run(request: Request, db: Session = Depends(get_db)):
                 ),
             )
         logger.exception("night_audit_integrity_error date=%s", business_date)
-        nas.record_failure(db, company_id, business_date, user_id, str(exc))
+        # The full exception went to the log above. `error_message` is rendered
+        # verbatim by /night_audit/history, so persisting str(exc) there put
+        # driver text and whole SQL statements in front of every operator who
+        # opened the audit history -- an information disclosure dressed up as
+        # a diagnostic. The row records that it failed, not how.
+        nas.record_failure(
+            db, company_id, business_date, user_id,
+            "Night audit aborted: a concurrent run or constraint rejected the write. "
+            "See the service log for the underlying error.",
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Night audit failed and was rolled back. No changes were applied.",
@@ -924,7 +939,14 @@ async def night_audit_run(request: Request, db: Session = Depends(get_db)):
         # again in its own transaction. "We tried and it failed" and "nobody
         # ever ran it" are different facts, and only the first says "retry".
         logger.exception("night_audit_failed date=%s company=%s", business_date, company_id)
-        nas.record_failure(db, company_id, business_date, user_id, str(exc))
+        # Same reasoning as the IntegrityError branch: str(exc) is for the log,
+        # which already has it. What is persisted is read by humans in the
+        # history screen and must not carry Python/driver internals.
+        nas.record_failure(
+            db, company_id, business_date, user_id,
+            f"Night audit aborted with an unexpected error ({type(exc).__name__}). "
+            "See the service log for the underlying error.",
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Night audit failed and was rolled back. No changes were applied.",

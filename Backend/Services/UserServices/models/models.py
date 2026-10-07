@@ -179,7 +179,10 @@ class Menus(Base):
     __tablename__ = "menus"
 
     id = Column(Integer, primary_key=True, index=True)
-    menu_name = Column(String(100), nullable=False, index=True)
+    # The database carries a UNIQUE index on menu_name (menus are company-wide,
+    # and the seed refuses to write a duplicate); declare it so autogenerate
+    # stops offering to drop it.
+    menu_name = Column(String(100), nullable=False, index=True, unique=True)
     menu_link = Column(String(255), nullable=False)
     menu_icon = Column(String(100), nullable=True)
     order = Column(Integer, nullable=False)

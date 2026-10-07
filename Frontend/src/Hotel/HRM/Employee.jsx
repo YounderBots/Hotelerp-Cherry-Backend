@@ -28,6 +28,9 @@ const MARITAL_STATUSES = ["Single", "Married", "Divorced", "Widowed", "Prefer no
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_PHOTO_MB = 3;
+// Kept in step with PASSWORD_MIN_LENGTH in UserServices/resources/userController.py.
+// The server enforces this; the browser just gets there first.
+const PASSWORD_MIN_LENGTH = 8;
 
 const isoDay = (v) => (typeof v === "string" ? v.slice(0, 10) : "");
 
@@ -273,8 +276,8 @@ const Employee = () => {
       return emergency.message || "Enter a valid emergency contact number";
     }
     if (!editId && !formData.password) return "Password is required for a new employee";
-    if (formData.password && formData.password.length < 6) {
-      return "Password must be at least 6 characters";
+    if (formData.password && formData.password.length < PASSWORD_MIN_LENGTH) {
+      return `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
     }
     if (isoDay(formData.dob) > todayIso()) {
       return "Date of birth cannot be in the future";

@@ -62,11 +62,20 @@ const User = () => {
     { fetch: () => APICall.getT("/user/menus"), select: readList, fallback: "Failed to load menus." },
   ]);
 
-  // Saving a row POSTs (create) and falls back to PUT (edit), so a role
-  // needs one of the two to change anything; without either the matrix is
-  // read-only rather than a screen of controls the gateway would refuse.
+  // The save loop below is BOTH branches for every dirty row: it POSTs
+  // /user/role_permissions (create) and falls back to PUT when the server
+  // answers 409 (update). The gateway authorises those against the "/user"
+  // page — ROUTE_PERMISSIONS[("user","role_permissions","POST"/"PUT")] = ("/user",)
+  // in Backend/Services/LoginServices/resources/rbac_map.py — which is what
+  // usePagePermissions("/user") reads here.
+  //
+  // A user holding only one of the two flags used to be offered Save and then
+  // failed on the half of the loop they were not allowed to run (a role with
+  // `add` but no `edit` 403s the PUT of every row that already has a
+  // permission_id, and vice versa). Both branches are required before the
+  // matrix is writable at all, so the button is gated on both.
   const permissions = usePagePermissions("/user");
-  const canWrite = permissions.add || permissions.edit;
+  const canWrite = permissions.add && permissions.edit;
   const { toast, showToast } = useToast();
 
   const [selectedRoleId, setSelectedRoleId] = useState("");

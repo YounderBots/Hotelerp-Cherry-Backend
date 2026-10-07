@@ -43,7 +43,12 @@ const Roles = () => {
 
   const payload = () => ({
     role_name: formData.roleName.trim(),
-    description: formData.description.trim() || null,
+    // Coerced before trimming: `formData.description` is always a string from
+    // this form, but a payload builder is the one place a stray null/undefined
+    // would turn into "Cannot read properties of undefined (reading 'trim')"
+    // at save time, i.e. a failure the user cannot act on. JSON null is what
+    // the API reads as "no description" (`_text` in userController).
+    description: String(formData.description ?? "").trim() || null,
   });
 
   const createRole = async () => {
@@ -96,7 +101,7 @@ const Roles = () => {
       showToast("Role name must be under 100 characters", "error");
       return;
     }
-    if (formData.description.length > 255) {
+    if (String(formData.description ?? "").length > 255) {
       showToast("Description must be under 255 characters", "error");
       return;
     }
@@ -222,7 +227,10 @@ const Roles = () => {
             label: saving ? "Saving…" : "Submit",
             variant: "primary",
             onClick: handleSave,
-            disabled: saving,
+            // The role name is the one required field, and handleSave rejects
+            // an empty one — saying so with the button itself beats a toast
+            // that only fires after the click.
+            disabled: saving || !formData.roleName.trim(),
           },
         ]}
       >

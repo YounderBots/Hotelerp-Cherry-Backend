@@ -1,4 +1,5 @@
 import logging
+import math
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -56,6 +57,45 @@ def _round(value: float) -> float:
 # than the order produced a bill with a negative grand total.
 MAX_PERCENT = 100.0
 
+# The discount column is a MySQL ENUM('Percentage','Flat'); anything else is
+# refused here rather than discovered by a constraint error at insert time.
+DISCOUNT_TYPES = ("Percentage", "Flat")
+
+# How many ways one bill may be split. The floor stops a zero-way split that
+# would divide by a number <= 1; the ceiling stops a request for a million
+# shares turning into a million inserts inside one transaction.
+SPLIT_MIN_PEOPLE = 2
+SPLIT_MAX_PEOPLE = 100
+
+# Mirrors the `bill_split_type_enum` column. Only "By Person" is implemented,
+# but the column accepts all three, so the API accepts all three rather than
+# failing a valid-looking request at the driver.
+SPLIT_TYPES = ("By Person", "By Item", "By Amount")
+
+
+def _finite(value, field: str) -> float:
+    """Reject NaN/Infinity before they reach a comparison or a column.
+
+    `NaN < 0` and `NaN > 100` are both False, so every range check below
+    silently passes for a NaN and the value lands in the arithmetic that
+    follows. Python's json decoder accepts the bare `NaN`/`Infinity`
+    literals, so this is reachable from an ordinary HTTP body.
+    """
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field} must be a number",
+        )
+    if not math.isfinite(parsed):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field} must be a finite number",
+        )
+    return parsed
+
+
 # An order that was never confirmed has not reached the kitchen, and a cancelled
 # one is not owed. The Billing screen already offers only Served / Ready /
 # In Progress orders; this is the same rule on the server, where it binds.
@@ -65,14 +105,19 @@ BILLABLE_ORDER_STATUSES = ("In Progress", "Ready", "Served", "Completed")
 def _assert_billable_charges(payload, sub_total: float) -> float:
     """Validate the charge inputs and return the discount they imply."""
     for field in ("cgst_percentage", "sgst_percentage", "service_charge_percentage"):
-        value = getattr(payload, field, 0) or 0
+        value = _finite(getattr(payload, field, 0) or 0, field)
         if value < 0 or value > MAX_PERCENT:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"{field} must be between 0 and {MAX_PERCENT:.0f}",
             )
 
-    discount_value = payload.discount_value or 0
+    discount_value = _finite(payload.discount_value or 0, "discount_value")
+    if payload.discount_type not in (None, "", *DISCOUNT_TYPES):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"discount_type must be one of {', '.join(DISCOUNT_TYPES)}",
+        )
     if discount_value < 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -341,16 +386,24 @@ def get_bill(bill_id: int, request: Request, db: Session = Depends(get_db)):
 @router.post("/bill/{bill_id}/payment", status_code=status.HTTP_201_CREATED)
 def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
+    # Row lock: two payments posted at the same moment both read the same
+    # `already_paid`, both pass the outstanding check below, and the second
+    # commit erases the first's effect on the totals -- money taken twice,
+    # recorded once. The lock serialises them so the second sees the first.
     bill = (
         db.query(models.RestaurantBill)
         .filter(models.RestaurantBill.id == bill_id, models.RestaurantBill.company_id == company_id)
+        .with_for_update()
         .first()
     )
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
     if bill.bill_status == "Cancelled":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot pay a cancelled bill")
-    if payload.paid_amount <= 0:
+    if bill.bill_status == "Paid":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot pay a bill that is already paid")
+    paid_amount = _finite(payload.paid_amount, "paid_amount")
+    if paid_amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="paid_amount must be greater than zero")
 
     # Overpayment guard. Without it this endpoint accepted any amount: paying
@@ -372,7 +425,7 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This bill is already fully paid",
         )
-    if payload.paid_amount > outstanding:
+    if paid_amount > outstanding:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"paid_amount exceeds the outstanding balance of {outstanding}",
@@ -407,7 +460,7 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
         payment = models.RestaurantBillPayment(
             bill_id=bill.id,
             payment_method_id=payload.payment_method_id,
-            paid_amount=payload.paid_amount,
+            paid_amount=paid_amount,
             payment_reference=payload.payment_reference,
             payment_date=now.date(),
             payment_time=now.time(),
@@ -484,9 +537,12 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
 @router.put("/bill/{bill_id}/cancel", status_code=status.HTTP_200_OK)
 def cancel_bill(bill_id: int, payload: BillCancelIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
+    # Locked so a cancel cannot race a payment: without it, cancel reads
+    # payment_status before the payment commits and lets both through.
     bill = (
         db.query(models.RestaurantBill)
         .filter(models.RestaurantBill.id == bill_id, models.RestaurantBill.company_id == company_id)
+        .with_for_update()
         .first()
     )
     if not bill:
@@ -506,17 +562,53 @@ def cancel_bill(bill_id: int, payload: BillCancelIn, request: Request, db: Sessi
 @router.post("/bill/{bill_id}/split", status_code=status.HTTP_201_CREATED)
 def split_bill_by_person(bill_id: int, payload: SplitByPersonIn, request: Request, db: Session = Depends(get_db)):
     user_id, role_id, company_id = _auth(request)
+    # Locked so two concurrent splits of the same bill cannot both succeed and
+    # leave two sets of children for one parent.
     bill = (
         db.query(models.RestaurantBill)
         .filter(models.RestaurantBill.id == bill_id, models.RestaurantBill.company_id == company_id)
+        .with_for_update()
         .first()
     )
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
-    if payload.number_of_people < 2:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="number_of_people must be at least 2")
-    if bill.payment_status == "Paid":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bill is already paid")
+    if payload.split_type not in SPLIT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"split_type must be one of {', '.join(SPLIT_TYPES)}",
+        )
+    if not (SPLIT_MIN_PEOPLE <= payload.number_of_people <= SPLIT_MAX_PEOPLE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"number_of_people must be between {SPLIT_MIN_PEOPLE} and "
+                f"{SPLIT_MAX_PEOPLE}"
+            ),
+        )
+    if bill.bill_status == "Cancelled":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bill is cancelled")
+    # A bill with money already against it cannot be cancelled into shares:
+    # the children would start at zero while the payments stay on the parent,
+    # so the property appears to have been paid twice. Refuse and let the
+    # operator refund first.
+    if bill.payment_status in ("Paid", "Partial"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bill has payments against it; refund them before splitting",
+        )
+    payments = (
+        db.query(models.RestaurantBillPayment)
+        .filter(
+            models.RestaurantBillPayment.bill_id == bill.id,
+            models.RestaurantBillPayment.payment_status == "Success",
+        )
+        .count()
+    )
+    if payments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bill has payments against it; refund them before splitting",
+        )
 
     try:
         split = models.RestaurantBillSplit(

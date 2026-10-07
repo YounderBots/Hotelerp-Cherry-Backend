@@ -43,9 +43,12 @@ export function useToast() {
     };
     useEffect(() => clearTimers, []);
 
+    // `type` defaults in the signature AND on the way into state, so a caller
+    // that passes `undefined`/`null` explicitly still gets a success toast
+    // rather than a `toast--undefined` class and an unknown icon.
     const showToast = useCallback((message, type = "success") => {
         clearTimers();
-        setToast({ show: true, message, type, exiting: false });
+        setToast({ show: true, message, type: type || "success", exiting: false });
         timers.current = [
             setTimeout(() => setToast((prev) => ({ ...prev, exiting: true })), VISIBLE_MS),
             setTimeout(() => setToast(HIDDEN), VISIBLE_MS + EXIT_MS),

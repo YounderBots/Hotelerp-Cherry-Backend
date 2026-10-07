@@ -15,6 +15,7 @@ import { ChipGroup } from "../../stories/Chip";
 import RepeatableRowEditor from "../../stories/RepeatableRowEditor";
 import APICall from "../../APICalls/APICalls";
 import { errMsg, readList } from "../../functions/apiHelpers";
+import { amountError } from "../../functions/amountRules";
 import { formatPrecise } from "../../functions/formatters";
 import { useApiResources } from "../../hooks/useApiResource";
 import { useToast } from "../../hooks/useToast";
@@ -113,6 +114,20 @@ const MenuManagement = () => {
   const [newVariant, setNewVariant] = useState(emptyVariant());
   const [newModifier, setNewModifier] = useState(emptyModifier());
   const [imageUploading, setImageUploading] = useState(false);
+
+  // MONEY FIELDS ARE CHECKED FOR WHAT THEY HOLD, NOT ONLY WHETHER THEY ARE
+  // FILLED IN.
+  //
+  // `type="number"` accepts a leading minus, and the submit guard only ever
+  // asked for a non-empty price — so "-50" as a price and "-18" as a tax rate
+  // passed the client and were sent on as real numbers. Read during render so
+  // the field can say what is wrong where the user typed it, the submit button
+  // can refuse a value no till can print, and the API never has to be the one
+  // to discover it.
+  const priceError = amountError(formData.price, { label: "Price" });
+  const costPriceError = amountError(formData.cost_price, { label: "Cost price" });
+  const taxError = amountError(formData.tax_percentage, { label: "Tax %", max: 100 });
+  const hasAmountError = Boolean(priceError || costPriceError || taxError);
 
   // An unknown id reads as "—": a row number tells the user nothing, and
   // usually means the reference list simply has not loaded.
@@ -313,6 +328,13 @@ const MenuManagement = () => {
     if (saving || savingRef.current) return;
     if (!formData.item_name.trim() || !formData.price || !formData.category_id) {
       setFormError("Item name, price and category are required.");
+      return;
+    }
+    // A field that is filled in but wrong (a minus sign, a tax rate over 100)
+    // is a different mistake from a missing one, and gets its own sentence —
+    // otherwise the user hunts the required field they already filled in.
+    if (hasAmountError) {
+      setFormError(priceError || costPriceError || taxError);
       return;
     }
     const cleanVariants = variants.filter((v) => v.variant_name.trim() && v.price !== "");
@@ -592,7 +614,15 @@ const MenuManagement = () => {
           showFooter
           actions={[
             { label: "Close", variant: "secondary", onClick: closeModal, disabled: saving },
-            { label: saving ? "Saving…" : "Submit", variant: "primary", onClick: handleSave, disabled: saving },
+            {
+              label: saving ? "Saving…" : "Submit",
+              variant: "primary",
+              onClick: handleSave,
+              // Refused while a price, cost or tax holds something no till can
+              // print: the message is already under the field, so pressing it
+              // would only repeat what the form is saying.
+              disabled: saving || hasAmountError,
+            },
           ]}
         >
           {formError && (
@@ -636,11 +666,43 @@ const MenuManagement = () => {
 
           <Input label="Preparation Time (min)" type="number" name="preparation_time" value={formData.preparation_time} onChange={handleChange} />
 
-          <Input label="Price" required type="number" name="price" value={formData.price} onChange={handleChange} />
+          <Input
+            label="Price"
+            required
+            type="number"
+            name="price"
+            min="0"
+            step="0.01"
+            value={formData.price}
+            onChange={handleChange}
+            error={Boolean(priceError)}
+            helperText={priceError || undefined}
+          />
 
-          <Input label="Cost Price" type="number" name="cost_price" value={formData.cost_price} onChange={handleChange} />
+          <Input
+            label="Cost Price"
+            type="number"
+            name="cost_price"
+            min="0"
+            step="0.01"
+            value={formData.cost_price}
+            onChange={handleChange}
+            error={Boolean(costPriceError)}
+            helperText={costPriceError || undefined}
+          />
 
-          <Input label="Tax %" type="number" name="tax_percentage" value={formData.tax_percentage} onChange={handleChange} />
+          <Input
+            label="Tax %"
+            type="number"
+            name="tax_percentage"
+            min="0"
+            max="100"
+            step="0.1"
+            value={formData.tax_percentage}
+            onChange={handleChange}
+            error={Boolean(taxError)}
+            helperText={taxError || undefined}
+          />
 
           <Select
             label="Service Charge Applicable"

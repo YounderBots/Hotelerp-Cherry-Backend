@@ -139,7 +139,6 @@
     ];
     
     const handleSubmit = (data) => {
-      console.log('Form submitted:', data);
       alert('Form data: ' + JSON.stringify(data, null, 2));
       setIsOpen(false);
     };
@@ -429,7 +428,6 @@
     ];
     
     const handleSubmit = (data) => {
-      console.log('Form submitted:', data);
       alert('Room Type saved: ' + JSON.stringify(data, null, 2));
       setIsOpen(false);
     };

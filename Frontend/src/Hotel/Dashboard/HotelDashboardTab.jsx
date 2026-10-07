@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../Context/AuthContext";
-import APICall, { ApiError } from "../../APICalls/APICalls";
+import APICall from "../../APICalls/APICalls";
 import { todayIso } from "../../functions/formatters";
 
 import KPISection from "./Components/KPISection";
@@ -23,7 +23,10 @@ const HotelDashboardTab = () => {
   const [rooms, setRooms] = useState(null);
   const [dailyRevenue, setDailyRevenue] = useState(0);
   const [activity, setActivity] = useState(null);
-  const [errors, setErrors] = useState({ reservations: null, rooms: null, activity: null, sales: null });
+  // The signed-in staff member's housekeeping tasks — null until the call
+  // settles, so the card can tell "still loading" from "there are none".
+  const [tasks, setTasks] = useState(null);
+  const [errors, setErrors] = useState({ reservations: null, rooms: null, activity: null, sales: null, tasks: null });
   const [refreshTick, setRefreshTick] = useState(0);
 
   // One value for "today", used by both dated report calls below. Use the
@@ -36,12 +39,18 @@ const HotelDashboardTab = () => {
     setSummary(null);
     setRooms(null);
     setActivity(null);
-    setErrors({ reservations: null, rooms: null, activity: null, sales: null });
+    setTasks(null);
+    setErrors({ reservations: null, rooms: null, activity: null, sales: null, tasks: null });
 
-    const companyId = user?.company_id;
-    const activityCall = companyId
-      ? APICall.getT("/hotel/user_activity_log", { company_id: companyId })
-      : Promise.reject(new ApiError("Company context unavailable.", { status: 0, code: "no_company" }));
+    // No company_id is sent, and none is checked for.
+    //
+    // `user_activity_log` takes only from_date/to_date and reads company_id
+    // from the verified token (nightauditController: "company_id now comes
+    // from the verified token"). The parameter was therefore always ignored,
+    // and the guard around it was worse than useless: rejecting the call when
+    // the session's user object had no company_id turned a perfectly readable
+    // log into a permanent "Failed to load activity" for that session.
+    const activityCall = APICall.getT("/hotel/user_activity_log");
 
     Promise.allSettled([
       // A SUMMARY, not the whole book.
@@ -58,24 +67,32 @@ const HotelDashboardTab = () => {
       // Same correction as OverviewTab: revenue for a DAY, from the dated
       // report, rather than the sum of every reservation in the book.
       APICall.getT("/hotel/reports/daily_sales", { report_date: today }),
-    ]).then(([rRes, rRoom, rAct, rSales]) => {
+      // "My Tasks" is the signed-in staff member's own housekeeping rows.
+      // The gateway maps this GET to /task_assign and /user_reserved_details
+      // (rbac_map), so a role holding only the Dashboard is refused with a
+      // 403 — that refusal is passed to the card to display, never swallowed
+      // into an empty list that would read as "you have no work".
+      APICall.getT("/hotel/housekeeper_tasks"),
+    ]).then(([rRes, rRoom, rAct, rSales, rTasks]) => {
       if (!mounted.current) return;
 
       setSummary(rRes.status === "fulfilled" ? rRes.value?.data || null : null);
       setRooms(rRoom.status === "fulfilled" ? Array.isArray(rRoom.value?.data) ? rRoom.value.data : [] : []);
       setActivity(rAct.status === "fulfilled" ? rAct.value?.data || { room_activity: [], housekeeping_activity: [] } : { room_activity: [], housekeeping_activity: [] });
       setDailyRevenue(rSales.status === "fulfilled" ? Number(rSales.value?.data?.grand_total) || 0 : 0);
+      setTasks(rTasks.status === "fulfilled" ? (Array.isArray(rTasks.value?.data) ? rTasks.value.data : []) : []);
 
       setErrors({
         reservations: rRes.status === "rejected" ? (rRes.reason?.message || "Failed to load bookings.") : null,
         rooms: rRoom.status === "rejected" ? (rRoom.reason?.message || "Failed to load rooms.") : null,
         activity: rAct.status === "rejected" ? (rAct.reason?.message || "Failed to load activity.") : null,
         sales: rSales.status === "rejected" ? (rSales.reason?.message || "Failed to load today's sales.") : null,
+        tasks: rTasks.status === "rejected" ? (rTasks.reason?.message || "Failed to load your tasks.") : null,
       });
     });
 
     return () => { mounted.current = false; };
-  }, [user?.company_id, refreshTick, today]);
+  }, [refreshTick, today]);
 
 
   const kpis = useMemo(() => {
@@ -158,7 +175,7 @@ const HotelDashboardTab = () => {
   const handleRefresh = () => setRefreshTick((n) => n + 1);
   const handleAddBooking = () => navigate("/add_new_reservation");
 
-  const anyLoading = summary === null || rooms === null || activity === null;
+  const anyLoading = summary === null || rooms === null || activity === null || tasks === null;
 
   return (
     <div className="dashboard-wrapper container-fluid" aria-busy={anyLoading}>
@@ -188,7 +205,12 @@ const HotelDashboardTab = () => {
           />
         </div>
         <div className="dashboard-col dashboard-col-4">
-          <TaskList />
+          <TaskList
+            tasks={tasks || []}
+            userId={user?.id}
+            loading={tasks === null}
+            error={errors.tasks}
+          />
         </div>
       </div>
 

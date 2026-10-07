@@ -131,7 +131,7 @@ const AddNewReservation = () => {
 
   // Room selection state
   const [selectedRoomIds, setSelectedRoomIds] = useState([]); // ordered ints
-  const [perRoom, setPerRoom] = useState({}); // { [roomId]: { adults, children, rateType, complementary } }
+  const [perRoom, setPerRoom] = useState({}); // { [roomId]: { adults, children, rateType } }
 
   // Date-first availability state — populated once both stay dates are chosen.
   // `blockedRoomIds` is out-of-order rooms, which the server reports separately
@@ -158,6 +158,11 @@ const AddNewReservation = () => {
     departure_date: "",
     booking_status_id: "",
     identity_type_id: "",
+    // ONE complementary choice for the whole reservation, because that is what
+    // the reservation stores: `room_complementary` is a single String(100) on
+    // the row. It used to be asked once per room, and only the first room's
+    // answer was ever sent — a two-room booking quietly discarded the second.
+    room_complementary: "",
     common_complementary: "",
     proof_document: null, // File
   });
@@ -336,7 +341,6 @@ const AddNewReservation = () => {
           adults: 1,
           children: 0,
           rateType: "daily",
-          complementary: "",
         },
       }));
       return [...prev, room.id];
@@ -579,10 +583,11 @@ const AddNewReservation = () => {
     fd.append("booking_status_id", String(Number(formData.booking_status_id)));
     fd.append("reservation_type", "RESERVATION");
 
-    const firstComplementary = selectedRoomIds
-      .map((id) => perRoom[id]?.complementary)
-      .find((c) => c) || "";
-    fd.append("room_complementary", firstComplementary);
+    // One complementary choice for the reservation, not one per room: the API
+    // stores `room_complementary` as a single value on the reservation row, so
+    // the per-room selects were sending the first room's answer and dropping
+    // every other room's.
+    fd.append("room_complementary", formData.room_complementary || "");
     fd.append("common_complementary", formData.common_complementary || "");
 
     fd.append("identity_type_id", String(Number(formData.identity_type_id)));
@@ -1124,21 +1129,6 @@ const AddNewReservation = () => {
                         max={maxChildren > 0 ? maxChildren : undefined}
                       />
                     </div>
-                    <div className="complementary-toggle">
-                      <label htmlFor={`anr-comp-${room.id}`}>Complementary</label>
-                      <select
-                        id={`anr-comp-${room.id}`}
-                        value={p.complementary || ""}
-                        onChange={(e) => updateRoomField(room.id, "complementary", e.target.value)}
-                      >
-                        <option value="">No Complementary</option>
-                        {complementaries.map((c) => (
-                          <option key={c.id} value={c.complementry_name}>
-                            {c.complementry_name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
                 </div>
               );
@@ -1146,6 +1136,26 @@ const AddNewReservation = () => {
             <div className="anr-totals" role="status" aria-live="polite">
               <strong>Total Adults: {totalAdults}</strong> | <strong>Total Children: {totalChildren}</strong>
             </div>
+          </div>
+
+          {/* ONE complementary choice for the whole booking. It sat inside each
+              room card while the API stores a single value for the reservation,
+              so a second room's choice was shown as saved and never sent. */}
+          <div className="form-group" style={{ marginTop: "20px" }}>
+            <label htmlFor="anr-room-comp">Complementary</label>
+            <select
+              id="anr-room-comp"
+              value={formData.room_complementary}
+              onChange={(e) => setFormData((f) => ({ ...f, room_complementary: e.target.value }))}
+            >
+              <option value="">No Complementary</option>
+              {complementaries.map((c) => (
+                <option key={c.id} value={c.complementry_name}>
+                  {c.complementry_name}
+                </option>
+              ))}
+            </select>
+            <p className="anr-hint">Applies to every room on this reservation.</p>
           </div>
 
           <div className="form-group" style={{ marginTop: "20px" }}>

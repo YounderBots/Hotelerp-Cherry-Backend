@@ -598,9 +598,34 @@ def split_bill_by_person(bill_id: int, payload: SplitByPersonIn, request: Reques
     if payload.split_type != "By Person":
         raise HTTPException(status_code=400, detail="Only By Person splits are supported")
     if payload.number_of_people < 2 or payload.number_of_people > 100:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="number_of_people must be at least 2")
-    if bill.payment_status == "Paid":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bill is already paid")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="number_of_people must be between 2 and 100",
+        )
+    if bill.bill_status == "Cancelled":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bill is cancelled")
+    # A bill with money already against it cannot be cancelled into shares:
+    # the children would start at zero while the payments stay on the parent,
+    # so the property appears to have been paid twice. Refuse and let the
+    # operator refund first. Same rule as RestaurantServices.
+    if bill.payment_status in ("Paid", "Partial"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bill has payments against it; refund them before splitting",
+        )
+    payments = (
+        db.query(models.BarBillPayment)
+        .filter(
+            models.BarBillPayment.bill_id == bill.id,
+            models.BarBillPayment.payment_status == "Success",
+        )
+        .count()
+    )
+    if payments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bill has payments against it; refund them before splitting",
+        )
 
     try:
         split = models.BarBillSplit(

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Check, CreditCard, Download, HandCoins, LogOut } from "lucide-react";
 
 import TableTemplate from "../../stories/TableTemplate";
@@ -392,7 +393,11 @@ const Reservation = () => {
 
   /* ============================== Edit ============================== */
 
-  const openEdit = (row) => {
+  // useCallback, because this handler is a dependency of the edit hand-off
+  // effect below: a fresh identity on every render would re-run that effect
+  // every render (react-hooks/exhaustive-deps). Everything it touches is a
+  // stable setter or an import, so its identity can be stable too.
+  const openEdit = useCallback((row) => {
     setEditRow(row);
     setEditError(null);
     setEditQuote(null);
@@ -431,7 +436,7 @@ const Reservation = () => {
       room_complementary: row.room_complementary || "",
       common_complementary: row.common_complementary || "",
     });
-  };
+  }, []);
 
   const closeEdit = () => {
     if (editSaving) return;
@@ -439,6 +444,57 @@ const Reservation = () => {
     setEditForm({});
     setEditPhoneError(null);
   };
+
+  // ===================================================================
+  // EDIT HAND-OFF FROM THE DETAIL VIEW
+  // ===================================================================
+  //
+  // `/ReservationView` has an Edit button but no form: the edit form lives
+  // here, as a modal opened from a row action. It used to route back with
+  // nothing but the list, leaving the operator to find the row again — with
+  // filters applied, possibly not to find it at all. The detail view now
+  // passes the row id in navigation state and this list opens on that row.
+  //
+  // The row only exists once the page it belongs to has loaded, hence
+  // `reservations` in the deps. The id is consumed with a replace that clears
+  // the state, so a refresh or a later visit cannot reopen a modal the
+  // operator has already closed; a row that is not on this page is reported
+  // rather than silently ignored.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const pendingEditId = location.state?.editReservationId ?? null;
+  const editHandoffRef = useRef(null);
+
+  useEffect(() => {
+    if (pendingEditId == null) return;
+    if (editHandoffRef.current === pendingEditId) return;
+
+    const row = reservations.find((r) => String(r.id) === String(pendingEditId));
+    if (!row) {
+      // Not loaded yet is not the same as "not here" — say nothing until the
+      // list has actually answered.
+      if (!loading) {
+        editHandoffRef.current = pendingEditId;
+        showToast(
+          "That reservation is not in this list page. Clear the filters or search for it to edit it.",
+          "error",
+        );
+      }
+      return;
+    }
+
+    editHandoffRef.current = pendingEditId;
+    if (permissions.edit) {
+      // Reacting to a navigation event — the detail view's Edit — which is
+      // exactly what this effect exists to translate into a modal. It runs
+      // once per hand-off, so there is no cascade to suppress.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      openEdit(row);
+    } else {
+      showToast("Your role does not allow editing reservations.", "error");
+    }
+    navigate("/reservation", { replace: true, state: null });
+  }, [pendingEditId, reservations, loading, permissions.edit, openEdit, navigate, showToast]);
 
   const setField = (field) => (e) =>
     setEditForm((prev) => ({ ...prev, [field]: e.target.value }));

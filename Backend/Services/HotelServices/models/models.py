@@ -300,7 +300,7 @@ class HousekeeperTask(Base):
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     schedule_time = Column(Time, nullable=False)
-    schedule_date = Column(Date, nullable=False)
+    schedule_date = Column(Date, nullable=False, index=True)
     room_no = Column(Integer, nullable=False, index=True)  # master room id (room.id)
     # The task_type NAME from the masterdata task_type table, not its id --
     # that is what every existing row holds and what the dashboard renders.

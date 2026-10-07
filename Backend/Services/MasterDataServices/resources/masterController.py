@@ -201,6 +201,26 @@ def _write_upload(data: bytes, ext: str) -> str:
     return f"/templates/static/upload_image/{safe_name}"
 
 
+def _text(payload: dict, key: str, default: str = "") -> str:
+    """Read one free-text field out of a JSON body, tolerating `null`.
+
+    `payload.get(key, default)` only falls back when the key is ABSENT. A body
+    carrying `"facility_name": null` returns None and `.strip()` on None raises
+    AttributeError, which the generic handler reports as a 500 for ordinary
+    input. JSON `null` means "no value", so it reads as the default and the
+    validation below answers with a 400 naming the field.
+    """
+    value = payload.get(key, default)
+    if value is None:
+        value = default
+    if isinstance(value, (dict, list)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{key.replace('_', ' ').capitalize()} must be text",
+        )
+    return str(value).strip()
+
+
 router = APIRouter()
 
 # =====================================================
@@ -300,7 +320,7 @@ async def create_facility(
                 detail="Invalid JSON body"
             )
 
-        facility_name = payload.get("facility_name", "").strip()
+        facility_name = _text(payload, "facility_name")
 
         # -------------------------------------------------
         # VALIDATION
@@ -492,7 +512,7 @@ async def update_facility(
             )
 
         facility_id = payload.get("id")
-        facility_name = payload.get("facility_name", "").strip()
+        facility_name = _text(payload, "facility_name")
 
         # -------------------------------------------------
         # VALIDATION
@@ -4310,7 +4330,7 @@ async def create_identity_proof(
                 detail="Invalid JSON body"
             )
 
-        proof_name = payload.get("proof_name", "").strip()
+        proof_name = _text(payload, "proof_name")
 
         # -------------------------------------------------
         # VALIDATION
@@ -4497,7 +4517,7 @@ async def update_identity_proof(
             )
 
         proof_id = payload.get("id")
-        proof_name = payload.get("proof_name", "").strip()
+        proof_name = _text(payload, "proof_name")
 
         # -------------------------------------------------
         # VALIDATION
@@ -5304,8 +5324,8 @@ async def create_task_type(
                 detail="Invalid JSON body"
             )
 
-        task_name = payload.get("task_name", "").strip()
-        color = payload.get("color", "").strip()
+        task_name = _text(payload, "task_name")
+        color = _text(payload, "color")
 
         # -------------------------------------------------
         # VALIDATION
@@ -5509,8 +5529,8 @@ async def update_task_type(
             )
 
         task_type_id = payload.get("id")
-        task_name = payload.get("task_name", "").strip()
-        color = payload.get("color", "").strip()
+        task_name = _text(payload, "task_name")
+        color = _text(payload, "color")
 
         # -------------------------------------------------
         # VALIDATION
@@ -6301,8 +6321,8 @@ async def create_reservation_status(
                 detail="Invalid JSON body"
             )
 
-        status_name = payload.get("status_name", "").strip()
-        color = payload.get("color", "").strip()
+        status_name = _text(payload, "status_name")
+        color = _text(payload, "color")
 
         # -------------------------------------------------
         # VALIDATION
@@ -6505,8 +6525,8 @@ async def update_reservation_status(
             )
 
         status_id = payload.get("id")
-        status_name = payload.get("status_name", "").strip()
-        color = payload.get("color", "").strip()
+        status_name = _text(payload, "status_name")
+        color = _text(payload, "color")
 
         # -------------------------------------------------
         # VALIDATION

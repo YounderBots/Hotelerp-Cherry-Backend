@@ -381,7 +381,6 @@ export const RegistrationForm = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submitted:', formData);
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 1000));
     alert('Form submitted successfully!');

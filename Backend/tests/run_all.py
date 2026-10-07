@@ -128,6 +128,10 @@ def main() -> int:
     # match the type its name claims. One suite, run from each service root that
     # owns an upload path, because the module layout is per-service.
     jobs += [(svc, "test_upload_content.py") for svc in UPLOAD_SERVICES]
+    # The staff-photo path is UserServices' own upload (it writes to
+    # templates/static/users and derives the extension from the declared type),
+    # so it gets its own suite rather than sharing the extension-based one.
+    jobs.append((RBAC_SERVICE, "test_user_photo_upload.py"))
     # Field validation (C-086): the phone matrix, plus email and name rules, run
     # from each service that owns a copy of resources/validation.py.
     jobs += [(svc, "test_phone_validation.py") for svc in PHONE_VALIDATION_SERVICES]

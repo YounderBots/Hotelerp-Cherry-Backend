@@ -79,7 +79,10 @@ const Settings = () => {
       });
       setForm({ current_password: "", new_password: "", confirm_password: "" });
       setReveal(false);
-      showToast("success", "Your password has been changed.");
+      // showToast(message, type) — this used to be written the other way
+      // round, so the banner printed the literal word "success" where the
+      // sentence should be and carried the sentence as its type class.
+      showToast("Your password has been changed.", "success");
     } catch (err) {
       setError(errMsg(err, "The password could not be changed."));
     } finally {

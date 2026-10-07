@@ -187,7 +187,16 @@ class RestaurantOrder(Base):
 # =====================================================
 class RestaurantTableReservation(Base):
     __tablename__ = "restaurant_table_reservation"
-    __table_args__ = (UniqueConstraint("company_id", "branch_id", "reservation_code", name="uq_reservation_code"),)
+    __table_args__ = (
+        UniqueConstraint("company_id", "branch_id", "reservation_code", name="uq_reservation_code"),
+        # Overlap probe: every "is this table free at that time?" query filters
+        # company + table + date (+ status/start_time). Added to the model to
+        # match the index migration f0b1c2d3e4f5 rather than being DB-only.
+        Index(
+            "ix_restaurant_reservation_table_date_status",
+            "company_id", "table_id", "reservation_date", "status", "start_time",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
 

@@ -6,6 +6,7 @@ import DetailList, { DetailItem } from "../../stories/DetailList";
 import ViewSection from "../../stories/ViewSection";
 import Input from "../../stories/Form/Input";
 import PhoneInput from "../../stories/Form/PhoneInput";
+import { regionOf } from "../../stories/Form/phone";
 import Select from "../../stories/Form/Select";
 import Textarea from "../../stories/Form/Textarea";
 import ErrorAlert from "../../stories/ErrorAlert";
@@ -95,16 +96,26 @@ const GuestManagement = () => {
     setEditId(null);
     setFormData(initialForm);
     setFormError(null);
+    setPhoneError(null);
     setShowGuestModal(true);
   };
 
   const openEditModal = (row) => {
     setEditId(row.id);
     setFormError(null);
+    setPhoneError(null);
+    // Prefilled from the row itself, spread over initialForm so every key the
+    // form reads exists (the phone field's `region` used to come out undefined
+    // here, which dropped the selector back to the property's default country
+    // and re-read somebody else's number as local). `regionOf` reads the
+    // country back out of the stored E.164, so an international guest keeps
+    // their own country in the selector.
     setFormData({
+      ...initialForm,
       first_name: row.first_name || "",
       last_name: row.last_name || "",
       mobile: row.mobile || "",
+      phone_region: regionOf(row.mobile) || initialForm.phone_region,
       email: row.email || "",
       guest_type: row.guest_type || "Walk-In",
       food_preferences: (row.food_preferences || []).join(", "),
@@ -119,6 +130,7 @@ const GuestManagement = () => {
     setEditId(null);
     setFormData(initialForm);
     setFormError(null);
+    setPhoneError(null);
   };
 
   // The list row carries the guest but not their addresses or visit history,
@@ -392,6 +404,12 @@ const GuestManagement = () => {
           label="Mobile Number"
           required
           name="mobile"
+          // Remounts per record: the field keeps the digits the user last saw
+          // in local state, so a key tied to the record being edited is what
+          // guarantees Add always opens empty and Edit always opens on that
+          // guest's own number, even when the modal unmounts late (its close
+          // animation) and the two records meet in the same field instance.
+          key={editId ? `guest-${editId}` : "guest-new"}
           value={formData.mobile}
           region={formData.phone_region}
           error={Boolean(phoneError)}

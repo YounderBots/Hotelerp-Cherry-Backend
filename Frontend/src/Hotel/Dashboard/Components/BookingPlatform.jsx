@@ -1,21 +1,27 @@
 import React from "react";
 import DonutChart from "./DonutChart";
 
-const data = [
-  { label: "Direct Booking", value: 61, color: "#2a78d6" },
-  { label: "Booking.com",    value: 12, color: "#eb6834" },
-  { label: "Agoda",          value: 11, color: "#1baf7a" },
-  { label: "Airbnb",         value:  9, color: "#eda100" },
-  { label: "Hotels.com",     value:  5, color: "#e87ba4" },
-  { label: "Others",         value:  2, color: "#008300" },
-];
-
+/**
+ * Booking by platform — and why it is empty.
+ *
+ * This card used to draw six hardcoded shares (Direct Booking 61%, Booking.com
+ * 12%, Agoda 11%, …) under a small "Sample" tag. Nothing in the API can produce
+ * them: a reservation carries no channel, no booking source, and no report
+ * aggregates one, so the figures could never have described this property. A
+ * number on a dashboard reads as a measurement, and a tag the size of a
+ * footnote does not undo that — an operator would plan around 61% direct.
+ *
+ * So the card renders the empty state and says why, which is the honest
+ * answer until a source exists. When a channel field does land on the
+ * reservation, `data` is the only line that changes: DonutChart already
+ * handles loading, error, empty and non-zero states.
+ */
 const BookingPlatform = () => (
   <DonutChart
     title="Booking by Platform"
-    data={data}
-    sampleTag="Sample data — no channel-manager integration wired yet"
+    data={[]}
     valueFormatter={(v) => `${v}%`}
+    emptyMessage="No booking-source data yet. Reservations do not record the channel they came from, so there is nothing to break down by platform."
   />
 );
 
