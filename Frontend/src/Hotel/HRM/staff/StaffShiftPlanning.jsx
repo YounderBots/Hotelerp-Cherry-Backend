@@ -14,6 +14,9 @@ import { useApiResources } from "../../../hooks/useApiResource";
 import { useToast } from "../../../hooks/useToast";
 import { usePagePermissions } from "../../../hooks/usePagePermissions";
 import { todayIso } from "../../../functions/formatters";
+// See the note in StaffRoster.jsx: the .roster-date-controls block lives in
+// HRM.css, which nothing on this route imports.
+import "../HRM.css";
 
 /**
  * Shift scheduling + clock in/out, shared by the Restaurant and Bar screens.

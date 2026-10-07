@@ -11,6 +11,11 @@ import { useApiResources } from "../../../hooks/useApiResource";
 import { useToast } from "../../../hooks/useToast";
 import { usePagePermissions } from "../../../hooks/usePagePermissions";
 import { todayIso } from "../../../functions/formatters";
+// The roster date navigation below is styled by HRM.css. Without this import
+// the styles only load if some other page happened to import HRM.css first
+// (User.jsx does), so visiting this page directly rendered the date picker and
+// its buttons as unstyled native browser controls.
+import "../HRM.css";
 
 /**
  * Today's floor roster, shared by the Restaurant and Bar screens.

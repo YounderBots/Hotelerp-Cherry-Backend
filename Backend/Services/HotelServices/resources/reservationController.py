@@ -2759,6 +2759,23 @@ async def reservation_checkout(
         adjust_stay = bool((payload or {}).get("adjust_stay", False))
 
         reservation = _load_by_id_or_token(db, company_id, key)
+
+        # Terminal is terminal. Checking out twice used to answer 200 the second
+        # time: no money moved (the folio was already settled and the status
+        # write is idempotent) so it looked harmless, but a caller that retried
+        # after a timeout was told it had just departed a guest, and the response
+        # carried a second, empty "rooms_needing_cleaning" list that read like a
+        # fresh housekeeping signal. Say no instead.
+        current_status = rules.normalise_status(reservation.reservation_status)
+        if current_status in {rules.normalise_status(s) for s in rules.TERMINAL}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This reservation is already {reservation.reservation_status}; "
+                    "there is nothing left to check out."
+                ),
+            )
+
         position = _early_checkout_position(md, reservation)
 
         if adjust_stay:

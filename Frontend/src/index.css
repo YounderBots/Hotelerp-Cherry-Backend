@@ -5,6 +5,20 @@
   box-sizing: border-box;
 }
 
+/* Form controls do not inherit type from the page. The UA stylesheet gives
+   input, select, textarea and button their own font (Arial 13.333px), so a
+   label rendered in Urbanist sat directly above a field the user types into
+   rendered in Arial, and the primary button on the sign-in screen did the
+   same. Setting only `font-size` on a control does not restore the family --
+   that is why the individual component sheets needed `font-family: inherit`
+   repeated in them. Inherit it once, globally, instead. */
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+}
+
 body {
   margin: 0;
   overflow-x: hidden;

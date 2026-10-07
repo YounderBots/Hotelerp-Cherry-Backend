@@ -273,6 +273,13 @@ check("settle the rest -> 200", s == 200, f"{s} {str(b)[:180]}")
 s, b = req("POST", f"/hotel/room_reservation_checkout/{token}", TOK, {})
 check("checkout once settled -> 200", s == 200, f"{s} {str(b)[:200]}")
 
+# A retry after a timeout must not be told it just departed a guest. This used
+# to answer 200 a second time -- no money moved, so it looked harmless -- while
+# returning a second, empty "rooms_needing_cleaning" list that read like a fresh
+# housekeeping signal.
+s, b = req("POST", f"/hotel/room_reservation_checkout/{token}", TOK, {})
+check("cannot check out a departed reservation twice", refused(s), f"{s} {str(b)[:180]}")
+
 s, b = req("GET", "/hotel/room_reservation", TOK)
 row = next((r for r in rows(b) if r.get("id") == res_id), {})
 print(f"  final status: {row.get('reservation_status')} terminal={row.get('is_terminal')}")

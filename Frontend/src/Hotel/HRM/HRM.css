@@ -149,7 +149,10 @@
   gap: 0;
 }
 
-/* ---------- Roster date navigation ---------- */
+/* ---------- Roster date navigation ----------
+   These are bare <button> and <input type="date"> elements, so without the
+   explicit font-size below they render in the browser's default 13.33px and
+   look like a different application from the styled tables underneath. */
 .roster-date-controls {
   display: flex;
   align-items: end;
@@ -166,35 +169,70 @@
 }
 
 .roster-date-controls input {
-  min-height: 38px;
+  min-height: 40px;
   padding: 8px 10px;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.2;
+  color: var(--text-primary);
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .roster-date-controls button {
-  min-height: 38px;
-  padding: 8px 12px;
+  min-height: 40px;
+  /* 40px tall and 12px of horizontal padding: comfortably above the 24px
+     minimum target size, and large enough to hit on a phone. */
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
-  background: var(--bg-primary);
-  color: var(--text-primary);
   cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
-.roster-date-controls button:hover,
+.roster-date-controls input:hover,
+.roster-date-controls button:hover {
+  border-color: var(--primary-light);
+  background: var(--primary-lightest);
+}
+
+.roster-date-controls input:focus-visible,
 .roster-date-controls button:focus-visible {
   border-color: var(--primary-color);
   outline: 2px solid color-mix(in srgb, var(--primary-color) 25%, transparent);
   outline-offset: 1px;
 }
 
+/* The native date control reserves its own picker glyph; matching its colour
+   stops a black calendar icon landing in the middle of a cherry-accented bar. */
+.roster-date-controls input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.roster-date-controls input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
 .roster-date-label {
   align-self: center;
-  color: var(--text-muted);
-  font-size: 0.875rem;
+  padding: 4px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary-dark);
+  background: var(--primary-lightest);
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 /* ---------- Narrow screens ----------
