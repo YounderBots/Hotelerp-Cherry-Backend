@@ -172,7 +172,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("masterdata", "hall_floor", "POST"): ("/hall_floor",),
     ("masterdata", "hall_floor", "PUT"): ("/hall_floor",),
     ("masterdata", "hall_floor/{id}", "DELETE"): ("/hall_floor",),
-    ("masterdata", "identity_proof", "GET"): ("/add_new_reservation", "/identification_proof",),
+    ("masterdata", "identity_proof", "GET"): ("/add_new_reservation", "/identification_proof", "/reservation",),
     ("masterdata", "identity_proof", "POST"): ("/identification_proof",),
     ("masterdata", "identity_proof", "PUT"): ("/identification_proof",),
     ("masterdata", "identity_proof/{id}", "DELETE"): ("/identification_proof",),

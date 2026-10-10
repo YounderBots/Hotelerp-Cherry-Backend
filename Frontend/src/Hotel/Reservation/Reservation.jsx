@@ -104,6 +104,34 @@ const PAYMENT_STATES = ["Unpaid", "Partly paid", "Paid"];
 const RESERVATION_TYPES = ["RESERVATION", "CHECKIN"];
 const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Mx.", "Dr.", "Prof."];
 
+// Identity-document limits. These mirror `ALLOWED_PROOF_EXTENSIONS`,
+// `ALLOWED_PROOF_CONTENT_TYPES` and `UPLOAD_MAX_BYTES` on the server
+// (reservationController.py) and the Add page's own copy, so a file rejected
+// here is one the server would have rejected anyway -- the check exists to give
+// the message beside the field instead of after a round trip.
+const IDENTITY_MAX_MB = 5;
+const IDENTITY_EXT = ["pdf", "jpg", "jpeg", "png", "webp"];
+const IDENTITY_MIME = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
+
+/** @returns {string|null} an error message, or null when the file is acceptable. */
+const validateIdentityFile = (file) => {
+  if (!file) return null;
+  const ext = String(file.name || "").split(".").pop().toLowerCase();
+  if (!IDENTITY_EXT.includes(ext))
+    return `Identity file type must be one of: ${IDENTITY_EXT.join(", ")}.`;
+  if (file.type && IDENTITY_MIME[ext] && file.type !== IDENTITY_MIME[ext])
+    return `Identity file type must be one of: ${IDENTITY_EXT.join(", ")}.`;
+  if (file.size / (1024 * 1024) > IDENTITY_MAX_MB)
+    return `Identity file must be ${IDENTITY_MAX_MB} MB or smaller.`;
+  return null;
+};
+
 const EMPTY_FILTERS = {
   reservation_status: "",
   reservation_type: "",
@@ -128,7 +156,7 @@ const Reservation = () => {
   const queryKey = JSON.stringify(query);
 
   const {
-    data: [reservationPage, statuses, rooms, paymentMethods, taxTypes, discountTypes],
+    data: [reservationPage, statuses, rooms, paymentMethods, taxTypes, discountTypes, identityTypes],
     loading,
     error,
     reload,
@@ -152,6 +180,10 @@ const Reservation = () => {
       { fetch: () => APICall.getT("/masterdata/payment_methods"), select: readList },
       { fetch: () => APICall.getT("/masterdata/tax"), select: readList },
       { fetch: () => APICall.getT("/masterdata/discount"), select: readList },
+      // Identity types, for the amendment form. The Add page has always
+      // loaded these; the Edit modal did not, which is why a guest's document
+      // type could not be corrected after booking.
+      { fetch: () => APICall.getT("/masterdata/identity_proof"), select: readList },
     ],
     { deps: [queryKey] },
   );
@@ -177,6 +209,12 @@ const Reservation = () => {
   const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState(null);
+  // A replacement document picked in the edit form, and its own field-level
+  // message. Kept out of `editForm` so that "unchanged" is represented by the
+  // absence of a File rather than by a filename string the server would have
+  // to guess the intent of.
+  const [editIdentityFile, setEditIdentityFile] = useState(null);
+  const [editIdentityError, setEditIdentityError] = useState(null);
   // The edit form's phone message, beside the field rather than only in the
   // dialog-level alert.
   const [editPhoneError, setEditPhoneError] = useState(null);
@@ -436,7 +474,15 @@ const Reservation = () => {
       reservation_status: row.reservation_status || "",
       room_complementary: row.room_complementary || "",
       common_complementary: row.common_complementary || "",
+      // Identity: the id drives the dropdown; the stored filename is NOT put
+      // in editForm, because a submit that carried it would tell the server to
+      // keep a file it must never be handed back. Replacement is expressed by
+      // picking a new File, and deletion by `identity_remove`.
+      identity_type_id: row.identity_type_id || "",
+      identity_remove: false,
     });
+    setEditIdentityFile(null);
+    setEditIdentityError(null);
   }, []);
 
   const closeEdit = () => {
@@ -444,6 +490,8 @@ const Reservation = () => {
     setEditRow(null);
     setEditForm({});
     setEditPhoneError(null);
+    setEditIdentityFile(null);
+    setEditIdentityError(null);
   };
 
   // ===================================================================
@@ -636,9 +684,25 @@ const Reservation = () => {
       fd.set("room_complementary", editForm.room_complementary || "");
       fd.set("common_complementary", editForm.common_complementary || "");
 
+      // ---- Identity ---------------------------------------------------
+      // `identity_type_id` is sent only when the operator actually chose one,
+      // so an amendment that leaves the dropdown alone preserves the stored
+      // type instead of blanking it. The same holds for the document: a picked
+      // File replaces it, `identity_remove` deletes it, and neither leaves it
+      // untouched -- which is the case an ordinary name correction hits.
+      if (editForm.identity_type_id)
+        fd.set("identity_type_id", String(num(editForm.identity_type_id)));
+      if (editIdentityFile) fd.set("identity_file", editIdentityFile);
+      else if (editForm.identity_remove) fd.set("remove_identity_file", "1");
+
       await APICall.putT("/hotel/room_reservation", fd);
       showToast("Reservation updated.", "update");
       setEditRow(null);
+      // Drop the picked File with the modal. Keeping it would let a later
+      // open of a DIFFERENT reservation silently resubmit this document.
+      setEditIdentityFile(null);
+      setEditIdentityError(null);
+      setEditForm({});
       reload();
     } catch (err) {
       setEditError(errMsg(err, "Failed to update reservation."));
@@ -1424,6 +1488,123 @@ const Reservation = () => {
                 onChange={setField("common_complementary")}
                 maxLength={100}
               />
+            </div>
+          </ViewSection>
+
+          {/* Identity. The Add page has always captured these; the amendment
+              form did not, so a guest's document type could not be corrected
+              and a wrongly-scanned document could not be replaced without
+              cancelling and rebooking. Everything here is optional on purpose:
+              the stored document survives an amendment that does not mention
+              it. */}
+          <ViewSection title="Identity">
+            <div className="res-form-grid">
+              <div className="form-group">
+                <label className="form-label" htmlFor="edit-identity-type">
+                  Identity Type
+                </label>
+                <select
+                  id="edit-identity-type"
+                  className="select-control"
+                  value={editForm.identity_type_id || ""}
+                  onChange={(e) => {
+                    setField("identity_type_id")(e);
+                    // Choosing a type after clearing the scan makes the clear
+                    // incoherent, so the document comes back as the thing to fix.
+                    if (editForm.identity_remove)
+                      setEditForm((p) => ({ ...p, identity_remove: false }));
+                  }}
+                >
+                  <option value="">— not recorded —</option>
+                  {identityTypes.map((t) => (
+                    <option key={t.id} value={t.id}>{t.proof_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="edit-identity-file">
+                Identity Document
+              </label>
+
+              {editForm.identity_remove ? (
+                <div className="attachment attachment__note attachment__note--error">
+                  The stored document will be removed when you save.
+                </div>
+              ) : editIdentityFile ? (
+                <div className="attachment__note">
+                  Will replace the stored document: {editIdentityFile.name}
+                </div>
+              ) : editRow?.proof_document ? (
+                <AttachmentPreview
+                  path={`/templates/static/identity_proofs/${editRow.proof_document}`}
+                  prefix="/hotel"
+                  alt={`Identity document for ${guestName(editRow)}`}
+                />
+              ) : (
+                <div className="attachment__note">
+                  No document was captured for this reservation.
+                </div>
+              )}
+
+              {editIdentityError && (
+                <p className="form-helper form-helper--error">{editIdentityError}</p>
+              )}
+
+              <div className="file-upload">
+                <input
+                  id="edit-identity-file"
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    const problem = validateIdentityFile(file);
+                    setEditIdentityError(problem);
+                    if (problem) {
+                      setEditIdentityFile(null);
+                      e.target.value = "";
+                      return;
+                    }
+                    setEditIdentityFile(file);
+                    // A replacement supersedes a pending removal.
+                    if (file) setEditForm((p) => ({ ...p, identity_remove: false }));
+                  }}
+                />
+                <label htmlFor="edit-identity-file" className="file-label">
+                  {editIdentityFile ? "Replace File" : "Choose File"}
+                </label>
+                <span className="file-name" aria-live="polite">
+                  {editIdentityFile ? editIdentityFile.name : "No file chosen"}
+                </span>
+              </div>
+              <p className="anr-hint">
+                Optional. Leaving this untouched keeps the stored document. Max{" "}
+                {IDENTITY_MAX_MB} MB · {IDENTITY_EXT.join(", ")}
+              </p>
+
+              {editRow?.proof_document && !editForm.identity_remove && (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => {
+                    setEditForm((p) => ({ ...p, identity_remove: true }));
+                    setEditIdentityFile(null);
+                    setEditIdentityError(null);
+                  }}
+                >
+                  Remove stored document
+                </button>
+              )}
+              {editForm.identity_remove && (
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--small"
+                  onClick={() => setEditForm((p) => ({ ...p, identity_remove: false }))}
+                >
+                  Keep stored document
+                </button>
+              )}
             </div>
           </ViewSection>
 

@@ -2206,6 +2206,15 @@ async def update_room_reservation(
     last_name: str = Form(None),
     phone_number: str = Form(...),
     email: str = Form(None),
+    # ---------------- Identity ----------------
+    # All three optional, and deliberately so. An amendment that says nothing
+    # about identity must leave the stored document exactly as it was -- the
+    # common case, an operator fixing a typo in a name, must not silently drop
+    # the guest's ID scan. `remove_identity_file` is the explicit way to clear
+    # it, so "no file was sent" and "delete the file" can never be confused.
+    identity_type_id: int = Form(None),
+    identity_file: UploadFile = File(None),
+    remove_identity_file: str = Form(None),
     # ---------------- Stay ----------------
     arrival_date: date = Form(...),
     departure_date: date = Form(...),
@@ -2364,6 +2373,25 @@ async def update_room_reservation(
     reservation.last_name = (last_name or "").strip() or None
     reservation.phone_number = phone_number
     reservation.email = _clean_email(email)
+
+    # ---- Identity: amend, replace, or leave alone ------------------------
+    # Only a value the caller actually sent is written, so an amendment that
+    # omits the field preserves what was captured at booking. A replacement
+    # mints a new filename (an old one must never stay replayable), and an
+    # explicit remove clears the reference. Keeping "omitted" and "cleared"
+    # distinct is the whole point: the common amendment -- an operator fixing
+    # a typo in a name -- must not silently drop the guest's ID scan.
+    if identity_type_id is not None:
+        rules.resolve_identity_type(md, identity_type_id, required=False)
+        reservation.identity_type_id = identity_type_id
+
+    if identity_file is not None and identity_file.filename:
+        reservation.proof_document = await _store_identity_proof(identity_file)
+    elif str(remove_identity_file or "").strip().lower() in ("1", "true", "yes"):
+        reservation.proof_document = None
+        # A cleared scan with the old document type still attached would read
+        # as "PAN card verified" when nothing was ever shown.
+        reservation.identity_type_id = None
 
     reservation.arrival_date = arrival_date
     reservation.departure_date = departure_date
