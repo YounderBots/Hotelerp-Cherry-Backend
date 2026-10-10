@@ -19,9 +19,25 @@ import { FileText } from 'lucide-react';
 import APICall from '../APICalls/APICalls';
 import './AttachmentPreview.css';
 
-/** Last path segment of a stored upload, used as the display and download name. */
+/** Last path segment of a stored upload. This is the DOWNLOAD name only. */
 const attachmentName = (path) =>
   String(path ?? '').split('/').pop() || 'attachment';
+
+/**
+ * A human label for the file row.
+ *
+ * Uploads are stored as `<uuid>.<ext>` (see `_store_identity_proof`), so the
+ * stored name is a uuid with no meaning to the person reading the record --
+ * printing it is the same defect as rendering it instead of the picture, which
+ * is exactly what this component replaced. The real name is still carried in
+ * the `download` attribute, so saving the file keeps it.
+ */
+const attachmentLabel = (alt, type) => {
+  const trimmed = String(alt ?? '').trim();
+  if (trimmed) return trimmed;
+  if (type === 'application/pdf') return 'PDF document';
+  return 'Attachment';
+};
 
 /**
  * @param {string} path    stored path, e.g. "/templates/static/room_incidents/ab.png"
@@ -107,31 +123,32 @@ const AttachmentPreview = ({ path, prefix = '', alt, className = '' }) => {
   // only show its own fallback on a load failure, which a plugin-less browser
   // never raises: it just renders an empty rectangle.
   if (state.type === 'application/pdf') {
+    const rowLabel = attachmentLabel(alt, state.type);
     return (
       <div className={`${wrapperClass} attachment__pdf-block`}>
         <object
           className="attachment__pdf"
           data={state.url}
           type="application/pdf"
-          aria-label={alt || `${name} (PDF preview)`}
+          aria-label={`${rowLabel} (PDF preview)`}
         >
           <a className="attachment__file" href={state.url} download={name}>
             <FileText size={16} aria-hidden="true" />
-            <span className="attachment__file-name">{name}</span>
+            <span className="attachment__file-name">{rowLabel}</span>
           </a>
         </object>
-        <a className="attachment__file" href={state.url} download={name}>
+        <a className="attachment__file" href={state.url} download={name} title={name}>
           <FileText size={16} aria-hidden="true" />
-          <span className="attachment__file-name">{name}</span>
+          <span className="attachment__file-name">{rowLabel}</span>
         </a>
       </div>
     );
   }
 
   return (
-    <a className={`${wrapperClass} attachment__file`} href={state.url} download={name}>
+    <a className={`${wrapperClass} attachment__file`} href={state.url} download={name} title={name}>
       <FileText size={16} aria-hidden="true" />
-      <span className="attachment__file-name">{name}</span>
+      <span className="attachment__file-name">{attachmentLabel(alt, state.type)}</span>
     </a>
   );
 };
