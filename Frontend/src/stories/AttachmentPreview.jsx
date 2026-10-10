@@ -90,13 +90,41 @@ const AttachmentPreview = ({ path, prefix = '', alt, className = '' }) => {
     );
   }
 
-  // Images preview in place; anything else (a PDF) is offered as a download,
-  // because an inline PDF viewer inside a modal is worse than the browser's.
+  // Images preview in place.
   if (state.type.startsWith('image/')) {
     return (
       <a className={wrapperClass} href={state.url} target="_blank" rel="noreferrer" title={name}>
         <img className="attachment__image" src={state.url} alt={alt || name} />
       </a>
+    );
+  }
+
+  // PDFs render in the browser's own viewer inside a bounded frame, because a
+  // clerk checking an identity document should not have to download and reopen
+  // it. `<object>` rather than `<iframe>` specifically because its CHILDREN are
+  // the fallback: where no PDF plugin exists -- iOS Safari, a locked-down kiosk
+  // -- the frame shows the download row instead of a blank box. `<iframe>` can
+  // only show its own fallback on a load failure, which a plugin-less browser
+  // never raises: it just renders an empty rectangle.
+  if (state.type === 'application/pdf') {
+    return (
+      <div className={`${wrapperClass} attachment__pdf-block`}>
+        <object
+          className="attachment__pdf"
+          data={state.url}
+          type="application/pdf"
+          aria-label={alt || `${name} (PDF preview)`}
+        >
+          <a className="attachment__file" href={state.url} download={name}>
+            <FileText size={16} aria-hidden="true" />
+            <span className="attachment__file-name">{name}</span>
+          </a>
+        </object>
+        <a className="attachment__file" href={state.url} download={name}>
+          <FileText size={16} aria-hidden="true" />
+          <span className="attachment__file-name">{name}</span>
+        </a>
+      </div>
     );
   }
 

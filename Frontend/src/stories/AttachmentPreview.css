@@ -34,7 +34,36 @@ a.attachment:focus-visible {
   border-radius: var(--border-radius);
 }
 
-/* ---------- Non-image (PDF) ---------- */
+/* ---------- PDF ---------- */
+/* The frame fills the grid cell it sits in and takes a fixed, generous
+   height rather than the PDF's own page count: a 40-page scan must not set
+   the modal's scroll height on its own. */
+.attachment__pdf-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-xs);
+  width: 100%;
+}
+
+.attachment__pdf {
+  display: block;
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+}
+
+/* A phone cannot show a 420px reader and the form fields around it in one
+   screen; a shorter frame keeps the download row reachable without a scroll. */
+@media (max-width: 640px) {
+  .attachment__pdf {
+    height: 300px;
+  }
+}
+
+/* ---------- Non-image (PDF fallback / other files) ---------- */
 .attachment__file {
   gap: var(--spacing-xs);
   padding: 10px 12px;

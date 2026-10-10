@@ -105,7 +105,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("bar", "variant/{id}", "DELETE"): ("/bar_menus",),
     ("bar", "variant/{id}", "PUT"): ("/bar_menus",),
     # ---- hotel ----
-    ("hotel", "housekeeper_tasks", "GET"): ("/task_assign", "/user_reserved_details",),
+    ("hotel", "housekeeper_tasks", "GET"): ("/dashboard", "/task_assign", "/user_reserved_details",),
     ("hotel", "housekeeper_tasks", "POST"): ("/task_assign",),
     ("hotel", "housekeeper_tasks", "PUT"): ("/task_assign",),
     ("hotel", "housekeeper_tasks/{id}", "DELETE"): ("/task_assign",),

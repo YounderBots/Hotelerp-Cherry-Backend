@@ -12,6 +12,7 @@ import RowActions from "../../stories/RowActions";
 import IconButton from "../../stories/IconButton";
 import DetailList, { DetailItem } from "../../stories/DetailList";
 import ViewSection from "../../stories/ViewSection";
+import AttachmentPreview from "../../stories/AttachmentPreview";
 import ErrorAlert from "../../stories/ErrorAlert";
 import Toast from "../../stories/Toast";
 import APICall from "../../APICalls/APICalls";
@@ -1113,7 +1114,25 @@ const Reservation = () => {
             <DetailItem label="Phone" value={viewRow?.phone_number} />
             <DetailItem label="Email" value={viewRow?.email} span={2} />
             <DetailItem label="Identity type" value={viewRow?.identity_type} />
-            <DetailItem label="Identity document" value={viewRow?.proof_document} span={3} />
+            {/* `proof_document` holds a bare FILENAME, not a served path —
+                `_store_identity_proof` writes into templates/static/identity_proofs
+                and returns just `uuid.ext` (reservationController.py:228,718). The
+                path is rebuilt here so the preview resolves. Fetching still has to
+                go through AttachmentPreview: that directory is mounted behind the
+                authenticated gateway proxy, so a bare <img src> gets a 401 and shows
+                a broken slot. Rendered as a child so the value is the picture
+                rather than the uuid a front-desk clerk cannot do anything with. */}
+            <DetailItem label="Identity document" span={3}>
+              {viewRow?.proof_document ? (
+                <AttachmentPreview
+                  path={`/templates/static/identity_proofs/${viewRow.proof_document}`}
+                  prefix="/hotel"
+                  alt={`Identity document for ${guestName(viewRow)}`}
+                />
+              ) : (
+                "Not captured"
+              )}
+            </DetailItem>
           </DetailList>
         </ViewSection>
 
