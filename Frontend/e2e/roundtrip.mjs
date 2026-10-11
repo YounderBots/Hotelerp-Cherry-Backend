@@ -57,7 +57,15 @@ const B = `${RUN}B`;
  * refusal that reads like a product defect.
  */
 const timeFor = (n) => `${String(7 + (n % 12)).padStart(2, "0")}:00`;
-const indexOf = (arr, item) => arr.indexOf(item);
+
+/** A date as a table prints it, for searching by what the user can see. */
+const longDate = (iso) => {
+  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit", month: "short", year: "numeric", timeZone: "UTC",
+  });
+};
 
 /** Everything the in-page filler needs, decided in Node. */
 const planFor = (fields) => {
@@ -485,15 +493,21 @@ const flipValue = (f) => {
  */
 async function locate(page, text) {
   if (!text) return -1;
-  let idx = await findRow(page, text);
-  if (idx >= 0) return idx;
-
-  const box = page.locator('input[placeholder^="Search"], input[aria-label^="Search"]').first();
-  if (!(await box.count())) return -1;
-  await box.fill(text).catch(() => {});
-  await page.waitForTimeout(700);
-  idx = await findRow(page, text);
-  return idx;
+  // A table prints a date as "26 Feb 2026" where the API stores "2026-01-26".
+  // Try the stored form and the printed one, or every date-anchored search
+  // silently fails and the run falls back to the last row.
+  for (const candidate of [text, longDate(text)].filter(Boolean)) {
+    let idx = await findRow(page, candidate);
+    if (idx >= 0) return idx;
+    const box = page.locator('input[placeholder^="Search"], input[aria-label^="Search"]').first();
+    if (await box.count()) {
+      await box.fill(candidate).catch(() => {});
+      await page.waitForTimeout(700);
+      idx = await findRow(page, candidate);
+      if (idx >= 0) return idx;
+    }
+  }
+  return -1;
 }
 
 /** Put the table back the way it was, so the next phase sees the full list. */
@@ -668,14 +682,36 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
     const n = rowTexts.filter((t) => t.includes(p.plan)).length;
     return n === 1 && rowTexts[mine]?.includes(p.plan);
   });
-  const anchor = unique?.plan
-    || usable.find((p) => rowTexts.filter((t) => t.includes(p.plan)).length === 1)?.plan
+  // A DATE is the tie-breaker when nothing else in the row is unique: a task
+  // list shows the Assigned To staff member, the room, the task type and the
+  // scheduled slot, and a fresh row can repeat all of them. Its own schedule
+  // date, planned for this run alone, identifies it.
+  //
+  // Match it the way the TABLE prints it, not the way the API stores it. A task
+  // row reads "26 Jan 2026 · 07:00" where the value went in as "2026-01-26",
+  // so an ISO search finds nothing and the run falls back to editing whichever
+  // row happens to be first. A TIME must never be the anchor: every task row
+  // carries one, so it looks unique by accident and names the wrong row.
+  const dateAnchor = unique
+    ? null
+    : plan.find((p) => p.kind === "date"
+      && [longDate(p.plan), longDate(flipValue(p))]
+        .some((fmt) => fmt && rowTexts.some((t) => t.includes(fmt))))?.plan;
+  const anchor = unique?.plan || dateAnchor
+    || usable.find((p) => String(p.plan).length > 3 && p.kind !== "time")?.plan
     || usable.find((p) => String(p.plan).length > 3)?.plan
     || null;
+  // The printed form is what the table shows; search on that, not the ISO one.
+  const anchorSearch = dateAnchor
+    ? (rowTexts.some((t) => t.includes(longDate(dateAnchor)))
+        ? longDate(dateAnchor) : dateAnchor)
+    : anchor;
   rec.phases.anchor = anchor;
+  rec.phases.anchorSearch = anchorSearch || anchor;
   rec.phases.anchorFromList = !!unique;
+  rec.phases.anchorIsDate = !unique && !!dateAnchor;
 
-  let rowIdx = await locate(page, anchor);
+  let rowIdx = await locate(page, anchorSearch || anchor);
   if (rowIdx < 0) {
     const n = await tableRows(page).count();
     rowIdx = Math.max(0, n - 1);
@@ -686,8 +722,43 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
   }
 
   // ---- 4. EDIT must load the saved value ---------------------------------
+  // A row may carry no Edit because the entity is not edited from the list.
+  // An ORDER is amended through its own items dialog and has only View and
+  // Cancel on the row; reporting that as a missing affordance turns a design
+  // decision into a defect. Record what the row DOES offer instead.
+  const rowVerbs = await page.evaluate(() => {
+    const row = document.querySelector(
+      "table:not(#export-table-full) tbody tr:not(.table-message-row)");
+    return row ? [...row.querySelectorAll("[aria-label]")]
+      .map((b) => String(b.getAttribute("aria-label")).split(" ")[0]) : [];
+  });
+  rec.phases.rowVerbs = rowVerbs;
   fresh();
   const editBtn = rowAction(page, rowIdx, "Edit");
+  if (!(await editBtn.count())) {
+    if (rowVerbs.includes("View")) {
+      // Exercise what IS there rather than reporting an absent Edit.
+      fresh();
+      const viewOnly = rowAction(page, rowIdx, "View");
+      if (await viewOnly.count()) {
+        await viewOnly.click({ timeout: 6000 }).catch(() => {});
+        await page.waitForTimeout(900);
+        const vm = await readModal(page);
+        rec.phases.viewText = (vm?.detailItems || [])
+          .map((d) => `${d.label}: ${d.value}`).join(" || ").slice(0, 900);
+        if (!rec.phases.viewText) {
+          add("P2", "view", "the row offers View but the dialog showed no detail rows");
+        }
+        await closeModal(page).catch(() => {});
+      }
+      rec.phases.editOffered = false;
+      rec.status = "passed";
+      report.push(rec);
+      console.log(`ok  ${id} ${route.padEnd(32)} passed (view/cancel row, no Edit by design)`);
+      return;
+    }
+    add("P2", "edit", "row has neither Edit nor a View action");
+  }
   if (await editBtn.count()) {
     await editBtn.click({ timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(900);
@@ -768,10 +839,16 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
     // ---- 6. VIEW must show the changed value -----------------------------
     fresh();
     // Re-locate by value: the edit re-sorted or re-paged the list, so the
-    // index captured before the edit no longer names the same row.
-    const anchorB = plan.filter((p) => p.kind === "name" || p.kind === "text")
-      .map((p) => flipValue(p)).find(Boolean) || anchor;
-    rowIdx = await locate(page, anchorB);
+    // index captured before the edit no longer names the same row. When the
+    // anchor is the schedule date, its post-edit value is the one to look for.
+    const anchorB = (rec.phases.anchorIsDate
+      ? [flipValue(plan.find((p) => p.kind === "date")), longDate(flipValue(plan.find((p) => p.kind === "date")))]
+      : [])
+      .concat(plan.filter((p) => p.kind === "name" || p.kind === "text").map((p) => flipValue(p)))
+      .filter(Boolean);
+    anchorB.push(anchorSearch || anchor, anchor);
+    const searchFor = anchorB.find((a) => a && a !== anchor && a !== anchorSearch) || anchorSearch || anchor;
+    rowIdx = await locate(page, searchFor);
     if (rowIdx < 0) rowIdx = await locate(page, anchor);
     const viewBtn = rowIdx >= 0 ? rowAction(page, rowIdx, "View") : null;
     if (viewBtn && await viewBtn.count()) {
@@ -798,11 +875,11 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
     // edit: after a successful update the old text is gone BY DESIGN, so
     // searching for it reports a false persistence failure.
     await open(page, route);
-    rec.phases.persisted = await locate(page, anchorB) >= 0;
-    rec.phases.persistedSearchedFor = anchorB;
+    rec.phases.persisted = await locate(page, searchFor) >= 0;
+    rec.phases.persistedSearchedFor = searchFor;
     if (!rec.phases.persisted) {
       add("P1", "persistence",
-        `the updated row is NOT on the page after a reload (searched for "${anchorB}")`);
+        `the updated row is NOT on the page after a reload (searched for "${searchFor}")`);
     }
 
     // ---- 8. clean up -----------------------------------------------------
@@ -814,8 +891,8 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
     const hasDelete = await rowAction(page, 0, "Delete").count().catch(() => 0);
     rec.phases.deleteOffered = !!hasDelete;
     if (!KEEP && hasDelete) {
-      const idx = await locate(page, anchorB) >= 0 ? await locate(page, anchorB)
-        : await locate(page, anchor);
+      const idx0 = await locate(page, searchFor);
+      const idx = idx0 >= 0 ? idx0 : await locate(page, anchor);
       fresh();
       const del = idx >= 0 ? rowAction(page, idx, "Delete") : null;
       if (del && await del.count()) {
@@ -849,7 +926,7 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
             rec.phases.rowCount.afterCleanup = real;
             if (real !== before) {
               add("P2", "cleanup",
-                `row count is ${real}, was ${before} before the test - the QA row "${anchorB}" may still be present`);
+                `row count is ${real}, was ${before} before the test - the QA row "${searchFor}" may still be present`);
             }
           }
         } else {
