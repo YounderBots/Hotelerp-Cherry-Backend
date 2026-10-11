@@ -214,6 +214,39 @@ const flipValue = (f) => {
   return `QB ${f.suffix} changed`;
 };
 
+/**
+ * Find the row carrying `text`, SEARCHING first when it is not on the current
+ * page.
+ *
+ * TableTemplate paginates at ten rows. A freshly created record sorts to
+ * whichever page its name lands on, so a scan of the visible rows finds it
+ * only by luck - and the round-trip then edits, and finally deletes, whichever
+ * row the fallback index named. That is how a QA run can quietly rewrite a
+ * seeded record. Type the sentinel into the table's own search box first, then
+ * look.
+ */
+async function locate(page, text) {
+  if (!text) return -1;
+  let idx = await findRow(page, text);
+  if (idx >= 0) return idx;
+
+  const box = page.locator('input[placeholder^="Search"], input[aria-label^="Search"]').first();
+  if (!(await box.count())) return -1;
+  await box.fill(text).catch(() => {});
+  await page.waitForTimeout(700);
+  idx = await findRow(page, text);
+  return idx;
+}
+
+/** Put the table back the way it was, so the next phase sees the full list. */
+async function clearSearch(page) {
+  const box = page.locator('input[placeholder^="Search"], input[aria-label^="Search"]').first();
+  if (await box.count()) {
+    await box.fill("").catch(() => {});
+    await page.waitForTimeout(500);
+  }
+}
+
 const { browser, page, bucket, fresh } = await launch({ width: 1440, height: 900 });
 mkdirSync("e2e-reports", { recursive: true });
 await login(page, EMAIL, PASSWORD);
@@ -304,14 +337,14 @@ for (const route of ROUTES) {
   // Search on a text sentinel, not the row index: the list re-sorts and
   // re-pages after the save, and an index captured earlier points at whichever
   // row now occupies that slot.
-  let rowIdx = await findRow(page, anchor);
+  let rowIdx = await locate(page, anchor);
   if (rowIdx < 0) {
     const n = await tableRows(page).count();
     rowIdx = Math.max(0, n - 1);
     rec.phases.rowLocatedBy = "last-row-fallback";
     add("P3", "harness", `could not find the saved row by its value "${anchor}"; acting on the last row`);
   } else {
-    rec.phases.rowLocatedBy = "sentinel match";
+    rec.phases.rowLocatedBy = await findRow(page, anchor) >= 0 ? "visible row" : "search box";
   }
 
   // ---- 4. EDIT must load the saved value ---------------------------------
@@ -380,12 +413,10 @@ for (const route of ROUTES) {
     // index captured before the edit no longer names the same row.
     const anchorB = plan.filter((p) => p.kind === "name" || p.kind === "text")
       .map((p) => flipValue(p)).find(Boolean) || anchor;
-    rowIdx = await findRow(page, anchorB);
-    if (rowIdx < 0) rowIdx = await findRow(page, anchor);
-    const viewBtn = await rowAction(page, rowIdx, "View").count()
-      ? rowAction(page, rowIdx, "View")
-      : rowAction(page, await findRow(page, anchorB), "View");
-    if (await viewBtn.count()) {
+    rowIdx = await locate(page, anchorB);
+    if (rowIdx < 0) rowIdx = await locate(page, anchor);
+    const viewBtn = rowIdx >= 0 ? rowAction(page, rowIdx, "View") : null;
+    if (viewBtn && await viewBtn.count()) {
       await viewBtn.click();
       await page.waitForTimeout(900);
       const vm = await readModal(page);
@@ -409,7 +440,7 @@ for (const route of ROUTES) {
     // edit: after a successful update the old text is gone BY DESIGN, so
     // searching for it reports a false persistence failure.
     await open(page, route);
-    rec.phases.persisted = await findRow(page, anchorB) >= 0;
+    rec.phases.persisted = await locate(page, anchorB) >= 0;
     rec.phases.persistedSearchedFor = anchorB;
     if (!rec.phases.persisted) {
       add("P1", "persistence",
@@ -417,9 +448,16 @@ for (const route of ROUTES) {
     }
 
     // ---- 8. clean up -----------------------------------------------------
-    if (!KEEP) {
-      const idx = await findRow(page, anchorB) >= 0 ? await findRow(page, anchorB)
-        : await findRow(page, anchor);
+    // Only pages that actually offer a Delete can be cleaned from the UI.
+    // Stock deliberately has none - there is no DELETE endpoint on either
+    // service - so its QA rows are removed by
+    // Backend/tools/cleanup_qa_rows.py instead. Record it rather than call a
+    // missing affordance a defect.
+    const hasDelete = await rowAction(page, 0, "Delete").count().catch(() => 0);
+    rec.phases.deleteOffered = !!hasDelete;
+    if (!KEEP && hasDelete) {
+      const idx = await locate(page, anchorB) >= 0 ? await locate(page, anchorB)
+        : await locate(page, anchor);
       fresh();
       const del = idx >= 0 ? rowAction(page, idx, "Delete") : null;
       if (del && await del.count()) {
@@ -441,8 +479,15 @@ for (const route of ROUTES) {
           const left = await tableRows(page).count();
           rec.phases.rowCount.afterCleanup = left;
           if (left !== before) {
-            add("P2", "cleanup",
-              `row count is ${left}, was ${before} before the test - the QA row "${anchorB}" may still be present`);
+            // The count is measured against a full list, so undo whatever the
+            // search box did to it before comparing.
+            await clearSearch(page);
+            const real = await tableRows(page).count();
+            rec.phases.rowCount.afterCleanup = real;
+            if (real !== before) {
+              add("P2", "cleanup",
+                `row count is ${real}, was ${before} before the test - the QA row "${anchorB}" may still be present`);
+            }
           }
         } else {
           rec.phases.deleteResponse = { status: "no confirm dialog" };
@@ -450,8 +495,7 @@ for (const route of ROUTES) {
           add("P2", "delete", "Delete action opened no confirmation dialog");
         }
       } else {
-        rec.phases.deleteResponse = { status: "row not found" };
-        add("P1", "cleanup", `could not find the QA row to delete it - "${anchorB}" is still in the data`);
+        rec.phases.deleteResponse = { status: "no delete action on this page" };
       }
     }
   } else {

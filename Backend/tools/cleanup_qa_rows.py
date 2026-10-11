@@ -13,7 +13,19 @@ import sys
 sys.path.insert(0, r".run-logs")
 from dbq import conn  # noqa: E402
 
-MARKERS = ("ZZQA", "ZZCP-", "ZZCOLORPROBE", "zzprobe")
+MARKERS = ("ZZQA", "ZZCP-", "ZZCOLORPROBE", "zzprobe", "ZZVIS", "ZZEDT", "ZZDIRECT")
+
+# A QA item with a stock row is referenced by it, so the child goes first.
+# Order matters: deleting the parent first raises an FK error and the tool
+# leaves the debris behind while reporting a traceback.
+CHILD_OF = {
+    "restaurant.inventory_item": [
+        "inventory_stock_transaction", "inventory_purchase", "inventory_stock",
+    ],
+    "bar.bar_inventory_item": [
+        "bar_inventory_stock_transaction", "bar_inventory_purchase", "bar_inventory_stock",
+    ],
+}
 
 # table -> the text columns worth searching
 TARGETS = {
@@ -43,14 +55,17 @@ TARGETS = {
         ("task_type", ["Task_Type"]),
     ],
     "restaurant": [
+        # The item tables are named inventory_item / bar_inventory_item, NOT
+        # stock_item. A wrong name here reads as "nothing left behind" while
+        # fifteen QA rows sit in the database.
+        ("inventory_item", ["item_name"]),
         ("menu_item", ["Item_Name"]),
-        ("stock_item", ["item_name"]),
         ("restaurant_guest", ["Guest_Name"]),
         ("table_master", ["Table_Name"]),
     ],
     "bar": [
+        ("bar_inventory_item", ["item_name"]),
         ("menu_item", ["Item_Name"]),
-        ("stock_item", ["item_name"]),
         ("bar_guest", ["Guest_Name"]),
         ("table_master", ["Table_Name"]),
     ],
@@ -76,6 +91,9 @@ def first_value(row):
 def main() -> int:
     total = 0
     dry = "--apply" not in sys.argv
+
+    # Pass 1: QA rows that nothing else references.
+    found = {}
     for which, tables in TARGETS.items():
         try:
             c = conn(which)
@@ -90,33 +108,74 @@ def main() -> int:
                 except Exception:
                     continue
                 pk = "id" if "id" in have else ("ID" if "ID" in have else None)
-                if not pk:
-                    continue
                 usable = [x for x in cols if x in have]
-                if not usable:
+                if not pk or not usable:
                     continue
-                # One predicate per (column, marker) pair, so there is exactly one
-                # placeholder per predicate.
+                # One predicate per (column, marker) pair, so there is exactly
+                # one placeholder per predicate.
                 where = " OR ".join(
                     f"`{x}` LIKE %s" for x in usable for _ in MARKERS)
                 args = [f"%{m}%" for _ in usable for m in MARKERS]
                 cur.execute(f"SELECT `{pk}` FROM `{table}` WHERE {where}", args)
                 ids = [first_value(r) for r in cur.fetchall()]
-                if not ids:
-                    continue
-                total += len(ids)
-                print(f"  {which}.{table}: {len(ids)} QA row(s) -> {ids}")
-                if not dry:
-                    cur.execute(
-                        f"DELETE FROM `{table}` WHERE `{pk}` IN ({','.join(['%s'] * len(ids))})",
-                        ids)
-            if not dry:
-                c.commit()
+                if ids:
+                    found[(which, table)] = ids
         try:
             c.close()
         except Exception:
             pass          # `with c` already closed it on the way out
-    print(("DRY RUN - " if dry else "DELETED ") + f"{total} QA row(s)")
+
+    if not found:
+        print("no QA rows found")
+        return 0
+
+    for (which, table), ids in found.items():
+        total += len(ids)
+        print(f"  {which}.{table}: {len(ids)} QA row(s) -> {ids}")
+
+    if dry:
+        print(f"DRY RUN - {total} QA row(s)")
+        return 0
+
+    # Pass 2: delete children, then parents, in one transaction per database.
+    # A QA item now carries a stock row (that was the fix), so removing the
+    # parent first trips the foreign key and leaves the debris in place.
+    for which in {w for w, _ in found}:
+        c = conn(which)
+        with c:
+            cur = c.cursor()
+            parents = {t: ids for (w, t), ids in found.items() if w == which}
+
+            for table, ids in parents.items():
+                for child in CHILD_OF.get(f"{which}.{table}", []):
+                    try:
+                        child_cols = columns(c, child)
+                    except Exception:
+                        continue
+                    fk = next((x for x in ("inventory_item_id", "bar_inventory_item_id")
+                               if x in child_cols), None)
+                    pk = "id" if "id" in child_cols else None
+                    if not fk or not pk:
+                        continue
+                    marks = ",".join(["%s"] * len(ids))
+                    cur.execute(
+                        f"DELETE FROM `{child}` WHERE `{fk}` IN ({marks})", ids)
+                    if cur.rowcount:
+                        print(f"    {which}.{child}: removed {cur.rowcount} child row(s)")
+
+            for table, ids in parents.items():
+                cur.execute(
+                    f"DELETE FROM `{table}` WHERE `id` IN ({','.join(['%s'] * len(ids))})",
+                    ids)
+                if cur.rowcount != len(ids):
+                    print(f"    {which}.{table}: removed {cur.rowcount} of {len(ids)}")
+            c.commit()
+        try:
+            c.close()
+        except Exception:
+            pass
+
+    print(f"DELETED {total} QA row(s)")
     return 0
 
 

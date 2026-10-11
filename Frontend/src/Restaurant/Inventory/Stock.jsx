@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { Activity } from "lucide-react";
+import { Activity, SlidersHorizontal } from "lucide-react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal from "../../stories/Modal";
 import RowActions from "../../stories/RowActions";
@@ -50,7 +50,7 @@ const Stock = () => {
 
   const { toast, showToast } = useToast();
 
-  const [activeModal, setActiveModal] = useState(null); // view | adjust | movement | add-item
+  const [activeModal, setActiveModal] = useState(null); // view | adjust | movement | add-item | edit-item
   const [selectedItem, setSelectedItem] = useState(null);
   const [movements, setMovements] = useState([]);
   const [movementsLoading, setMovementsLoading] = useState(false);
@@ -60,6 +60,10 @@ const Stock = () => {
 
   const [adjustForm, setAdjustForm] = useState(emptyAdjust);
   const [newItemForm, setNewItemForm] = useState(emptyItem);
+  // The item being edited. A separate copy rather than `selectedItem`, because
+  // the list row and the half-typed form are different things: editing the row
+  // in place would repaint the table on every keystroke.
+  const [editItemForm, setEditItemForm] = useState(emptyItem);
 
   /* ================= HANDLERS ================= */
 
@@ -89,6 +93,68 @@ const Stock = () => {
     setNewItemForm(emptyItem);
     setFormError(null);
     setActiveModal("add-item");
+  };
+
+  /**
+   * EDIT THE ITEM ITSELF -- name, unit and reorder level.
+   *
+   * This row's pencil used to open Adjust Stock, which is a different thing
+   * entirely: it moves quantity through the ledger and leaves the item's own
+   * attributes alone. So a storekeeper who mistyped "Basmati Rice" as "Basmati
+   * Rise", or set the wrong reorder level, had no way to correct it -- the
+   * backend has carried PUT /restaurant/inventory_item/{id} the whole time and
+   * no screen called it, which is why the generator filed it under
+   * UNCALLED_ENDPOINTS. Adjust Stock stays, as its own action.
+   */
+  const openEditItemModal = (row) => {
+    setSelectedItem(row);
+    setEditItemForm({
+      item_name: row.item_name ?? "",
+      unit: row.unit || "Kg",
+      min_stock_level:
+        row.min_stock_level === null || row.min_stock_level === undefined
+          ? ""
+          : String(row.min_stock_level),
+    });
+    setFormError(null);
+    setActiveModal("edit-item");
+  };
+
+  const saveItemEdit = async () => {
+    if (saving || savingRef.current) return;
+    if (!editItemForm.item_name.trim()) {
+      setFormError("Item name is required.");
+      return;
+    }
+    const min = editItemForm.min_stock_level;
+    if (min !== "" && (Number.isNaN(Number(min)) || Number(min) < 0)) {
+      setFormError("Minimum stock level must be zero or more.");
+      return;
+    }
+
+    savingRef.current = true;
+    setSaving(true);
+    setFormError(null);
+    try {
+      await APICall.putT(
+        `/restaurant/inventory_item/${selectedItem.inventory_item_id}`,
+        {
+          item_name: editItemForm.item_name.trim(),
+          unit: editItemForm.unit,
+          min_stock_level: min === "" ? 0 : Number(min),
+        },
+      );
+      showToast("Inventory item updated successfully", "update");
+      setActiveModal(null);
+      setSelectedItem(null);
+      setEditItemForm(emptyItem);
+      await load();
+    } catch (err) {
+      setFormError(errMsg(err, "Failed to update item."));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   const closeModal = () => {
@@ -242,8 +308,19 @@ const Stock = () => {
                 label="stock item"
                 canEdit={perms.edit}
                 onView={() => openModal("view", row)}
-                onEdit={() => openModal("adjust", row)}
+                onEdit={() => openEditItemModal(row)}
               >
+                {/* Adjust Stock is a ledger movement, not an edit of the item.
+                    It used to BE the pencil, which is why the item's own name,
+                    unit and reorder level could never be corrected. */}
+                <IconButton
+                  variant="action-edit"
+                  size="action"
+                  icon={<SlidersHorizontal size={16} />}
+                  onClick={() => openModal("adjust", row)}
+                  title={`Adjust stock for ${row.item_name || "item"}`}
+                  ariaLabel={`Adjust stock for ${row.item_name || "item"}`}
+                />
                 {/* Movements is a read-only history. It used to be a
                     danger-ghost icon — the destructive red — beside a View
                     and an Edit drawn in two other styles. */}
@@ -288,8 +365,11 @@ const Stock = () => {
                 `${formatPrecise(selectedItem.available_quantity)} ${selectedItem.unit || ""}`.trim()
               }
             />
-            <DetailItem
-              label="Minimum Stock"
+            /* "Minimum Stock Level" in the forms, "Minimum Stock" in View: the same
+   reorder threshold under two names, so a reader comparing the form with the
+   record cannot tell they are the same field. */
+<DetailItem
+              label="Minimum Stock Level"
               value={
                 selectedItem &&
                 `${formatPrecise(selectedItem.min_stock_level)} ${selectedItem.unit || ""}`.trim()
@@ -350,6 +430,52 @@ const Stock = () => {
           placeholder="0"
           value={newItemForm.min_stock_level}
           onChange={(e) => setNewItemForm((p) => ({ ...p, min_stock_level: e.target.value }))}
+        />
+      </Modal>
+
+      {/* ================= EDIT ITEM ================= */}
+      <Modal
+        isOpen={activeModal === "edit-item" && !!selectedItem}
+        title={`Edit Inventory Item — ${selectedItem?.item_name || ""}`}
+        onClose={closeModal}
+        size="medium"
+        bodyLayout="grid"
+        showFooter
+        actions={[
+          { label: "Cancel", variant: "secondary", onClick: closeModal, disabled: saving },
+          {
+            label: saving ? "Saving…" : "Submit",
+            variant: "primary",
+            onClick: saveItemEdit,
+            disabled: saving,
+          },
+        ]}
+      >
+        <ErrorAlert message={formError} className="field-full" />
+
+        <Input
+          label="Item Name"
+          required
+          name="item_name"
+          placeholder="e.g. Basmati Rice"
+          value={editItemForm.item_name}
+          onChange={(e) => setEditItemForm((p) => ({ ...p, item_name: e.target.value }))}
+        />
+        <Select
+          label="Unit"
+          name="unit"
+          value={editItemForm.unit}
+          onChange={(e) => setEditItemForm((p) => ({ ...p, unit: e.target.value }))}
+          options={UNITS}
+        />
+        <Input
+          label="Minimum Stock Level"
+          type="number"
+          min="0"
+          name="min_stock_level"
+          placeholder="0"
+          value={editItemForm.min_stock_level}
+          onChange={(e) => setEditItemForm((p) => ({ ...p, min_stock_level: e.target.value }))}
         />
       </Modal>
 

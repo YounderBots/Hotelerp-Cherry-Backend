@@ -11,7 +11,33 @@ GW = os.environ.get("E2E_GATEWAY", "http://127.0.0.1:8000")
 # The seeded password. Once Backend/tools/rotate_passwords.py has replaced it --
 # which every production deployment must do -- point these suites at the new one
 # with E2E_PASSWORD, or run them against a freshly seeded demo database.
+#
+# E2E_CREDENTIALS points at the file rotate_passwords.py wrote. Use it when the
+# accounts hold DIFFERENT passwords: the rotation exists to give each account its
+# own, so a suite that signs in as two different users with one shared value
+# fails on the second login with "Invalid credentials" and looks like a broken
+# account rather than a stale assumption.
 PW = os.environ.get("E2E_PASSWORD", "")
+
+_CRED_FILE = os.environ.get("E2E_CREDENTIALS", "")
+
+
+def _per_account() -> dict:
+    if not _CRED_FILE or not os.path.isfile(_CRED_FILE):
+        return {}
+    out = {}
+    with open(_CRED_FILE, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            email, _, pw = line.partition("\t")
+            if email and pw:
+                out[email] = pw
+    return out
+
+
+ACCOUNTS = _per_account()
 
 
 def req(method, path, tok=None, body=None, raw=False):
@@ -41,13 +67,18 @@ def req(method, path, tok=None, body=None, raw=False):
         return 0, str(e)
 
 
-def login(email, password=PW):
+def login(email, password=None):
     """Sign in, waiting out the gateway's login rate limiter if it is tripped.
 
     The limiter is per-peer and per-minute, and the security suite exhausts it
     on purpose. Without this, whichever suite ran next could not sign in at all
     and reported a failure that was really the previous suite's tail.
+
+    `password` defaults to this account's own credential when the rotation file
+    is available, and to the shared E2E_PASSWORD otherwise.
     """
+    if password is None:
+        password = ACCOUNTS.get(email, PW)
     for attempt in range(4):
         s, b = req("POST", "/login_post", body={"email": email, "password": password})
         if s == 200:

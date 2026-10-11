@@ -481,6 +481,11 @@ def list_stock(request: Request, station_id: Optional[int] = Query(None), db: Se
                 "item_name": item.item_name if item else None,
                 "unit": item.unit if item else None,
                 "min_stock_level": item.min_stock_level if item else None,
+                # The item join above already carries name, unit and reorder
+                # level. is_perishable was missing, so the stock screen's View
+                # showed every line as non-perishable -- including the ones the
+                # user had just ticked in Add or Edit.
+                "is_perishable": bool(item.is_perishable) if item else False,
                 "below_minimum": bool(item and s.available_quantity < (item.min_stock_level or 0)),
                 # "Main Store" is what a null station_id means: stock held
                 # centrally rather than at a station.

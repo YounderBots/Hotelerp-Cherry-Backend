@@ -56,6 +56,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("bar", "guest/{id}/loyalty", "POST"): ("/bar_guest_management",),
     ("bar", "inventory_item", "GET"): ("/bar_recipe_management",),
     ("bar", "inventory_item", "POST"): ("/bar_stock",),
+    ("bar", "inventory_item/{id}", "PUT"): ("/bar_stock",),
     ("bar", "inventory_item/{id}/transactions", "GET"): ("/bar_stock",),
     ("bar", "inventory_stock", "GET"): ("/bar_stock",),
     ("bar", "inventory_stock/adjust", "POST"): ("/bar_stock",),
@@ -229,6 +230,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("restaurant", "guest/{id}/loyalty", "POST"): ("/guest_management",),
     ("restaurant", "inventory_item", "GET"): ("/recipe_management",),
     ("restaurant", "inventory_item", "POST"): ("/stock",),
+    ("restaurant", "inventory_item/{id}", "PUT"): ("/stock",),
     ("restaurant", "inventory_item/{id}/transactions", "GET"): ("/stock",),
     ("restaurant", "inventory_stock", "GET"): ("/stock",),
     ("restaurant", "inventory_stock/adjust", "POST"): ("/stock",),
@@ -363,7 +365,6 @@ ACTION_OVERRIDES: dict[tuple[str, str, str], str] = {
 UNCALLED_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     # ---- bar ----
     ("bar", "bill/{id}/split", "POST"),
-    ("bar", "inventory_item/{id}", "PUT"),
     ("bar", "inventory_purchase", "POST"),
     ("bar", "menu_category", "POST"),
     ("bar", "menu_sub_category", "POST"),
@@ -400,7 +401,6 @@ UNCALLED_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("masterdata", "tax/{id}", "GET"),
     # ---- restaurant ----
     ("restaurant", "bill/{id}/split", "POST"),
-    ("restaurant", "inventory_item/{id}", "PUT"),
     ("restaurant", "inventory_purchase", "POST"),
     ("restaurant", "kitchen", "POST"),
     ("restaurant", "kot/{id}/print", "POST"),

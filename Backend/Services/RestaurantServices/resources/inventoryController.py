@@ -369,6 +369,15 @@ def create_inventory_item(payload: InventoryItemIn, request: Request, db: Sessio
     item = models.InventoryItem(item_code=gen_code("INV"), created_by=user_id, company_id=company_id, **values)
     db.add(item)
     try:
+        db.flush()
+        # THE STOCK SCREEN READS THE STOCK TABLE, NOT THE ITEM TABLE.
+        #
+        # Creating an item without its stock row left it invisible: the API said
+        # "created", the UI toasted "added successfully", reload() refetched, and
+        # the new item was nowhere on the page - so a storekeeper could create
+        # an item and then have no way to find, view or adjust it. The row is
+        # created at zero quantity; the first adjustment moves it from there.
+        _get_or_create_stock_row(db, item.id, None, company_id)
         db.commit()
     except IntegrityError:
         db.rollback()

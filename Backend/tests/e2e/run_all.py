@@ -4,6 +4,16 @@
     ./run.sh                              # start the six services first
     python Backend/tests/e2e/run_all.py
 
+CREDENTIALS
+    After Backend/tools/rotate_passwords.py has run -- which every deployment
+    must do -- each account holds its OWN password, so a suite that signs in as
+    two different users needs both:
+
+        E2E_CREDENTIALS=/path/to/cherry-credentials.txt python Backend/tests/e2e/run_all.py
+
+    E2E_PASSWORD still works, and is still right for a freshly seeded database
+    where every account shares one password.
+
 Unlike Backend/tests/run_all.py -- which is offline, in-process and needs no
 database -- these drive the real gateway over HTTP, against the real MySQL
 schemas, exactly as the SPA does. They are what catches the class of bug a unit
