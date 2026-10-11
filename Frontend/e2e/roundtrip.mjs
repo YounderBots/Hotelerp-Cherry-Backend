@@ -47,6 +47,18 @@ const RUN = `ZZQA${Date.now().toString(36).toUpperCase().slice(-6)}`;
 const A = `${RUN}A`;
 const B = `${RUN}B`;
 
+/**
+ * A time slot that differs for every time field on a form.
+ *
+ * Counting the TIME fields rather than the field's position matters: two time
+ * inputs can sit at positions 1 and 2, or 8 and 9, and only the first
+ * numbering guarantees they land on different hours. Shift refuses identical
+ * start and end times, and two fields filled with the same value produce a
+ * refusal that reads like a product defect.
+ */
+const timeFor = (n) => `${String(7 + (n % 12)).padStart(2, "0")}:00`;
+const indexOf = (arr, item) => arr.indexOf(item);
+
 /** Everything the in-page filler needs, decided in Node. */
 const planFor = (fields) => {
   const fillable = fields.filter((f) => !f.isFile && !f.disabled);
@@ -87,29 +99,33 @@ const planFor = (fields) => {
     return { ...base, plan: (unit || opts[0])?.value ?? null, kind: "select" };
   }
   if (f.type === "number") {
-    // A number that the API treats as a UNIQUE KEY (a floor number, a table
-    // number) collides with the seeded rows when numbered from the field's
-    // position, and the create answers 409. Start above anything in use: the
-    // sentinel's own digits make it distinct between passes and between runs.
     const label = (f.label || "").toLowerCase();
+
+    // Booking's room count is tied to its room types: the helper text says
+    // "Select one room type for each room", and the multi-select holds a single
+    // chip. It has to be checked BEFORE the unique-key rule below, because
+    // "No. of Rooms" contains the word "Rooms" and would otherwise be pinned to
+    // an unused number - 719 rooms against one chosen type, which the form
+    // refuses.
+    const tiedToSelects = /\bno\.? ?of\.? ?rooms\b|^rooms?$/.test(label)
+      && !/adult|child/.test(label);
+    if (tiedToSelects) {
+      return { ...base, plan: "1", kind: "number", tiedToSelects };
+    }
+
+    // A number the API treats as a UNIQUE KEY (a floor number, a table
+    // number) collides with the seeded rows when numbered from the field's
+    // position, and the create answers 409. Start above anything in use.
     const isNumberKey = /\b(number|no\.?|#)\b/.test(label)
       || ["floor_number", "table_number", "table_no"].includes(String(f.name || ""));
     if (isNumberKey) {
       const n = 700 + (RUN.length % 200) + (i % 90);
       return { ...base, plan: String(n), kind: "number", uniqueNumber: true };
     }
-    // Booking's room count is pinned to one because its helper text says
-    // "Select one room type for each room" and the multi-select holds a
-    // single chip. That rule lives in the number branch below, where the
-    // `tiedToSelects` flag is also set - an earlier copy of it here returned
-    // without the flag, so the second pass moved the count anyway and the
-    // form refused the save.
     const lo = Number.isFinite(f.min) ? f.min : 1;
     const hi = Number.isFinite(f.max) ? f.max : 999;
-    const tiedToSelects = /\bno\.? ?of\.? ?rooms\b|^rooms?$/.test(label)
-      && !/adult|child/.test(label);
-    const value = tiedToSelects ? lo : Math.min(Math.max(lo + i, lo), hi);
-    return { ...base, plan: String(value), kind: "number", numericIndex: i, tiedToSelects };
+    const value = Math.min(Math.max(lo + i, lo), hi);
+    return { ...base, plan: String(value), kind: "number", numericIndex: i };
   }
   if (f.type === "date") {
     // Dates on one form are ORDERED (a birth date precedes a joining date) and
@@ -133,7 +149,12 @@ const planFor = (fields) => {
   // into <input type="time">, which rejects it and leaves the box EMPTY. The
   // form then correctly refuses to save and the page is reported as broken when
   // the harness was at fault.
-  if (f.type === "time") return { ...base, plan: "14:30", kind: "time" };
+  if (f.type === "time" || f.kind === "time") {
+    // Time fields on one form must all DIFFER: Shift refuses "Start time and
+    // end time cannot be identical". Derive the hour from the field's own
+    // position, which differs per field even when several share a type.
+    return { ...base, plan: timeFor(fillable.filter((x) => x.type === "time").indexOf(f)), kind: "time" };
+  }
   // A guest mobile is UNIQUE in the F&B guest tables, so even the FIRST pass
   // must not reuse a number any live row holds or the create answers 409.
   // Keep the country code from DIAL and make the SUBSCRIBER part unique to the
@@ -221,14 +242,17 @@ const FILL = async ({ plan, which }) => {
       const i = opts.findIndex((o) => o.value === f.plan);
       return opts[(i + 1) % opts.length]?.value ?? null;
     }
-    if (f.type === "time" || f.kind === "time") return "16:45";
+    if (f.type === "time" || f.kind === "time") {
+      // A different slot on the second pass, still distinct from every other
+      // time field: Shift refuses identical start and end times.
+      const idx = (f.index || 0) + 1;
+      return String(7 + idx).padStart(2, "0") + (which === "B" ? ":30" : ":00");
+    }
     if (f.type === "date" || f.type === "datetime-local") {
-      // Later, still in the past where the rule requires it. A future date of
-      // birth is refused by the app, correctly.
-      // A week later, keeping the fields' relative order, so a birth date
-      // stays before a joining date and a stay is a week rather than a year.
-      // `index` travels with the plan because this runs in the browser, where
-      // the Node-side loop counter is not in scope.
+      // A week later than the first pass, keeping the fields' relative order,
+      // so a birth date stays before a joining date and a stay is a week
+      // rather than a year. `index` travels with the plan because this runs in
+      // the browser, where the Node-side loop counter is not in scope.
       const d = new Date(Date.UTC(2026, 1, 5) + ((f.index || 0) * 7) * 86400000);
       return f.type === "date" ? d.toISOString().slice(0, 10)
         : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -267,23 +291,31 @@ const FILL = async ({ plan, which }) => {
   };
   const sel = '[data-testid="modal"].modal--active';
   let filled = 0, skipped = [];
-  const phoneFired = [];
   for (const f of plan) {
-    const label = f.label || f.name;
-    if (!label) continue;
+    // Prefer the label, then the name, then the id. A react-select proxy input
+    // has no name of its own and its id is a per-render useId, so a field can
+    // arrive with only one of the three - and dropping it because the first
+    // choice was empty is how a required multi-select silently went unfilled.
+    const label = f.label || f.name || f.id;
+    if (!label) { skipped.push("(anonymous field)"); continue; }
     const byName = f.name ? `${sel} [name="${CSS.escape(f.name)}"]` : null;
     const byLabel = null;
     let el = null;
     if (byName) el = document.querySelector(byName);
     if (!el) {
-      const lab = [...document.querySelectorAll(`${sel} label`)].find(
-        (l) => l.textContent.replace(/\s*\*\s*$/, "").trim() === label);
+      // Match on the label's text, and also on its `for` attribute. A react-select
+      // proxy input carries NO name at all, so the name lookup cannot find it and
+      // the label lookup has to carry the field on its own.
+      const labs = [...document.querySelectorAll(`${sel} label`)];
+      const lab = labs.find((l) => l.textContent.replace(/\s*\*\s*$/, "").trim() === label);
       if (lab) {
         const t = lab.getAttribute("for");
-        el = t ? document.getElementById(t) : lab.parentElement.querySelector("input, select, textarea");
+        el = t
+          ? (document.getElementById(t) || document.querySelector(`${sel} [id="${CSS.escape(t)}"]`))
+          : lab.parentElement.querySelector("input, select, textarea");
       }
     }
-    if (!el) { skipped.push(label); continue; }
+    if (!el) { skipped.push(`${label} (not found)`); continue; }
 
     const value = which === "A" ? f.plan : flip(f);
     if (f.type === "checkbox" || f.type === "radio") {
@@ -337,7 +369,8 @@ const FILL = async ({ plan, which }) => {
       }
       continue;
     }
-      // React installs a value tracker on every input and ignores an event whose
+
+    // React installs a value tracker on every input and ignores an event whose
       // value it believes it already has. Writing `el.value = x` updates the DOM
       // but not that tracker, so onChange never fires and the component keeps
       // the OLD state - the form then posts the default. Always go through the
@@ -370,12 +403,11 @@ const FILL = async ({ plan, which }) => {
         onChange({ target: { value } },
           { 91: "IN", 44: "GB", 1: "US", 971: "AE", 65: "SG" }[cc] || "IN",
           { ok: true, incomplete: false });
-        phoneFired.push(`${label}:${value}`);
       }
       filled += 1;
     }
   }
-  return { filled, skipped, phoneFired };
+  return { filled, skipped };
 };
 
 /** Read what the dialog currently holds. */
@@ -420,15 +452,17 @@ const flipValue = (f) => {
     return String(Math.min(Math.max(next, lo), hi));
   }
   if (f.kind === "unique") return `${f.suffix} ${(f.label || "row").toLowerCase()}`.slice(0, 40);
-    if (f.kind === "tags") return "Vegan, Jain";
   if (f.kind === "tags") return "Vegan, Jain";
   if (f.kind === "select") return null;
   if (f.kind === "date") {
     const d = new Date(Date.UTC(2026, 1, 5) + ((f.index || 0) * 7) * 86400000);
     return d.toISOString().slice(0, 10);
   }
-  if (f.kind === "time" || f.type === "time") return "16:45";
-    if (f.type === "time" || f.kind === "time") return "16:45";
+  // Must differ from every other time on the form AND from the first pass.
+  if (f.kind === "time" || f.type === "time") {
+    const idx = (f.index || 0) + 1;
+    return String(7 + idx).padStart(2, "0") + ":30";
+  }
   if (f.type === "tel") {
     const d = f.dial || "+919876543210";
     return d.startsWith("+91") ? "+919812345678" : d.replace(/\d(?=\d{2}$)/, "8");
@@ -558,6 +592,7 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
   }
   rec.phases.addFields = addModal.fields.map((f) => `${f.label}[${f.type}${f.required ? "*" : ""}]`);
   const plan = planFor(addModal.fields);
+  rec.phases.planTypes = plan.map((p) => `${p.label || p.name}:${p.type}`);
   if (!plan.length) {
     rec.skipped = "Add form offers no fillable fields";
     report.push(rec);
