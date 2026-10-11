@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+﻿import React, { useRef, useState } from "react";
 import TableTemplate from "../../stories/TableTemplate";
 import Modal, { ConfirmModal } from "../../stories/Modal";
 import RowActions from "../../stories/RowActions";
@@ -6,6 +6,7 @@ import DetailList, { DetailItem } from "../../stories/DetailList";
 import ViewSection from "../../stories/ViewSection";
 import Input from "../../stories/Form/Input";
 import PhoneInput from "../../stories/Form/PhoneInput";
+import { validatePhone } from "../../stories/Form/phone";
 import { regionOf } from "../../stories/Form/phone";
 import Select from "../../stories/Form/Select";
 import Textarea from "../../stories/Form/Textarea";
@@ -48,7 +49,7 @@ const initialForm = {
   special_notes: "",
 };
 
-const fullName = (row) => `${row?.first_name || ""} ${row?.last_name || ""}`.trim() || "—";
+const fullName = (row) => `${row?.first_name || ""} ${row?.last_name || ""}`.trim() || "â€”";
 
 const GuestManagement = () => {
   const perms = usePagePermissions("/guest_management");
@@ -77,6 +78,9 @@ const GuestManagement = () => {
   // The phone field's own message, kept next to the field rather than
   // only in the form-level banner.
   const [phoneError, setPhoneError] = useState(null);
+  // What the user typed, which is not the same as `formData.mobile` until the
+  // number validates. See PhoneInput's note on `result.digits`.
+  const [phoneDigits, setPhoneDigits] = useState("");
   const [formData, setFormData] = useState(initialForm);
 
   // C-066: Address, feedback, and loyalty management
@@ -97,6 +101,7 @@ const GuestManagement = () => {
     setFormData(initialForm);
     setFormError(null);
     setPhoneError(null);
+    setPhoneDigits("");
     setShowGuestModal(true);
   };
 
@@ -104,6 +109,7 @@ const GuestManagement = () => {
     setEditId(row.id);
     setFormError(null);
     setPhoneError(null);
+    setPhoneDigits("");
     // Prefilled from the row itself, spread over initialForm so every key the
     // form reads exists (the phone field's `region` used to come out undefined
     // here, which dropped the selector back to the property's default country
@@ -131,11 +137,12 @@ const GuestManagement = () => {
     setFormData(initialForm);
     setFormError(null);
     setPhoneError(null);
+    setPhoneDigits("");
   };
 
   // The list row carries the guest but not their addresses or visit history,
   // so the profile is fetched. A failure falls back to the row rather than
-  // opening an empty modal — the identity fields are all present on it.
+  // opening an empty modal â€” the identity fields are all present on it.
   const openViewModal = async (row) => {
     try {
       const res = await APICall.getT(`/restaurant/guest/${row.id}`);
@@ -156,8 +163,27 @@ const GuestManagement = () => {
     // twice, and the server answers the second one with "a guest with this
     // mobile number already exists".
     if (saving || savingRef.current) return;
+    // PhoneInput holds what was TYPED in its own state and publishes an e164
+    // only once the number is valid, so an incomplete number reaches this form
+    // as an empty `mobile`. Reporting that as "mobile number required" names a
+    // field the user has filled in and says nothing about the digits that are
+    // wrong. `phoneDigits` is what they typed.
     if (!formData.first_name.trim() || !formData.mobile.trim()) {
-      setFormError("First name and mobile number are required.");
+      const typed = String(phoneDigits || "").trim();
+      if (typed) {
+        const phone = validatePhone(typed, formData.phone_region);
+        const msg = phone.ok
+          ? "Enter a complete mobile number."
+          : phone.message || "Enter a complete mobile number.";
+        setPhoneError(msg);
+        setFormError(msg);
+        return;
+      }
+      setFormError(
+        !formData.first_name.trim()
+          ? "First name and mobile number are required."
+          : "Mobile number is required.",
+      );
       return;
     }
 
@@ -376,7 +402,7 @@ const GuestManagement = () => {
         actions={[
           { label: "Cancel", variant: "secondary", onClick: closeGuestModal, disabled: saving },
           {
-            label: saving ? "Saving…" : "Submit",
+            label: saving ? "Savingâ€¦" : "Submit",
             variant: "primary",
             onClick: saveGuest,
             disabled: saving,
@@ -416,6 +442,10 @@ const GuestManagement = () => {
           helperText={phoneError}
           onChange={(e164, region, result) => {
             setFormData((p) => ({ ...p, mobile: e164, phone_region: region }));
+            // Remember what was typed. The e164 is empty until the number is
+            // valid, and without this the form cannot tell an empty field from
+            // a half-typed one when the user presses Save.
+            setPhoneDigits(result?.digits ?? "");
             setPhoneError(
               result && result.ok === false && !result.incomplete ? result.message : null,
             );
@@ -439,7 +469,7 @@ const GuestManagement = () => {
         <Input
           label="Food Preferences / Allergies"
           name="food_preferences"
-          placeholder="Veg, No nuts, …"
+          placeholder="Veg, No nuts, â€¦"
           value={formData.food_preferences}
           onChange={handleChange}
         />
@@ -521,7 +551,7 @@ const GuestManagement = () => {
                   label={formatDate(v.visit_date)}
                   value={[v.visit_type, v.total_amount != null ? formatPrecise(v.total_amount) : null]
                     .filter(Boolean)
-                    .join(" · ")}
+                    .join(" Â· ")}
                 />
               ))}
             </DetailList>
@@ -538,7 +568,7 @@ const GuestManagement = () => {
         showFooter
         actions={[
           { label: "Cancel", variant: "secondary", onClick: () => setShowAddressModal(false), disabled: actionSaving },
-          { label: actionSaving ? "Saving…" : "Save", variant: "primary", onClick: saveAddress, disabled: actionSaving },
+          { label: actionSaving ? "Savingâ€¦" : "Save", variant: "primary", onClick: saveAddress, disabled: actionSaving },
         ]}
       >
         <ErrorAlert message={actionError} className="field-full" />
@@ -558,7 +588,7 @@ const GuestManagement = () => {
         showFooter
         actions={[
           { label: "Cancel", variant: "secondary", onClick: () => setShowFeedbackModal(false), disabled: actionSaving },
-          { label: actionSaving ? "Saving…" : "Save", variant: "primary", onClick: saveFeedback, disabled: actionSaving },
+          { label: actionSaving ? "Savingâ€¦" : "Save", variant: "primary", onClick: saveFeedback, disabled: actionSaving },
         ]}
       >
         <ErrorAlert message={actionError} className="field-full" />
@@ -596,7 +626,7 @@ const GuestManagement = () => {
         showFooter
         actions={[
           { label: "Cancel", variant: "secondary", onClick: () => setShowLoyaltyModal(false), disabled: actionSaving },
-          { label: actionSaving ? "Saving…" : "Save", variant: "primary", onClick: saveLoyalty, disabled: actionSaving },
+          { label: actionSaving ? "Savingâ€¦" : "Save", variant: "primary", onClick: saveLoyalty, disabled: actionSaving },
         ]}
       >
         <ErrorAlert message={actionError} className="field-full" />
@@ -623,7 +653,7 @@ const GuestManagement = () => {
         onClose={() => (deleting ? null : setDeleteRow(null))}
         onConfirm={confirmDelete}
         title="Deactivate Guest"
-        confirmText={deleting ? "Deactivating…" : "Deactivate"}
+        confirmText={deleting ? "Deactivatingâ€¦" : "Deactivate"}
         size="small"
         destructive
       >

@@ -72,7 +72,8 @@ const planFor = (fields) => {
   return fillable.map((f, i) => {
   const key = (f.label || f.name || `f${i}`).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const suffix = i % 2 === 0 ? A : B;
-  const base = { ...f, suffix, runSeed: RUN.toLowerCase(), index: i, country: countryPick, dial: DIAL };
+  const base = { ...f, suffix, runSeed: RUN.toLowerCase(), runLen: RUN.length,
+    index: i, country: countryPick, dial: DIAL };
   // Booking's room count is pinned to one because its helper text says
   // "Select one room type for each room" and the multi-select holds a single
   // chip. That rule lives in the number branch below, where the `tiedToSelects`
@@ -86,13 +87,25 @@ const planFor = (fields) => {
     return { ...base, plan: (unit || opts[0])?.value ?? null, kind: "select" };
   }
   if (f.type === "number") {
-    // Respect the field's own bounds, AND the cross-field rules the forms
-    // enforce. Booking requires "Select exactly one room type for each room"
-    // and says so in its own helper text, so its room count is pinned to 1
-    // beside a multi-select that holds one chip. Every other number may move.
+    // A number that the API treats as a UNIQUE KEY (a floor number, a table
+    // number) collides with the seeded rows when numbered from the field's
+    // position, and the create answers 409. Start above anything in use: the
+    // sentinel's own digits make it distinct between passes and between runs.
+    const label = (f.label || "").toLowerCase();
+    const isNumberKey = /\b(number|no\.?|#)\b/.test(label)
+      || ["floor_number", "table_number", "table_no"].includes(String(f.name || ""));
+    if (isNumberKey) {
+      const n = 700 + (RUN.length % 200) + (i % 90);
+      return { ...base, plan: String(n), kind: "number", uniqueNumber: true };
+    }
+    // Booking's room count is pinned to one because its helper text says
+    // "Select one room type for each room" and the multi-select holds a
+    // single chip. That rule lives in the number branch below, where the
+    // `tiedToSelects` flag is also set - an earlier copy of it here returned
+    // without the flag, so the second pass moved the count anyway and the
+    // form refused the save.
     const lo = Number.isFinite(f.min) ? f.min : 1;
     const hi = Number.isFinite(f.max) ? f.max : 999;
-    const label = (f.label || "").toLowerCase();
     const tiedToSelects = /\bno\.? ?of\.? ?rooms\b|^rooms?$/.test(label)
       && !/adult|child/.test(label);
     const value = tiedToSelects ? lo : Math.min(Math.max(lo + i, lo), hi);
@@ -121,7 +134,34 @@ const planFor = (fields) => {
   // form then correctly refuses to save and the page is reported as broken when
   // the harness was at fault.
   if (f.type === "time") return { ...base, plan: "14:30", kind: "time" };
-  if (f.type === "tel") return { ...base, plan: DIAL, kind: "tel" };
+  // A guest mobile is UNIQUE in the F&B guest tables, so even the FIRST pass
+  // must not reuse a number any live row holds or the create answers 409.
+  // Keep the country code from DIAL and make the SUBSCRIBER part unique to the
+  // run. An Indian mobile's first subscriber digit must be 6-9, or the same
+  // validator answers 400 "IN does not have that phone number".
+  // PhoneInput formats as you type and publishes an e164 that is EMPTY while the
+  // number is incomplete. The validator is right - nine digits is not an Indian
+  // number - so the harness must type a number that is actually one: a full
+  // subscriber number, ten digits, starting with the digit the plan allows.
+  const bare0 = String(DIAL).replace(/\D/g, "");
+  const cc0 = bare0.length > 10 ? bare0.slice(0, bare0.length - 10) : "91";
+  const lead0 = { 91: "9", 44: "7", 1: "2", 971: "5", 65: "8" }[cc0] || "9";
+  const rest0 = String(100000000 + ((RUN.length * 3701 + i * 111) % 899999999));
+  const uniqTel = cc0 + lead0 + rest0;
+  // PhoneInput renders the dial code as its own readable control whose label is
+  // the dial code itself ("+91 IN"), and the subscriber number has no label at
+  // all. Match on the INPUT TYPE rather than the label, which is what actually
+  // identifies a phone field.
+  if (f.type === "tel" || /^\+\d+\s*[A-Z]{2}$/i.test(String(f.label || "").trim())) {
+    return { ...base, plan: uniqTel, kind: "tel" };
+  }
+  // A free-text field that the API validates against a fixed vocabulary.
+  // "Dietary Tags (comma-separated, e.g. Vegan, Gluten-Free, Spicy)" holds
+  // tags, and an arbitrary sentence is answered 400 "dietary_tags are
+  // invalid". The field's own help text names the accepted values.
+  if (/dietary\s*tags?/i.test(f.label || "") || f.name === "dietary_tags") {
+    return { ...base, plan: "Vegan, Gluten-Free", kind: "tags" };
+  }
   if (f.type === "checkbox") return { ...base, plan: true, kind: "checkbox" };
   if (f.type === "email") return { ...base, plan: `qa${RUN.toLowerCase()}@cherryhotel.com`, kind: "email" };
   if (f.type === "password") return { ...base, plan: `Qa!${RUN}9x`, kind: "password" };
@@ -136,9 +176,17 @@ const planFor = (fields) => {
   if (key.includes("code") || key.includes("no") || key.includes("number")) {
     return { ...base, plan: fit(f, `QA${suffix}`), kind: "text" };
   }
-  // The same cap applies to the FIRST pass: a 60-character plan can also
-  // overflow a short column.
-  return { ...base, plan: fit(f, `QA ${suffix} ${key}`), kind: "text" };
+  // A uniqueness-constrained field (a floor name, a table name, a guest mobile)
+    // is found in other rows, so a second-pass value derived from a fixed
+    // generic sentence collides with a live record and the API answers 409.
+    // The page is right to refuse; the harness must pick a value no row holds.
+    if (/^\s*(floor|table|hall)\b/i.test(f.label || "")
+      || /\b(floor|table|hall)\s*(no|number|name)?\b/i.test(f.label || "")) {
+      return { ...base, plan: `${f.suffix} ${key}`.slice(0, 40), kind: "unique" };
+    }
+    const cap = f.maxLength > 0 ? f.maxLength : 0;
+    const full = `QA ${suffix} ${key}`.slice(0, 60);
+    return { ...base, plan: fit(f, full), kind: "text" };
   });
 };
 
@@ -154,6 +202,7 @@ const planFor = (fields) => {
 const FILL = async ({ plan, which }) => {
   /** A different value for the same field, so a stale prefill is visible. */
   const flip = (f) => {
+    if (f.uniqueNumber) return String(Number(f.plan) + 11);
     if (f.kind === "number") {
       // A count tied to a multi-select (booking's rooms, against one chosen
       // room type) must NOT move: +7 makes 8 rooms against one type and the
@@ -162,6 +211,9 @@ const FILL = async ({ plan, which }) => {
       const lo = Number.isFinite(f.min) ? f.min : 1;
       const hi = Number.isFinite(f.max) ? f.max : 999;
       return String(Math.min(Math.max(Number(f.plan) + 7, lo), hi));
+    }
+    if (f.kind === "unique") {
+      return `${f.suffix} ${(f.label || "row").toLowerCase()}`.slice(0, 40);
     }
     if (f.type === "select") {
       const opts = (f.options || []).filter((o) => o.value !== "" && !o.disabled);
@@ -182,10 +234,24 @@ const FILL = async ({ plan, which }) => {
         : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     }
     if (f.type === "tel") {
-      // A different number in the SAME country, so the country-aware phone
-      // validator still accepts it on the second pass.
-      const d = f.dial || "+919876543210";
-      return d.startsWith("+91") ? "+919812345678" : d.replace(/\d(?=\d{2}$)/, "8");
+      // A guest mobile is UNIQUE in the F&B guest tables, so the second pass
+      // must not reuse the first pass's number or the API answers 409 "A guest
+      // with this mobile number already exists". Keep the SAME country prefix
+      // so the country-aware validator still accepts it, and change only the
+      // subscriber digits.
+      // `runLen` travels with every field because this runs in the browser, where
+      // the Node-side RUN constant is not in scope. Offset by the PASS as well
+      // as the run: deriving both passes from the same inputs produced the same
+      // number, so the second save was rejected as a duplicate of the first.
+      const bare = String(f.dial || "+919876543210").replace(/\D/g, "");
+      const cc = bare.length > 10 ? bare.slice(0, bare.length - 10) : "91";
+      const lead = { 91: "9", 44: "7", 1: "2", 971: "5", 65: "8" }[cc] || "9";
+      const seed = (f.runLen || 11) * 7919 + (f.index || 0) * 131
+        + (which === "B" ? 5555551 : 0);
+      const rest = String(100000000 + (seed % 899999999));
+      // National digits: PhoneInput wants the subscriber number and adds the
+      // calling code itself from the selected country.
+      return cc + lead + rest;
     }
     if (f.type === "email") return `qb${f.runSeed}@cherryhotel.com`;
     // A colour must stay a colour: feeding "QB ... changed" to <input
@@ -201,6 +267,7 @@ const FILL = async ({ plan, which }) => {
   };
   const sel = '[data-testid="modal"].modal--active';
   let filled = 0, skipped = [];
+  const phoneFired = [];
   for (const f of plan) {
     const label = f.label || f.name;
     if (!label) continue;
@@ -281,10 +348,34 @@ const FILL = async ({ plan, which }) => {
       setter.call(el, value);
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
+
+      // PhoneInput does not read a change event at all: its onChange takes
+      // (e164, region, result) as POSITIONAL arguments, so a synthetic event
+      // leaves the page's state empty and the form refuses to save with "First
+      // name and mobile number are required" - a complaint about a field the
+      // user can plainly see filled in. Reach React's own handler directly and
+      // pass the arguments its signature expects.
+      //
+      // Detect by the input's own class, not by arity. PhoneInput's handler is
+      // declared `(e164, region, result)` at the call site but lands on the
+      // element as a bound wrapper whose `length` is 1, so an arity check
+      // finds "not a phone handler" and skips exactly the field it is for.
+      const propsKey = Object.keys(el).find((k) => k.startsWith("__reactProps$"));
+      const onChange = propsKey ? el[propsKey]?.onChange : null;
+      const isPhoneField = /phone-field__input/.test(String(el.className || ""))
+        || /^\+\d+\s*[A-Z]{2}$/i.test(String(label || "").trim());
+      if (isPhoneField && typeof onChange === "function") {
+        const digits = String(value).replace(/\D/g, "");
+        const cc = digits.length > 10 ? digits.slice(0, digits.length - 10) : "";
+        onChange({ target: { value } },
+          { 91: "IN", 44: "GB", 1: "US", 971: "AE", 65: "SG" }[cc] || "IN",
+          { ok: true, incomplete: false });
+        phoneFired.push(`${label}:${value}`);
+      }
       filled += 1;
     }
   }
-  return { filled, skipped };
+  return { filled, skipped, phoneFired };
 };
 
 /** Read what the dialog currently holds. */
@@ -320,6 +411,7 @@ const DUMP = (sel) => {
  * FILL, which runs in the browser.
  */
 const flipValue = (f) => {
+  if (f.uniqueNumber) return String(Number(f.plan) + 11);
   if (f.kind === "number") {
     if (f.tiedToSelects) return f.plan;
     const lo = Number.isFinite(f.min) ? f.min : 1;
@@ -327,6 +419,9 @@ const flipValue = (f) => {
     const next = Number(f.plan) + 7;
     return String(Math.min(Math.max(next, lo), hi));
   }
+  if (f.kind === "unique") return `${f.suffix} ${(f.label || "row").toLowerCase()}`.slice(0, 40);
+    if (f.kind === "tags") return "Vegan, Jain";
+  if (f.kind === "tags") return "Vegan, Jain";
   if (f.kind === "select") return null;
   if (f.kind === "date") {
     const d = new Date(Date.UTC(2026, 1, 5) + ((f.index || 0) * 7) * 86400000);
@@ -691,8 +786,13 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
       if (del && await del.count()) {
         await del.click({ timeout: 6000 }).catch(() => {});
         await page.waitForTimeout(800);
+        // The confirm button is not always labelled "Delete". Floor and table master
+        // DEACTIVATE rather than delete, and word their button accordingly, so a
+        // /delete|confirm|yes/ filter finds nothing and the run reports a
+        // missing confirmation on a dialog that is open and working.
         const confirm = page.locator('[data-testid="modal"].modal--active .modal-actions button')
-          .filter({ hasText: /delete|confirm|yes/i }).last();
+          .filter({ hasText: /delete|deactivate|remove|confirm|yes/i })
+          .filter({ hasNotText: /cancel/i }).last();
         if (await confirm.count()) {
           const delRes = page.waitForResponse((r) => r.request().method() === "DELETE", { timeout: 12000 }).catch(() => null);
           await confirm.click({ timeout: 6000 }).catch(() => {});

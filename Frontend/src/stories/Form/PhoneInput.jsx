@@ -39,14 +39,24 @@
  *     required
  *     value={form.mobile}                 // canonical E.164, or ""
  *     region={form.phone_region}          // ISO-2, e.g. "IN"
- *     onChange={(e164, region, result) => ...}   // all three handed up
+ *     onChange={(e164, region, result) => ...}   // all three handed up;
+ *                                        // `result.digits` is what was TYPED,
+ *                                        // which is not in `e164` while the
+ *                                        // number is still incomplete
  *     error={Boolean(phoneError)}
  *     helperText={phoneError}   // omit it and the component shows the
  *                                // selected country's own example
  *   />
- *   The parent stores `e164` in the field the API expects and sends `region`
+ *     The parent stores `e164` in the field the API expects and sends `region`
  *   alongside it, because a national number with no country is ambiguous and
  *   the API refuses to guess one.
+ *
+ * WHY `result.digits` MATTERS
+ *   A half-typed number has no e164, so the parent sees "" and reports the
+ *   field as MISSING when the user presses Save - while the digits they can
+ *   plainly see in the box are the whole problem. Read `result.digits` to tell
+ *   "no number entered" apart from "a number that is not valid yet", and say
+ *   which of the two it is.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AsYouType } from "libphonenumber-js";
@@ -121,7 +131,11 @@ const PhoneInput = ({
     const result = validatePhone(formatted, regionCode);
     const e164 = result.ok ? result.e164 || "" : "";
     lastEmitted.current = e164;
-    if (onChange) onChange(e164, regionCode, result);
+    // `digits` is what the user actually typed. Without it the parent cannot
+    // tell an empty field from a field holding a number that is not valid yet:
+    // both give it an empty e164, so "mobile number required" is the only
+    // message it can produce, and it is wrong for the second case.
+    if (onChange) onChange(e164, regionCode, { ...result, digits: formatted });
   };
 
   const emit = (typed) => {

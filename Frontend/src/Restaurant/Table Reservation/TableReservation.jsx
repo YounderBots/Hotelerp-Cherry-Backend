@@ -8,6 +8,7 @@ import DetailList, { DetailItem } from "../../stories/DetailList";
 import ViewSection from "../../stories/ViewSection";
 import Input from "../../stories/Form/Input";
 import PhoneInput from "../../stories/Form/PhoneInput";
+import { validatePhone } from "../../stories/Form/phone";
 import Select from "../../stories/Form/Select";
 import Textarea from "../../stories/Form/Textarea";
 import ErrorAlert from "../../stories/ErrorAlert";
@@ -98,6 +99,8 @@ const TableReservation = () => {
   // The phone field's own message, kept next to the field rather than
   // only in the form-level banner.
   const [phoneError, setPhoneError] = useState(null);
+  // What the user typed; the e164 stays empty until the number validates.
+  const [phoneDigits, setPhoneDigits] = useState("");
   const [formData, setFormData] = useState(initialForm);
 
   /* ================= HANDLERS ================= */
@@ -130,6 +133,17 @@ const TableReservation = () => {
       !formData.start_time ||
       !formData.no_of_guests
     ) {
+      // An incomplete or invalid mobile publishes as an empty e164, so the
+      // combined "required" message reported a number the user can see in the
+      // box as missing. Name the phone problem when there is one.
+      const typed = String(phoneDigits || "").trim();
+      if (typed) {
+        const phone = validatePhone(typed, formData.phone_region);
+        setFormError(phone.ok
+          ? "Enter a complete mobile number."
+          : phone.message || "Enter a complete mobile number.");
+        return;
+      }
       setFormError("Table, guest name, mobile, date, start time and guest count are required.");
       return;
     }
@@ -440,6 +454,10 @@ const TableReservation = () => {
           helperText={phoneError}
           onChange={(e164, region, result) => {
             setFormData((p) => ({ ...p, guest_mobile: e164, phone_region: region }));
+            // What was typed. The e164 is empty until the number validates, so
+            // without this the form cannot tell an empty field from a
+            // half-typed one when the user presses Save.
+            setPhoneDigits(result?.digits ?? "");
             setPhoneError(
               result && result.ok === false && !result.incomplete ? result.message : null,
             );

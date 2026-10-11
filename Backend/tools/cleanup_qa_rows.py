@@ -27,6 +27,24 @@ CHILD_OF = {
         "bar_inventory_stock_transaction", "bar_inventory_purchase", "bar_inventory_stock",
     ],
     "users.users": ["role_permissions"],
+    # A floor and a table are referenced by the orders placed against them, and
+    # a table by its reservations and merges. Deleting the parent first raises
+    # 1451 and leaves everything behind.
+    "restaurant.restaurant_table": [
+        "restaurant_order_item", "restaurant_order", "restaurant_table_reservation",
+        "restaurant_table_merge_detail", "restaurant_table_merge",
+    ],
+    "restaurant.restaurant_floor": ["restaurant_table"],
+    "bar.bar_table": ["bar_order_item", "bar_order", "bar_table_reservation"],
+    "bar.bar_floor": ["bar_table"],
+}
+
+# Rows with no textual marker to match. The round-trip generates a mobile from
+# the run token, so every QA guest sits in the same numeric block; seeded
+# mobiles do not.
+BY_VALUE = {
+    "restaurant.guest": ("mobile", ("+9196543", "+9198186", "+9190000")),
+    "bar.bar_guest": ("mobile", ("+9196543", "+9198186", "+9190000")),
 }
 
 # table -> the text columns worth searching
@@ -59,13 +77,12 @@ TARGETS = {
     "hotel": [
         ("room_booking", ["first_name", "last_name", "guest_name", "Guest_Name"]),
         ("room_reservation", ["first_name", "last_name", "guest_name", "Guest_Name"]),
-        ("guest_enquiry", ["first_name", "last_name", "guest_name", "Guest_Name"]),
-        ("room_incident_log", ["incident_details", "title", "Involved_Staff"]),
-        ("housekeeper_tasks", ["special_instructions", "lost_and_found"]),
-        ("employee", ["First_Name", "Last_Name", "username"]),
-        ("department", ["Department_Name", "department_name"]),
-        ("designation", ["Designation_Name", "designation_name"]),
-        ("shift", ["Shift_Name", "shift_name"]),
+        ("inquiry", ["guest_name", "Guest_Name"]),
+        ("hsk_room_incident", ["incident_description", "involved_staff", "witnesses"]),
+        # housekeeper_task keeps the assigned staff's name, so a QA run that
+        # created a throwaway employee leaves tasks behind that name - and they
+        # then show up in Task Assign's list as real rows.
+        ("housekeeper_task", ["first_name", "last_name", "lost_found"]),
     ],
     "restaurant": [
         # The item tables are named inventory_item / bar_inventory_item, NOT
@@ -73,14 +90,20 @@ TARGETS = {
         # fifteen QA rows sit in the database.
         ("inventory_item", ["item_name"]),
         ("menu_item", ["Item_Name"]),
-        ("restaurant_guest", ["Guest_Name"]),
-        ("table_master", ["Table_Name"]),
+        # Guest rows carry a generated mobile, not a name marker, so they are
+        # found by the mobiles the round-trip used. Leaving them behind makes
+        # the NEXT run collide with 409 "a guest with this mobile already
+        # exists" and look like a product defect.
+        ("guest", ["guest_name", "first_name", "last_name"]),
+        ("restaurant_table", ["table_name", "Table_Name"]),
+        ("restaurant_floor", ["floor_name", "Floor_Name"]),
     ],
     "bar": [
         ("bar_inventory_item", ["item_name"]),
         ("menu_item", ["Item_Name"]),
-        ("bar_guest", ["Guest_Name"]),
-        ("table_master", ["Table_Name"]),
+        ("bar_guest", ["guest_name", "first_name", "last_name"]),
+        ("bar_table", ["table_name", "Table_Name"]),
+        ("bar_floor", ["floor_name", "Floor_Name"]),
     ],
 }
 
@@ -131,6 +154,17 @@ def main() -> int:
                 args = [f"%{m}%" for _ in usable for m in MARKERS]
                 cur.execute(f"SELECT `{pk}` FROM `{table}` WHERE {where}", args)
                 ids = [first_value(r) for r in cur.fetchall()]
+
+                key = f"{which}.{table}"
+                if key in BY_VALUE:
+                    col, values = BY_VALUE[key]
+                    if col in have:
+                        marks = ",".join(["%s"] * len(values))
+                        cur.execute(
+                            f"SELECT `{pk}` FROM `{table}` WHERE `{col}` IN ({marks})", values)
+                        extra = [first_value(r) for r in cur.fetchall()]
+                        if extra:
+                            ids = sorted(set(ids) | set(extra))
                 if ids:
                     found[(which, table)] = ids
         try:
@@ -165,7 +199,9 @@ def main() -> int:
                         child_cols = columns(c, child)
                     except Exception:
                         continue
-                    fk = next((x for x in ("inventory_item_id", "bar_inventory_item_id")
+                    fk = next((x for x in ("inventory_item_id", "bar_inventory_item_id",
+                                           "table_id", "bar_table_id", "floor_id",
+                                           "bar_floor_id")
                                if x in child_cols), None)
                     pk = "id" if "id" in child_cols else None
                     if not fk or not pk:
