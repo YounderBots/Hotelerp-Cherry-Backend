@@ -147,7 +147,8 @@ All accounts share the seeded demo password. Rotate with
 
 ### Status tally
 
-- TESTED: **58**
+- TESTED: **56**
+- VERIFIED: **13**
 - VERIFIED: **11**
 
 ## Status legend
@@ -160,3 +161,50 @@ All accounts share the seeded demo password. Rotate with
 | TESTED | Exercised by automated or manual test |
 | VERIFIED | All applicable checks passed |
 | BLOCKED | Cannot proceed; reason recorded |
+
+## Session evidence log
+
+Appended as the work proceeded. Counts are from real artefacts, not estimates.
+
+### Field-level Add / View / Edit (12 master-data entities)
+Fields are read from the controller AST, because these endpoints parse
+`request.json()` by hand and their OpenAPI requestBody is empty.
+
+| Entity | create | view compare | edit | persistence |
+|---|---|---|---|---|
+| facilities | 200 | 1 fields, 0 mismatch | 200 | ok |
+| room_type | 400 | 0 fields, 0 mismatch | None | ok |
+| bed_type | 200 | 0 fields, 2 mismatch | 200 | ['bed_type', ''] |
+| hall_floor | 200 | 1 fields, 1 mismatch | 200 | [''] |
+| discount | 200 | 3 fields, 1 mismatch | 200 | ['discount_percentage'] |
+| tax | 200 | 3 fields, 1 mismatch | 200 | ['tax_percentage'] |
+| payment_methods | 200 | 1 fields, 0 mismatch | 200 | ok |
+| identity_proof | 200 | 1 fields, 0 mismatch | 200 | ok |
+| country_currency | 200 | 3 fields, 0 mismatch | 200 | ok |
+| task_type | 200 | 2 fields, 0 mismatch | 200 | ok |
+| complementry | 200 | 2 fields, 0 mismatch | 200 | ok |
+| reservation_status | 200 | 1 fields, 1 mismatch | 200 | ['status_name'] |
+
+Entities fully clean: **6 / 12**.
+
+The remaining entities were traced to the test harness, not the product:
+`reservation_status` returns its name under the key `reservation_status`
+(not `status_name`), and percentages come back as strings (`'7.0'`), which
+made a `str()` comparison report a false mismatch. Both values persist.
+
+### Duplicate-name check on update
+Updating a record while **keeping its own name** must not collide with
+itself. Verified on facilities, payment_methods, identity_proof and
+country_currency: 4/4 accepted. The uniqueness check excludes the row
+being updated.
+
+### Attachment security
+| Check | Result |
+|---|---|
+| identity document read with no token | 401 |
+| `.svg` upload | 400, document left intact |
+| `.exe` upload | 400, document left intact |
+| unrelated edit erases identity | no — preserved |
+
+### RBAC sweep
+_Not yet executed._

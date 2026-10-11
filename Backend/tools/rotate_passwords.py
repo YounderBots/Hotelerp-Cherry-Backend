@@ -32,6 +32,7 @@ PRINTED ONCE
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import os
 import secrets
 import string
@@ -83,6 +84,13 @@ def main() -> int:
                     help="set this password on every selected account instead of "
                          "generating one each. A shared password is weaker; the "
                          "default exists because it is the better option.")
+    ap.add_argument("--out",
+                    help="write the new credentials to this file instead of stdout, "
+                         "so they do not land in a terminal scrollback or a CI log. "
+                         "The path must be OUTSIDE the repository unless --force.")
+    ap.add_argument("--force", action="store_true",
+                    help="allow --out to point inside the repository (only if the "
+                         "path is git-ignored).")
     args = ap.parse_args()
 
     engine = sa.create_engine(db_url(), pool_pre_ping=True)
@@ -115,9 +123,34 @@ def main() -> int:
             sys.exit("ERROR: a password shorter than 8 characters is refused "
                      "(UserServices enforces the same minimum).")
 
+        target = None
+        if args.out:
+            # The guard runs BEFORE anything is written. Rotating first and
+            # then refusing to save the output would change every password and
+            # discard the only copy of them.
+            target = os.path.abspath(args.out)
+            try:
+                inside_repo = os.path.commonpath([target, ROOT]) == ROOT
+            except ValueError:
+                inside_repo = False
+            if inside_repo and not args.force:
+                sys.exit(
+                    f"REFUSED: {target} is inside the repository.\n"
+                    "A plaintext credential file must live outside the working "
+                    "tree, or be git-ignored. Choose a path elsewhere, or pass "
+                    "--force if you have added it to .gitignore."
+                )
+
         print("=" * 72)
-        print("NEW CREDENTIALS -- shown once, stored nowhere. File them now.")
+        if target:
+            print(f"NEW CREDENTIALS -> {target}")
+        else:
+            print("NEW CREDENTIALS -- shown once, stored nowhere. File them now.")
         print("=" * 72)
+
+        # Collected first so the file is written even if a hash fails, and so
+        # nothing reaches a log unless the caller asked for a file.
+        issued = []
         for r in rows:
             password = args.password or generate()
             hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
@@ -125,7 +158,24 @@ def main() -> int:
                 sa.text("UPDATE users SET Password = :p WHERE id = :i"),
                 {"p": hashed, "i": r["id"]},
             )
-            print(f"  {r['Company_Email']:<36} {password}")
+            issued.append((r["Company_Email"], password))
+            if not target:
+                print(f"  {r['Company_Email']:<36} {password}")
+
+        if target:
+            with open(target, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write("# Cherry Hotel ERP - development credentials\n")
+                fh.write(f"# generated {dt.datetime.now().isoformat(timespec='seconds')}\n")
+                fh.write("# Local use only. Never commit, never paste into a ticket.\n")
+                fh.write("# Rotate again with rotate_passwords.py if this is lost.\n")
+                for email, pw in issued:
+                    fh.write(f"{email}\t{pw}\n")
+            try:
+                os.chmod(target, 0o600)
+            except OSError:
+                pass  # best effort; Windows ACLs are not POSIX
+            print(f"  wrote {len(issued)} credential(s) to {target}")
+
         print("=" * 72)
         print(f"{len(rows)} password(s) changed.")
         print("Verify with:  python Backend/tools/preflight.py")
