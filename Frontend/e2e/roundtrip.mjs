@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Per-page round trip: ADD -> SAVE -> EDIT -> SAVE -> VIEW -> REFRESH.
  *
  *   node roundtrip.mjs <email> <label> [--routes=/a,/b] [--keep]
@@ -21,7 +21,7 @@
 import { mkdirSync, writeFileSync } from "fs";
 import {
   launch, login, open, settle, probe, addButton, tableRows, rowAction, findRow,
-  readModal, modalOpen, closeModal, loadCredentials,
+  readModal, modalOpen, closeModal, loadCredentials, BASE,
 } from "./lib.mjs";
 
 const arg = (n, d) => {
@@ -48,44 +48,99 @@ const A = `${RUN}A`;
 const B = `${RUN}B`;
 
 /** Everything the in-page filler needs, decided in Node. */
-const planFor = (fields) => fields.filter((f) => !f.isFile && !f.disabled).map((f, i) => {
+const planFor = (fields) => {
+  const fillable = fields.filter((f) => !f.isFile && !f.disabled);
+  // Choose the country FIRST, then give every phone field a number valid in
+  // that country. Deciding per field inside one map() cannot see the array
+  // being built, and a form told "Singapore" that receives an Indian number
+  // refuses to save - correctly.
+  const countryPick = (() => {
+    for (const f of fillable) {
+      if (f.type !== "select") continue;
+      const opts = (f.options || []).filter((o) => o.value !== "" && !o.disabled);
+      const match = opts.find((o) => /india/i.test(String(o.label || o.value)));
+      if (match) return match.value;
+    }
+    return null;
+  })();
+  const DIAL = /united kingdom/i.test(String(countryPick)) ? "+447700900123"
+    : /united states/i.test(String(countryPick)) ? "+12025550123"
+    : /united arab/i.test(String(countryPick)) ? "+971501234567"
+    : /singapore/i.test(String(countryPick)) ? "+6581234567"
+    : "+919876543210";
+
+  return fillable.map((f, i) => {
   const key = (f.label || f.name || `f${i}`).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const suffix = i % 2 === 0 ? A : B;
-  const base = { ...f, suffix, runSeed: RUN.toLowerCase(), index: i };
+  const base = { ...f, suffix, runSeed: RUN.toLowerCase(), index: i, country: countryPick, dial: DIAL };
+  // Booking's room count is pinned to one because its helper text says
+  // "Select one room type for each room" and the multi-select holds a single
+  // chip. That rule lives in the number branch below, where the `tiedToSelects`
+  // flag is also set - an earlier copy of it here returned without the flag,
+  // so the second pass moved the count anyway and the form refused the save.
   if (f.type === "select") {
-    const opt = (f.options || []).find((o) => o.value !== "" && !o.disabled);
-    return { ...base, plan: opt ? opt.value : null, kind: "select" };
+    // A unit field is not a country: prefer the one the seeded data uses so
+    // the value stays meaningful, and fall back to the first real option.
+    const opts = (f.options || []).filter((o) => o.value !== "" && !o.disabled);
+    const unit = opts.find((o) => /^(kg|nos|gram|ml|litre|bottle)$/i.test(String(o.value)));
+    return { ...base, plan: (unit || opts[0])?.value ?? null, kind: "select" };
   }
   if (f.type === "number") {
-    // Respect the field's own bounds. A percentage capped at 100 was filled
-    // with 102 and the client-side guard correctly refused it -- a harness
-    // failure dressed as a product defect, which is worse than no finding.
+    // Respect the field's own bounds, AND the cross-field rules the forms
+    // enforce. Booking requires "Select exactly one room type for each room"
+    // and says so in its own helper text, so its room count is pinned to 1
+    // beside a multi-select that holds one chip. Every other number may move.
     const lo = Number.isFinite(f.min) ? f.min : 1;
     const hi = Number.isFinite(f.max) ? f.max : 999;
-    const value = Math.min(Math.max(lo + i, lo), hi);
-    return { ...base, plan: String(value), kind: "number" };
+    const label = (f.label || "").toLowerCase();
+    const tiedToSelects = /\bno\.? ?of\.? ?rooms\b|^rooms?$/.test(label)
+      && !/adult|child/.test(label);
+    const value = tiedToSelects ? lo : Math.min(Math.max(lo + i, lo), hi);
+    return { ...base, plan: String(value), kind: "number", numericIndex: i, tiedToSelects };
   }
-  if (f.type === "date") return { ...base, plan: new Date().toISOString().slice(0, 10), kind: "date" };
+  if (f.type === "date") {
+    // Dates on one form are ORDERED (a birth date precedes a joining date) and
+    // both must be in the past. Two independent "today minus N" values satisfy
+    // neither, and the app refuses the pair with a message that names the rule
+    // - correctly.
+    //
+    // Space them a WEEK apart rather than a year: booking arrival and departure
+    // are consecutive fields, and a year between them produces a 365-night
+    // stay that is legal but absurd - and the nights field then becomes a
+    // nonsense number to compare against.
+    const d = new Date(Date.UTC(2026, 0, 5) + i * 7 * 86400000);
+    return { ...base, plan: d.toISOString().slice(0, 10), kind: "date" };
+  }
   if (f.type === "datetime-local") {
     const d = new Date(Date.now() + 86400000);
     return { ...base, plan: new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16), kind: "date" };
   }
-  if (f.type === "time") return { ...base, plan: "14:30", kind: "text" };
-  if (f.type === "tel") return { ...base, plan: "+919876543210", kind: "tel" };
+  // Keep the KIND, not just a plan value: `kind` decides what `flip` produces on
+  // the second pass, and a time field typed as "text" gets "QB ... changed" fed
+  // into <input type="time">, which rejects it and leaves the box EMPTY. The
+  // form then correctly refuses to save and the page is reported as broken when
+  // the harness was at fault.
+  if (f.type === "time") return { ...base, plan: "14:30", kind: "time" };
+  if (f.type === "tel") return { ...base, plan: DIAL, kind: "tel" };
   if (f.type === "checkbox") return { ...base, plan: true, kind: "checkbox" };
   if (f.type === "email") return { ...base, plan: `qa${RUN.toLowerCase()}@cherryhotel.com`, kind: "email" };
   if (f.type === "password") return { ...base, plan: `Qa!${RUN}9x`, kind: "password" };
   if (f.type === "color") return { ...base, plan: "#1a2b3c", kind: "text" };
   if (f.type === "textarea") return { ...base, plan: `QA ${suffix} note`, kind: "text" };
-  if (key.includes("name")) return { ...base, plan: `QA${suffix}`, kind: "name" };
+  const capOf = (f) => (f.maxLength > 0 ? f.maxLength : 0);
+  const fit = (f, v) => { const c = capOf(f); return c ? v.slice(0, c) : v; };
+  if (key.includes("name")) return { ...base, plan: fit(f, `QA${suffix}`), kind: "name" };
   if (key.includes("description") || key.includes("address") || key.includes("note")) {
-    return { ...base, plan: `QA ${suffix} detail`, kind: "text" };
+    return { ...base, plan: fit(f, `QA ${suffix} detail`), kind: "text" };
   }
   if (key.includes("code") || key.includes("no") || key.includes("number")) {
-    return { ...base, plan: `QA${suffix}`, kind: "text" };
+    return { ...base, plan: fit(f, `QA${suffix}`), kind: "text" };
   }
-  return { ...base, plan: `QA ${suffix} ${key}`.slice(0, 60), kind: "text" };
-});
+  // The same cap applies to the FIRST pass: a 60-character plan can also
+  // overflow a short column.
+  return { ...base, plan: fit(f, `QA ${suffix} ${key}`), kind: "text" };
+  });
+};
 
 /**
  * Type the planned values into the live controls.
@@ -96,10 +151,14 @@ const planFor = (fields) => fields.filter((f) => !f.isFile && !f.disabled).map((
  * this function for the same reason: it runs in the browser, where a
  * module-scope helper does not exist.
  */
-const FILL = ({ plan, which }) => {
+const FILL = async ({ plan, which }) => {
   /** A different value for the same field, so a stale prefill is visible. */
   const flip = (f) => {
     if (f.kind === "number") {
+      // A count tied to a multi-select (booking's rooms, against one chosen
+      // room type) must NOT move: +7 makes 8 rooms against one type and the
+      // form refuses the pair by a rule it prints in its own helper text.
+      if (f.tiedToSelects) return f.plan;
       const lo = Number.isFinite(f.min) ? f.min : 1;
       const hi = Number.isFinite(f.max) ? f.max : 999;
       return String(Math.min(Math.max(Number(f.plan) + 7, lo), hi));
@@ -110,18 +169,35 @@ const FILL = ({ plan, which }) => {
       const i = opts.findIndex((o) => o.value === f.plan);
       return opts[(i + 1) % opts.length]?.value ?? null;
     }
+    if (f.type === "time" || f.kind === "time") return "16:45";
     if (f.type === "date" || f.type === "datetime-local") {
-      const d = new Date(Date.now() + 3 * 86400000);
+      // Later, still in the past where the rule requires it. A future date of
+      // birth is refused by the app, correctly.
+      // A week later, keeping the fields' relative order, so a birth date
+      // stays before a joining date and a stay is a week rather than a year.
+      // `index` travels with the plan because this runs in the browser, where
+      // the Node-side loop counter is not in scope.
+      const d = new Date(Date.UTC(2026, 1, 5) + ((f.index || 0) * 7) * 86400000);
       return f.type === "date" ? d.toISOString().slice(0, 10)
         : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     }
-    if (f.type === "tel") return "+919812345678";
+    if (f.type === "tel") {
+      // A different number in the SAME country, so the country-aware phone
+      // validator still accepts it on the second pass.
+      const d = f.dial || "+919876543210";
+      return d.startsWith("+91") ? "+919812345678" : d.replace(/\d(?=\d{2}$)/, "8");
+    }
     if (f.type === "email") return `qb${f.runSeed}@cherryhotel.com`;
     // A colour must stay a colour: feeding "QB ... changed" to <input
     // type="color"> makes the browser coerce it to #000000, which then looks
     // like the product threw the value away.
     if (f.type === "color") return "#2d6cdf";
-    return `QB ${f.suffix} changed`;
+    // Respect the field's own maxLength. A postal-code column capped at 20
+    // rejects the 20-character generic sentence, and the page is then reported
+    // as broken when the harness was the thing that was too long.
+    const cap = f.maxLength > 0 ? f.maxLength : 0;
+    const out = `QB ${f.suffix} changed`;
+    return cap ? out.slice(0, cap) : out;
   };
   const sel = '[data-testid="modal"].modal--active';
   let filled = 0, skipped = [];
@@ -152,8 +228,48 @@ const FILL = ({ plan, which }) => {
       if (opt) { el.value = opt.value; el.dispatchEvent(new Event("change", { bubbles: true })); filled += 1; }
       else skipped.push(label);
     } else {
-      // react-select has no <select>; its proxy input filters a menu.
-      if (el.closest(".react-select")) { skipped.push(`${label} (react-select)`); continue; }
+      // react-select renders no <select>: a text input filters a popup menu and
+    // the chosen values live in sibling chips. Setting input.value therefore
+    // selects nothing, and the form refuses to save for a reason that has
+    // nothing to do with the page under test. Drive the control the way a user
+    // does - click it, then click the first option.
+    // The proxy input is a DESCENDANT of `.react-select`, not inside it:
+    // control > value-container > input-container > input. So
+    // `el.closest('.react-select')` finds the wrapper, and the clickable
+    // control is the element whose class carries `react-select__control`.
+    // Getting this wrong reads as "no react-select on this page".
+    if (el.classList.contains("react-select__input")) {
+      const control = el.closest(".react-select__control")
+        || el.parentElement?.parentElement?.parentElement;
+      if (!control) { skipped.push(`${label} (no react-select control)`); continue; }
+      // Booking validates "Select exactly one room type for each room", so the
+      // multi-select must hold exactly as many chips as the rooms count.
+      // Adding a second chip beside rooms=1 is refused by a rule the page
+      // states plainly. Swap the chip: remove the existing one, then pick
+      // another, so the count stays right and the VALUE still changes.
+      if (which === "B") {
+        const remove = control.querySelector(".react-select__multi-value__remove");
+        if (remove) { remove.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); remove.click(); }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 350));
+      // Pick an option the control does NOT already hold. On the second pass
+      // the first option is the one already selected, and react-select treats
+      // re-picking it as a deselect - which empties the field and makes the
+      // form refuse to save for a reason that has nothing to do with the page.
+      const opts = [...document.querySelectorAll(".react-select__option")];
+      const picked = which === "B" ? (opts[1] || opts[0]) : opts[0];
+      if (picked) {
+        picked.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        picked.click();
+        await new Promise((r) => setTimeout(r, 300));
+        filled += 1;
+      } else {
+        skipped.push(`${label} (no react-select option)`);
+      }
+      continue;
+    }
       // React installs a value tracker on every input and ignores an event whose
       // value it believes it already has. Writing `el.value = x` updates the DOM
       // but not that tracker, so onChange never fires and the component keeps
@@ -185,8 +301,12 @@ const DUMP = (sel) => {
     if (el.tagName.toLowerCase() === "select") value = el.options[el.selectedIndex]?.text?.trim() || "";
     else if (el.type === "checkbox" || el.type === "radio") value = el.checked ? "yes" : "no";
     else value = el.value;
-    if (el.closest(".react-select")) {
-      value = [...el.closest(".react-select").parentElement.querySelectorAll(".react-select__single-value, .react-select__multi-value")]
+    // Read chips from the CONTROL ancestor, not from `closest('.react-select')`:
+    // react-select's root div carries only hashed css classes, so the stable
+    // hook is `.react-select__control`.
+    if (el.classList.contains("react-select__input")) {
+      const control = el.closest(".react-select__control");
+      value = [...(control?.querySelectorAll(".react-select__single-value, .react-select__multi-value") || [])]
         .map((s) => s.textContent.trim()).join(", ");
     }
     out.push({ label, type: el.type || el.tagName.toLowerCase(), value, required: !!wrap?.querySelector(".form-label--required") });
@@ -201,14 +321,23 @@ const DUMP = (sel) => {
  */
 const flipValue = (f) => {
   if (f.kind === "number") {
+    if (f.tiedToSelects) return f.plan;
     const lo = Number.isFinite(f.min) ? f.min : 1;
     const hi = Number.isFinite(f.max) ? f.max : 999;
     const next = Number(f.plan) + 7;
     return String(Math.min(Math.max(next, lo), hi));
   }
   if (f.kind === "select") return null;
-  if (f.kind === "date") return new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
-  if (f.type === "tel") return "+919812345678";
+  if (f.kind === "date") {
+    const d = new Date(Date.UTC(2026, 1, 5) + ((f.index || 0) * 7) * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
+  if (f.kind === "time" || f.type === "time") return "16:45";
+    if (f.type === "time" || f.kind === "time") return "16:45";
+  if (f.type === "tel") {
+    const d = f.dial || "+919876543210";
+    return d.startsWith("+91") ? "+919812345678" : d.replace(/\d(?=\d{2}$)/, "8");
+  }
   if (f.type === "email") return `qb${f.runSeed}@cherryhotel.com`;
   if (f.type === "color") return "#2d6cdf";
   return `QB ${f.suffix} changed`;
@@ -247,6 +376,25 @@ async function clearSearch(page) {
   }
 }
 
+/**
+ * Read whatever the form is complaining about.
+ *
+ * Not every screen reports a refusal the same way: Employee raises a toast,
+ * Task Assign and Room Incident Log put the message under the field, and
+ * Booking renders it in an inline alert. Asking only for a toast finds the
+ * first and reports the other two as a silent failure.
+ */
+const READ_ERRORS = () => {
+  const modal = document.querySelector('[data-testid="modal"].modal--active');
+  const root = modal || document.querySelector("main") || document.body;
+  const toast = [...document.querySelectorAll(".toast, [role='status']")]
+    .map((t) => t.textContent.trim()).filter(Boolean).join(" | ");
+  const fields = [...root.querySelectorAll(
+    ".form-helper--error, .field-error, [class*='-error'], .error-alert, .alert--error, .form-error")]
+    .map((e) => e.textContent.trim()).filter(Boolean);
+  return { toast: toast || null, fields: [...new Set(fields)].slice(0, 8) };
+};
+
 const { browser, page, bucket, fresh } = await launch({ width: 1440, height: 900 });
 mkdirSync("e2e-reports", { recursive: true });
 await login(page, EMAIL, PASSWORD);
@@ -260,6 +408,30 @@ for (const route of ROUTES) {
   const rec = { id, route, run: RUN, phases: {}, findings: [] };
   const add = (sev, kind, msg, detail) => rec.findings.push({ sev, kind, msg, ...(detail ? { detail } : {}) });
 
+  // One page must never stop the sweep. A missing button, a dialog that never
+  // opened or a locator that timed out used to throw out of the loop and lose
+  // every page after it, which is how a run reports three results for
+  // fifty-seven pages and still looks like it finished.
+  try {
+    await runPage(page, route, id, rec, add, fresh, { probe, open, settle, tableRows, rowAction,
+      addButton, readModal, modalOpen, closeModal, locate, clearSearch });
+  } catch (err) {
+    add("P2", "harness", `run aborted on this page: ${String(err).slice(0, 200)}`);
+    rec.status = "error";
+    report.push(rec);
+    console.log(`!!  ${id} ${route.padEnd(32)} error: ${String(err).slice(0, 90)}`);
+    // Recover: dismiss whatever is open so the next page starts clean.
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.goto(BASE + "/dashboard", { waitUntil: "domcontentloaded" }).catch(() => {});
+    await page.waitForTimeout(800);
+  }
+}
+
+/** Everything done to one page, isolated from the rest of the sweep. */
+async function runPage(page, route, id, rec, add, fresh, deps) {
+  const { probe, open, settle, tableRows, rowAction, addButton, readModal, modalOpen,
+    closeModal, locate, clearSearch } = deps;
+
   fresh();
   await open(page, route);
   const p0 = await probe(page);
@@ -267,7 +439,7 @@ for (const route of ROUTES) {
     rec.skipped = p0.hasTable ? "table has no rows" : "page has no table";
     report.push(rec);
     console.log(`--  ${id} ${route.padEnd(32)} skipped: ${rec.skipped}`);
-    continue;
+    return;
   }
 
   const before = p0.rowCount;
@@ -278,16 +450,16 @@ for (const route of ROUTES) {
     rec.skipped = "no Add button";
     report.push(rec);
     console.log(`--  ${id} ${route.padEnd(32)} skipped: no Add button`);
-    continue;
+    return;
   }
-  await btn.click();
+  await btn.click({ timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(800);
   const addModal = await readModal(page);
   if (!addModal) {
     add("P1", "affordance", "Add button did not open a dialog");
     report.push(rec);
     console.log(`!!  ${id} ${route.padEnd(32)} P1:affordance`);
-    continue;
+    return;
   }
   rec.phases.addFields = addModal.fields.map((f) => `${f.label}[${f.type}${f.required ? "*" : ""}]`);
   const plan = planFor(addModal.fields);
@@ -296,33 +468,48 @@ for (const route of ROUTES) {
     report.push(rec);
     console.log(`--  ${id} ${route.padEnd(32)} skipped: no fillable fields`);
     await closeModal(page);
-    continue;
+    return;
   }
 
   // ---- 2. fill with sentinel A and save -----------------------------------
   const fa = await page.evaluate(FILL, { plan, which: "A" });
   await page.waitForTimeout(500);
-  const dumpA = await page.evaluate(DUMP, '[data-testid="modal"].modal--active .modal__body');
   rec.phases.fillA = fa;
-  const anchor = plan.find((f) => f.kind === "name" || f.kind === "text")?.plan;
 
   fresh();
   const saveBtn = page.locator('[data-testid="modal"].modal--active .modal-actions button')
     .filter({ hasText: /submit|save|create|add/i }).last();
+  // A bounded click: a form whose Save is disabled, or a dialog that renders no
+  // footer at all, would otherwise stall the sweep for 30 seconds a page and
+  // then throw.
+  if (!(await saveBtn.count())) {
+    add("P1", "create", "the Add dialog offers no Submit/Save button");
+    return;
+  }
   const postA = page.waitForResponse((r) => r.request().method() === "POST", { timeout: 12000 }).catch(() => null);
-  await saveBtn.click();
+  // Watch for a toast from the moment Submit is pressed. Reading it afterwards
+  // loses it: the toast auto-dismisses, so by the time the harness asks, the
+  // only evidence that the save was refused is an empty string.
+  const toastSeen = page.locator(".toast, [role='status']").first();
+  const toastText = toastSeen.textContent({ timeout: 2500 }).catch(() => null);
+  await saveBtn.click({ timeout: 6000 }).catch((e) => {
+    add("P1", "create", `the Submit button could not be pressed: ${String(e).slice(0, 80)}`);
+  });
   const resA = await postA;
   await page.waitForTimeout(1200);
   rec.phases.createResponse = resA ? { status: resA.status(), url: resA.url().replace(/^https?:\/\/[^/]+/, "") } : null;
   rec.phases.createErrors = [...bucket.httpErrors];
 
   if (!resA || resA.status() >= 400) {
-    const toast = (await page.locator(".toast, [role='status']").allInnerTexts().catch(() => [])).join(" ").slice(0, 200);
-    add("P1", "create", `Add did not succeed (${resA ? resA.status() : "no request"})`, { toast, url: resA?.url() });
+    const errs = await page.evaluate(READ_ERRORS).catch(() => ({}));
+    const shown = errs.toast || errs.fields.join(" | ") || (await toastText) || "";
+    rec.phases.createRefusal = { ...errs, text: shown };
+    add("P1", "create", `Add did not succeed (${resA ? resA.status() : "no request"})`,
+      { refusal: shown, url: resA?.url() });
     await closeModal(page).catch(() => {});
     report.push(rec);
     console.log(`!!  ${id} ${route.padEnd(32)} P1:create ${resA?.status()}`);
-    continue;
+    return;
   }
   // The dialog must close on a successful save, or the user is left editing a
   // record that already exists.
@@ -333,10 +520,31 @@ for (const route of ROUTES) {
   const after = await probe(page);
   rec.phases.rowCount = { before, after: after.rowCount };
 
-  // ---- 3. find the new row ------------------------------------------------
-  // Search on a text sentinel, not the row index: the list re-sorts and
-  // re-pages after the save, and an index captured earlier points at whichever
-  // row now occupies that slot.
+  // ---- 3. choose an anchor the LIST can show, then find the row -----------
+  // Read the table only now that the row is on it. A table can show the
+  // Assigned To staff member (a select value) rather than the note (a
+  // textarea value); guessing from the form alone picked the note, the search
+  // found nothing, and the run then edited and deleted whichever row happened
+  // to be last - a seeded record.
+  const listText = (await page.locator("table:not(#export-table-full)").first().innerText().catch(() => "")) || "";
+  const usable = plan.filter((p) => p.plan);
+  // An anchor must identify ONE row. "Pest Control" appears on every task row,
+  // so searching for it lands on whichever came first - a seeded record. Only
+  // accept a value that the new row carries and no other row shares.
+  const rowTexts = await tableRows(page).evaluateAll(
+    (rows) => rows.map((r) => r.innerText));
+  const mine = rowTexts.findIndex((t) => usable.some((p) => t.includes(p.plan)));
+  const unique = usable.find((p) => {
+    const n = rowTexts.filter((t) => t.includes(p.plan)).length;
+    return n === 1 && rowTexts[mine]?.includes(p.plan);
+  });
+  const anchor = unique?.plan
+    || usable.find((p) => rowTexts.filter((t) => t.includes(p.plan)).length === 1)?.plan
+    || usable.find((p) => String(p.plan).length > 3)?.plan
+    || null;
+  rec.phases.anchor = anchor;
+  rec.phases.anchorFromList = !!unique;
+
   let rowIdx = await locate(page, anchor);
   if (rowIdx < 0) {
     const n = await tableRows(page).count();
@@ -351,7 +559,7 @@ for (const route of ROUTES) {
   fresh();
   const editBtn = rowAction(page, rowIdx, "Edit");
   if (await editBtn.count()) {
-    await editBtn.click();
+    await editBtn.click({ timeout: 6000 }).catch(() => {});
     await page.waitForTimeout(900);
     const editModal = await readModal(page);
     rec.phases.editFields = editModal?.fields.map((f) => `${f.label}[${f.type}]`);
@@ -376,6 +584,16 @@ for (const route of ROUTES) {
     const lost = [];
     for (const f of plan) {
       if (!f.plan || f.type === "select") continue;
+      // A react-select holds an OPTION's label, not the sentinel the plan
+      // carries for it - the plan's value is meaningless for that control.
+      // Comparing it reports "Edit did not load the saved value" on a field
+      // that loaded perfectly.
+      // A CALCULATED field shows the app's own arithmetic, not what was typed.
+      // Nights is derived from arrival and departure; typing 9 into a field the
+      // page recomputes is not a lost value, and reporting it as one hides the
+      // real failures behind a permanently-red line.
+      if (/\bnights?\b/i.test(f.label || "")) continue;
+      if (f.options && f.options.isMulti) continue;
       const got = (loaded || []).find((l) => norm(l.label) === norm(f.label));
       if (!got) continue;
       if (!sameValue(f.plan, got.value, f.type)) {
@@ -392,17 +610,27 @@ for (const route of ROUTES) {
     const fb = await page.evaluate(FILL, { plan, which: "B" });
     await page.waitForTimeout(500);
     rec.phases.fillB = fb;
+    rec.phases.afterB = await page.evaluate(DUMP, '[data-testid="modal"].modal--active .modal__body');
     fresh();
     const saveEdit = page.locator('[data-testid="modal"].modal--active .modal-actions button')
       .filter({ hasText: /submit|save|update/i }).last();
     const putB = page.waitForResponse((r) => ["PUT", "PATCH"].includes(r.request().method()), { timeout: 12000 }).catch(() => null);
-    await saveEdit.click();
+    const toastB = page.locator(".toast, [role='status']").first();
+    const toastTextB = toastB.textContent({ timeout: 2500 }).catch(() => null);
+    await saveEdit.click({ timeout: 6000 }).catch(() => {});
     const resB = await putB;
     await page.waitForTimeout(1200);
     rec.phases.updateResponse = resB ? { status: resB.status(), url: resB.url().replace(/^https?:\/\/[^/]+/, "") } : null;
     if (!resB || resB.status() >= 400) {
-      const toast = (await page.locator(".toast, [role='status']").allInnerTexts().catch(() => [])).join(" ").slice(0, 200);
-      add("P1", "update", `Edit save failed (${resB ? resB.status() : "no request"})`, { toast });
+      // Capture WHY. A silent "no request" is the most expensive kind of
+      // failure to diagnose: the difference between a client-side validation
+      // rule firing and a dead button is the whole diagnosis, and a report
+      // carrying only "no request" throws it away.
+      const errs = await page.evaluate(READ_ERRORS).catch(() => ({}));
+      const shown = errs.toast || errs.fields.join(" | ") || (await toastTextB) || "";
+      rec.phases.updateRefusal = { ...errs, text: shown };
+      add("P1", "update", `Edit save failed (${resB ? resB.status() : "no request"})`,
+        { refusal: shown });
     }
     if (await modalOpen(page)) await closeModal(page);
     await settle(page, 900);
@@ -417,7 +645,7 @@ for (const route of ROUTES) {
     if (rowIdx < 0) rowIdx = await locate(page, anchor);
     const viewBtn = rowIdx >= 0 ? rowAction(page, rowIdx, "View") : null;
     if (viewBtn && await viewBtn.count()) {
-      await viewBtn.click();
+      await viewBtn.click({ timeout: 6000 }).catch(() => {});
       await page.waitForTimeout(900);
       const vm = await readModal(page);
       const viewText = (vm?.detailItems || []).map((d) => `${d.label}: ${d.value}`).join(" || ");
@@ -461,13 +689,13 @@ for (const route of ROUTES) {
       fresh();
       const del = idx >= 0 ? rowAction(page, idx, "Delete") : null;
       if (del && await del.count()) {
-        await del.click();
+        await del.click({ timeout: 6000 }).catch(() => {});
         await page.waitForTimeout(800);
         const confirm = page.locator('[data-testid="modal"].modal--active .modal-actions button')
           .filter({ hasText: /delete|confirm|yes/i }).last();
         if (await confirm.count()) {
           const delRes = page.waitForResponse((r) => r.request().method() === "DELETE", { timeout: 12000 }).catch(() => null);
-          await confirm.click();
+          await confirm.click({ timeout: 6000 }).catch(() => {});
           const dres = await delRes;
           await page.waitForTimeout(1200);
           rec.phases.deleteResponse = dres ? { status: dres.status() } : null;
@@ -513,3 +741,4 @@ writeFileSync(`${OUT}.json`, JSON.stringify({ run: RUN, report }, null, 1));
 const done = report.filter((r) => !r.skipped);
 console.log(`\nwrote ${OUT}.json  (${done.length} round-tripped, ${done.filter((r) => r.status === "passed").length} passed, ${done.filter((r) => r.status === "defect").length} with defects)`);
 await browser.close();
+

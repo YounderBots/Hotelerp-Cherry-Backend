@@ -578,10 +578,18 @@ const Employee = () => {
         <div className="modal-section">
           <h4 className="modal-section__title">Address</h4>
           <div className="field-grid">
-            <Textarea label="Address" required name="address" rows={2} value={formData.address} onChange={handleChange} disabled={saving} />
-            <Input label="City" required name="city" value={formData.city} onChange={handleChange} disabled={saving} />
-            <Input label="State" required name="state" value={formData.state} onChange={handleChange} disabled={saving} />
-            <Input label="Postal Code" required name="postal_code" value={formData.postal_code} onChange={handleChange} disabled={saving} />
+            <Textarea label="Address" required name="address" rows={2} value={formData.address} onChange={handleChange} disabled={saving} maxLength={255} />
+            <Input label="City" required name="city" value={formData.city} onChange={handleChange} disabled={saving} maxLength={100} />
+            <Input label="State" required name="state" value={formData.state} onChange={handleChange} disabled={saving} maxLength={100} />
+            {/* The server caps these at their column width (_STAFF_FIELD_LIMITS
+                in UserServices/resources/userController.py) and answers a longer
+                value with a 400. Without the matching maxLength the user types
+                past the limit, presses Save, and is told nothing about which
+                field was wrong. Every limit below is the server's, not a guess:
+                username/first_name/last_name 100, address 255, city/state 100,
+                postal_code 20, experience 50, salary_details 100,
+                register_code 100, emergency_name 100, emergency_relationship 50. */}
+            <Input label="Postal Code" required name="postal_code" value={formData.postal_code} onChange={handleChange} disabled={saving} maxLength={20} />
             {/* Was a free-text input. /masterdata/country_currency is the
                 canonical country list — the same source Tax Types and Discount
                 Types read. A value already stored that is not in the list is
@@ -614,16 +622,16 @@ const Employee = () => {
             <Select label="Role" required name="role_id" value={formData.role_id} onChange={handleChange} placeholder="Select role" disabled={saving} options={roles.map((r) => ({ value: r.id, label: r.role_name }))} />
             <Select label="Shift" required name="shift_id" value={formData.shift_id} onChange={handleChange} placeholder="Select shift" disabled={saving} options={shifts.map((s) => ({ value: s.id, label: s.shift_name }))} />
             <Input label="Date of Joining" required type="date" name="date_of_joining" value={formData.date_of_joining} onChange={handleChange} disabled={saving} />
-            <Input label="Experience" required name="experience" placeholder="e.g. 3 years" value={formData.experience} onChange={handleChange} disabled={saving} />
-            <Input label="Salary Details" required name="salary_details" value={formData.salary_details} onChange={handleChange} disabled={saving} />
-            <Input label="Register Code" required name="register_code" value={formData.register_code} onChange={handleChange} disabled={saving} />
+            <Input label="Experience" required name="experience" placeholder="e.g. 3 years" value={formData.experience} onChange={handleChange} disabled={saving} maxLength={50} />
+            <Input label="Salary Details" required name="salary_details" value={formData.salary_details} onChange={handleChange} disabled={saving} maxLength={100} />
+            <Input label="Register Code" required name="register_code" value={formData.register_code} onChange={handleChange} disabled={saving} maxLength={100} />
           </div>
         </div>
 
         <div className="modal-section">
           <h4 className="modal-section__title">Emergency Contact</h4>
           <div className="field-grid">
-            <Input label="Name" required name="emergency_name" value={formData.emergency_name} onChange={handleChange} disabled={saving} />
+            <Input label="Name" required name="emergency_name" value={formData.emergency_name} onChange={handleChange} disabled={saving} maxLength={100} />
             <PhoneInput
               label="Contact Number"
               required
@@ -635,7 +643,7 @@ const Employee = () => {
               disabled={saving}
               onChange={handlePhoneChange("emergency_contact")}
             />
-            <Input label="Relationship" required name="emergency_relationship" placeholder="e.g. Spouse" value={formData.emergency_relationship} onChange={handleChange} disabled={saving} />
+            <Input label="Relationship" required name="emergency_relationship" placeholder="e.g. Spouse" value={formData.emergency_relationship} onChange={handleChange} disabled={saving} maxLength={50} />
           </div>
         </div>
 

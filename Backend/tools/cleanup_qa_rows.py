@@ -13,7 +13,8 @@ import sys
 sys.path.insert(0, r".run-logs")
 from dbq import conn  # noqa: E402
 
-MARKERS = ("ZZQA", "ZZCP-", "ZZCOLORPROBE", "zzprobe", "ZZVIS", "ZZEDT", "ZZDIRECT")
+MARKERS = ("ZZQA", "ZZCP-", "ZZCOLORPROBE", "zzprobe", "ZZVIS", "ZZEDT",
+           "ZZDIRECT", "QAZZQA", "QB ZZTEST", "ZZPG")
 
 # A QA item with a stock row is referenced by it, so the child goes first.
 # Order matters: deleting the parent first raises an FK error and the tool
@@ -25,10 +26,21 @@ CHILD_OF = {
     "bar.bar_inventory_item": [
         "bar_inventory_stock_transaction", "bar_inventory_purchase", "bar_inventory_stock",
     ],
+    "users.users": ["role_permissions"],
 }
 
 # table -> the text columns worth searching
 TARGETS = {
+    "users": [
+        # The Employee screen writes to the USERS database, not the hotel one.
+        # Missing it left sixteen QA accounts behind - and verify_seed.py then
+        # failed on "all 10 staff photos exist on disk", because it counts every
+        # ACTIVE user and the QA ones have no photo.
+        ("users", ["First_Name", "Last_Name", "username", "Company_Email"]),
+        ("department", ["department_name", "Department_Name"]),
+        ("designation", ["designation_name", "Designation_Name"]),
+        ("shift", ["shift_name", "Shift_Name"]),
+    ],
     "masterdata": [
         ("bed_type", ["Type_Name"]),
         ("facility", ["Facility_Name"]),
@@ -45,14 +57,15 @@ TARGETS = {
         ("countries_currency", ["country_name", "currency_name"]),
     ],
     "hotel": [
-        ("reservation", ["Guest_Name", "guest_name"]),
-        ("guest_enquiry", ["Guest_Name", "guest_name"]),
-        ("room_incident_log", ["incident_details", "title"]),
-        ("employee", ["First_Name"]),
-        ("department", ["Department_Name"]),
-        ("designation", ["Designation_Name"]),
-        ("shift", ["Shift_Name"]),
-        ("task_type", ["Task_Type"]),
+        ("room_booking", ["first_name", "last_name", "guest_name", "Guest_Name"]),
+        ("room_reservation", ["first_name", "last_name", "guest_name", "Guest_Name"]),
+        ("guest_enquiry", ["first_name", "last_name", "guest_name", "Guest_Name"]),
+        ("room_incident_log", ["incident_details", "title", "Involved_Staff"]),
+        ("housekeeper_tasks", ["special_instructions", "lost_and_found"]),
+        ("employee", ["First_Name", "Last_Name", "username"]),
+        ("department", ["Department_Name", "department_name"]),
+        ("designation", ["Designation_Name", "designation_name"]),
+        ("shift", ["Shift_Name", "shift_name"]),
     ],
     "restaurant": [
         # The item tables are named inventory_item / bar_inventory_item, NOT

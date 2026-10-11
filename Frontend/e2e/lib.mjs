@@ -129,7 +129,7 @@ export const READ_FIELDS = (scope = "modal") => {
   for (const el of body.querySelectorAll("input, select, textarea")) {
     if (el.type === "hidden") continue;
     // react-select renders a text input proxy; the control is the wrapper.
-    const inReactSelect = !!el.closest(".react-select");
+    const inReactSelect = el.classList.contains("react-select__input");
     const tag = el.tagName.toLowerCase();
     const type = tag === "select" ? "select" : tag === "textarea" ? "textarea" : (el.type || "text");
 
@@ -137,12 +137,18 @@ export const READ_FIELDS = (scope = "modal") => {
     if (tag === "select") {
       options = [...el.options].map((o) => ({ value: o.value, label: o.textContent.trim(), disabled: o.disabled }));
     } else if (inReactSelect) {
-      const wrap = el.closest(".react-select");
+      // The proxy input is a DESCENDANT of the control, not of `.react-select`
+      // itself - react-select's root div carries only hashed css classes, so
+      // `closest('.react-select')` returns null and every option reads as
+      // empty. `.react-select__control` is the stable hook.
+      const control = el.closest(".react-select__control");
+      const root = control?.parentElement;
       options = {
-        isMulti: !!document.querySelector(".react-select__control--is-multi"),
-        selected: [...wrap.parentElement.querySelectorAll(".react-select__single-value, .react-select__multi-value")]
+        isMulti: !!control?.querySelector(".react-select__value-container--is-multi"),
+        selected: [...(control?.querySelectorAll(".react-select__single-value, .react-select__multi-value") || [])]
           .map((s) => s.textContent.trim()),
-        placeholder: wrap.parentElement.querySelector(".react-select__placeholder")?.textContent?.trim() || null,
+        placeholder: control?.querySelector(".react-select__placeholder")?.textContent?.trim() || null,
+        available: root ? [...document.querySelectorAll(".react-select__option")].map((o) => o.textContent.trim()) : [],
       };
     }
 
