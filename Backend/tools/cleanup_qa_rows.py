@@ -46,6 +46,129 @@ BY_VALUE = {
     "restaurant.guest": ("mobile", ("+9196543", "+9198186", "+9190000")),
     "bar.bar_guest": ("mobile", ("+9196543", "+9198186", "+9190000")),
 }
+# A table shows as bookable only while its status is "Available". A QA run that
+# books a table and never completes or cancels the order leaves it "Occupied"
+# for good, and a later run finds "No tables are free right now" and reports a
+# defect the product does not have.
+#
+# The QA order itself has to go too, and it is found by its numbers rather than
+# by a name marker: an order row carries the guest's name, which the harness
+# does write, but a run that fails between the create and the cleanup leaves one
+# holding a table. Freeing the table while keeping the order orphans it - the
+# next booking of that table is then refused with "Table already has an active
+# order", which is a state this tool created.
+RELEASE_TABLES = [
+    ("bar", "bar_table", "bar_order"),
+    ("restaurant", "restaurant_table", "restaurant_order"),
+]
+
+# The order numbers the live seed creates - every one of them Completed, so an
+# order that is still open cannot be seeded data. Read from the running
+# database rather than a dump, because the two have drifted: the dump under
+# Backend/db says BO-2026..., the live seed says BO-2026... with different
+# dates, and hard-coding one of them deleted real orders once already.
+SEEDED_ORDER_STATUSES = ("Completed", "Cancelled")
+
+# What an order owns. Removed before the order itself, or the delete raises a
+# foreign-key error and the transaction rolls back.
+ORDER_CHILDREN = {
+    "bar": ["bar_order_ticket", "bar_order_item", "bar_order_item_modifier"],
+    "restaurant": ["restaurant_order_ticket", "restaurant_order_item",
+                   "restaurant_order_item_modifier"],
+}
+
+
+def release_tables(dry: bool) -> int:
+    released = 0
+    for db, table, orders in RELEASE_TABLES:
+        try:
+            c = conn(db)
+        except Exception:
+            continue
+        with c:
+            cur = c.cursor()
+            try:
+                cur.execute(f"SHOW COLUMNS FROM `{table}`")
+                cols = [next(iter(r.values())) if isinstance(r, dict) else r[0]
+                        for r in cur.fetchall()]
+                cur.execute(f"SHOW COLUMNS FROM `{orders}`")
+                ocols = [next(iter(r.values())) if isinstance(r, dict) else r[0]
+                         for r in cur.fetchall()]
+            except Exception:
+                continue
+            if "current_order_id" not in cols or "table_status" not in cols:
+                continue
+
+            # An order still open after the sweep. Every seeded order is
+            # Completed or Cancelled, so "New" cannot be seeded data - which is
+            # a safer test than a list of order numbers, because the dump and
+            # the live seed disagree about what those are.
+            if {"order_number", "order_status"} <= set(ocols):
+                marks = ",".join(["%s"] * len(SEEDED_ORDER_STATUSES))
+                cur.execute(
+                    f"SELECT id FROM `{orders}` WHERE order_status NOT IN ({marks}) "
+                    f"AND status = 'ACTIVE'", SEEDED_ORDER_STATUSES)
+                stale = [next(iter(r.values())) if isinstance(r, dict) else r[0]
+                         for r in cur.fetchall()]
+                if stale:
+                    print(f"  {db}.{orders}: removing {len(stale)} stale open order(s)")
+                    if not dry and "table_id" in ocols:
+                        m2 = ",".join(["%s"] * len(stale))
+                        cur.execute(
+                            f"UPDATE `{table}` SET table_status='Available', "
+                            f"current_order_id=NULL WHERE current_order_id IN ({m2})", stale)
+                        # An order carries tickets, items and modifiers. The
+                        # delete raises a foreign-key error without removing
+                        # them first, and the whole transaction rolls back -
+                        # so the tables stay stuck and the next run sees them
+                        # again.
+                        for child in ORDER_CHILDREN.get(db, []):
+                            try:
+                                ccols = columns(c, child)
+                            except Exception:
+                                continue
+                            if "order_id" not in ccols or "id" not in ccols:
+                                continue
+                            cm = ",".join(["%s"] * len(stale))
+                            cur.execute(
+                                f"DELETE FROM `{child}` WHERE order_id IN ({cm})", stale)
+                            if cur.rowcount:
+                                print(f"    {db}.{child}: removed {cur.rowcount} child row(s)")
+                    if not dry:
+                        m2 = ",".join(["%s"] * len(stale))
+                        try:
+                            cur.execute(f"DELETE FROM `{orders}` WHERE id IN ({m2})", stale)
+                        except Exception as e:
+                            print(f"    {db}.{orders}: delete refused ({e}); "
+                                  "leaving the order in place")
+                        else:
+                            c.commit()
+
+            cur.execute(
+                f"SELECT id FROM `{table}` "
+                f"WHERE current_order_id IS NOT NULL AND status = 'ACTIVE'")
+            stuck = [next(iter(r.values())) if isinstance(r, dict) else r[0]
+                     for r in cur.fetchall()]
+            if not stuck:
+                continue
+            released += len(stuck)
+            print(f"  {db}.{table}: releasing {len(stuck)} table(s) held by an order")
+            if not dry:
+                marks = ",".join(["%s"] * len(stuck))
+                cur.execute(
+                    f"UPDATE `{table}` SET table_status='Available', "
+                    f"current_order_id=NULL WHERE id IN ({marks})", stuck)
+            # `with c:` ROLLS BACK on a clean exit - it only commits on the way
+            # out of the block below. Every delete and release this function
+            # performs was therefore thrown away, and the tables stayed stuck
+            # for the next run to trip over again.
+            if not dry:
+                c.commit()
+        try:
+            c.close()
+        except Exception:
+            pass
+    return released
 
 # table -> the text columns worth searching
 TARGETS = {
@@ -173,6 +296,10 @@ def main() -> int:
             pass          # `with c` already closed it on the way out
 
     if not found:
+        # Even with no marked rows, a table a QA order is still sitting on has
+        # to be released - that is what makes the next run's "No tables are free
+        # right now" disappear.
+        release_tables(dry)
         print("no QA rows found")
         return 0
 
@@ -181,6 +308,7 @@ def main() -> int:
         print(f"  {which}.{table}: {len(ids)} QA row(s) -> {ids}")
 
     if dry:
+        release_tables(dry)
         print(f"DRY RUN - {total} QA row(s)")
         return 0
 
@@ -225,6 +353,7 @@ def main() -> int:
             pass
 
     print(f"DELETED {total} QA row(s)")
+    release_tables(dry)
     return 0
 
 
