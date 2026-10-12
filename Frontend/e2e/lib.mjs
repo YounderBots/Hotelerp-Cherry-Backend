@@ -114,6 +114,12 @@ export const READ_FIELDS = (scope = "modal") => {
       document.querySelector('[data-testid="modal"]')
     : document.querySelector("main") || document.body;
   if (!root) return null;
+  // Reading "main" on a table page returns the search box, the filter row and
+  // the KOT switches alongside whatever the page actually offers. They are page
+  // chrome, not the form under audit, so a whole-scope read skips them.
+  const CHROME = ".table-toolbar, .table-filters, .kds-controls, .report-controls,"
+    + " .perm-panel, .toolbar-filters, .pagination, .table-actions-row";
+  const isChrome = scope === "modal" ? () => false : (el) => !!el.closest(CHROME);
   const body = root.querySelector(".modal__body") || root;
   const head = root.querySelector(".modal__title");
 
@@ -128,12 +134,14 @@ export const READ_FIELDS = (scope = "modal") => {
   const fields = [];
   for (const el of body.querySelectorAll("input, select, textarea")) {
     if (el.type === "hidden") continue;
+    if (isChrome(el)) continue;
     // react-select renders a text input proxy; the control is the wrapper.
     const inReactSelect = el.classList.contains("react-select__input");
     const tag = el.tagName.toLowerCase();
     const type = tag === "select" ? "select" : tag === "textarea" ? "textarea" : (el.type || "text");
 
     let options = null;
+    let value = tag === "select" ? el.value : (el.type === "checkbox" ? el.checked : el.value);
     if (tag === "select") {
       options = [...el.options].map((o) => ({ value: o.value, label: o.textContent.trim(), disabled: o.disabled }));
     } else if (inReactSelect) {
@@ -143,13 +151,20 @@ export const READ_FIELDS = (scope = "modal") => {
       // empty. `.react-select__control` is the stable hook.
       const control = el.closest(".react-select__control");
       const root = control?.parentElement;
+      const selected = [...(control?.querySelectorAll(".react-select__single-value, .react-select__multi-value") || [])]
+        .map((s) => s.textContent.trim());
       options = {
         isMulti: !!control?.querySelector(".react-select__value-container--is-multi"),
-        selected: [...(control?.querySelectorAll(".react-select__single-value, .react-select__multi-value") || [])]
-          .map((s) => s.textContent.trim()),
+        selected,
         placeholder: control?.querySelector(".react-select__placeholder")?.textContent?.trim() || null,
         available: root ? [...document.querySelectorAll(".react-select__option")].map((o) => o.textContent.trim()) : [],
       };
+      // The selection lives on the CONTROL, never on the proxy input, whose
+      // value is "" whether or not a value is chosen. Reading el.value here
+      // reported every pre-filled react-select in every Edit dialog as an empty
+      // required field - on /booking, "Room Types" came back blank while the
+      // dialog plainly showed "Executive Room".
+      value = selected.join(", ");
     }
 
     fields.push({
@@ -165,7 +180,7 @@ export const READ_FIELDS = (scope = "modal") => {
       max: el.max !== "" && el.max != null ? Number(el.max) : null,
       maxLength: el.maxLength > 0 ? el.maxLength : null,
       placeholder: el.placeholder || null,
-      value: tag === "select" ? el.value : (el.type === "checkbox" ? el.checked : el.value),
+      value,
       options,
       isFile: el.type === "file",
     });
@@ -286,9 +301,29 @@ export const PROBE = () => {
     imgCount: document.images.length,
     rowCount: vis ? vis.querySelectorAll("tbody tr:not(.table-message-row)").length : 0,
     hasTable: !!vis,
+    // An empty table and a table whose fetch never finished are both zero rows.
+    // This table's own wording is what separates them, so keep it: "No combo
+    // deals yet" is a page legitimately at rest, while a spinner that never
+    // resolved is a defect the row count alone would never show.
+    tableMessage: vis?.querySelector(".table-message-row")?.textContent?.trim().replace(/\s+/g, " ").slice(0, 120) || null,
+    // Anything the page says is still in flight.
+    loadingText: (body?.innerText || "").match(/\b(loading|fetching|please wait)\b/i)?.[0] || null,
+    // The access-denied panel is rendered INSIDE the .error-boundary container,
+    // so counting that element alone reports a deliberate "you cannot see this
+    // page" as a crash on every page a role is not entitled to - 53 of 57 for
+    // Front Desk. A crash is the boundary showing a failure, not the boundary
+    // doing its job.
     denied: text.includes("You do not have access to this page"),
     notFound: text.includes("Page not found"),
-    crashed: !!document.querySelector(".error-boundary"),
+    // The access-denied panel and the 404 panel are both rendered INSIDE a
+    // .error-boundary container, so counting that element alone reports a
+    // deliberate "you cannot see this page" as a crash on every page a role is
+    // not entitled to - 53 of 57 for Front Desk - and reports the catch-all
+    // 404 route as a crash too. A crash is the boundary showing a failure, not
+    // the boundary doing its job.
+    crashed: !!document.querySelector(".error-boundary")
+      && !text.includes("You do not have access to this page")
+      && !text.includes("Page not found"),
   };
 };
 
@@ -297,20 +332,75 @@ export async function probe(page) {
 }
 
 /**
- * The action button in the table toolbar ("Add Bed Type", "Add Employee", ...).
+ * The Add affordance for the page.
  *
  * TableTemplate renders it through TableActionButton, which lands in
  * `.table-actions-row` - NOT inside `.table-toolbar`, so a toolbar-scoped
  * selector silently matched nothing and every page then reported "no Add
  * affordance". Use the class TableActionButton puts on itself.
+ *
+ * Taking the FIRST such button is not enough: the export/print actions sit in
+ * the same row, and on /reservation "Export CSV" comes first. The harness
+ * clicked it, found the filter controls still on the page, and reported a
+ * filter panel as the Add form. So match the label, and widen the search to
+ * primary buttons outside the toolbar for the wizard pages (/add_new_reservation
+ * has no toolbar at all - its "Next" is what opens the guest form).
+ *
+ * Returns null when the page offers nothing that starts data entry, so callers
+ * can say "read-only page" instead of inventing a form out of the filters.
  */
-export function addButton(page) {
-  return page.locator("button.table-action-button").first();
+export const ADD_VERB =
+  /^(add|create|new|assign|generate|record|book|start|next|continue|save)\b/i;
+
+/** Buttons that are page chrome, not page content. */
+const NOT_CHROME = [
+  "not(ancestor::*[contains(@class,'table-toolbar')])",
+  "not(ancestor::*[contains(@class,'table-filters')])",
+  "not(ancestor::*[contains(@class,'kds-controls')])",
+  "not(ancestor::*[contains(@class,'report-controls')])",
+  "not(ancestor::*[contains(@class,'sidebar')])",
+  "not(ancestor::*[contains(@class,'nav-item')])",
+  "not(ancestor::*[contains(@class,'sub-item')])",
+  "not(ancestor::*[contains(@class,'modal')])",
+].join(" and ");
+
+export async function addButton(page) {
+  const pick = async (locator) => {
+    const n = await locator.count();
+    for (let i = 0; i < n; i += 1) {
+      const label = ((await locator.nth(i).textContent()) || "").trim();
+      if (label && ADD_VERB.test(label)) return locator.nth(i);
+    }
+    return null;
+  };
+  return (await pick(page.locator("button.table-action-button")))
+    || (await pick(page.locator(`xpath=//button[${NOT_CHROME}]`)));
 }
 
 /** Pages that render a bare form with no toolbar button. */
 export function inlineForm(page) {
   return page.locator("main form, main .form, main [class*='form-grid'], main [class*='form-body']").first();
+}
+
+/**
+ * Count the editable controls a data form offers.
+ *
+ * Everything a page puts in its chrome is excluded: the search box, the filter
+ * row, the KOT switches, the report date picker and the permission picker all
+ * render real inputs, so "the page has inputs" was true of every table page and
+ * the Add probe on /reservation reported six FILTER fields as the Add form. A
+ * data form is not a filter panel.
+ */
+export const COUNT_DATA_INPUTS = () => {
+  const CHROME = ".table-toolbar, .table-filters, .kds-controls, .report-controls,"
+    + " .perm-panel, .toolbar-filters, .pagination, .table-actions-row";
+  const main = document.querySelector("main") || document.body;
+  return [...main.querySelectorAll("input, select, textarea")]
+    .filter((el) => el.type !== "hidden" && !el.closest(CHROME)).length;
+};
+
+export async function dataInputCount(page) {
+  return page.evaluate(COUNT_DATA_INPUTS);
 }
 
 /**

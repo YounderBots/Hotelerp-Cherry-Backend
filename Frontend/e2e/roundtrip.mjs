@@ -588,8 +588,8 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
   const before = p0.rowCount;
 
   // ---- 1. open Add, read the fields ---------------------------------------
-  const btn = addButton(page);
-  if (!(await btn.count())) {
+  const btn = await addButton(page);
+  if (!btn) {
     rec.skipped = "no Add button";
     report.push(rec);
     console.log(`--  ${id} ${route.padEnd(32)} skipped: no Add button`);
