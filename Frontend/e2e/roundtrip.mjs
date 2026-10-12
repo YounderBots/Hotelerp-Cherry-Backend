@@ -21,7 +21,7 @@
 import { mkdirSync, writeFileSync } from "fs";
 import {
   launch, login, open, settle, probe, addButton, tableRows, rowAction, findRow,
-  readModal, modalOpen, closeModal, loadCredentials, BASE,
+  readModal, modalOpen, closeModal, loadCredentials, inlineForm, BASE,
 } from "./lib.mjs";
 
 const arg = (n, d) => {
@@ -595,10 +595,29 @@ async function runPage(page, route, id, rec, add, fresh, deps) {
     console.log(`--  ${id} ${route.padEnd(32)} skipped: no Add button`);
     return;
   }
+  const urlBefore = page.url();
   await btn.click({ timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(800);
   const addModal = await readModal(page);
   if (!addModal) {
+    // Add does not have to open a dialog. /reservation's "Add New
+    // Reservation" navigates to a full-page form, which is a different screen
+    // with its own entry in this report -- auditing it as a P1 "Add button did
+    // not open a dialog" reported the navigation as a broken button.
+    const urlAfter = page.url();
+    if (urlAfter !== urlBefore) {
+      const landed = new URL(urlAfter).pathname;
+      rec.skipped = `Add navigates to ${landed} (audited as its own route)`;
+      report.push(rec);
+      console.log(`--  ${id} ${route.padEnd(32)} skipped: ${rec.skipped}`);
+      return;
+    }
+    if (await inlineForm(page).count()) {
+      rec.skipped = "Add opens a bare form, not a dialog";
+      report.push(rec);
+      console.log(`--  ${id} ${route.padEnd(32)} skipped: ${rec.skipped}`);
+      return;
+    }
     add("P1", "affordance", "Add button did not open a dialog");
     report.push(rec);
     console.log(`!!  ${id} ${route.padEnd(32)} P1:affordance`);

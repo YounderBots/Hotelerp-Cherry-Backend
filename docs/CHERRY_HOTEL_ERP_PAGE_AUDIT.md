@@ -154,15 +154,36 @@ the e2e harness reads via `E2E_CREDENTIALS` / `CRED_FILE`.
 ### Status tally
 
 All 69 routes were exercised in this session. Counts come from
-`e2e-reports/deep-all69.json` (1440), `deep-resp768.json`, `deep-resp375.json`
-and `role-matrix.json`.
+`e2e-reports/deep-all69.json` (1440), `deep-resp768.json`,
+`deep-resp375.json`, `role-matrix.json` and `rt-final3.json`.
 
 - Deep-audited at 3 viewport widths: **69 / 69**
 - Clean at all 3 widths (no finding of any severity): **51 / 69**
 - Advisory-only (P3; see the run log below for each): **18 / 69**
 - Role matrix: **69 / 69** routes x 5 roles = 345 pairs, 0 crashes, 0 mismatch
-- Defects found and fixed this session: **5**
-- Defects remaining open: **2** (see "Open defects")
+- Full data flow (ADD -> SAVE -> EDIT prefilled -> change -> SAVE -> VIEW
+  updated -> REFRESH persisted): **34 / 34 passed, 0 defects**
+- Defects remaining open: **0**
+
+Fixed this session:
+
+| # | Kind | What |
+|---|---|---|
+| 1 | data leak | `/user/users` and `/user/users/{id}` returned 13 private staff fields (personal email, alternate mobile, DOB, marital status, full address, 3 emergency-contact fields) to every role that could reach the directory; now gated on the Employee page like salary already was |
+| 2 | view gap | Orders detail modal, restaurant and bar: no Order Type, Table/Room, Guest Name, Guest Mobile, No. of Guests, Server or Special Notes |
+| 3 | view gap | Menu Management view, restaurant and bar: Item Code shown, Item Name never |
+| 4 | view gap | Menu Management view, restaurant and bar: Dietary Tags drawn only when present, so "no tags" and "field not shown" were indistinguishable |
+| 5 | view gap | Staff Roster view merged Start Time and End Time into one cell the form collects as two |
+| 6 | label drift | Guest Enquiry view said "Mode" where the form says "Enquiry Mode" |
+| 7 | test bug | `security.py` case-insensitive-login check sent the removed shared password instead of the account's own, so it failed for the wrong reason |
+
+Harness fixes, each of which had been reporting correct product behaviour
+as a defect: the NotFound page shares `.error-boundary` styling and was
+counted as a P0 crash; `addButton` landed on "Export CSV" on `/reservation`;
+pagination controls were not excluded from the Add search, so the pager's
+"Next" was read as an Add affordance on both recipe pages; a route-changing
+Add button was reported as a broken one; page chrome was counted as data
+fields; react-select values were read from an always-empty proxy input.
 
 ## Status legend
 
@@ -180,16 +201,20 @@ records a specific advisory with its evidence attached.
 
 ## Open defects
 
-| # | Route | Severity | Defect | Evidence |
-|---|---|---|---|---|
-| 1 | `/recipe_management`, `/bar_recipe_management` | P1 | Add button does not open a dialog | `rt-final2.json` phases `{}` on both |
-| 2 | `/reservation` | P1 | Add button does not open a dialog | `rt-final2.json` phases `{}` |
+None. The two P1 findings carried here mid-session were both harness
+defects, settled by reading the DOM rather than by inference:
 
-Both are the harness failing to drive a non-modal Add path, not confirmed
-product breakage: `/reservation` and `/recipe_management` both round-trip
-through `crud.py` at the API layer. The DOM probe to settle this was
-interrupted twice by stack restarts and has not been re-run, so these stay
-open rather than being closed on reasoning alone.
+- **`/reservation`** - "Add button did not open a dialog". Its
+  `Add New Reservation` navigates to `/add_new_reservation`, a full-page
+  form that is audited as a route in its own right. `roundtrip.mjs` now
+  treats a route change after the Add click as that, not as a broken button.
+- **`/recipe_management`, `/bar_recipe_management`** - same message. Both
+  pages genuinely have no Add button: the table is keyed by menu item and
+  each row opens View or Edit for that item's recipe, because a recipe has
+  no subject of its own. The harness's `ADD_VERB` accepts "Next" (the
+  `/add_new_reservation` wizard opens on its Next) and the pager's own
+  `Next` matched it. Pagination classes were not in the chrome exclusion
+  list, so a pager button was read as an Add affordance.
 
 ## Session evidence log
 

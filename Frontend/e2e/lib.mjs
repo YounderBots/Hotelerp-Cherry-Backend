@@ -362,6 +362,12 @@ const NOT_CHROME = [
   "not(ancestor::*[contains(@class,'nav-item')])",
   "not(ancestor::*[contains(@class,'sub-item')])",
   "not(ancestor::*[contains(@class,'modal')])",
+  // Paging controls are chrome too, and they are NOT wrapped in a container:
+  // the class sits on the button itself. ADD_VERB accepts "Next" because the
+  // /add_new_reservation wizard has no toolbar and opens on its Next, which
+  // made the pager's Next look like an Add affordance on both recipe pages --
+  // pages that have no Add button at all and manage recipes per row.
+  "not(ancestor-or-self::*[contains(@class,'pagination')])",
 ].join(" and ");
 
 export async function addButton(page) {
