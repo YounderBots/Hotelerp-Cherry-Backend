@@ -49,105 +49,105 @@ the e2e harness reads via `E2E_CREDENTIALS` / `CRED_FILE`.
 
 | Route | Page | A | V | E | T | Roles | Status | Evidence |
 |---|---|:-:|:-:|:-:|:-:|---|---|---|
-| `*` | - |   |   |   |   | (unassigned) | **TESTED** | - |
+| `*` | - |   |   |   |   | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
 
 ### Account (2)
 
 | Route | Page | A | V | E | T | Roles | Status | Evidence |
 |---|---|:-:|:-:|:-:|:-:|---|---|---|
-| `/profile` | Profile |   |   |   |   | (unassigned) | **TESTED** | audit.mjs x40 |
-| `/settings` | Settings | x |   |   |   | (unassigned) | **TESTED** | audit.mjs x40 |
+| `/profile` | Profile |   |   |   |   | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/settings` | Settings | x |   |   |   | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
 
 ### Authentication (4)
 
 | Route | Page | A | V | E | T | Roles | Status | Evidence |
 |---|---|:-:|:-:|:-:|:-:|---|---|---|
-| `/` | Login | x |   |   |   | (unassigned) | **TESTED** | - |
-| `/authentication/forgotpassword` | ForgotPassword | x |   |   |   | (unassigned) | **TESTED** | - |
-| `/authentication/lockscreen` | LockScreen | x |   |   |   | (unassigned) | **TESTED** | - |
-| `/authentication/register` | Register | x |   |   |   | (unassigned) | **TESTED** | - |
+| `/` | Login | x |   |   |   | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/authentication/forgotpassword` | ForgotPassword | x |   |   |   | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/authentication/lockscreen` | LockScreen | x |   |   |   | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/authentication/register` | Register | x |   |   |   | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
 
 ### Bar (11)
 
 | Route | Page | A | V | E | T | Roles | Status | Evidence |
 |---|---|:-:|:-:|:-:|:-:|---|---|---|
-| `/bar_billing_payments` | BarBillingPayments |   | x |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/bar_floor_layout` | BarFloorLayout | x | x | x | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40 |
-| `/bar_guest_management` | BarGuestManagement | x | x | x | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/bar_menus` | BarMenuManagement | x | x | x | x | Admin, Food & Beverage | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/bar_orders` | BarOrders | x |   |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/bar_recipe_management` | BarReceipeManagement | x | x |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/bar_reports_analytics` | BarReportAnalytics |   |   |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40 |
-| `/bar_station` | BarStationDisplay |   |   |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40 |
-| `/bar_stock` | BarStock | x | x |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/bar_table_master` | BarTableMaster | x | x | x | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/floor_layout` | FloorLayout | x | x | x | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40 |
+| `/bar_billing_payments` | BarBillingPayments |   | x |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/bar_floor_layout` | BarFloorLayout | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/bar_guest_management` | BarGuestManagement | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/bar_menus` | BarMenuManagement | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/bar_orders` | BarOrders | x |   |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/bar_recipe_management` | BarReceipeManagement | x | x |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/bar_reports_analytics` | BarReportAnalytics |   |   |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/bar_station` | BarStationDisplay |   |   |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/bar_stock` | BarStock | x | x |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/bar_table_master` | BarTableMaster | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/floor_layout` | FloorLayout | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
 
 ### Hotel (24)
 
 | Route | Page | A | V | E | T | Roles | Status | Evidence |
 |---|---|:-:|:-:|:-:|:-:|---|---|---|
-| `/ReservationView` | ReservationModelView |   | x |   |   | (unassigned) | **TESTED** | audit.mjs x38 |
-| `/add_new_reservation` | AddNewReservation | x |   |   |   | Admin, Front Office Manager, Front Desk, Housekeeping | **TESTED** | audit.mjs x40 |
-| `/bar_roster` | BarRoster |   |   |   |   | Admin | **TESTED** | audit.mjs x40, interact.mjs |
-| `/bar_shift_planning` | BarShiftPlanning |   |   |   |   | Admin | **TESTED** | audit.mjs x40, interact.mjs |
-| `/booking` | Booking | x | x | x | x | Admin, Front Office Manager, Front Desk, Housekeeping | **TESTED** | audit.mjs x40, interact.mjs |
-| `/dashboard` | AdminDashboard |   |   |   |   | Admin, Front Office Manager, Front Desk, Housekeeping, Food & Beverage | **TESTED** | audit.mjs x40 |
-| `/department` | Department | x | x | x | x | Admin | **TESTED** | audit.mjs x40, interact.mjs |
-| `/designation` | Designation | x | x | x | x | Admin | **TESTED** | audit.mjs x40, interact.mjs |
-| `/employee` | Employee | x | x | x | x | Admin | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/guest_enquiry` | GuestEnquiry | x | x | x | x | Admin, Front Office Manager, Front Desk | **TESTED** | audit.mjs x40, interact.mjs |
-| `/night_audit` | NightAuditDashboard |   | x |   | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40 |
-| `/reservation` | Reservation | x | x | x | x | Admin, Front Office Manager, Front Desk, Housekeeping | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/reservation_view` | ReservationView |   |   |   |   | Admin, Front Office Manager, Front Desk, Housekeeping | **TESTED** | audit.mjs x40 |
-| `/restaurant_roster` | RestaurantRoster |   |   |   |   | Admin | **TESTED** | audit.mjs x40, interact.mjs |
-| `/restaurant_shift_planning` | RestaurantShiftPlanning |   |   |   |   | Admin | **TESTED** | audit.mjs x40, interact.mjs |
-| `/roles` | Roles | x | x | x | x | Admin | **TESTED** | audit.mjs x40, interact.mjs |
-| `/room_booked_details` | RoomBooked |   | x |   | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40 |
-| `/room_incident_log` | RoomIncidentLog | x | x | x | x | Admin, Front Office Manager, Housekeeping | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/room_view` | RoomView |   |   |   |   | Admin, Front Office Manager, Front Desk, Housekeeping | **VERIFIED** | audit.mjs x40, manual browser |
-| `/settlement_summary` | SettlementSummary |   | x |   | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40 |
-| `/shift` | Shift | x | x | x | x | Admin | **TESTED** | audit.mjs x40, interact.mjs |
-| `/task_assign` | TaskAssign |   | x | x | x | Admin, Front Office Manager, Housekeeping | **TESTED** | audit.mjs x40, interact.mjs |
-| `/user` | User |   |   |   |   | Admin | **TESTED** | audit.mjs x40 |
-| `/user_reserved_details` | UserReserved |   | x |   | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40 |
+| `/ReservationView` | ReservationModelView |   | x |   |   | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/add_new_reservation` | AddNewReservation | x |   |   |   | Admin, Front Office Manager, Front Desk, Housekeeping | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/bar_roster` | BarRoster |   |   |   |   | Admin | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/bar_shift_planning` | BarShiftPlanning |   |   |   |   | Admin | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/booking` | Booking | x | x | x | x | Admin, Front Office Manager, Front Desk, Housekeeping | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/dashboard` | AdminDashboard |   |   |   |   | Admin, Front Office Manager, Front Desk, Housekeeping, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/department` | Department | x | x | x | x | Admin | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/designation` | Designation | x | x | x | x | Admin | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/employee` | Employee | x | x | x | x | Admin | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/guest_enquiry` | GuestEnquiry | x | x | x | x | Admin, Front Office Manager, Front Desk | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/night_audit` | NightAuditDashboard |   | x |   | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/reservation` | Reservation | x | x | x | x | Admin, Front Office Manager, Front Desk, Housekeeping | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/reservation_view` | ReservationView |   |   |   |   | Admin, Front Office Manager, Front Desk, Housekeeping | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/restaurant_roster` | RestaurantRoster |   |   |   |   | Admin | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/restaurant_shift_planning` | RestaurantShiftPlanning |   |   |   |   | Admin | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/roles` | Roles | x | x | x | x | Admin | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/room_booked_details` | RoomBooked |   | x |   | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/room_incident_log` | RoomIncidentLog | x | x | x | x | Admin, Front Office Manager, Housekeeping | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/room_view` | RoomView |   |   |   |   | Admin, Front Office Manager, Front Desk, Housekeeping | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/settlement_summary` | SettlementSummary |   | x |   | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/shift` | Shift | x | x | x | x | Admin | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/task_assign` | TaskAssign |   | x | x | x | Admin, Front Office Manager, Housekeeping | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/user` | User |   |   |   |   | Admin | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/user_reserved_details` | UserReserved |   | x |   | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
 
 ### MasterData (13)
 
 | Route | Page | A | V | E | T | Roles | Status | Evidence |
 |---|---|:-:|:-:|:-:|:-:|---|---|---|
-| `/bed_type` | BedType | x | x | x | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40, interact.mjs |
-| `/complementary` | Complementary | x | x | x | x | Admin, Front Office Manager | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/currency_country` | CurrencyCountry | x | x | x | x | Admin, Front Office Manager | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/discount_type` | DiscountType | x | x | x | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40, interact.mjs |
-| `/facilities` | Facilities | x | x | x | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40, interact.mjs |
-| `/hall_floor` | HallFloor | x | x | x | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40, interact.mjs |
-| `/hsk_task_type` | HskTaskType | x | x | x | x | Admin, Front Office Manager | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/identification_proof` | IdentificationProof | x | x | x | x | Admin, Front Office Manager | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/payment_methods` | PaymentMethods | x | x | x | x | Admin, Front Office Manager | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/reservation_status` | ReservationStatus | x | x | x | x | Admin, Front Office Manager | **VERIFIED** | audit.mjs x40, interact.mjs, manual browser |
-| `/room_type` | RoomType | x | x | x | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40, interact.mjs |
-| `/rooms` | Rooms | x | x | x | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40, interact.mjs |
-| `/tax_types` | TaxTypes | x | x | x | x | Admin, Front Office Manager | **TESTED** | audit.mjs x40, interact.mjs |
+| `/bed_type` | BedType | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/complementary` | Complementary | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/currency_country` | CurrencyCountry | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/discount_type` | DiscountType | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/facilities` | Facilities | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/hall_floor` | HallFloor | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/hsk_task_type` | HskTaskType | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/identification_proof` | IdentificationProof | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/payment_methods` | PaymentMethods | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/reservation_status` | ReservationStatus | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/room_type` | RoomType | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/rooms` | Rooms | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/tax_types` | TaxTypes | x | x | x | x | Admin, Front Office Manager | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
 
 ### Restaurant (14)
 
 | Route | Page | A | V | E | T | Roles | Status | Evidence |
 |---|---|:-:|:-:|:-:|:-:|---|---|---|
-| `/billing_payments` | BillingPayments |   | x |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/combo_deals` | ComboDeals | x | x | x | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/guest_management` | GuestManagement | x | x | x | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/kot/dessert` | Dessert |   |   |   |   | Admin, Food & Beverage | **TESTED** | audit.mjs x40 |
-| `/kot/grill` | Grill |   |   |   |   | Admin, Food & Beverage | **TESTED** | audit.mjs x40 |
-| `/kot/main_kitchen` | MainKitchen |   |   |   |   | Admin, Food & Beverage | **TESTED** | audit.mjs x40 |
-| `/menus` | MenuManagement | x | x | x | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/orders` | Orders | x |   |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/recipe_management` | ReceipeManagement | x | x |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/reports_analytics` | ReportAnalytics |   |   |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40 |
-| `/stock` | Stock | x | x |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/table_master` | TableMaster | x | x | x | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/table_reservation` | TableReservation | x | x |   | x | Admin, Food & Beverage | **TESTED** | audit.mjs x40, interact.mjs |
-| `/view` | ViewFloor |   | x |   | x | (unassigned) | **TESTED** | audit.mjs x38 |
+| `/billing_payments` | BillingPayments |   | x |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/combo_deals` | ComboDeals | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/guest_management` | GuestManagement | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/kot/dessert` | Dessert |   |   |   |   | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/kot/grill` | Grill |   |   |   |   | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/kot/main_kitchen` | MainKitchen |   |   |   |   | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/menus` | MenuManagement | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/orders` | Orders | x |   |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/recipe_management` | ReceipeManagement | x | x |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/reports_analytics` | ReportAnalytics |   |   |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/stock` | Stock | x | x |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/table_master` | TableMaster | x | x | x | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, rt-final3, role-matrix |
+| `/table_reservation` | TableReservation | x | x |   | x | Admin, Food & Beverage | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
+| `/view` | ViewFloor |   | x |   | x | (unassigned) | **AUDITED** | deep-all69, resp768, resp375, role-matrix |
 
 **Total pages: 69**
 
