@@ -189,13 +189,14 @@ USER_DIRECTORY_PAGES = (
 )
 
 
-def _may_read_salary(db: Session, role_id, company_id) -> bool:
-    """Salary is shown on the Employee screen, so it is gated on that page.
+def _may_read_employee(db: Session, role_id, company_id) -> bool:
+    """The Employee screen alone may read pay and the private contact fields.
 
     The directory itself is needed by the rosters and the pickers, but a name
-    picker has no business carrying what someone is paid. `edit` counts as
-    well as `view`: a role that may change a salary may read the one it is
-    changing, and refusing it would leave the required field blank on submit.
+    picker has no business carrying what someone is paid, where they live, or
+    who to call in an emergency. `edit` counts as well as `view`: a role that
+    may change a salary may read the one it is changing, and refusing it would
+    leave the required field blank on submit.
     """
     return (
         has_permission(db, role_id, company_id, "/employee", "view") is True
@@ -657,7 +658,7 @@ def get_all_users(
         require_any_permission(
             db, auth_role, company_id, USER_DIRECTORY_PAGES, "view"
         )
-        read_salary = _may_read_salary(db, auth_role, company_id)
+        read_employee = _may_read_employee(db, auth_role, company_id)
 
         # -------------------------------------------------
         # FETCH USERS
@@ -688,18 +689,8 @@ def get_all_users(
                     "first_name": user.First_Name,
                     "last_name": user.Last_Name,
 
-                    "personal_email": user.Personal_Email,
                     "company_email": user.Company_Email,
                     "mobile": user.Mobile,
-                    "alternative_mobile": user.Alternative_Mobile,
-                    "dob": user.D_O_B,
-                    "gender": user.Gender,
-                    "marital_status": user.Marital_Status,
-                    "address": user.Address,
-                    "city": user.City,
-                    "state": user.State,
-                    "postal_code": user.Postal_Code,
-                    "country": user.Country,
                     "department_id": user.Department_ID,
                     "designation_id": user.Designation_ID,
                     "role_id": user.Role_ID,
@@ -707,13 +698,32 @@ def get_all_users(
 
                     "date_of_joining": user.Date_Of_Joining,
                     "experience": user.Experience,
-                    # Only the Employee page's readers see pay; a roster's name
-                    # picker gets the rest of the record but not this.
-                    **({"salary_details": user.Salary_Details} if read_salary else {}),
+                    # Pay and the private contact fields are the Employee
+                    # page's alone; a roster's name picker gets neither.
+                    **({"salary_details": user.Salary_Details} if read_employee else {}),
                     "register_code": user.Register_Code,
-                    "emergency_name": user.Emergency_Name,
-                    "emergency_contact": user.Emergency_Contact,
-                    "emergency_relationship": user.Emergency_Relationship,
+                    # A roster or task-assign screen needs a name to pick, not
+                    # where that person lives or who to call in an emergency.
+                    # Every field here is read back only by Employee.jsx.
+                    **(
+                        {
+                            "personal_email": user.Personal_Email,
+                            "alternative_mobile": user.Alternative_Mobile,
+                            "dob": user.D_O_B,
+                            "gender": user.Gender,
+                            "marital_status": user.Marital_Status,
+                            "address": user.Address,
+                            "city": user.City,
+                            "state": user.State,
+                            "postal_code": user.Postal_Code,
+                            "country": user.Country,
+                            "emergency_name": user.Emergency_Name,
+                            "emergency_contact": user.Emergency_Contact,
+                            "emergency_relationship": user.Emergency_Relationship,
+                        }
+                        if read_employee
+                        else {}
+                    ),
                     "acknowledgment_of_hotel_policies": user.Acknowledgment_of_Hotel_Policies,
 
                     "status": user.status,
@@ -764,7 +774,7 @@ def get_user_by_id(
         require_any_permission(
             db, auth_role, company_id, USER_DIRECTORY_PAGES, "view"
         )
-        read_salary = _may_read_salary(db, auth_role, company_id)
+        read_employee = _may_read_employee(db, auth_role, company_id)
 
         if user_id <= 0:
             raise HTTPException(
@@ -805,20 +815,8 @@ def get_user_by_id(
                 "first_name": user.First_Name,
                 "last_name": user.Last_Name,
 
-                "personal_email": user.Personal_Email,
                 "company_email": user.Company_Email,
                 "mobile": user.Mobile,
-                "alternative_mobile": user.Alternative_Mobile,
-
-                "dob": user.D_O_B,
-                "gender": user.Gender,
-                "marital_status": user.Marital_Status,
-
-                "address": user.Address,
-                "city": user.City,
-                "state": user.State,
-                "postal_code": user.Postal_Code,
-                "country": user.Country,
 
                 "department_id": user.Department_ID,
                 "designation_id": user.Designation_ID,
@@ -827,14 +825,31 @@ def get_user_by_id(
 
                 "date_of_joining": user.Date_Of_Joining,
                 "experience": user.Experience,
-                # Omitted, not nulled: absent means the caller's role cannot
-                # see pay, which is different from "this role is paid nothing".
-                **({"salary_details": user.Salary_Details} if read_salary else {}),
+                # Pay and the private contact fields are the Employee page's
+                # alone. Omitted, not nulled: absent means the caller's role
+                # cannot see them, which is different from "this record has
+                # none".
+                **({"salary_details": user.Salary_Details} if read_employee else {}),
                 "register_code": user.Register_Code,
-
-                "emergency_name": user.Emergency_Name,
-                "emergency_contact": user.Emergency_Contact,
-                "emergency_relationship": user.Emergency_Relationship,
+                **(
+                    {
+                        "personal_email": user.Personal_Email,
+                        "alternative_mobile": user.Alternative_Mobile,
+                        "dob": user.D_O_B,
+                        "gender": user.Gender,
+                        "marital_status": user.Marital_Status,
+                        "address": user.Address,
+                        "city": user.City,
+                        "state": user.State,
+                        "postal_code": user.Postal_Code,
+                        "country": user.Country,
+                        "emergency_name": user.Emergency_Name,
+                        "emergency_contact": user.Emergency_Contact,
+                        "emergency_relationship": user.Emergency_Relationship,
+                    }
+                    if read_employee
+                    else {}
+                ),
 
                 "acknowledgment_of_hotel_policies": user.Acknowledgment_of_Hotel_Policies,
 

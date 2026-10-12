@@ -9,7 +9,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from api import GW, PW, req, login, rows  # noqa: E402
+from api import GW, PW, ACCOUNTS, req, login, rows  # noqa: E402
 
 FAILS, PASSES = [], 0
 
@@ -132,7 +132,12 @@ for label, body, want in [
     s, b = req("POST", "/login_post", body=body)
     check(f"login with {label} -> {want}", s == want, f"got {s} {str(b)[:110]}")
 
-s, b = req("POST", "/login_post", body={"email": "ADMIN@CherryHotel.COM", "password": PW})
+# Look the password up the same way login() does. PW is the old shared
+# password and is empty once rotate_passwords.py has run, so using it here
+# sent an empty password and failed for the wrong reason.
+s, b = req("POST", "/login_post",
+           body={"email": "ADMIN@CherryHotel.COM",
+                 "password": ACCOUNTS.get("admin@cherryhotel.com", PW)})
 check("email is matched case-insensitively", s == 200, f"got {s} {str(b)[:90]}")
 
 s, b = req("POST", "/login_post", body={"email": "admin@cherryhotel.com", "password": "nope"})
