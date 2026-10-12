@@ -22,12 +22,21 @@ Legend - A: has Add/create - V: has View/details - E: has Edit - T: has a table
 | 4 | Housekeeping | imran.khan, lakshmi.iyer |
 | 5 | Food & Beverage | vikram.singh, sunita.patel, joseph.dsouza |
 
-All 10 accounts hold **distinct** passwords, written by
-`python Backend/tools/rotate_passwords.py --confirm` and stored nowhere but
-the printed output. The seeded demo password in `Backend/db/*/README.md` and
-in git history is dead. Rotating again invalidates the credential file at
-`C:\Users\anand\AppData\Local\Temp\opencode\cherry-credentials.txt`, which
-the e2e harness reads via `E2E_CREDENTIALS` / `CRED_FILE`.
+All 10 accounts share the demo password `CherryDemo!2026`, restored on
+request with `rotate_passwords.py --confirm --password '...' --out <file>`
+so that a demo works from one card.
+
+This is the credential published in `Backend/db/*/README.md`, the seed
+source and git history, so anyone who has seen the repository can sign in.
+`Backend/tools/preflight.py` fails on exactly this and will keep failing
+until the passwords are rotated again -- which is the correct state for a
+deployment, and the wrong state for a demonstration. Rotate before any
+deployment goes anywhere real:
+
+    python Backend/tools/rotate_passwords.py --confirm
+
+The e2e harness reads per-account credentials from the file that command
+writes, via `E2E_CREDENTIALS` (Backend suites) and `CRED_FILE` (Playwright).
 
 ## Navigation
 
