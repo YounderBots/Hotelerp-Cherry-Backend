@@ -5,6 +5,8 @@ import Modal, { ConfirmModal } from "../../stories/Modal";
 import RowActions from "../../stories/RowActions";
 import IconButton from "../../stories/IconButton";
 import Button from "../../stories/Button";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ViewSection from "../../stories/ViewSection";
 import Input from "../../stories/Form/Input";
 import PhoneInput from "../../stories/Form/PhoneInput";
 import Select from "../../stories/Form/Select";
@@ -281,6 +283,12 @@ const Orders = () => {
     .filter((t) => t.table_status === "Available")
     .map((t) => ({ value: t.id, label: `${t.table_name} (${t.table_code})` }));
 
+  // Which table the order was placed against, read from `tables` rather than
+  // `availableTables`: an order is usually viewed after its table was taken,
+  // and a table that is not "Available" is missing from the second list, so
+  // the order would show no table at all - exactly the row being added.
+  const detailTable = tables.find((t) => String(t.id) === String(detailOrder?.table_id));
+
   return (
     <>
       <ErrorAlert message={error} />
@@ -485,6 +493,25 @@ const Orders = () => {
             {formatPrecise(detailOrder?.grand_total)}
           </span>
         </div>
+
+        {/* Who the order is for and where it sits. Add Order collects all of
+            this, and the line items alone left the modal answering "which
+            guest, which table?" with nothing - the two questions a bartender
+            opens an order to answer. */}
+        <ViewSection title="Guest">
+          <DetailList columns={2}>
+            <DetailItem label="Order Type" value={detailOrder?.order_type} />
+            <DetailItem
+              label="Table"
+              value={detailTable ? `${detailTable.table_name} (${detailTable.table_code})` : null}
+            />
+            <DetailItem label="Guest Name" value={detailOrder?.guest_name} />
+            <DetailItem label="Guest Mobile" value={detailOrder?.guest_mobile} />
+            <DetailItem label="No. of Guests" value={detailOrder?.no_of_guests} />
+            <DetailItem label="Server" value={detailOrder?.server_name} />
+            <DetailItem label="Special Notes" value={detailOrder?.special_notes} span={2} />
+          </DetailList>
+        </ViewSection>
 
         {/* Was a hand-rolled <table> with per-cell inline styles and hardcoded
             hex colours. TableTemplate gives it the same header, alignment and

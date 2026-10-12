@@ -391,7 +391,9 @@ const GuestEnquiry = () => {
         <ViewSection title="Enquiry">
           <DetailList columns={3}>
             <DetailItem label="Guest Name" value={viewData?.guest_name} />
-            <DetailItem label="Mode" value={viewData?.inquiry_mode} />
+            {/* Same field the form calls "Enquiry Mode"; one dialog naming it
+                "Mode" was a second name for one thing. */}
+            <DetailItem label="Enquiry Mode" value={viewData?.inquiry_mode} />
             <DetailItem label="Status" value={viewData?.inquiry_status} />
           </DetailList>
         </ViewSection>

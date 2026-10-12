@@ -5,6 +5,8 @@ import Modal, { ConfirmModal } from "../../stories/Modal";
 import RowActions from "../../stories/RowActions";
 import IconButton from "../../stories/IconButton";
 import Button from "../../stories/Button";
+import DetailList, { DetailItem } from "../../stories/DetailList";
+import ViewSection from "../../stories/ViewSection";
 import Input from "../../stories/Form/Input";
 import PhoneInput from "../../stories/Form/PhoneInput";
 import Select from "../../stories/Form/Select";
@@ -283,6 +285,20 @@ const Orders = () => {
     .filter((t) => t.table_status === "Available")
     .map((t) => ({ value: t.id, label: `${t.table_name} (${t.table_code})` }));
 
+  // Which table the order was placed against. Read from `tables`, not from
+  // `availableTables`: an order is usually viewed long after its table was
+  // taken, and a booked-out table is missing from the Available list, so the
+  // order would show no table at all - exactly the row we are adding.
+  const detailTable = tables.find((t) => String(t.id) === String(detailOrder?.table_id));
+  // The place the food goes, which differs by order type: a table for Dine-In,
+  // a room number for Room Service, nothing for Takeaway/Delivery.
+  const detailWhere =
+    detailOrder?.order_type === "Room Service"
+      ? detailOrder?.room_no
+      : detailTable
+        ? `${detailTable.table_name} (${detailTable.table_code})`
+        : null;
+
   return (
     <>
       <ErrorAlert message={error} />
@@ -498,6 +514,22 @@ const Orders = () => {
             {formatPrecise(detailOrder?.grand_total)}
           </span>
         </div>
+
+        {/* Who the order is for and where it is going. Add Order collects all
+            of this, and the line items alone left the modal answering "which
+            guest, which table?" with nothing - the two questions a cashier
+            opens an order to answer. */}
+        <ViewSection title="Guest">
+          <DetailList columns={2}>
+            <DetailItem label="Order Type" value={detailOrder?.order_type} />
+            <DetailItem label={detailOrder?.order_type === "Room Service" ? "Room" : "Table"} value={detailWhere} />
+            <DetailItem label="Guest Name" value={detailOrder?.guest_name} />
+            <DetailItem label="Guest Mobile" value={detailOrder?.guest_mobile} />
+            <DetailItem label="No. of Guests" value={detailOrder?.no_of_guests} />
+            <DetailItem label="Server" value={detailOrder?.server_name} />
+            <DetailItem label="Special Notes" value={detailOrder?.special_notes} span={2} />
+          </DetailList>
+        </ViewSection>
 
         {/* Was a hand-rolled <table> with per-cell inline styles and hardcoded
             hex colours. TableTemplate gives it the same header, alignment and

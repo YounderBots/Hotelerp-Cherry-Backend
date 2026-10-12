@@ -94,6 +94,8 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, ap
       shift_time: shift
         ? `${String(shift.shift_start).slice(0, 5)} – ${shift.shift_end ? String(shift.shift_end).slice(0, 5) : "open"}`
         : null,
+      shift_start: shift?.shift_start ? String(shift.shift_start).slice(0, 5) : null,
+      shift_end: shift?.shift_end ? String(shift.shift_end).slice(0, 5) : null,
       shift_status: shift?.shift_status || "Not Scheduled",
       scheduled: Boolean(shift),
     };
@@ -264,7 +266,12 @@ const StaffRoster = ({ venueLabel, roleOptions, hasSection = false, pagePath, ap
           <DetailItem label="Role" value={viewRow?.role} />
           <DetailItem label="Floor" value={viewRow?.floor} />
           {hasSection && <DetailItem label="Section" value={viewRow?.section} />}
-          <DetailItem label="Shift" value={viewRow?.shift_time} />
+          {/* The table packs start and end into one "Shift" cell ("09:00 –
+              17:00"), which is right for a column. In the View, though, the
+              form collects them as two fields, so show them as two - a merged
+              cell made Start Time and End Time unanswerable from the dialog. */}
+          <DetailItem label="Start Time" value={viewRow?.shift_start} />
+          <DetailItem label="End Time" value={viewRow?.shift_end} />
         </DetailList>
       </Modal>
 

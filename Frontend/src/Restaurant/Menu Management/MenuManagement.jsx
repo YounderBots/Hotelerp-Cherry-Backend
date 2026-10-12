@@ -540,6 +540,11 @@ const MenuManagement = () => {
               which is exactly what DetailList was written to replace. */}
           <ViewSection title="Basic Information">
             <DetailList columns={2}>
+              {/* The dialog title carries the name, but a View that only lists
+                  Item Code made the row impossible to match to its menu entry
+                  when printed or copied, and left Add's "Item Name" with no
+                  counterpart. */}
+              <DetailItem label="Item Name" value={viewData.item_name} span={2} />
               <DetailItem label="Item Code" value={viewData.item_code} />
               <DetailItem label="Category" value={categoryName(viewData.category_id)} />
               <DetailItem label="Sub-Category" value={subCategoryName(viewData.sub_category_id)} />
@@ -572,11 +577,14 @@ const MenuManagement = () => {
                 label="Preparation Time"
                 value={viewData.preparation_time ? `${viewData.preparation_time} min` : null}
               />
-              {Array.isArray(viewData.dietary_tags) && viewData.dietary_tags.length > 0 && (
-                <DetailItem label="Dietary Tags" span={2}>
-                  <ChipGroup items={viewData.dietary_tags} />
-                </DetailItem>
-              )}
+              {/* Unconditional like every other row here: drawing it only when
+                  tags exist leaves the reader unable to tell "this item has no
+                  tags" from "this dialog does not show tags". */}
+              <DetailItem label="Dietary Tags" span={2}>
+                {viewData.dietary_tags?.length
+                  ? <ChipGroup items={viewData.dietary_tags} />
+                  : "—"}
+              </DetailItem>
             </DetailList>
           </ViewSection>
 
