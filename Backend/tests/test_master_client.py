@@ -30,6 +30,7 @@ WHY THIS SUITE EXISTS
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 import httpx
 import pytest
@@ -208,6 +209,109 @@ class TestRulesThroughTheClient:
         q = rules.quote(md, room_ids=[1], rate_types=["daily"], nights=2,
                         tax_type_id=3, discount_type_id=4)
         assert (q["room_amount"], q["tax_amount"], q["discount_amount"]) == (10000.0, 1200.0, 1000.0)
+
+
+# ---------------------------------------------------------------------------
+# Pricing and booking must agree about what is sellable
+# ---------------------------------------------------------------------------
+class TestQuoteAndBookingAgree:
+    """A guest cannot be quoted a room the system will not sell them.
+
+    `POST /room_reservation_quote` is what the guest is shown before they
+    confirm, and it is priced by the same code that will store the booking --
+    that is its entire reason to exist. It consulted `rules.quote` and nothing
+    else, so every gate in `assert_rooms_sellable` was skipped and a blocked
+    room came back with a full total. The booking request a moment later was
+    then refused with "Room 601 is blocked / out of order and cannot be
+    booked": two answers from the same module, one screen apart.
+
+    These pin the shared gates the quote now runs, and -- just as important --
+    that the quote still does NOT run the date-overlap check, which would
+    refuse every amendment because a booking overlaps the dates it is being
+    moved to and the caller sends no reservation id to exclude.
+    """
+
+    @pytest.fixture()
+    def with_blocked(self, master):
+        """Room 1 sellable, room 3 blocked / out of order."""
+        master.add_room(id=3, room_no="303", room_type_id="7", room_status="Blocking")
+        master.add_room(id=4, room_no="304", room_type_id="7", max_adult="2")
+        master.add_room_type(id=7, room_type_name="Deluxe", daily_rate=5000, room_cost=4500)
+        return MasterData(master)
+
+    def test_a_blocked_room_is_refused_before_it_is_priced(self, with_blocked):
+        with pytest.raises(rules.RuleError, match="blocked / out of order"):
+            rules.assert_rooms_sellable(with_blocked, [3])
+        # ...and the same call the booking endpoint makes, so the two agree.
+        with pytest.raises(rules.RuleError, match="blocked / out of order"):
+            rules.assert_rooms_bookable(None, with_blocked, "1", [3],
+                                        date(2026, 11, 1), date(2026, 11, 3))
+
+    def test_the_quote_endpoint_runs_the_gate(self, monkeypatch):
+        """The wiring, not just the rule: `quote_reservation` must call it.
+
+        Read from the source on purpose. The endpoint is `async def` with a
+        Request and a snapshot behind it, so exercising it directly means
+        stubbing half the module; what matters is that the call is there and
+        that it is the sellable gate rather than the database-backed one.
+        """
+        import inspect
+        import pathlib
+        import re
+
+        src = pathlib.Path(inspect.getfile(rules)).with_name("reservationController.py")
+        text = src.read_text(encoding="utf-8")
+
+        body = re.search(
+            r"async def quote_reservation\(request: Request\):(.*?)\n    return \{",
+            text, re.S)
+        assert body, "quote_reservation not found"
+        quoted = body.group(1)
+
+        assert "rules.assert_rooms_sellable(md, room_ids)" in quoted, (
+            "the quote endpoint no longer refuses an unsellable room"
+        )
+        assert "assert_rooms_bookable" not in quoted, (
+            "the quote endpoint must not run the date-overlap check -- it would "
+            "refuse every amendment, because a booking overlaps the very dates "
+            "it is being moved to and no reservation id is sent to exclude it"
+        )
+
+    def test_a_sellable_room_still_prices(self, with_blocked):
+        assert set(rules.assert_rooms_sellable(with_blocked, [1])) == {1}
+        q = rules.quote(with_blocked, room_ids=[1], rate_types=["daily"], nights=2)
+        assert q["room_amount"] > 0
+
+    def test_the_gates_survive_the_split_unchanged(self, with_blocked):
+        """Every gate the booking endpoint had before the split is still here.
+
+        The extraction must not have quietly dropped one, so each is checked:
+        empty, duplicate, unknown id, blocked, and both occupancy limits.
+        """
+        with pytest.raises(rules.RuleError, match="Select at least one room"):
+            rules.assert_rooms_sellable(with_blocked, [])
+        with pytest.raises(rules.RuleError, match="selected more than once"):
+            rules.assert_rooms_sellable(with_blocked, [1, 1])
+        with pytest.raises(rules.RuleError, match="does not exist for this property"):
+            rules.assert_rooms_sellable(with_blocked, [999])
+        with pytest.raises(rules.RuleError, match=r"Room 303 is blocked"):
+            rules.assert_rooms_sellable(with_blocked, [3])
+        with pytest.raises(rules.RuleError, match="takes at most 2 adult"):
+            rules.assert_rooms_sellable(with_blocked, [4], occupancy={4: (3, 0)})
+        with pytest.raises(rules.RuleError, match="needs at least one adult"):
+            rules.assert_rooms_sellable(with_blocked, [1], occupancy={1: (0, 0)})
+        with pytest.raises(rules.RuleError, match="negative children"):
+            rules.assert_rooms_sellable(with_blocked, [1], occupancy={1: (1, -1)})
+        # ...and the happy path with occupancy present.
+        assert set(rules.assert_rooms_sellable(with_blocked, [1],
+                                               occupancy={1: (1, 0)})) == {1}
+
+    def test_a_legacy_room_status_row_is_still_sellable(self, with_blocked):
+        """`room_status` also carries the legacy value "ACTIVE" on rows created
+        before the Blocking/UnBlocking vocabulary settled. Only an explicit
+        block disqualifies -- treating "ACTIVE" as unsellable would take rooms
+        out of the inventory."""
+        assert set(rules.assert_rooms_sellable(with_blocked, [1])) == {1}
 
 
 # ---------------------------------------------------------------------------

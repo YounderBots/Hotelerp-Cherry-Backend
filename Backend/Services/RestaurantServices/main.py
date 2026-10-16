@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,7 +33,75 @@ if _configs.SERVICE_NAME != "RestaurantServices":
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Bind address -- the gateway is the only door
+# ---------------------------------------------------------------------------
+# Every external request is meant to arrive through the login gateway, which is
+# where the 279-row permission map is applied. That model has a premise, stated
+# in LoginServices/resources/rbac.py:
+#
+#     "the services themselves bind to 127.0.0.1 and are not routable from
+#      outside. Enforcing once at the proxy therefore covers the whole external
+#      surface."
+#
+# On 2026-10-16 that premise was false: all five backend services were answering
+# on the deployment's PUBLIC IP, so the permission map could be stepped around by
+# addressing a service port directly. It was found while auditing a gateway whose
+# authorisation was switched off, which is the worst possible pairing -- and
+# neither layer knew.
+#
+# start-network.ps1 and run.sh already read SERVICE_HOST and pass --host to
+# uvicorn, so a run through the launcher is correct. This is the check for every
+# OTHER way a process starts -- `uvicorn main:app` typed by hand, a process
+# manager, a container -- where nothing reads the .env at all.
+#
+# It runs at import, which is before uvicorn binds, so a wrong address fails the
+# start instead of quietly opening a port. It is NOT limited to production: the
+# deployment in question was running ASCEND_ENV=dev, so a production-only check
+# would not have caught it.
+#
+# Deliberately opt-out rather than opt-in, for the same reason the gateway's RBAC
+# mode is: ALLOW_PUBLIC_BIND=true is an explicit, greppable decision by somebody
+# who knows why. The default has to be the safe one.
+#
+# Installed identically into all five services by
+# Backend/tools/install_bind_guard.py, so they cannot drift apart.
+_LOOPBACK_HOSTS = {"", "127.0.0.1", "::1", "localhost", "loopback"}
+
+
+def _assert_private_bind() -> None:
+    host = str(os.getenv("SERVICE_HOST", "127.0.0.1")).strip()
+    if host.lower() in _LOOPBACK_HOSTS:
+        return
+    if str(os.getenv("ALLOW_PUBLIC_BIND", "")).strip().lower() in ("1", "true", "yes"):
+        print(
+            f"[restaurantservices] WARNING: binding "
+            f"{host}:{os.getenv('SERVICE_PORT', '?')} because "
+            f"ALLOW_PUBLIC_BIND is set. This service is meant to be reached only "
+            f"through the login gateway; a public bind lets a caller address it "
+            f"directly and bypass the gateway's permission map entirely.",
+            file=sys.stderr,
+        )
+        return
+    raise RuntimeError(
+        f"RestaurantServices would bind {host}, which is reachable from outside this "
+        f"machine. Only the login gateway is meant to be externally reachable: "
+        f"the other five services are addressed through it, and the permission "
+        f"map that authorises them is applied there. A service on a public "
+        f"address can be called directly, skipping that map entirely.\n"
+        f"  Set SERVICE_HOST=127.0.0.1 in "
+        f"Backend/Services/RestaurantServices/.env, or start it with start-network.ps1 / "
+        f"run.sh, which bind loopback by default.\n"
+        f"  If a public bind is genuinely intended, set ALLOW_PUBLIC_BIND=true "
+        f"and make sure you have accepted that the gateway is not the only "
+        f"thing authorising this service."
+    )
+
+
+_assert_private_bind()
 from configs.base_config import BaseConfig
+from resources.route_policy import RoutePermissionMiddleware
 from routes import router
 
 logging.basicConfig(
@@ -89,6 +158,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# The gateway's permission map, applied again here -- the second,
+# independent authorisation layer. `audit` by default, so this changes
+# no behaviour on deploy and logs what it would have refused; set
+# ROUTE_POLICY_MODE=enforce after the log has been read.
+app.add_middleware(RoutePermissionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Static uploads live under templates/static.

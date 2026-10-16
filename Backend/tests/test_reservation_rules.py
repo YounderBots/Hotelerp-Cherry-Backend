@@ -138,6 +138,180 @@ def test_assert_transition_raises_with_a_409_and_names_both_states():
 
 
 # ---------------------------------------------------------------------------
+# Cancelling is not idempotent, so it must not be offered twice
+# ---------------------------------------------------------------------------
+
+def test_cancelling_an_already_cancelled_booking_is_not_offered():
+    """The rule the endpoint now enforces before writing.
+
+    `POST /room_reservation_cancel/{key}` used to accept a second call. It
+    re-applied the status and then overwrote `cancellation_reason`,
+    `cancelled_at` and `cancelled_by` -- so the record of WHY a booking was
+    cancelled, the one thing the endpoint insists on asking for, was silently
+    replaceable by anyone who could reach the URL.
+
+    `can_offer` (not `can_transition`) is the correct test: staying put is
+    legal for an edit that changes nothing, but a repeat cancel writes over
+    the reason.
+    """
+    assert rules.can_offer("Cancelled", rules.CANCELLED) is False
+
+
+@pytest.mark.parametrize("current", ["Checked-In", "Checked-Out", "No-Show"])
+def test_cancelling_a_booking_past_the_point_is_not_offered(current):
+    """A guest who has arrived or departed cannot be cancelled either; the
+    folio is settled through checkout, and a no-show is a different fact."""
+    assert rules.can_offer(current, rules.CANCELLED) is False
+
+
+@pytest.mark.parametrize("current", ["Pending", "On Hold", "Confirmed"])
+def test_a_live_booking_can_still_be_cancelled(current):
+    """The other half: the guard must not refuse a cancellation that should
+    happen, or a front desk could not release a room at all."""
+    assert rules.can_offer(current, rules.CANCELLED) is True
+
+
+def test_the_button_and_the_endpoint_agree_by_construction():
+    """The UI's Cancel button is drawn from the serialised `can_cancel` flag,
+    which is `can_offer(status, CANCELLED)`. The endpoint's guard now consults
+    the same call. Asserted here so the two cannot drift: if one is ever
+    re-expressed, this is what notices.
+
+    (reservationController.py, the `_serialise` dict:
+        "can_cancel": rules.can_offer(reservation.reservation_status,
+                                      rules.CANCELLED),
+     and reservation_cancel, immediately before writing:
+        if not rules.can_offer(reservation.reservation_status, rules.CANCELLED):
+    )
+    """
+    import inspect
+    import pathlib
+    import re
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "Services" / "HotelServices" / \
+        "resources" / "reservationController.py"
+    text = src.read_text(encoding="utf-8")
+    guard = re.search(
+        r"if not rules\.can_offer\(\s*reservation\.reservation_status,\s*rules\.CANCELLED\s*\)\s*:",
+        text)
+    assert guard, "reservation_cancel no longer guards on can_offer(status, CANCELLED)"
+    assert '"can_cancel": rules.can_offer(' in text, (
+        "the serialised can_cancel flag no longer comes from can_offer"
+    )
+
+
+# ---------------------------------------------------------------------------
+# The controller's guard, exercised through the real function
+# ---------------------------------------------------------------------------
+# The tests above pin the RULE. This pins the ENDPOINT, because the defect was
+# in the endpoint not consulting it: `POST /room_reservation_cancel/{key}`
+# accepted a second call and overwrote `cancellation_reason`, `cancelled_at` and
+# `cancelled_by`.
+#
+# `reservation_cancel` is called directly with the three collaborators stubbed
+# -- the JWT check, the Master Data snapshot and the row lookup. Nothing touches
+# a database, so this is the regression test for the fix and it fails against
+# the pre-fix controller.
+
+def _call_cancel(reservation, monkeypatch):
+    """Invoke the real `reservation_cancel` against a stand-in reservation.
+
+    It is `async def`, so it is driven through asyncio rather than called
+    directly -- calling it and expecting an exception would pass silently,
+    because an un-awaited coroutine never runs its body.
+    """
+    import asyncio
+
+    from fastapi import HTTPException
+    from resources import reservationController as rc
+
+    class _Db:
+        def commit(self):
+            pass
+
+        def refresh(self, _r):
+            pass
+
+        def rollback(self):
+            pass
+
+    class _Snapshot:
+        def __getattr__(self, _name):
+            return {}
+
+    monkeypatch.setattr(rc, "verify_authentication",
+                        lambda _r: (1, "1", "1", "tok"))
+    monkeypatch.setattr(rc, "_load_by_id_or_token",
+                        lambda db, company_id, key: reservation)
+    monkeypatch.setattr(rc.MasterData, "for_token", staticmethod(lambda _t: _Snapshot()))
+    monkeypatch.setattr(rc, "sync_room_booking_status", lambda *a, **k: None)
+    monkeypatch.setattr(rc, "server_error", lambda *a, **k: None)
+    # A reason is mandatory, and it is read off the request body. Supplying one
+    # is deliberate: the point of these tests is the guard AFTER the reason
+    # check, so the request has to get past it to reach it.
+    async def _body(_request, optional=False):
+        return {"cancellation_reason": "supplied by the caller"}
+    monkeypatch.setattr(rc, "_json_object", _body)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(rc.reservation_cancel("any-key", None, _Db()))
+    return exc.value
+
+
+def _reservation(status, **kw):
+    r = type("R", (), {})()
+    r.reservation_status = status
+    r.reservation_token = "tok"
+    r.token = "tok"
+    r.room_ids = [1]
+    r.paid_amount = 0.0
+    r.cancellation_reason = None
+    r.cancelled_at = None
+    r.cancelled_by = None
+    for k, v in kw.items():
+        setattr(r, k, v)
+    return r
+
+
+def test_cancelling_twice_is_refused_and_keeps_the_original_reason(monkeypatch):
+    """The defect, restated as an assertion: the second call must be refused."""
+    original = "guest changed their mind"
+    res = _reservation(rules.CANCELLED, cancellation_reason=original,
+                       cancelled_at="2026-10-15 12:20:44", cancelled_by="4")
+
+    exc = _call_cancel(res, monkeypatch)
+
+    assert exc.status_code == 409
+    # The caller is told what the record already says, not merely that it failed.
+    assert original in exc.detail
+    assert "2026-10-15 12:20:44" in exc.detail
+    # And nothing was written.
+    assert res.cancellation_reason == original
+    assert res.cancelled_at == "2026-10-15 12:20:44"
+    assert res.cancelled_by == "4"
+
+
+def test_cancelling_a_departed_guest_is_refused_with_a_useful_answer(monkeypatch):
+    """Checked-Out reaches the same guard through a different branch, and the
+    message must not claim it was already cancelled."""
+    res = _reservation(rules.CHECKED_OUT)
+    exc = _call_cancel(res, monkeypatch)
+    assert exc.status_code == 409
+    assert "Checked-Out" in exc.detail
+    assert "already cancelled" not in exc.detail
+
+
+def test_a_booking_past_the_point_is_not_told_to_amend_it(monkeypatch):
+    """The already-cancelled branch suggests amending the booking; that advice
+    would be nonsense for a guest who has already left."""
+    res = _reservation(rules.CHECKED_IN)
+    exc = _call_cancel(res, monkeypatch)
+    assert exc.status_code == 409
+    assert "amend the booking" not in exc.detail
+    assert "checkout" in exc.detail
+
+
+# ---------------------------------------------------------------------------
 # can_offer -- legal AND a change
 # ---------------------------------------------------------------------------
 

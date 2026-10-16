@@ -18,15 +18,41 @@ WHERE PERMISSIONS COME FROM
     their own permissions without the signing key.
 
 ROLLOUT
-    RBAC_GATEWAY_MODE controls behaviour, and defaults to `audit` on purpose:
+    RBAC_GATEWAY_MODE controls behaviour, and defaults to `enforce`:
 
         off      no checks at all
-        audit    evaluate and log what WOULD be denied, but allow (default)
-        enforce  deny with 403
+        audit    evaluate and log what WOULD be denied, but allow
+        enforce  deny with 403 (default)
 
-    A 222-row map applied to a live hotel is not something to switch on blind.
-    Run in `audit`, read the `rbac_would_deny` lines, fix whatever the mapping
-    got wrong, and only then set `enforce`.
+    WHY THE DEFAULT IS NOW `enforce`, AND NOT `audit`
+        It used to be `audit`, and that default cost this system its entire
+        authorisation layer on a deployment that simply did not set the
+        variable: every role could reach every endpoint, on every service.
+        A missing environment variable is an ordinary, invisible mistake --
+        nothing fails, no log line says so, and `rbac_would_deny` is the only
+        evidence, written to a log nobody reads until after an incident. The
+        sibling check in UserServices/resources/authorization.py made the
+        opposite choice for the same reason, and this module now matches it:
+        an operator opts OUT of enforcement deliberately.
+
+        The original hesitation was that the map had not been read against
+        real traffic. It has been. The map is derived mechanically from the
+        SPA by Backend/tools/build_rbac_map.py, and a dry run over live traffic
+        (QA/live/rbac_dryrun.py) reports 279 rows, zero rows that nothing can
+        grant, zero detail routes without a parent page, and 67 routes that
+        fail closed -- all 67 of them endpoints no page in the SPA ever issues,
+        which is exactly the set the generator already lists as
+        UNCALLED_ENDPOINTS. So enforcement removes dead API surface and nothing
+        the UI can reach.
+
+        Re-run that dry run after changing the map or the frontend. If it ever
+        reports a mapped route the app really calls, `audit` is the right
+        temporary mode -- set it EXPLICITLY, so it is in the deployment config
+        where someone can see it, rather than being what happens when the
+        variable is absent.
+
+    Fail-closed is also what `check()` already did for an unmapped route under
+    `enforce`; this change makes the mode itself consistent with that.
 """
 
 from __future__ import annotations
@@ -49,7 +75,19 @@ logger = logging.getLogger("loginservice.rbac")
 VIEW, CREATE, EDIT, DELETE = 1, 2, 4, 8
 ACTION_BIT = {"view": VIEW, "create": CREATE, "edit": EDIT, "delete": DELETE}
 
-MODE = os.getenv("RBAC_GATEWAY_MODE", "audit").strip().lower()
+MODE = os.getenv("RBAC_GATEWAY_MODE", "enforce").strip().lower()
+
+# A typo'd value must not silently behave like `off`. `enforce` and `audit` are
+# the only modes that mean anything; anything else is a deployment mistake, and
+# treating it as `audit` would restore the fail-open behaviour this module was
+# changed to remove -- so it falls forward to enforcement and says so loudly.
+if MODE not in ("off", "audit", "enforce"):
+    logger.critical(
+        "rbac_bad_mode RBAC_GATEWAY_MODE=%r is not one of off|audit|enforce; "
+        "falling back to 'enforce'. Set the variable explicitly to silence this.",
+        MODE,
+    )
+    MODE = "enforce"
 
 # ALWAYS_ALLOW now comes from rbac_map (imported below, beside the rest of the
 # generated table) rather than being kept here.

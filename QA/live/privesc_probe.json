@@ -1,0 +1,165 @@
+{
+ "results": [
+  {
+   "probe": "masterdata tax update (no-op)",
+   "role": "Admin",
+   "method": "PUT",
+   "path": "/masterdata/tax/6",
+   "status": 405,
+   "body": "{\"detail\":\"Method Not Allowed\"}",
+   "role_has_tax_types_perm": true,
+   "role_perm_page_count": 60
+  },
+  {
+   "probe": "masterdata tax update (no-op)",
+   "role": "FrontOfficeManager",
+   "method": "PUT",
+   "path": "/masterdata/tax/6",
+   "status": 405,
+   "body": "{\"detail\":\"Method Not Allowed\"}",
+   "role_has_tax_types_perm": true,
+   "role_perm_page_count": 26
+  },
+  {
+   "probe": "masterdata tax update (no-op)",
+   "role": "FrontDesk",
+   "method": "PUT",
+   "path": "/masterdata/tax/6",
+   "status": 405,
+   "body": "{\"detail\":\"Method Not Allowed\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 7
+  },
+  {
+   "probe": "masterdata tax update (no-op)",
+   "role": "Housekeeping",
+   "method": "PUT",
+   "path": "/masterdata/tax/6",
+   "status": 405,
+   "body": "{\"detail\":\"Method Not Allowed\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 8
+  },
+  {
+   "probe": "masterdata tax update (no-op)",
+   "role": "FoodAndBeverage",
+   "method": "PUT",
+   "path": "/masterdata/tax/6",
+   "status": 405,
+   "body": "{\"detail\":\"Method Not Allowed\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 25
+  },
+  {
+   "probe": "masterdata tax DELETE",
+   "role": "Housekeeping",
+   "method": "DELETE",
+   "path": "/masterdata/tax/6",
+   "status": 200,
+   "body": "{\"status\":\"success\",\"message\":\"Tax deleted successfully\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 8
+  },
+  {
+   "probe": "masterdata tax DELETE",
+   "role": "FrontDesk",
+   "method": "DELETE",
+   "path": "/masterdata/tax/6",
+   "status": 404,
+   "body": "{\"detail\":\"Tax not found\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 7
+  },
+  {
+   "probe": "masterdata tax DELETE",
+   "role": "FoodAndBeverage",
+   "method": "DELETE",
+   "path": "/masterdata/tax/6",
+   "status": 404,
+   "body": "{\"detail\":\"Tax not found\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 25
+  },
+  {
+   "probe": "room state set (as Housekeeping)",
+   "role": "Housekeeping",
+   "method": "PUT",
+   "path": "/masterdata/room/25/state",
+   "status": 400,
+   "body": "{\"detail\":\"Send at least one of booking_status, working_status, room_status\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 8
+  },
+  {
+   "probe": "room state set (as FrontDesk)",
+   "role": "FrontDesk",
+   "method": "PUT",
+   "path": "/masterdata/room/25/state",
+   "status": 400,
+   "body": "{\"detail\":\"Send at least one of booking_status, working_status, room_status\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 7
+  },
+  {
+   "probe": "room DELETE (as FoodAndBeverage)",
+   "role": "FoodAndBeverage",
+   "method": "DELETE",
+   "path": "/masterdata/room/25",
+   "status": 200,
+   "body": "{\"status\":\"success\",\"message\":\"Room deleted successfully\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 25
+  },
+  {
+   "probe": "restaurant bill cancel",
+   "role": "Housekeeping",
+   "method": "POST",
+   "path": "/restaurant/bill/12/cancel",
+   "status": 405,
+   "body": "{\"detail\":\"Method Not Allowed\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 8
+  },
+  {
+   "probe": "restaurant bill cancel",
+   "role": "FrontDesk",
+   "method": "POST",
+   "path": "/restaurant/bill/12/cancel",
+   "status": 405,
+   "body": "{\"detail\":\"Method Not Allowed\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 7
+  },
+  {
+   "probe": "role_permissions edit",
+   "role": "Housekeeping",
+   "method": "PUT",
+   "path": "/user/role_permissions/4",
+   "status": 405,
+   "body": "{\"detail\":\"Method Not Allowed\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 8
+  },
+  {
+   "probe": "role create",
+   "role": "Housekeeping",
+   "method": "POST",
+   "path": "/user/roles",
+   "status": 403,
+   "body": "{\"detail\":\"Your role does not have create permission for /roles.\"}",
+   "role_has_tax_types_perm": false,
+   "role_perm_page_count": 8
+  },
+  {
+   "probe": "tampered JWT",
+   "status": 401,
+   "role": "attacker"
+  },
+  {
+   "probe": "alg=none JWT",
+   "status": 401,
+   "role": "attacker"
+  }
+ ],
+ "row_unchanged": true
+}

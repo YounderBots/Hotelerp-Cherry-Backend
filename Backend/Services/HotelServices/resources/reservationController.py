@@ -1481,6 +1481,27 @@ async def quote_reservation(request: Request):
     of their own. That is the point: the figures the guest is shown before
     confirming are produced by the server that will store them, so the summary
     and the saved booking cannot disagree.
+
+    WHICH MEANS IT HAS TO AGREE WITH THE BOOKING ABOUT WHAT IS SELLABLE.
+        It used to price whatever rooms it was handed and check nothing, so a
+        room that is blocked / out of order came back with a full total, and the
+        booking request a moment later was refused with "Room 601 is blocked /
+        out of order and cannot be booked". The guest was quoted a price for a
+        room the system would not sell them, by two answers from the same
+        module one screen apart.
+
+        So it now runs `assert_rooms_sellable` -- existence, out of order, and
+        the room's own occupancy limits -- before pricing. Those need only the
+        property's room master, so no database is needed and nothing that could
+        refuse a legitimate re-price is introduced: a booking being amended
+        through this endpoint demonstrably passed these same gates when it was
+        first made.
+
+        The date-overlap check is NOT applied here, and must not be: the Edit
+        screen re-prices a reservation that overlaps the very dates it is being
+        moved to, and the caller sends no reservation id to exclude. It stays on
+        the create and update paths, which hold `db`. See
+        `assert_rooms_sellable` for the full reasoning.
     """
     user_id, role_id, company_id, token = verify_authentication(request)
     if not company_id:
@@ -1496,8 +1517,16 @@ async def quote_reservation(request: Request):
         nights = rules.nights_between(arrival, departure)
 
         room_ids = [int(r) for r in (payload.get("room_ids") or [])]
-        if not room_ids:
-            raise rules.RuleError("Select at least one room")
+
+        # `occupancy` is deliberately not passed. The quote payload carries no
+        # `room_occupancy` and no adult/child totals -- AddNewReservation sends
+        # dates, rooms, rate types and pricing inputs, and nothing else -- so
+        # there is nothing to check the party size against, and inventing one
+        # from the room count would refuse quotes the booking endpoint is
+        # perfectly happy with. The occupancy limits are enforced where the
+        # client actually supplies them: create and update, via
+        # `_parse_occupancy`.
+        rules.assert_rooms_sellable(md, room_ids)
 
         priced = rules.quote(
             md,
@@ -2933,6 +2962,56 @@ async def reservation_cancel(key: str, request: Request, db: Session = Depends(g
             )
 
         reservation = _load_by_id_or_token(db, company_id, key)
+
+        # A cancellation is a fact about a booking, and this endpoint is the
+        # only place that fact is written. Calling it twice used to be accepted:
+        # the second call re-applied the status and then overwrote
+        # `cancellation_reason`, `cancelled_at` and `cancelled_by` with the
+        # second caller's values, silently discarding the original record. That
+        # is the one answer nobody can reconstruct later -- "why is 304 free on
+        # the 5th?" has four different answers and the status alone tells none
+        # of them apart, which is the whole reason the reason is required.
+        #
+        # Check-out has refused its own terminal state this way all along
+        # (`only a checked-in guest can be checked out`); this is the same rule
+        # for the same reason, and it answers with the original reason rather
+        # than accepting a replacement.
+        #
+        # `rules.can_offer` is the test, not `rules.can_transition`. Transition
+        # treats same-status-to-same-status as legal -- "not a transition at
+        # all" -- which is right for an edit that does not change the status and
+        # wrong for this one, because a repeated cancel is not idempotent: it
+        # replaces the recorded reason. `can_offer` is exactly "legal AND a
+        # change", and the same field already driving the UI's button visibility
+        # (see the `can_*` flags serialised at line ~1278) is what decides here,
+        # so the button and the endpoint cannot disagree.
+        if not rules.can_offer(reservation.reservation_status, rules.CANCELLED):
+            # Two different refusals reach this line, and they need different
+            # answers. "Already cancelled" means the caller is repeating
+            # themselves and the record they would be replacing is worth
+            # showing them. Anything else means the booking is past the point
+            # where cancelling is a meaningful act -- checked in, or departed
+            # -- and that is a different conversation entirely.
+            if rules.normalise_status(
+                reservation.reservation_status
+            ) == rules.normalise_status(rules.CANCELLED):
+                detail = (
+                    f"This reservation was already cancelled on "
+                    f"{reservation.cancelled_at} by user {reservation.cancelled_by}"
+                    + (f", recorded as: {reservation.cancellation_reason}"
+                       if reservation.cancellation_reason else
+                       " (reason not recorded)")
+                    + ". A cancellation is not re-recordable; amend the booking "
+                      "instead if the status is wrong."
+                )
+            else:
+                detail = (
+                    f"A reservation that is {reservation.reservation_status} "
+                    "cannot be cancelled. Settle the folio through checkout "
+                    "instead, or record the guest as a no-show."
+                )
+            raise HTTPException(status_code=409, detail=detail)
+
         _apply_status(md, reservation, user_id, rules.CANCELLED)
 
         reservation.cancellation_reason = reason

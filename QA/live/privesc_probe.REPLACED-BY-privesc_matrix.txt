@@ -1,0 +1,227 @@
+# -*- coding: utf-8 -*-
+"""Prove (or disprove) server-side authorisation on WRITE endpoints.
+
+Every probe here is a NO-OP WRITE: the exact current field values are read,
+then written straight back. Nothing on the staging database is added, changed
+or deleted, so the probes are safe to re-run and leave no trace. What they
+measure is purely whether the request is REFUSED.
+
+A probe is a finding when a role that holds no permission on the owning page
+still gets a non-4xx (i.e. the write was accepted, or at least the request
+passed the authorisation layer).
+
+Usage:
+    python QA/live/privesc_probe.py
+"""
+from __future__ import annotations
+
+import base64
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+
+GW = os.environ.get("E2E_GATEWAY", "http://168.231.103.18:9010")
+PW = os.environ.get("QA_PASSWORD", "")  # never stored in this repo; see qa_common.py
+
+ACCOUNTS = {
+    "Admin": "admin@cherryhotel.com",
+    "FrontOfficeManager": "meera.krishnan@cherryhotel.com",
+    "FrontDesk": "divya.rao@cherryhotel.com",
+    "Housekeeping": "imran.khan@cherryhotel.com",
+    "FoodAndBeverage": "joseph.dsouza@cherryhotel.com",
+}
+
+
+def call(method, path, tok=None, body=None, form=None, timeout=30):
+    url = GW + path
+    data = None
+    hdrs = {}
+    if body is not None:
+        data = json.dumps(body).encode()
+        hdrs["Content-Type"] = "application/json"
+    elif form is not None:
+        data = form
+        hdrs["Content-Type"] = "application/x-www-form-urlencoded"
+    r = urllib.request.Request(url, data=data, method=method)
+    for k, v in hdrs.items():
+        r.add_header(k, v)
+    if tok:
+        r.add_header("Authorization", "Bearer " + tok)
+    try:
+        with urllib.request.urlopen(r, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+            try:
+                return resp.status, json.loads(raw)
+            except ValueError:
+                return resp.status, raw[:200]
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace")
+        try:
+            return e.code, json.loads(raw)
+        except ValueError:
+            return e.code, raw[:200]
+    except Exception as e:
+        return 0, str(e)[:160]
+
+
+def login(email, password=PW):
+    for attempt in range(6):
+        s, b = call("POST", "/login_post", body={"email": email, "password": password})
+        if s == 200:
+            return b["access_token"]
+        if s == 429:
+            w = 20 * (attempt + 1)
+            print(f"  (rate limited {email}, waiting {w}s)")
+            time.sleep(w)
+            continue
+        raise SystemExit(f"login failed {email}: {s} {b}")
+    raise SystemExit("rate limited")
+
+
+def claims(tok):
+    seg = tok.split(".")[1]
+    return json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))
+
+
+def first(b):
+    d = b.get("data") if isinstance(b, dict) else None
+    if isinstance(d, dict):
+        d = d.get("data", d)
+    return d[0] if isinstance(d, list) and d else None
+
+
+def main():
+    tok, meta = {}, {}
+    for role, email in ACCOUNTS.items():
+        tok[role] = login(email)
+        meta[role] = claims(tok[role])
+
+    # --- 1. baseline snapshot of a master-data row we will write back -----
+    s, tax_list = call("GET", "/masterdata/tax", tok=tok["Admin"])
+    tax = first(tax_list)
+    if not tax:
+        raise SystemExit(f"no tax rows to probe: {s} {tax_list}")
+    tax_id = tax.get("tax_id") or tax.get("id")
+    print(f"probe target: masterdata tax id={tax_id} -> {tax}")
+
+    s2, before = call("GET", f"/masterdata/tax/{tax_id}", tok=tok["Admin"])
+    print(f"  before: {s2} {before}")
+
+    # Build a no-op update body from the row itself.
+    fields = {k: v for k, v in (before.get("data") or before).items()
+              if k in ("tax_name", "tax_percentage", "tax_type", "country_id", "company_id",
+                       "status", "description", "cgst", "sgst", "igst")}
+    print(f"  replay fields: {fields}")
+
+    from urllib.parse import urlencode
+    form = urlencode({k: ("" if v is None else v) for k, v in fields.items()}).encode()
+    form = form + b"&tax_id=" + str(tax_id).encode()
+
+    results = []
+
+    def probe(label, role, method, path, data=None, ctype=None):
+        t = tok.get(role)
+        url = GW + path
+        r = urllib.request.Request(url, data=data, method=method)
+        if ctype:
+            r.add_header("Content-Type", ctype)
+        if t:
+            r.add_header("Authorization", "Bearer " + t)
+        try:
+            with urllib.request.urlopen(r, timeout=30) as resp:
+                st, bd = resp.status, resp.read().decode("utf-8", "replace")[:160]
+        except urllib.error.HTTPError as e:
+            st, bd = e.code, e.read().decode("utf-8", "replace")[:160]
+        except Exception as e:
+            st, bd = 0, str(e)[:160]
+        perm = meta.get(role, {}).get("perm", {})
+        results.append({"probe": label, "role": role, "method": method, "path": path,
+                        "status": st, "body": bd,
+                        "role_has_tax_types_perm": bool(perm.get("/tax_types")),
+                        "role_perm_page_count": len(perm)})
+        print(f"  {label:52s} {role:18s} -> {st}  {bd[:70]}")
+
+    print("\n=== NO-OP WRITE: PUT /masterdata/tax/{id} with unchanged values ===")
+    for role in ACCOUNTS:
+        probe("masterdata tax update (no-op)", role, "PUT", f"/masterdata/tax/{tax_id}",
+              form, "application/x-www-form-urlencoded")
+
+    s3, after = call("GET", f"/masterdata/tax/{tax_id}", tok=tok["Admin"])
+    print(f"\n  after:  {s3} {after}")
+    unchanged = (before.get("data") or before) == (after.get("data") or after)
+    print(f"  ROW UNCHANGED BY PROBES: {unchanged}")
+
+    print("\n=== DELETE attempt on the same row (must be refused, nothing deleted) ===")
+    for role in ["Housekeeping", "FrontDesk", "FoodAndBeverage"]:
+        probe("masterdata tax DELETE", role, "DELETE", f"/masterdata/tax/{tax_id}")
+    s4, still = call("GET", f"/masterdata/tax/{tax_id}", tok=tok["Admin"])
+    print(f"  row still present after delete probes: {s4} {bool(first(still) or still.get('data'))}")
+
+    print("\n=== Room status write (Hotel service) as Housekeeping / FrontDesk ===")
+    s, rooms = call("GET", "/masterdata/room", tok=tok["Admin"])
+    room = first(rooms)
+    print(f"  room sample: {room}")
+    if room:
+        rid = room.get("room_id") or room.get("id")
+        probe("room state set (as Housekeeping)", "Housekeeping", "PUT",
+              f"/masterdata/room/{rid}/state", json.dumps({"state": room.get("room_state") or "available"}).encode(),
+              "application/json")
+        probe("room state set (as FrontDesk)", "FrontDesk", "PUT",
+              f"/masterdata/room/{rid}/state", json.dumps({"state": room.get("room_state") or "available"}).encode(),
+              "application/json")
+        probe("room DELETE (as FoodAndBeverage)", "FoodAndBeverage", "DELETE", f"/masterdata/room/{rid}")
+
+    print("\n=== Restaurant bill cancel as Housekeeping (must be refused) ===")
+    s, bills = call("GET", "/restaurant/bill", tok=tok["Admin"])
+    bill = first(bills)
+    if bill:
+        bid = bill.get("bill_id") or bill.get("id")
+        probe("restaurant bill cancel", "Housekeeping", "POST", f"/restaurant/bill/{bid}/cancel",
+              json.dumps({"reason": "QA-PRIVESC-PROBE"}).encode(), "application/json")
+        probe("restaurant bill cancel", "FrontDesk", "POST", f"/restaurant/bill/{bid}/cancel",
+              json.dumps({"reason": "QA-PRIVESC-PROBE"}).encode(), "application/json")
+
+    print("\n=== Role/permission self-grant attempts as Housekeeping (must be refused) ===")
+    probe("role_permissions edit", "Housekeeping", "PUT", "/user/role_permissions/4",
+          json.dumps({"role_id": 4, "menu_id": 1, "submenu_id": None,
+                      "view_permission": True, "create_permission": True,
+                      "edit_permission": True, "delete_permission": True}).encode(),
+          "application/json")
+    probe("role create", "Housekeeping", "POST", "/user/roles",
+          json.dumps({"role_name": "QA-PRIVESC-PROBE-ROLE"}).encode(), "application/json")
+
+    print("\n=== JWT tampering (must be refused) ===")
+    admin = tok["Admin"]
+    bad = admin[:-4] + ("aaaa" if not admin.endswith("aaaa") else "bbbb")
+    r = urllib.request.Request(GW + "/masterdata/room", method="GET")
+    r.add_header("Authorization", "Bearer " + bad)
+    try:
+        with urllib.request.urlopen(r, timeout=20) as resp:
+            print(f"  tampered signature            -> {resp.status}  !! ACCEPTED")
+            results.append({"probe": "tampered JWT", "status": resp.status, "role": "attacker"})
+    except urllib.error.HTTPError as e:
+        print(f"  tampered signature            -> {e.code}")
+        results.append({"probe": "tampered JWT", "status": e.code, "role": "attacker"})
+    # alg:none
+    import base64 as b64
+    hdr = b64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).rstrip(b"=").decode()
+    forged = hdr + "." + admin.split(".")[1] + "."
+    r = urllib.request.Request(GW + "/masterdata/room", method="GET")
+    r.add_header("Authorization", "Bearer " + forged)
+    try:
+        with urllib.request.urlopen(r, timeout=20) as resp:
+            print(f"  alg=none forgery              -> {resp.status}  !! ACCEPTED")
+            results.append({"probe": "alg=none JWT", "status": resp.status, "role": "attacker"})
+    except urllib.error.HTTPError as e:
+        print(f"  alg=none forgery              -> {e.code}")
+        results.append({"probe": "alg=none JWT", "status": e.code, "role": "attacker"})
+
+    with open(os.path.join(os.path.dirname(__file__), "privesc_probe.json"), "w", encoding="utf-8") as fh:
+        json.dump({"results": results, "row_unchanged": unchanged}, fh, indent=1)
+    print("\nwrote privesc_probe.json")
+
+
+if __name__ == "__main__":
+    main()

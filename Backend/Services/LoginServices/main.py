@@ -146,4 +146,34 @@ def readyz():
     }
 
 
+@app.on_event("startup")
+def _log_authorisation_mode():
+    """State the authorisation mode once, at boot.
+
+    `audit` means every role can reach every endpoint and the refusals exist
+    only in the log. That is a reasonable thing to want while mapping a new
+    deployment and a serious thing to leave switched on by accident, so it is
+    announced either way, and `audit`/`off` are announced at WARNING because
+    they are the modes an operator has to notice to be safe.
+    """
+    from resources.rbac import MODE
+
+    msg = "gateway authorisation mode: %s (map rows: %d)"
+    rows = len(rbac_map_rows())
+    if MODE == "enforce":
+        logger.info(msg, MODE, rows)
+    else:
+        logger.warning(
+            "%s -- permissions are NOT being enforced; every role can reach "
+            "every endpoint and refusals are only written to the log.",
+            msg % (MODE, rows),
+        )
+
+
+def rbac_map_rows() -> int:
+    from resources.rbac_map import ROUTE_PERMISSIONS
+
+    return len(ROUTE_PERMISSIONS)
+
+
 app.include_router(router, prefix="")

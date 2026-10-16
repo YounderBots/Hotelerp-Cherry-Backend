@@ -1,0 +1,2058 @@
+{
+ "roles": [
+  {
+   "id": "1",
+   "name": "Admin",
+   "description": "Full access to every module, including Master Data and HRM."
+  },
+  {
+   "id": "2",
+   "name": "Front Office Manager",
+   "description": "Reservations, night audit, guest enquiry and reporting."
+  },
+  {
+   "id": "3",
+   "name": "Front Desk",
+   "description": "Day-to-day reservations: book, check in, take payment, check out."
+  },
+  {
+   "id": "4",
+   "name": "Housekeeping",
+   "description": "Room status, task assignment and incident logging."
+  },
+  {
+   "id": "5",
+   "name": "Food & Beverage",
+   "description": "Restaurant and bar: menu, orders, kitchen and billing."
+  },
+  {
+   "id": "6",
+   "name": "QB ZZQA3XJSLLA changed",
+   "description": "QB ZZQA3XJSLLB changed"
+  },
+  {
+   "id": "7",
+   "name": "QB ZZQA3XOUWDA changed",
+   "description": "QB ZZQA3XOUWDB changed"
+  },
+  {
+   "id": "8",
+   "name": "QB ZZQA3XT2G2A changed",
+   "description": "QB ZZQA3XT2G2B changed"
+  },
+  {
+   "id": "9",
+   "name": "QB ZZQA3ZW9I8A changed",
+   "description": "QB ZZQA3ZW9I8B changed"
+  },
+  {
+   "id": "10",
+   "name": "QB ZZQA41IXPSA changed",
+   "description": "QB ZZQA41IXPSB changed"
+  },
+  {
+   "id": "11",
+   "name": "QB ZZQA42H55CA changed",
+   "description": "QB ZZQA42H55CB changed"
+  },
+  {
+   "id": "12",
+   "name": "QB ZZQA434N8GA changed",
+   "description": "QB ZZQA434N8GB changed"
+  },
+  {
+   "id": "13",
+   "name": "QB ZZQA4YDEH5A changed",
+   "description": "QB ZZQA4YDEH5B changed"
+  },
+  {
+   "id": "14",
+   "name": "QB ZZQA51PGWVA changed",
+   "description": "QB ZZQA51PGWVB changed"
+  }
+ ],
+ "pages": [
+  {
+   "kind": "Menu",
+   "parent": "",
+   "menu_id": "1",
+   "submenu_id": "",
+   "label": "Dashboard",
+   "path": "/dashboard",
+   "modules": [
+    "Cross-module (SPA)"
+   ],
+   "primary_module": "Cross-module (SPA)",
+   "served_by": [
+    "Bar",
+    "Hotel / Reservations",
+    "Master Data",
+    "Restaurant (F&B)"
+   ],
+   "routes": 19,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    },
+    "Front Desk": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    },
+    "Housekeeping": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "dashboard"
+  },
+  {
+   "kind": "Menu",
+   "parent": "",
+   "menu_id": "2",
+   "submenu_id": "",
+   "label": "Reservation",
+   "path": "/reservation",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 22,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Desk": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    },
+    "Housekeeping": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "reservation"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Reservation",
+   "menu_id": "2",
+   "submenu_id": "101",
+   "label": "Add New Reservation",
+   "path": "/add_new_reservation",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 14,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Desk": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    },
+    "Housekeeping": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "reservation"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Reservation",
+   "menu_id": "2",
+   "submenu_id": "102",
+   "label": "Booking",
+   "path": "/booking",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 7,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Desk": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    },
+    "Housekeeping": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "reservation"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Reservation",
+   "menu_id": "2",
+   "submenu_id": "103",
+   "label": "Room View",
+   "path": "/room_view",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 3,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Desk": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    },
+    "Housekeeping": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "reservation"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Reservation",
+   "menu_id": "2",
+   "submenu_id": "104",
+   "label": "Reservation View",
+   "path": "/reservation_view",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 2,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Desk": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    },
+    "Housekeeping": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "reservation"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Night Audit",
+   "menu_id": "3",
+   "submenu_id": "111",
+   "label": "Night Audit",
+   "path": "/night_audit",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "night-auditing"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Night Audit",
+   "menu_id": "3",
+   "submenu_id": "112",
+   "label": "User Reserved Details",
+   "path": "/user_reserved_details",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 3,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "night-auditing"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Night Audit",
+   "menu_id": "3",
+   "submenu_id": "113",
+   "label": "Room Booked Details",
+   "path": "/room_booked_details",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 2,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "night-auditing"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Night Audit",
+   "menu_id": "3",
+   "submenu_id": "114",
+   "label": "Settlement Summary",
+   "path": "/settlement_summary",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 2,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "night-auditing"
+  },
+  {
+   "kind": "Menu",
+   "parent": "",
+   "menu_id": "4",
+   "submenu_id": "",
+   "label": "Guest Enquiry",
+   "path": "/guest_enquiry",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 7,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    },
+    "Front Desk": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "guest-enquiry"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "House Keeper",
+   "menu_id": "5",
+   "submenu_id": "121",
+   "label": "Task Assign",
+   "path": "/task_assign",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "HRM / Users",
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 10,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    },
+    "Housekeeping": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "house-keeper"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "House Keeper",
+   "menu_id": "5",
+   "submenu_id": "122",
+   "label": "Room Incident Log",
+   "path": "/room_incident_log",
+   "modules": [
+    "Hotel / Reservations"
+   ],
+   "primary_module": "Hotel / Reservations",
+   "served_by": [
+    "HRM / Users",
+    "Hotel / Reservations",
+    "Master Data"
+   ],
+   "routes": 10,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    },
+    "Housekeeping": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "house-keeper"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "131",
+   "label": "Employee",
+   "path": "/employee",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "HRM / Users",
+    "Master Data"
+   ],
+   "routes": 11,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "132",
+   "label": "User",
+   "path": "/user",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "HRM / Users"
+   ],
+   "routes": 3,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "133",
+   "label": "Roles",
+   "path": "/roles",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "HRM / Users"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "134",
+   "label": "Department",
+   "path": "/department",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "HRM / Users"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "135",
+   "label": "Designation",
+   "path": "/designation",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "HRM / Users"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "136",
+   "label": "Shift",
+   "path": "/shift",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "HRM / Users"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "137",
+   "label": "Restaurant Roster",
+   "path": "/restaurant_roster",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "HRM / Users",
+    "Restaurant (F&B)"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "138",
+   "label": "Restaurant Shift Planning",
+   "path": "/restaurant_shift_planning",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "HRM / Users",
+    "Restaurant (F&B)"
+   ],
+   "routes": 9,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "139",
+   "label": "Bar Roster",
+   "path": "/bar_roster",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "Bar",
+    "HRM / Users"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "HRM",
+   "menu_id": "6",
+   "submenu_id": "140",
+   "label": "Bar Shift Planning",
+   "path": "/bar_shift_planning",
+   "modules": [
+    "HRM / Users"
+   ],
+   "primary_module": "HRM / Users",
+   "served_by": [
+    "Bar",
+    "HRM / Users"
+   ],
+   "routes": 9,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    }
+   },
+   "icon": "hrm"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "151",
+   "label": "Menu Management",
+   "path": "/menus",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 16,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "152",
+   "label": "Combo / Package Deals",
+   "path": "/combo_deals",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "153",
+   "label": "Floor Layout",
+   "path": "/floor_layout",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "154",
+   "label": "Table Master",
+   "path": "/table_master",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "155",
+   "label": "Order Management",
+   "path": "/orders",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 9,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "156",
+   "label": "Table Reservation",
+   "path": "/table_reservation",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "157",
+   "label": "Main Kitchen",
+   "path": "/kot/main_kitchen",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 6,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "158",
+   "label": "Grill Kitchen",
+   "path": "/kot/grill",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 6,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "159",
+   "label": "Dessert Kitchen",
+   "path": "/kot/dessert",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 6,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "160",
+   "label": "Billing & Payments",
+   "path": "/billing_payments",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 9,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "161",
+   "label": "Inventory Control",
+   "path": "/stock",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "162",
+   "label": "Recipe Management",
+   "path": "/recipe_management",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 6,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "163",
+   "label": "Guest Management",
+   "path": "/guest_management",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 8,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Restaurant",
+   "menu_id": "7",
+   "submenu_id": "164",
+   "label": "Report & Analytics",
+   "path": "/reports_analytics",
+   "modules": [
+    "Restaurant (F&B)"
+   ],
+   "primary_module": "Restaurant (F&B)",
+   "served_by": [
+    "Restaurant (F&B)"
+   ],
+   "routes": 8,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "restaurant"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "171",
+   "label": "Menu Management",
+   "path": "/bar_menus",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 16,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "172",
+   "label": "Floor Layout",
+   "path": "/bar_floor_layout",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "173",
+   "label": "Table Master",
+   "path": "/bar_table_master",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "174",
+   "label": "Order Management",
+   "path": "/bar_orders",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 9,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "175",
+   "label": "Station Display",
+   "path": "/bar_station",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 7,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "176",
+   "label": "Billing & Payments",
+   "path": "/bar_billing_payments",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 9,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "177",
+   "label": "Stock",
+   "path": "/bar_stock",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "178",
+   "label": "Recipe Management",
+   "path": "/bar_recipe_management",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 6,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "179",
+   "label": "Guest Management",
+   "path": "/bar_guest_management",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 8,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Bar",
+   "menu_id": "8",
+   "submenu_id": "180",
+   "label": "Report & Analytics",
+   "path": "/bar_reports_analytics",
+   "modules": [
+    "Bar"
+   ],
+   "primary_module": "Bar",
+   "served_by": [
+    "Bar"
+   ],
+   "routes": 8,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Food & Beverage": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": false
+    }
+   },
+   "icon": "bar"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "191",
+   "label": "Facilities",
+   "path": "/facilities",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "192",
+   "label": "Room Type",
+   "path": "/room_type",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 6,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "193",
+   "label": "Bed Type",
+   "path": "/bed_type",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "194",
+   "label": "Hall / Floor",
+   "path": "/hall_floor",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "195",
+   "label": "Rooms",
+   "path": "/rooms",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 8,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "196",
+   "label": "Discount Type",
+   "path": "/discount_type",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "197",
+   "label": "Tax Types",
+   "path": "/tax_types",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "198",
+   "label": "Payment Methods",
+   "path": "/payment_methods",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "199",
+   "label": "Identification Proof",
+   "path": "/identification_proof",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "200",
+   "label": "Currency & Country",
+   "path": "/currency_country",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "201",
+   "label": "HSK Task Type",
+   "path": "/hsk_task_type",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "202",
+   "label": "Complementary",
+   "path": "/complementary",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 5,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  },
+  {
+   "kind": "Submenu",
+   "parent": "Master Data",
+   "menu_id": "9",
+   "submenu_id": "203",
+   "label": "Reservation Status",
+   "path": "/reservation_status",
+   "modules": [
+    "Master Data"
+   ],
+   "primary_module": "Master Data",
+   "served_by": [
+    "Master Data"
+   ],
+   "routes": 4,
+   "roles": {
+    "Admin": {
+     "view": true,
+     "create": true,
+     "edit": true,
+     "delete": true
+    },
+    "Front Office Manager": {
+     "view": true,
+     "create": false,
+     "edit": false,
+     "delete": false
+    }
+   },
+   "icon": "master-data"
+  }
+ ],
+ "menus": [
+  {
+   "id": "1",
+   "label": "Dashboard",
+   "link": "/dashboard",
+   "icon": "dashboard",
+   "submenu_count": 0
+  },
+  {
+   "id": "2",
+   "label": "Reservation",
+   "link": "/reservation",
+   "icon": "reservation",
+   "submenu_count": 4
+  },
+  {
+   "id": "3",
+   "label": "Night Audit",
+   "link": "",
+   "icon": "night-auditing",
+   "submenu_count": 4
+  },
+  {
+   "id": "4",
+   "label": "Guest Enquiry",
+   "link": "/guest_enquiry",
+   "icon": "guest-enquiry",
+   "submenu_count": 0
+  },
+  {
+   "id": "5",
+   "label": "House Keeper",
+   "link": "",
+   "icon": "house-keeper",
+   "submenu_count": 2
+  },
+  {
+   "id": "6",
+   "label": "HRM",
+   "link": "",
+   "icon": "hrm",
+   "submenu_count": 10
+  },
+  {
+   "id": "7",
+   "label": "Restaurant",
+   "link": "",
+   "icon": "restaurant",
+   "submenu_count": 14
+  },
+  {
+   "id": "8",
+   "label": "Bar",
+   "link": "",
+   "icon": "bar",
+   "submenu_count": 10
+  },
+  {
+   "id": "9",
+   "label": "Master Data",
+   "link": "",
+   "icon": "master-data",
+   "submenu_count": 13
+  }
+ ]
+}

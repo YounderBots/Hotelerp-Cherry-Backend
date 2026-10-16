@@ -22,11 +22,14 @@ const HotelDashboardTab = () => {
   const [summary, setSummary] = useState(null); // null = loading
   const [rooms, setRooms] = useState(null);
   const [dailyRevenue, setDailyRevenue] = useState(0);
-  const [activity, setActivity] = useState(null);
+  // The recent-activity card is assembled from `summary` and `tasks` below, so
+  // there is no separate activity state any more. It used to be one
+  // (`/hotel/user_activity_log`) and that payload carried guest phone and
+  // email; see the call site for why.
   // The signed-in staff member's housekeeping tasks — null until the call
   // settles, so the card can tell "still loading" from "there are none".
   const [tasks, setTasks] = useState(null);
-  const [errors, setErrors] = useState({ reservations: null, rooms: null, activity: null, sales: null, tasks: null });
+  const [errors, setErrors] = useState({ reservations: null, rooms: null, sales: null, tasks: null });
   const [refreshTick, setRefreshTick] = useState(0);
 
   // One value for "today", used by both dated report calls below. Use the
@@ -38,19 +41,31 @@ const HotelDashboardTab = () => {
     mounted.current = true;
     setSummary(null);
     setRooms(null);
-    setActivity(null);
     setTasks(null);
-    setErrors({ reservations: null, rooms: null, activity: null, sales: null, tasks: null });
+    setErrors({ reservations: null, rooms: null, sales: null, tasks: null });
 
-    // No company_id is sent, and none is checked for.
+    // `user_activity_log` was called here and is not any more.
     //
-    // `user_activity_log` takes only from_date/to_date and reads company_id
-    // from the verified token (nightauditController: "company_id now comes
-    // from the verified token"). The parameter was therefore always ignored,
-    // and the guard around it was worse than useless: rejecting the call when
-    // the session's user object had no company_id turned a perfectly readable
-    // log into a permanent "Failed to load activity" for that session.
-    const activityCall = APICall.getT("/hotel/user_activity_log");
+    // It takes only from_date/to_date and reads company_id from the verified
+    // token (nightauditController: "company_id now comes from the verified
+    // token"), so the company_id this tab used to send was always ignored.
+    //
+    // It is not called from here any more, and the reason is PII rather than
+    // tidiness. That endpoint returns guest `phone` and `email` next to the
+    // name and room this card draws, and /dashboard is the one page EVERY role
+    // holds `view` on -- so calling it here handed a housekeeper the phone
+    // number and email address of every guest who touched a room. Neither field
+    // is rendered below; the card wants a name, a room, a status and a date.
+    //
+    // All four are already here from the two calls this card was making anyway:
+    // `reservation_summary` for the arrivals (name, room numbers, status,
+    // arrival date, no contact details) and `housekeeper_tasks` for the
+    // housekeeping half. Dropping the call therefore loses nothing from the
+    // screen and removes the only guest-contact payload a Dashboard can reach.
+    //
+    // This is the same correction already applied to /hotel/room_reservation
+    // on this page; see test_a_dashboard_only_role_cannot_read_the_reservation_list
+    // in Backend/tests/test_rbac_gateway.py, and its sibling added for this row.
 
     Promise.allSettled([
       // A SUMMARY, not the whole book.
@@ -63,7 +78,6 @@ const HotelDashboardTab = () => {
       // page actually draws, and carries no contact details at all.
       APICall.getT("/hotel/reports/reservation_summary", { report_date: today }),
       APICall.getT("/masterdata/room"),
-      activityCall,
       // Same correction as OverviewTab: revenue for a DAY, from the dated
       // report, rather than the sum of every reservation in the book.
       APICall.getT("/hotel/reports/daily_sales", { report_date: today }),
@@ -73,19 +87,17 @@ const HotelDashboardTab = () => {
       // 403 — that refusal is passed to the card to display, never swallowed
       // into an empty list that would read as "you have no work".
       APICall.getT("/hotel/housekeeper_tasks"),
-    ]).then(([rRes, rRoom, rAct, rSales, rTasks]) => {
+    ]).then(([rRes, rRoom, rSales, rTasks]) => {
       if (!mounted.current) return;
 
       setSummary(rRes.status === "fulfilled" ? rRes.value?.data || null : null);
       setRooms(rRoom.status === "fulfilled" ? Array.isArray(rRoom.value?.data) ? rRoom.value.data : [] : []);
-      setActivity(rAct.status === "fulfilled" ? rAct.value?.data || { room_activity: [], housekeeping_activity: [] } : { room_activity: [], housekeeping_activity: [] });
       setDailyRevenue(rSales.status === "fulfilled" ? Number(rSales.value?.data?.grand_total) || 0 : 0);
       setTasks(rTasks.status === "fulfilled" ? (Array.isArray(rTasks.value?.data) ? rTasks.value.data : []) : []);
 
       setErrors({
         reservations: rRes.status === "rejected" ? (rRes.reason?.message || "Failed to load bookings.") : null,
         rooms: rRoom.status === "rejected" ? (rRoom.reason?.message || "Failed to load rooms.") : null,
-        activity: rAct.status === "rejected" ? (rAct.reason?.message || "Failed to load activity.") : null,
         sales: rSales.status === "rejected" ? (rSales.reason?.message || "Failed to load today's sales.") : null,
         tasks: rTasks.status === "rejected" ? (rTasks.reason?.message || "Failed to load your tasks.") : null,
       });
@@ -145,23 +157,32 @@ const HotelDashboardTab = () => {
   );
 
   const recentActivityItems = useMemo(() => {
-    if (!activity) return [];
-    const roomActs = (activity.room_activity || []).map((r) => ({
-      key: `res-${r.id}`,
-      title: `${r.first_name || ""} ${r.last_name || ""}`.trim() || "Guest",
-      desc: `Room ${r.room_no || "—"} · ${r.booking_status || "Reservation"}`,
+    // Built from the two summaries this tab already loads, NOT from
+    // /hotel/user_activity_log. That endpoint is what the card used to read and
+    // it carries guest `phone` and `email`; see the comment at the call site for
+    // why a page every role can open must not receive it. Both sources here are
+    // already fetched, so the card loses no rows:
+    //
+    //   arrivals  from /hotel/reports/reservation_summary -> name, room numbers,
+    //            status, arrival date, and no contact details
+    //   tasks     from /hotel/housekeeper_tasks             -> task type,
+    //            assignee, room, task status
+    const roomActs = (summary?.arrivals || []).map((r, i) => ({
+      key: `res-${r.id ?? i}`,
+      title: r.guest_name || "Guest",
+      desc: `Room ${(r.room_nos || []).join(", ") || "—"} · ${r.reservation_status || "Reservation"}`,
       time: isoDay(r.arrival_date) || "",
       kind: "primary",
     }));
-    const keeperActs = (activity.housekeeping_activity || []).map((k) => ({
-      key: `hsk-${k.id}`,
-      title: `${k.task_type || "Housekeeping task"}`,
-      desc: `${k.employee_name || "Staff"} · Room ${k.room_no || "—"} · ${k.task_status || ""}`.replace(/\s·\s$/, ""),
+    const keeperActs = (tasks || []).map((t, i) => ({
+      key: `hsk-${t.id ?? i}`,
+      title: `${t.task_type || "Housekeeping task"}`,
+      desc: `${t.first_name ? `${t.first_name} ${t.last_name || ""}`.trim() : "Staff"} · Room ${t.room_no || "—"} · ${t.task_status || ""}`.replace(/\s·\s$/, ""),
       time: "",
       kind: "success",
     }));
     return [...roomActs, ...keeperActs].slice(0, 8);
-  }, [activity]);
+  }, [summary, tasks]);
 
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(" ");
   const displayName = (
@@ -175,7 +196,7 @@ const HotelDashboardTab = () => {
   const handleRefresh = () => setRefreshTick((n) => n + 1);
   const handleAddBooking = () => navigate("/add_new_reservation");
 
-  const anyLoading = summary === null || rooms === null || activity === null || tasks === null;
+  const anyLoading = summary === null || rooms === null || tasks === null;
 
   return (
     <div className="dashboard-wrapper container-fluid" aria-busy={anyLoading}>
@@ -234,8 +255,8 @@ const HotelDashboardTab = () => {
           <div className="recent-activity-wrap full-height">
             <RecentActivity
               items={recentActivityItems}
-              loading={activity === null}
-              error={errors.activity}
+              loading={summary === null || tasks === null}
+              error={null}
             />
           </div>
         </div>

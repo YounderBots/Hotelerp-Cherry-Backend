@@ -145,7 +145,7 @@ ROUTE_PERMISSIONS: dict[tuple[str, str, str], tuple[str, ...]] = {
     ("hotel", "roomincident_log/{id}", "DELETE"): ("/room_incident_log",),
     ("hotel", "templates/static/identity_proofs/{id}", "GET"): ("/add_new_reservation", "/reservation",),
     ("hotel", "templates/static/room_incidents/{id}", "GET"): ("/room_incident_log",),
-    ("hotel", "user_activity_log", "GET"): ("/dashboard", "/user_reserved_details",),
+    ("hotel", "user_activity_log", "GET"): ("/user_reserved_details",),
     # ---- masterdata ----
     ("masterdata", "bed_type", "POST"): ("/bed_type",),
     ("masterdata", "bed_type", "PUT"): ("/bed_type",),

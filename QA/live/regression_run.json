@@ -1,0 +1,335 @@
+[
+ {
+  "status": "PASS",
+  "service": "UserServices",
+  "suite": "test_rbac.py",
+  "kind": "pytest",
+  "checks": 19,
+  "protects": "Permission decisions inside the user service",
+  "summary": "19 passed in 1.49s"
+ },
+ {
+  "status": "PASS",
+  "service": "LoginServices",
+  "suite": "test_rbac_gateway.py",
+  "kind": "pytest",
+  "checks": 71,
+  "protects": "The gateway's 279-row permission map",
+  "summary": "71 passed in 1.39s"
+ },
+ {
+  "status": "PASS",
+  "service": "LoginServices",
+  "suite": "test_route_policy.py",
+  "kind": "pytest",
+  "checks": 18,
+  "protects": "Service guard agrees with the gateway, all 279 routes",
+  "summary": "18 passed in 0.69s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_night_audit.py",
+  "kind": "pytest",
+  "checks": 50,
+  "protects": "Business date, postings, reconciliation",
+  "summary": "50 passed in 1.68s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_reservation_rules.py",
+  "kind": "pytest",
+  "checks": 111,
+  "protects": "Cancellation, pricing, sellability, folio rules",
+  "summary": "111 passed in 1.18s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_reservation_pricing.py",
+  "kind": "pytest",
+  "checks": 10,
+  "protects": "Folio arithmetic over the real HTTP client",
+  "summary": "10 passed in 0.57s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_booking_validation.py",
+  "kind": "pytest",
+  "checks": 24,
+  "protects": "Dates, numeric bounds, room-type scope",
+  "summary": "24 passed in 1.10s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_reservation_housekeeping.py",
+  "kind": "pytest",
+  "checks": 23,
+  "protects": "Checkout -> housekeeping handover on the wire",
+  "summary": "23 passed in 1.42s"
+ },
+ {
+  "status": "PASS",
+  "service": "LoginServices",
+  "suite": "test_preflight_images.py",
+  "kind": "pytest",
+  "checks": 7,
+  "protects": "Preflight check 6: are the images really on disk",
+  "summary": "7 passed in 0.07s"
+ },
+ {
+  "status": "PASS",
+  "service": "LoginServices",
+  "suite": "test_seed_night_audit.py",
+  "kind": "pytest",
+  "checks": 10,
+  "protects": "Seeded audit rows reconcile with seeded bookings",
+  "summary": "10 passed in 0.77s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_master_client.py",
+  "kind": "pytest",
+  "checks": 45,
+  "protects": "The service-to-service HTTP client and its failure modes",
+  "summary": "45 passed, 3 warnings in 2.08s"
+ },
+ {
+  "status": "PASS",
+  "service": "MasterDataServices",
+  "suite": "test_snapshot_contract.py",
+  "kind": "pytest",
+  "checks": 12,
+  "protects": "/snapshot contract, asserted from both ends",
+  "summary": "12 passed, 1 warning in 1.52s"
+ },
+ {
+  "status": "PASS",
+  "service": "BarServices",
+  "suite": "test_bill_payment.py",
+  "kind": "pytest",
+  "checks": 11,
+  "protects": "Bills and payments reconcile",
+  "summary": "11 passed in 1.66s"
+ },
+ {
+  "status": "PASS",
+  "service": "RestaurantServices",
+  "suite": "test_bill_payment.py",
+  "kind": "pytest",
+  "checks": 11,
+  "protects": "Bills and payments reconcile",
+  "summary": "11 passed in 1.97s"
+ },
+ {
+  "status": "PASS",
+  "service": "MasterDataServices",
+  "suite": "test_upload_content.py",
+  "kind": "pytest",
+  "checks": 65,
+  "protects": "Uploads are validated, not just stored",
+  "summary": "65 passed in 1.00s"
+ },
+ {
+  "status": "PASS",
+  "service": "RestaurantServices",
+  "suite": "test_upload_content.py",
+  "kind": "pytest",
+  "checks": 65,
+  "protects": "Uploads are validated, not just stored",
+  "summary": "65 passed in 1.47s"
+ },
+ {
+  "status": "PASS",
+  "service": "BarServices",
+  "suite": "test_upload_content.py",
+  "kind": "pytest",
+  "checks": 65,
+  "protects": "Uploads are validated, not just stored",
+  "summary": "65 passed in 1.12s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_upload_content.py",
+  "kind": "pytest",
+  "checks": 78,
+  "protects": "Uploads are validated, not just stored",
+  "summary": "78 passed in 1.27s"
+ },
+ {
+  "status": "PASS",
+  "service": "UserServices",
+  "suite": "test_user_photo_upload.py",
+  "kind": "pytest",
+  "checks": 15,
+  "protects": "Employee photo upload",
+  "summary": "15 passed in 1.17s"
+ },
+ {
+  "status": "PASS",
+  "service": "BarServices",
+  "suite": "test_phone_validation.py",
+  "kind": "pytest",
+  "checks": 120,
+  "protects": "Phone normalisation is identical in every service",
+  "summary": "120 passed in 0.68s"
+ },
+ {
+  "status": "PASS",
+  "service": "RestaurantServices",
+  "suite": "test_phone_validation.py",
+  "kind": "pytest",
+  "checks": 120,
+  "protects": "Phone normalisation is identical in every service",
+  "summary": "120 passed in 0.71s"
+ },
+ {
+  "status": "PASS",
+  "service": "UserServices",
+  "suite": "test_phone_validation.py",
+  "kind": "pytest",
+  "checks": 120,
+  "protects": "Phone normalisation is identical in every service",
+  "summary": "120 passed in 0.70s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_phone_validation.py",
+  "kind": "pytest",
+  "checks": 120,
+  "protects": "Phone normalisation is identical in every service",
+  "summary": "120 passed in 0.73s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_phone_pattern_guard.py",
+  "kind": "pytest",
+  "checks": 2,
+  "protects": "The QA sweep's pattern can still detect a planted number",
+  "summary": "2 passed in 1.26s"
+ },
+ {
+  "status": "PASS",
+  "service": "RestaurantServices",
+  "suite": "test_combo_rules.py",
+  "kind": "pytest",
+  "checks": 4,
+  "protects": "Combo pricing",
+  "summary": "4 passed in 1.06s"
+ },
+ {
+  "status": "PASS",
+  "service": "BarServices",
+  "suite": "test_fnb_hardening.py",
+  "kind": "pytest",
+  "checks": 6,
+  "protects": "F&B edge cases and hardening",
+  "summary": "6 passed in 1.63s"
+ },
+ {
+  "status": "PASS",
+  "service": "RestaurantServices",
+  "suite": "test_fnb_hardening.py",
+  "kind": "pytest",
+  "checks": 6,
+  "protects": "F&B edge cases and hardening",
+  "summary": "6 passed in 1.81s"
+ },
+ {
+  "status": "PASS",
+  "service": "LoginServices",
+  "suite": "test_jwt_auth.py",
+  "kind": "pytest",
+  "checks": 10,
+  "protects": "Signature, expiry, missing claims, tamper",
+  "summary": "10 passed in 0.57s"
+ },
+ {
+  "status": "PASS",
+  "service": "UserServices",
+  "suite": "test_jwt_auth.py",
+  "kind": "pytest",
+  "checks": 10,
+  "protects": "Signature, expiry, missing claims, tamper",
+  "summary": "10 passed in 0.51s"
+ },
+ {
+  "status": "PASS",
+  "service": "MasterDataServices",
+  "suite": "test_jwt_auth.py",
+  "kind": "pytest",
+  "checks": 10,
+  "protects": "Signature, expiry, missing claims, tamper",
+  "summary": "10 passed in 0.56s"
+ },
+ {
+  "status": "PASS",
+  "service": "HotelServices",
+  "suite": "test_jwt_auth.py",
+  "kind": "pytest",
+  "checks": 10,
+  "protects": "Signature, expiry, missing claims, tamper",
+  "summary": "10 passed in 0.54s"
+ },
+ {
+  "status": "PASS",
+  "service": "RestaurantServices",
+  "suite": "test_jwt_auth.py",
+  "kind": "pytest",
+  "checks": 10,
+  "protects": "Signature, expiry, missing claims, tamper",
+  "summary": "10 passed in 0.60s"
+ },
+ {
+  "status": "PASS",
+  "service": "BarServices",
+  "suite": "test_jwt_auth.py",
+  "kind": "pytest",
+  "checks": 10,
+  "protects": "Signature, expiry, missing claims, tamper",
+  "summary": "10 passed in 0.52s"
+ },
+ {
+  "status": "PASS",
+  "service": "repo root",
+  "suite": "test_bind_guard.py",
+  "kind": "script",
+  "checks": 41,
+  "protects": "Every non-gateway service refuses a public bind",
+  "summary": "bind guard: 5 services x 7 cases, plus the message check and the gateway exception -- all behave as documented"
+ },
+ {
+  "status": "PASS",
+  "service": "repo root",
+  "suite": "test_spa_fallback.py",
+  "kind": "script",
+  "checks": 21,
+  "protects": "Routes get the SPA shell; missing assets are a real 404",
+  "summary": "all 20 SPA host cases pass -- routes get the shell, missing assets are 404, traversal is refused"
+ },
+ {
+  "status": "PASS",
+  "service": "repo root",
+  "suite": "install_bind_guard.py",
+  "kind": "script",
+  "checks": 5,
+  "protects": "Invariant: all 5 services still carry the bind guard",
+  "summary": "all 5 non-gateway services carry the loopback bind guard"
+ },
+ {
+  "status": "PASS",
+  "service": "repo root",
+  "suite": "remove_frozen_dates.py",
+  "kind": "script",
+  "checks": 6,
+  "protects": "Invariant: no import-time date constant remains",
+  "summary": "all 6 services carry no import-time date constant"
+ }
+]

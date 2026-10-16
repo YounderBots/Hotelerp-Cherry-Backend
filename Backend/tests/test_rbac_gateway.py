@@ -208,10 +208,204 @@ def test_off_mode_skips_checks_entirely(front_desk, monkeypatch):
     assert check({}, "bar", "bill", "DELETE") is None
 
 
-def test_default_mode_is_audit_not_enforce():
-    """Shipping straight to enforce on a live hotel is how people get locked out."""
+# --------------------------------------------------------------------------
+# The DEFAULT MODE
+#
+# This is the assertion that matters most in the file, and it used not to
+# assert anything: it was named `test_default_mode_is_audit_not_enforce` and
+# then checked the mode was in a set containing all three possible values, so
+# it passed whatever the answer was.
+#
+# It mattered because `audit` WAS the default. A deployment that simply did
+# not set RBAC_GATEWAY_MODE therefore deployed with the whole permission map
+# switched off -- every role could read every endpoint and could write to every
+# service -- and nothing failed, nothing logged at WARNING, and the only
+# evidence was an `rbac_would_deny` line nobody read until after the fact.
+#
+# A missing environment variable is an ordinary, invisible mistake. The safe
+# reading of one is "enforce", and opting OUT has to be deliberate. That is the
+# same choice UserServices/resources/authorization.py already made, and the
+# two layers disagreeing about it is how one deployment ended up with
+# authorisation in one service and none in the other five.
+# --------------------------------------------------------------------------
+
+_VALID_MODES = ("off", "audit", "enforce")
+_HTTP_METHODS = ("GET", "POST", "PUT", "DELETE", "PATCH")
+
+
+def _mode_with_env(monkeypatch, value=None):
+    """Re-import resources.rbac with RBAC_GATEWAY_MODE absent, or set to value."""
     import importlib
-    assert importlib.import_module("resources.rbac").MODE in ("audit", "enforce", "off")
+
+    monkeypatch.delenv("RBAC_GATEWAY_MODE", raising=False)
+    if value is not None:
+        monkeypatch.setenv("RBAC_GATEWAY_MODE", value)
+    return importlib.reload(importlib.import_module("resources.rbac")).MODE
+
+
+def test_an_unset_variable_enforces_rather_than_allows_everything(monkeypatch):
+    assert _mode_with_env(monkeypatch) == "enforce"
+
+
+def test_the_other_modes_are_still_reachable_by_asking_for_them(monkeypatch):
+    """The rollout escape hatch has to keep working. If `audit` were rejected
+    outright, mapping a new tenant would mean shipping the wrong mode instead
+    of choosing it, and the wrong mode would then be the default."""
+    assert _mode_with_env(monkeypatch, "audit") == "audit"
+    assert _mode_with_env(monkeypatch, "AUDIT") == "audit"
+    assert _mode_with_env(monkeypatch, "  enforce  ") == "enforce"
+    assert _mode_with_env(monkeypatch, "off") == "off"
+
+
+def test_a_misspelt_value_does_not_fall_open(monkeypatch):
+    """A typo must not be read as anything weaker than enforcement.
+
+    Treating an unknown value as `audit` would restore the exact failure this
+    default change removed, and would do it silently -- which is worse than
+    refusing, because the operator never learns a typo is why the gateway is
+    open.
+    """
+    for typo in ("enforcee", "ENFORCE", "true", "1", "yes", "enabled", "  ", ""):
+        assert _mode_with_env(monkeypatch, typo) == "enforce", typo
+
+
+def test_a_misspelt_value_is_logged_rather_than_swallowed(monkeypatch, caplog):
+    import importlib
+    import logging
+
+    monkeypatch.delenv("RBAC_GATEWAY_MODE", raising=False)
+    monkeypatch.setenv("RBAC_GATEWAY_MODE", "enfroce")
+    module = importlib.reload(importlib.import_module("resources.rbac"))
+
+    with caplog.at_level(logging.CRITICAL, logger="loginservice.rbac"):
+        importlib.reload(module)
+    # The reload inside the context is what emits it; assert on the messages
+    # recorded across the whole reload.
+    assert any("rbac_bad_mode" in r.message for r in caplog.records), (
+        [r.message for r in caplog.records]
+    )
+
+
+def test_the_routes_that_leaked_are_now_refused(front_desk, enforce):
+    """The measured live failure, restated against the committed map.
+
+    On the deployment, a front-desk claim -- view/create/edit on /reservation,
+    view on /rooms -- received 200 with data from the restaurant and bar
+    services. These are those exact requests.
+    """
+    for prefix in ("restaurant", "bar"):
+        for path in ("bill", "bill/5", "order", "menu", "guest", "kot", "inventory_item"):
+            for method in ("GET", "POST", "PUT", "DELETE"):
+                assert check(front_desk, prefix, path, method) is not None, (
+                    f"{method} /{prefix}/{path} must be refused"
+                )
+
+
+def test_housekeeping_cannot_touch_anything_outside_its_pages():
+    """Housekeeping's real claim (role_id 4 on the live deployment).
+
+    `GET /hotel/room_reservation` is deliberately NOT in this list. Housekeeping
+    is granted view on /reservation, /reservation_view, /booking,
+    /add_new_reservation and /room_view, and the reservation list is granted to
+    /reservation -- so the map correctly lets housekeeping read it. That is a
+    least-privilege observation about the role's DATA, reported as QA-SEC-006;
+    it is visible in the role's own menu, not a map defect.
+
+    `GET /user/users` is likewise NOT here: the staff list is granted to
+    /task_assign and /room_incident_log, because choosing an assignee needs it.
+
+    Everything else here is outside Housekeeping's grant and must be refused.
+    """
+    hk = {
+        "/dashboard": VIEW,
+        "/task_assign": VIEW | CREATE | EDIT,
+        "/room_incident_log": VIEW | CREATE | EDIT,
+        "/room_view": VIEW,
+        "/reservation": VIEW,
+        "/reservation_view": VIEW,
+        "/booking": VIEW,
+        "/add_new_reservation": VIEW,
+    }
+    leaks = [
+        ("hotel", "night_audit/preview", "GET"),
+        ("hotel", "user_activity_log", "GET"),
+        ("hotel", "room_sales", "GET"),
+        ("restaurant", "bill", "GET"),
+        ("bar", "bill", "GET"),
+        ("masterdata", "room", "DELETE"),
+        ("masterdata", "tax", "DELETE"),
+        ("masterdata", "rooms", "GET"),
+        ("masterdata", "room_types", "PUT"),
+        ("masterdata", "payment_methods", "PUT"),
+        ("restaurant", "order", "POST"),
+        ("bar", "order", "POST"),
+    ]
+    for prefix, path, method in leaks:
+        assert check(hk, prefix, path, method) is not None, (
+            f"Housekeeping must not reach {method} /{prefix}/{path}"
+        )
+
+
+def test_housekeeping_keeps_the_pages_it_is_granted():
+    """The other half of the above. Narrowing must not take away what the role
+    is actually for, or enforcement would lock housekeeping out of their job."""
+    hk = {
+        "/dashboard": VIEW,
+        "/task_assign": VIEW | CREATE | EDIT,
+        "/room_incident_log": VIEW | CREATE | EDIT,
+        "/room_view": VIEW,
+    }
+    assert check(hk, "hotel", "housekeeper_tasks", "GET") is None
+    assert check(hk, "hotel", "roomincident_log", "GET") is None
+    # Housekeeping holds add+edit on Task Assign but NOT delete (its real claim
+    # is bits 7), so it must be refused the delete AND keep create+edit.
+    assert check(hk, "hotel", "housekeeper_tasks", "POST") is None
+    assert check(hk, "hotel", "housekeeper_tasks", "PUT") is None
+    assert check(hk, "hotel", "housekeeper_tasks/7", "DELETE") is not None
+    assert check(hk, "masterdata", "room", "GET") is None        # Room View
+    assert check(hk, "masterdata", "task_type", "GET") is None    # HSK Task Type
+
+
+# --------------------------------------------------------------------------
+# Guest contact details are not a dashboard capability -- second instance
+# --------------------------------------------------------------------------
+
+def test_a_dashboard_only_role_cannot_read_the_activity_log(enforce):
+    """`/hotel/user_activity_log` is the second guest-contact payload the
+    Dashboard reached, and the one that survived the first fix.
+
+    `/hotel/room_reservation` was moved off this screen because it returns
+    guest phone and email, which the Dashboard never renders. The activity log
+    returns the same two fields next to the name and room the Recent Activity
+    card does draw, and the map granted it to `/dashboard` -- the one page
+    EVERY role holds `view` on. So opening the Dashboard handed a housekeeper
+    and a dishwasher the phone number and email address of every guest who
+    touched a room, and enforcement alone would not have stopped it.
+
+    HotelDashboardTab.jsx now builds the card from `reservation_summary` and
+    `housekeeper_tasks`, which carry the name, room, status and date and no
+    contact details, and the generated map no longer names `/dashboard` here.
+    """
+    dashboard_only = {"/dashboard": VIEW}
+    denial = check(dashboard_only, "hotel", "user_activity_log", "GET")
+    assert denial is not None
+    assert "/dashboard" not in ROUTE_PERMISSIONS[("hotel", "user_activity_log", "GET")]
+
+
+def test_the_screen_the_activity_log_was_written_for_still_reads_it(enforce):
+    """/user_reserved_details is the page that endpoint exists for; narrowing
+    the row to it must not take the feature away from Admin."""
+    assert check({"/user_reserved_details": VIEW},
+                 "hotel", "user_activity_log", "GET") is None
+
+
+def test_the_dashboard_still_gets_the_rows_the_card_draws(enforce):
+    """Narrowing the map row is only safe because the screen stopped needing it.
+    If a future change puts the call back, the generator re-grants /dashboard
+    and the test above fails -- so this one states what the card uses instead."""
+    dashboard_only = {"/dashboard": VIEW}
+    assert check(dashboard_only, "hotel", "reports/reservation_summary", "GET") is None
+    assert check(dashboard_only, "masterdata", "room", "GET") is None
 
 
 # --------------------------------------------------------------------------

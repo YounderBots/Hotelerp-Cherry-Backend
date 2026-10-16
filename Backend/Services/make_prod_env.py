@@ -128,16 +128,16 @@ def build(service: str, cfg: tuple, shared: dict, args) -> str:
             "PROXY_TIMEOUT_SECONDS=30",
             "UPSTREAM_TIMEOUT_SECONDS=10",
             "",
-            # rbac.py defaults to 'audit' on purpose -- switching a 222-row
-            # permission map on blind is not something to do to a live hotel.
-            # That default belongs to a ROLLOUT, though, not to a file whose
-            # name says PRODUCTION: written here, the deploy at
-            # 168.231.103.18 ran with every role able to reach every endpoint
-            # and the denials only being logged. A production env states the
-            # value it wants.
+            # rbac.py now defaults to 'enforce' too, so a missing key is no
+            # longer the hazard it was. It is still written out: a PRODUCTION
+            # file should state the value it wants rather than inherit one, and
+            # a reviewer reading the env can see authorisation is on.
+            #
+            # --rbac-mode already defaults to 'enforce'. Pass 'audit' only while
+            # mapping a deployment whose menus are still moving, and rehearse it
+            # with QA/live/rbac_dryrun.py first, which replays real traffic
+            # against the map offline and reports what would be refused.
             "# 'audit' logs what would be denied and allows it; 'enforce' denies.",
-            "# Start at audit if this map has never run here, read the",
-            "# rbac_would_deny lines, then come back and set enforce.",
             f"RBAC_GATEWAY_MODE={args.rbac_mode}",
         ]
 

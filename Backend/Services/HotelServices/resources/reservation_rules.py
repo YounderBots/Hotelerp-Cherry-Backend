@@ -524,29 +524,42 @@ def load_room_types(md: MasterData, type_ids: Iterable[int]) -> dict[int, RoomTy
     return {tid: active[tid] for tid in wanted if tid in active}
 
 
-def assert_rooms_bookable(
-    db: Session,
+def assert_rooms_sellable(
     md: MasterData,
-    company_id,
     room_ids: list[int],
-    arrival: date,
-    departure: date,
     *,
-    exclude_id: Optional[int] = None,
     occupancy: Optional[dict[int, tuple[int, int]]] = None,
 ) -> dict[int, Room]:
-    """Every gate a room has to pass before it can be sold. Returns the rooms.
+    """The gates that need nothing but the property's own room master.
 
-    Call `lock_rooms` first if this is guarding a write -- on its own this is
-    a read, and a read cannot stop a concurrent booking.
+    Split out of `assert_rooms_bookable` so that pricing a stay is subject to
+    the same rules as booking one, on the same data, without needing a database.
 
-    Deliberately NOT a gate: `Room_Booking_status`. That column is a snapshot
-    of whether the room is occupied *right now*, and the UI was treating it as
-    a booking gate, so a room occupied today could not be booked for any future
-    date -- thirteen of this property's twenty-five rooms were unsellable for
-    every date in the calendar. Whether a room is free on a given night is a
-    question about that night's reservations, which is what the overlap check
-    below answers.
+    WHY THE QUOTE ENDPOINT NEEDED THIS
+        `POST /room_reservation_quote` is what the guest is shown before they
+        confirm, and it is priced by the same code that will store the booking
+        -- that is its entire reason to exist. It consulted `rules.quote` and
+        nothing else, so every gate in this function was skipped: a room that is
+        blocked / out of order came back with a full price and a total, and the
+        guest was quoted for a room the booking endpoint then refused with
+        "Room 601 is blocked / out of order and cannot be booked". The two
+        answers came from the same module, one screen apart.
+
+    WHY ONLY THESE GATES, AND NOT THE DATE CHECK
+        These depend on the room itself -- does it exist, is it out of order, is
+        the party too large for it -- so re-pricing an EXISTING booking can
+        never be refused by them: the room demonstrably existed and was sold.
+
+        The date-overlap check is different, and is deliberately left where it
+        is. The Edit screen re-prices a reservation through this endpoint, and
+        the booking being edited overlaps the very dates it is being moved to.
+        Quoting it against other reservations would refuse every amendment
+        unless the caller also passed the reservation's own id to exclude, which
+        it does not. So the overlap check stays on the create and update paths,
+        which hold `db`, and where `exclude_id` is available.
+
+    Callers that also need the date check must call
+    `assert_rooms_bookable`, which calls this first and then adds it.
     """
     if not room_ids:
         raise RuleError("Select at least one room")
@@ -595,6 +608,30 @@ def assert_rooms_bookable(
                 raise RuleError(
                     f"Room {room.room_no} takes at most {max_child} child(ren)"
                 )
+
+    return rooms
+
+
+def assert_rooms_bookable(
+    db: Session,
+    md: MasterData,
+    company_id,
+    room_ids: list[int],
+    arrival: date,
+    departure: date,
+    *,
+    exclude_id: Optional[int] = None,
+    occupancy: Optional[dict[int, tuple[int, int]]] = None,
+) -> dict[int, Room]:
+    """Every gate a room has to pass before it can be sold. Returns the rooms.
+
+    Call `lock_rooms` first if this is guarding a write -- on its own this is
+    a read, and a read cannot stop a concurrent booking.
+
+    `assert_rooms_sellable` (existence, out of order, occupancy) and then the
+    date-range conflict, which is the only part that needs the database.
+    """
+    rooms = assert_rooms_sellable(md, room_ids, occupancy=occupancy)
 
     # The date-range conflict. This is the actual double-booking check.
     taken = booked_room_windows(

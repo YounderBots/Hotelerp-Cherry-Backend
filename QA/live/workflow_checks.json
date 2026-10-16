@@ -1,0 +1,175 @@
+{
+ "run": "QAWF090137",
+ "arrival": "2027-12-20",
+ "departure": "2027-12-22",
+ "results": [
+  {
+   "flow": "1 price",
+   "step": "GET /masterdata/snapshot",
+   "status": 200,
+   "expected": "200",
+   "pass": true,
+   "detail": "0 rows, fields=-"
+  },
+  {
+   "flow": "1 price",
+   "step": "POST room_reservation_quote",
+   "status": 200,
+   "expected": "200 with a priced total",
+   "pass": true,
+   "detail": "{\"lines\": [{\"room_id\": 34, \"room_no\": \"601\", \"room_type_id\": 7, \"room_type_name\": \"Presidential Suite\", \"rate_type\": \"daily\", \"unit_rate\": 22000.0, \"units\": 2, \"line_total\": 44000.0}], \"nights\": 2, \"room_amount\": 44000.0, \"computed_room_amount\": 44000.0, \"room"
+  },
+  {
+   "flow": "2 book",
+   "step": "availability BEFORE",
+   "status": 200,
+   "expected": "200 with a sellable room list",
+   "pass": true,
+   "detail": "24 sellable, 1 blocked :: {\"status\": \"success\", \"data\": {\"arrival_date\": \"2027-12-20\", \"departure_date\": \"2027-12-22\", \"no_of_nights\": 2, \"booked_room_ids\": [], \"blocked_room_i"
+  },
+  {
+   "flow": "2 book",
+   "step": "a blocked room (?) is not quotable/bookable",
+   "status": 200,
+   "expected": "4xx naming the reason",
+   "pass": false,
+   "detail": "{\"lines\": [{\"room_id\": 34, \"room_no\": \"601\", \"room_type_id\": 7, \"room_type_name\": \"Presidential Suite\", \"rate_type\": \"daily\", \"unit_rate\": 22000.0, \"units\": 2, \"line_total\": 44000.0}], \"nights\": 2, \"r"
+  },
+  {
+   "flow": "2 book",
+   "step": "POST /hotel/room_reservation",
+   "status": 201,
+   "expected": "2xx and a token back",
+   "pass": true,
+   "detail": "{\"status\": \"success\", \"message\": \"Room reservation created successfully\", \"data\": {\"id\": 38, \"room_reservation_id\": \"RES-20261015-C3FDE8\", \"token\": \"7b876d6a-4459-41d8-b312-cdaf9751c594\", \"confirmation_code\": \"B6F2E70B\", \"reservation_status\": \"Pending\", \"no_of_nights\": 2, \"room_amount\": 7000.0, \"tax_amount\": 0.0, \"discount_amount\": 0.0, \"overall_amount\": 7000.0, \"paid_amount\": 0.0, \"balance_amount"
+  },
+  {
+   "flow": "2 book",
+   "step": "availability AFTER",
+   "status": 200,
+   "expected": "one FEWER sellable room",
+   "pass": true,
+   "detail": "before=24 after=23"
+  },
+  {
+   "flow": "2 book",
+   "step": "folio: room - discount + tax + extras == overall_amount",
+   "status": 200,
+   "expected": "7000.0 == 7000.0",
+   "pass": true,
+   "detail": "room=7000.0 disc=0.0 tax=0.0 extras=0.0 overall=7000.0"
+  },
+  {
+   "flow": "2 book",
+   "step": "folio: paid + balance == overall_amount",
+   "status": 200,
+   "expected": "0.0 + 7000.0 == 7000.0",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "flow": "2 book",
+   "step": "proof document recorded on the booking",
+   "status": 200,
+   "expected": "a stored identity_file path",
+   "pass": true,
+   "detail": "3b5f54b4-1519-49c2-aab5-4ca6f1202f8c.png"
+  },
+  {
+   "flow": "3 cancel",
+   "step": "POST room_reservation_cancel",
+   "status": 200,
+   "expected": "2xx",
+   "pass": true,
+   "detail": "{\"status\": \"success\", \"message\": \"Reservation cancelled\", \"data\": {\"id\": 38, \"reservation_status\": \"Cancelled\", \"cancellation_reason\": \"QAWF090137 automated workflow run\", \"cancelled_at\": \"2026-10-15T14:08:13\", \"amount_a"
+  },
+  {
+   "flow": "3 cancel",
+   "step": "availability AFTER cancel",
+   "status": 200,
+   "expected": "back to the BEFORE count",
+   "pass": true,
+   "detail": "before=24 booked=23 after=24"
+  },
+  {
+   "flow": "3 cancel",
+   "step": "the cancelled row keeps its reason and shows Cancelled",
+   "status": 200,
+   "expected": "one row for QAWF090137, status Cancelled, reason recorded",
+   "pass": true,
+   "detail": "{\"reservation_status\": \"Cancelled\", \"cancellation_reason\": \"QAWF090137 automated workflow run\", \"cancelled_at\": \"2026-10-15T14:08:13\"}"
+  },
+  {
+   "flow": "3 cancel",
+   "step": "cancelling twice is refused",
+   "status": 200,
+   "expected": "4xx",
+   "pass": false,
+   "detail": "{\"status\": \"success\", \"message\": \"Reservation cancelled\", \"data\": {\"id\": 38, \"reservation_status\": \"Cancelled\", \"cancellation_reason\": \"duplicate cancel\", \"cancelled_at\": \"2026-10-15T14:08:13\", \"amoun"
+  },
+  {
+   "flow": "4 money",
+   "step": "room - discount + tax + extras == overall, and paid + balance == overall",
+   "status": 200,
+   "expected": "holds on EVERY booking in the book",
+   "pass": true,
+   "detail": "38 bookings, 0 mismatched []"
+  },
+  {
+   "flow": "4 money",
+   "step": "settled bookings carry a zero balance",
+   "status": 200,
+   "expected": "0 balance wherever payment_state is Settled",
+   "pass": true,
+   "detail": "0 settled of 38"
+  },
+  {
+   "flow": "4 money",
+   "step": "no booking is paid beyond its overall amount",
+   "status": 200,
+   "expected": "0 overpayments",
+   "pass": true,
+   "detail": "0 []"
+  },
+  {
+   "flow": "5 housekeeping",
+   "step": "rooms carry booking + housekeeping state",
+   "status": 200,
+   "expected": "every room has working_status and room_status",
+   "pass": true,
+   "detail": "25 rooms, 9 not ready, 1 blocking"
+  },
+  {
+   "flow": "5 housekeeping",
+   "step": "every task names a room and a status",
+   "status": 200,
+   "expected": "no task with a missing room_no or task_status",
+   "pass": true,
+   "detail": "14 tasks"
+  },
+  {
+   "flow": "6 billing",
+   "step": "restaurant: sub_total - discount + cgst + sgst + igst + service + round_off == grand_total",
+   "status": 200,
+   "expected": "holds for every bill",
+   "pass": true,
+   "detail": "12 bills, 0 mismatched []"
+  },
+  {
+   "flow": "6 billing",
+   "step": "bar: sub_total - discount + cgst + sgst + igst + service + round_off == grand_total",
+   "status": 200,
+   "expected": "holds for every bill",
+   "pass": true,
+   "detail": "12 bills, 0 mismatched []"
+  },
+  {
+   "flow": "6 billing",
+   "step": "no order is paid beyond its total",
+   "status": 200,
+   "expected": "0 overpayments",
+   "pass": true,
+   "detail": "12 orders, 0 []"
+  }
+ ]
+}

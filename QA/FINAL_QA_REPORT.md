@@ -377,21 +377,24 @@ product decisions, and one documented lint-hygiene item.
 
 ### Demo credentials — all 10 verified by real login
 
-**Password for every account: `CherryDemo!2026`** — supplied at seed time via `SEED_PASSWORD`;
-the literal is **not** present anywhere in the repository.
+**Password for every account: not stored here** — supplied at seed time via
+`SEED_PASSWORD`, and restored on demand by
+`Backend/tools/rotate_passwords.py --confirm --out <file>`. The literal was
+removed from this file on 2026-10-17; it is no longer present anywhere in the
+repository (see `Backend/tools/redact.py`).
 
 | Role | Email | Password | Permissions | Login |
 |---|---|---|---|---|
-| **Admin** | `admin@cherryhotel.com` | `CherryDemo!2026` | **60 pages**, view+add+edit+delete on all (incl. `/employee`, `/user`, `/roles`, all rosters) | **OK** |
-| Front Office Manager | `meera.krishnan@cherryhotel.com` | `CherryDemo!2026` | **26 pages** — reservation/booking full CRUD; night audit, settlement, guest enquiry v/a/e; master data + task/incident view-only | **OK** |
-| Front Office Manager | `priya.menon@cherryhotel.com` | `CherryDemo!2026` | same as above | **OK** |
-| Front Desk | `divya.rao@cherryhotel.com` | `CherryDemo!2026` | **7 pages** — reservation, add, booking, room/reservation view, guest enquiry v/a/e (no delete); dashboard view | **OK** |
-| Front Desk | `rahul.nair@cherryhotel.com` | `CherryDemo!2026` | same as above | **OK** |
-| Housekeeping | `imran.khan@cherryhotel.com` | `CherryDemo!2026` | **8 pages** — task assign + room incident log v/a/e; reservation screens view-only | **OK** |
-| Housekeeping | `lakshmi.iyer@cherryhotel.com` | `CherryDemo!2026` | same as above | **OK** |
-| Food & Beverage | `joseph.dsouza@cherryhotel.com` | `CherryDemo!2026` | **25 pages** — all restaurant + bar screens v/a/e (no delete); dashboard view | **OK** |
-| Food & Beverage | `sunita.patel@cherryhotel.com` | `CherryDemo!2026` | same as above | **OK** |
-| Food & Beverage | `vikram.singh@cherryhotel.com` | `CherryDemo!2026` | same as above | **OK** |
+| **Admin** | `admin@cherryhotel.com` | `<redacted — set >` | **60 pages**, view+add+edit+delete on all (incl. `/employee`, `/user`, `/roles`, all rosters) | **OK** |
+| Front Office Manager | `meera.krishnan@cherryhotel.com` | `<redacted — set >` | **26 pages** — reservation/booking full CRUD; night audit, settlement, guest enquiry v/a/e; master data + task/incident view-only | **OK** |
+| Front Office Manager | `priya.menon@cherryhotel.com` | `<redacted — set >` | same as above | **OK** |
+| Front Desk | `divya.rao@cherryhotel.com` | `<redacted — set >` | **7 pages** — reservation, add, booking, room/reservation view, guest enquiry v/a/e (no delete); dashboard view | **OK** |
+| Front Desk | `rahul.nair@cherryhotel.com` | `<redacted — set >` | same as above | **OK** |
+| Housekeeping | `imran.khan@cherryhotel.com` | `<redacted — set >` | **8 pages** — task assign + room incident log v/a/e; reservation screens view-only | **OK** |
+| Housekeeping | `lakshmi.iyer@cherryhotel.com` | `<redacted — set >` | same as above | **OK** |
+| Food & Beverage | `joseph.dsouza@cherryhotel.com` | `<redacted — set >` | **25 pages** — all restaurant + bar screens v/a/e (no delete); dashboard view | **OK** |
+| Food & Beverage | `sunita.patel@cherryhotel.com` | `<redacted — set >` | same as above | **OK** |
+| Food & Beverage | `vikram.singh@cherryhotel.com` | `<redacted — set >` | same as above | **OK** |
 
 **Negative controls:** wrong password → **401 Refused**; repeated failed logins → **429**;
 Front Desk calling `/user/users` → **403**.
@@ -447,7 +450,7 @@ python Backend/tools/seed_demo_data.py --confirm    # wipe + rebuild  (DESTROYS 
 ### Seed + verify
 
 ```powershell
-$env:SEED_PASSWORD = "CherryDemo!2026"              # never commit this value
+$env:SEED_PASSWORD = "<redacted — set >"              # never commit this value
 python Backend/tools/seed_demo_data.py --confirm
 python Backend/tools/build_rbac_map.py              # regenerate the route -> page -> action map
 python Backend/tools/verify_seed.py                 # 34 consistency checks
@@ -460,7 +463,7 @@ python Backend/tools/verify_seed.py                 # 34 consistency checks
 python Backend\tests\run_all.py
 
 # backend live e2e (6 suites / 345 checks)
-$env:E2E_PASSWORD = "CherryDemo!2026"
+$env:E2E_PASSWORD = "<redacted — set >"
 python Backend\tests\e2e\run_all.py
 
 # frontend
@@ -470,7 +473,7 @@ npm run lint             # 0 errors / 10 warnings
 npm run build            # production build
 
 # frontend e2e (needs the stack running)
-$env:PW_PASSWORD = "CherryDemo!2026"
+$env:PW_PASSWORD = "<redacted — set >"
 node e2e\audit.mjs admin@cherryhotel.com admin-desktop --width=1440
 node e2e\audit.mjs admin@cherryhotel.com admin-1024     --width=1024 --height=768
 node e2e\audit.mjs admin@cherryhotel.com admin-768      --width=768  --height=1024
@@ -482,8 +485,8 @@ node e2e\auth_audit.mjs
 ### Verify seed + security posture
 
 ```powershell
-$env:SEED_PASSWORD = "CherryDemo!2026"
-$env:PREFLIGHT_LOW_PASSWORD = "CherryDemo!2026"
+$env:SEED_PASSWORD = "<redacted — set >"
+$env:PREFLIGHT_LOW_PASSWORD = "<redacted — set >"
 python Backend\tools\preflight.py                    # run from ANOTHER host to exercise check 4
 ```
 

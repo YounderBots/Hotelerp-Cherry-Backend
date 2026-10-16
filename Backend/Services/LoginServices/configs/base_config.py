@@ -1,7 +1,6 @@
 import datetime as dt
 import os
 
-
 class BaseConfig:
     # Secrets are ALWAYS resolved from the environment. A dev-only fallback is
     # allowed via SECRET_KEY / SESSION_SECRET, but production deploys must set
@@ -41,7 +40,6 @@ class BaseConfig:
     PROXY_TIMEOUT_SECONDS = float(os.getenv("PROXY_TIMEOUT_SECONDS", "30"))
     UPSTREAM_TIMEOUT_SECONDS = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "10"))
 
-
 class CommonWords:
     STATUS = "ACTIVE"
     UNSTATUS = "INACTIVE"
@@ -51,19 +49,34 @@ class CommonWords:
     Room_Condition = "UnBlocking"
     WORK_STATUS = "Not Assigne"
     HouseKeeper_RoleID = "5"
-    CURRENTDATE = dt.datetime.today().strftime("%Y-%m-%d")
-    Today_DateFormated = dt.datetime.today().strftime("%d %b %Y")
+        # DELIBERATELY NO DATE CONSTANT HERE.
+        #
+        # There used to be four on this class -- CURRENTDATE, Today_DateFormated,
+        # CURRENTTIME, CURRENTDATETIME -- all written as `dt.datetime.today()...` in
+        # the class body. A class-body expression is evaluated once, when this module
+        # is imported, and then frozen for the life of the process: a service running
+        # across midnight reported yesterday's date until it was restarted.
+        #
+        # Nothing read them, so nothing ever broke, which is precisely why they were
+        # dangerous -- the failure mode was invisible until the one night the service
+        # was not restarted. In a system with a `business_date` and a night audit
+        # that closes on it, a date helper that silently stops being the date is not
+        # worth keeping around.
+        #
+        # If you want the date, ask for it where you use it:
+        #
+        #     import datetime as dt
+        #     today = dt.date.today()          # or dt.datetime.now()
+        #
+        # A value captured at import is the bug, whichever name it is filed under.
     Reser_Type_Reservation = "Reservation"
     Reser_Type_GroupReservation = "Group Reservation"
-    CURRENTTIME = dt.datetime.today().strftime("%H:%M")
-    CURRENTDATETIME = dt.datetime.today()
     LOGINER_URL = "../login"
     Checkout_List = "../checkout_list"
     Confirmed = "Confirmed"
     Arrived = "Arrived"
     Departures = "Departures"
     Cancelled = "Cancelled"
-
 
 class ServiceURL:
     USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://127.0.0.1:8020")

@@ -225,6 +225,11 @@ NAVIGATE = re.compile(
 # page_parents() for why, and what to do when a deployment's menus differ.
 MENU_SEED = ROOT / "hotelerp_users.sql"
 MENU_PATH = re.compile(r"'(/[A-Za-z0-9_/-]*)'")
+# `--menus-from FILE`: one menu/submenu link per line, written by
+# QA/live/fetch_menu_paths.py. Read first, so a machine with no database can
+# still regenerate the map instead of leaving a stale one in place. Set from
+# main(); the default keeps menu_paths() pure.
+MENU_FILE = ""
 # `path: "/x"` in the frontend's fallback MENU.
 SIDEBAR_PATH = re.compile(r'''path:\s*["'](/[A-Za-z0-9_/-]*)["']''')
 
@@ -423,7 +428,28 @@ def menu_paths() -> set[str]:
         The menus live in the `menus` table, which is the authoritative source
         and is present wherever this tool can usefully run. The seed file stays
         as a fallback for a checkout with no database.
+
+        `--menus-from FILE` is the third source, and the one that makes this
+        tool runnable off a server: QA/live/fetch_menu_paths.py writes exactly
+        those links out through the authorised API, so a map can be regenerated
+        in CI, or by a reviewer, without database credentials.
     """
+    if MENU_FILE:
+        try:
+            found = set()
+            for line in pathlib.Path(MENU_FILE).read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    found.add(line)
+        except OSError as exc:
+            print(f"WARNING: --menus-from {MENU_FILE} could not be read ({exc}); "
+                  "falling back to the database.", file=sys.stderr)
+        else:
+            if found:
+                return found
+            print(f"WARNING: --menus-from {MENU_FILE} held no paths; falling back "
+                  "to the database.", file=sys.stderr)
+
     if MENU_SEED.is_file():
         found = set(MENU_PATH.findall(
             MENU_SEED.read_text(encoding="utf-8", errors="replace")))
@@ -799,11 +825,390 @@ def render(table, uncalled, parents, unreachable) -> str:
     return "".join(lines)
 
 
+# Which service directory owns which gateway prefix. The per-service policy
+# files are written into these, so the gateway map and the services' own copies
+# come out of one run of this generator and cannot drift apart.
+SERVICE_DIRS = {
+    "masterdata": "MasterDataServices",
+    "hotel": "HotelServices",
+    "user": "UserServices",
+    "restaurant": "RestaurantServices",
+    "bar": "BarServices",
+}
+
+# The tables below are hand-written policy, not derived data, so this generator
+# does not invent them -- it reads them back out of the file it generated and
+# hands each service the slice that concerns it.
+#
+# AST rather than `import resources.rbac_map`, deliberately: importing would
+# make the generator depend on the gateway service's package resolving, and the
+# whole point of the generator is that it runs without the services running.
+HAND_WRITTEN_TABLES = ("METHOD_ACTION", "ACTION_OVERRIDES", "ALWAYS_ALLOW")
+
+
+def _literal_tables(path: pathlib.Path, wanted: tuple) -> dict:
+    """Read module-level assignments out of a Python file, by AST.
+
+    Handles both `X = {...}` and the annotated `X: dict[...] = {...}` that the
+    generated map uses for most of its tables -- an AnnAssign is a different AST
+    node, and missing that is why ACTION_OVERRIDES and ALWAYS_ALLOW silently
+    came back empty on the first attempt.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+        elif isinstance(node, ast.AnnAssign):
+            target = node.target
+        else:
+            continue
+        if isinstance(target, ast.Name) and target.id in wanted:
+            found[target.id] = ast.literal_eval(node.value)
+    return found
+
+
+def load_hand_written_tables(path: pathlib.Path) -> dict:
+    # AST rather than `import resources.rbac_map`, deliberately: importing would
+    # make the generator depend on the gateway service's package resolving, and
+    # the whole point of the generator is that it runs without the services
+    # running.
+    found = _literal_tables(path, HAND_WRITTEN_TABLES)
+    missing = [t for t in HAND_WRITTEN_TABLES if t not in found]
+    if missing:
+        raise SystemExit(
+            f"cannot read {missing} out of {path}. They are hand-written policy "
+            f"that lives in the generated file, so they have to already be there."
+        )
+    return found
+
+
+POLICY_BODY = '''def _pattern_matches(pattern: str, path: str) -> bool:
+    """Whether a slash-delimited pattern matches a concrete path.
+
+    ``{id}`` stands for exactly one segment, so it cannot swallow a slash.
+    """
+    pattern_segs = pattern.split("/")
+    path_segs = path.split("/") if path else []
+    if len(pattern_segs) != len(path_segs):
+        return False
+    return all(
+        expected == actual or (expected.startswith("{") and expected.endswith("}"))
+        for expected, actual in zip(pattern_segs, path_segs)
+    )
+
+
+def _action_for(pattern: str, method: str) -> Optional[str]:
+    """The permission a route needs -- its override, else its verb's default.
+
+    Keyed by the resolved pattern, so a literal row and the parameterised row
+    that matched it resolve identically.
+    """
+    return ACTION_OVERRIDES.get((pattern, method)) or METHOD_ACTION.get(method)
+
+
+def _is_always_allowed(path: str, method: str) -> bool:
+    for pattern, allowed_method in ALWAYS_ALLOW:
+        if allowed_method != method:
+            continue
+        if pattern == path or _pattern_matches(pattern, path):
+            return True
+    return False
+
+
+def _match(path: str, method: str):
+    """Resolve a request against this service's map. (action, pages) or None."""
+    path = (path or "").strip("/")
+    method = (method or "GET").upper()
+
+    key = (path, method)
+    if key in ROUTE_PERMISSIONS:
+        return _action_for(path, method), ROUTE_PERMISSIONS[key]
+
+    # Fall back to parameterised rows.
+    for (pattern, m), pages in ROUTE_PERMISSIONS.items():
+        if m != method or "{" not in pattern:
+            continue
+        if _pattern_matches(pattern, path):
+            return _action_for(pattern, method), pages
+    return None
+
+
+def check(perm: Optional[dict], path: str, method: str,
+          *, user_id=None, role_id=None) -> Optional[str]:
+    """None to allow, or a reason to deny. Same contract as the gateway's."""
+    if MODE == "off":
+        return None
+
+    method = (method or "GET").upper()
+    if method == "OPTIONS":
+        return None
+
+    path = (path or "").strip("/")
+    if _is_always_allowed(path, method):
+        return None
+
+    resolved = _match(path, method)
+    if resolved is None:
+        # Unmapped. Fail closed under enforce: a route nobody classified is
+        # exactly the one that should not be reachable by everyone by default.
+        reason = f"no permission mapping for {method} /{SERVICE_NAME}/{path}"
+        logger.error("rbac_unmapped svc=%s path=%s method=%s user=%s role=%s",
+                     SERVICE_NAME, path, method, user_id, role_id)
+        return None if MODE == "audit" else reason
+
+    action, pages = resolved
+    bit = ACTION_BIT.get(action or "", 0)
+    perm = perm or {}
+
+    for page in pages:
+        if perm.get(page, 0) & bit:
+            return None
+        for parent in PAGE_PARENTS.get(page, ()):
+            if perm.get(parent, 0) & bit:
+                return None
+
+    reason = (
+        f"role lacks '{action}' on "
+        + (pages[0] if len(pages) == 1 else "any of " + ", ".join(pages))
+    )
+    logger.warning("rbac_would_deny svc=%s path=%s method=%s user=%s role=%s: %s",
+                   SERVICE_NAME, path, method, user_id, role_id, reason)
+    return None if MODE == "audit" else reason
+
+
+def _caller(request):
+    """(perm, user_id, role_id) from the request's own token.
+
+    Unverified on purpose: this layer is not the thing authenticating anybody.
+    It runs AFTER nothing -- it is first -- so it cannot be the authority, and a
+    forged token that got this far would still be rejected by the route's own
+    `verify_authentication`. What it needs is the `perm` claim, and reading it
+    is enough: a caller who forges a permissive claim still has to get past the
+    route, which verifies the same token properly. Verification happens once, in
+    the route, where it already did.
+    """
+    header = request.headers.get("authorization") or ""
+    if not header.lower().startswith("bearer "):
+        return None, None, None
+    token = header.split(" ", 1)[1].strip()
+    try:
+        payload = jwt.decode(
+            token,
+            BaseConfig.SECRET_KEY,
+            algorithms=[BaseConfig.ALGORITHM],
+            issuer=BaseConfig.JWT_ISSUER,
+        )
+    except JWTError:
+        # Not a token this service can read. The route will reject it properly;
+        # there is nothing to decide here.
+        return None, None, None
+    claim = payload.get("perm")
+    return (claim if isinstance(claim, dict) else {}), payload.get("user_id"), \\
+        payload.get("role_id")
+
+
+class RoutePermissionMiddleware(BaseHTTPMiddleware):
+    """Applies this service's slice of the gateway's permission map."""
+
+    async def dispatch(self, request, call_next):
+        method = (request.method or "GET").upper()
+        path = request.url.path.rstrip("/") or "/"
+
+        if MODE == "off" or method == "OPTIONS" or path in EXEMPT_PATHS:
+            return await call_next(request)
+
+        perm, user_id, role_id = _caller(request)
+        if perm is None:
+            # No usable token: let the route's own authentication answer, so the
+            # caller gets a 401 about authentication rather than a 403 about
+            # permission for a token they never proved.
+            return await call_next(request)
+
+        reason = check(perm, path, method, user_id=user_id, role_id=role_id)
+        if reason is None:
+            return await call_next(request)
+
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"detail": f"Your role does not have permission for this "
+                              f"action ({reason})."},
+        )
+'''
+
+
+POLICY_HEADER = '''"""GENERATED FILE -- DO NOT EDIT.
+
+Emitted by ``Backend/tools/build_rbac_map.py`` alongside the gateway's
+``rbac_map.py``, from the same run and the same data. To change an
+endpoint-to-page mapping, change the generator or the SPA and re-run it; a hand
+edit here is silently overwritten on the next run and, until then, makes this
+service disagree with the gateway about who may call what.
+
+WHAT THIS IS
+    A second, independent copy of the gateway's authorisation decision, living
+    in the service that actually holds the data.
+
+WHY IT IS WORTH HAVING
+    The gateway is the primary control, and it is a good one -- it is the only
+    place that holds the whole permission model, so deciding once there covers
+    the entire external surface. Its model has a premise, though: *the services
+    are not reachable except through it*. That premise held in the repository
+    but not in the deployment this was written for, where all five services
+    answered on the public IP and the gateway could be stepped around entirely.
+
+    A check at the far end does not depend on that premise. It holds even if a
+    service is exposed, if the gateway is misconfigured, if a proxy is added
+    later that forwards straight to a service port. That is defence in depth,
+    and defence in depth is the point: the two layers must fail independently.
+
+HOW IT STAYS CORRECT
+    Same rows, same decision function, same ``perm`` claim as the gateway, so
+    the two layers cannot answer differently for the same request. ``audit`` is
+    the default for exactly that reason -- the first deployment of a third
+    enforcement layer should not also be the deployment that changes behaviour.
+
+MODE (``ROUTE_POLICY_MODE``)
+    ``audit``     log what would be denied, allow the request. Default.
+    ``enforce``   refuse with 403.
+    ``off``       no checks.
+
+    Opt-OUT, like the gateway's own mode and like the bind guard, so a missing
+    variable cannot silently disable the control.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Optional
+
+from fastapi import status
+from jose import JWTError, jwt
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
+
+from configs.base_config import BaseConfig
+
+logger = logging.getLogger(__name__)
+
+MODE = os.getenv("ROUTE_POLICY_MODE", "audit").strip().lower()
+if MODE not in ("off", "audit", "enforce"):
+    # A typo must not read as "off" or "audit" by accident. Fall forward to the
+    # safe end and be loud about it.
+    logger.critical(
+        "ROUTE_POLICY_MODE=%r is not one of off/audit/enforce; treating it as "
+        "'enforce'. Valid values are off, audit, enforce.", MODE)
+    MODE = "enforce"
+
+# Routes that exist on the service itself rather than in the permission model.
+# An unauthenticated request is passed through untouched so the route's own
+# `verify_authentication` produces its proper 401 -- a middleware that answered
+# first would turn "no token" into "forbidden", which is both wrong and a worse
+# error message.
+EXEMPT_PATHS = frozenset({
+    "/", "/healthz", "/readyz", "/docs", "/docs/oauth2-redirect",
+    "/redoc", "/openapi.json",
+})
+
+
+'''
+
+
+def render_service_policy(prefix: str, service: str, table: dict, hand: dict) -> str:
+    """One service's slice of the map, plus the decision logic that reads it."""
+    rows = sorted(k for k in table if k[0] == prefix)
+
+    out = [POLICY_HEADER]
+    out.append(f'SERVICE_NAME = "{prefix}"\n\n')
+
+    out.append(
+        "# Bit layout of the JWT `perm` claim. These travel inside a signed token,\n"
+        "# so they are a wire format shared with the gateway and with\n"
+        "# resources/utils.py -- not a value either side may change alone.\n"
+        "VIEW, CREATE, EDIT, DELETE = 1, 2, 4, 8\n"
+        'ACTION_BIT = {"view": VIEW, "create": CREATE, "edit": EDIT, "delete": DELETE}\n\n'
+    )
+
+    out.append(f"METHOD_ACTION = {hand['METHOD_ACTION']!r}\n\n")
+
+    out.append(
+        "# Routes whose HTTP verb does not describe what they DO: a POST that\n"
+        "# changes an existing record is an EDIT of it, not the creation of a new\n"
+        "# one. See the gateway's rbac.py for why this table exists.\n"
+        "ACTION_OVERRIDES = {\n"
+    )
+    overrides = sorted(
+        (k for k in hand["ACTION_OVERRIDES"] if k[0] == prefix),
+        key=lambda k: (k[1], k[2]),
+    )
+    for _, pattern, method in overrides:
+        out.append(f'    ("{pattern}", "{method}"): '
+                   f"{hand['ACTION_OVERRIDES'][(prefix, pattern, method)]!r},\n")
+    out.append("}\n\n")
+
+    out.append(
+        "# Exempt from checking. These are read by the SPA with the session token\n"
+        "# but are not permissioned screens (uploads, role_permissions/{id}), and\n"
+        "# an exact key alone would not exempt `role_permissions/7`.\n"
+        "ALWAYS_ALLOW = {\n"
+    )
+    for _, pattern, method in sorted(
+        (k for k in hand["ALWAYS_ALLOW"] if k[0] == prefix),
+        key=lambda k: (k[1], k[2]),
+    ):
+        out.append(f'    ("{pattern}", "{method}"),\n')
+    out.append("}\n\n")
+
+    out.append(
+        "# (path pattern, method) -> the pages whose permission authorises it.\n"
+        "# An endpoint in UNCALLED_ENDPOINTS is deliberately absent: the SPA never\n"
+        "# calls it, so it has no page to grant, and it is refused under enforce\n"
+        "# for the same reason it is refused at the gateway.\n"
+        "ROUTE_PERMISSIONS = {\n"
+    )
+    for _, pattern, method in rows:
+        pages = ", ".join(f'"{p}"' for p in table[(prefix, pattern, method)])
+        out.append(f'    ("{pattern}", "{method}"): ({pages},),\n')
+    out.append("}\n\n")
+
+    out.append(
+        "# A detail view has no menu row, so it can never be a key in `perm`.\n"
+        "# Naming the screen it is opened from is how the app already behaves.\n"
+        "# Not service-scoped: these are page links, shared by every service.\n"
+        "PAGE_PARENTS = {\n"
+    )
+    for route, parents in sorted(_page_parents().items()):
+        values = ", ".join(f'"{p}"' for p in parents)
+        out.append(f'    "{route}": ({values},),\n')
+    out.append("}\n\n")
+
+    out.append(POLICY_BODY)
+    return "".join(out)
+
+
+def _page_parents() -> dict:
+    """Read PAGE_PARENTS back out of the generated gateway map."""
+    parents = _literal_tables(OUT, ("PAGE_PARENTS",))
+    if "PAGE_PARENTS" not in parents:
+        raise SystemExit(f"cannot read PAGE_PARENTS out of {OUT}")
+    return parents["PAGE_PARENTS"]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--report", action="store_true",
                     help="print coverage, write nothing")
+    ap.add_argument("--menus-from", default="",
+                    help="file of menu/submenu links, one per line; used "
+                         "instead of the database when present "
+                         "(see QA/live/fetch_menu_paths.py)")
     args = ap.parse_args()
+
+    global MENU_FILE
+    MENU_FILE = args.menus_from
+    if MENU_FILE:
+        print(f"menu paths    : {MENU_FILE}")
 
     table, uncalled, parents, unreachable, stats = collect()
     by_service = collections.Counter(k[0] for k in table)
@@ -848,6 +1253,21 @@ def main() -> int:
 
     OUT.write_text(render(table, uncalled, parents, unreachable), encoding="utf-8")
     print(f"\nwrote {OUT.relative_to(ROOT)}")
+
+    # Each service gets its own slice of the same data, written from the same run
+    # so the two layers cannot disagree. The hand-written policy tables are read
+    # back out of the gateway map just written, which is why this happens after.
+    hand = load_hand_written_tables(OUT)
+    print("\nper-service policy (the second, independent authorisation layer):")
+    for prefix, service in sorted(SERVICE_DIRS.items()):
+        rows = sum(1 for k in table if k[0] == prefix)
+        target = (ROOT / "Backend" / "Services" / service
+                  / "resources" / "route_policy.py")
+        target.write_text(render_service_policy(prefix, service, table, hand),
+                          encoding="utf-8")
+        exempt = sum(1 for k in hand["ALWAYS_ALLOW"] if k[0] == prefix)
+        print(f"    {service:<22} {rows:>4} route(s), {exempt} exempt -> "
+              f"{target.relative_to(ROOT)}")
     return 0
 
 

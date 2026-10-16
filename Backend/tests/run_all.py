@@ -73,6 +73,20 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SERVICES_DIR = ROOT / "Backend" / "Services"
 TESTS_DIR = ROOT / "Backend" / "tests"
 
+# Suites that are scripts, not pytest modules -- each drives its own
+# subprocesses because what it verifies cannot be collected by importing.
+#
+# The last two are the source-rewriting tools, run WITHOUT --apply. They default
+# to reporting, so calling them here is a real assertion that all five non-gateway
+# services still carry the loopback bind guard and that none of the six has
+# regrown an import-time date constant.
+SCRIPT_SUITES = ["test_bind_guard.py", "test_spa_fallback.py"]
+
+SOURCE_INVARIANT_TOOLS = [
+    "install_bind_guard.py",
+    "remove_frozen_dates.py",
+]
+
 
 def run(service: str, suite: str) -> tuple[str, bool, str]:
     cwd = SERVICES_DIR / service
@@ -89,10 +103,46 @@ def run(service: str, suite: str) -> tuple[str, bool, str]:
     return label, proc.returncode == 0, tail[-1] if tail else "(no output)"
 
 
+def run_script(suite: str) -> tuple[str, bool, str]:
+    """A suite that is a script rather than a pytest module.
+
+    `test_bind_guard.py` imports each service's `main` in a subprocess with
+    different SERVICE_HOST values, because the control it verifies is an
+    import-time check -- pytest collects by importing the module under test, so
+    it cannot vary the environment per case within one process.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(TESTS_DIR / suite)],
+        cwd=str(ROOT), env={**os.environ, "DB_AUTO_CREATE": "false"},
+        capture_output=True, text=True,
+    )
+    tail = (proc.stdout or proc.stderr).strip().splitlines()
+    return suite, proc.returncode == 0, tail[-1] if tail else "(no output)"
+
+
+def run_tool(tool: str) -> tuple[str, bool, str]:
+    """Run one of the source-rewriting tools in its reporting mode.
+
+    These tools rewrite files across every service when given --apply. Because
+    reporting is the default, running them here is safe to do in CI and doubles
+    as the assertion that the invariant they enforce still holds.
+    """
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "Backend" / "tools" / tool)],
+        cwd=str(ROOT), capture_output=True, text=True,
+    )
+    tail = (proc.stdout or proc.stderr).strip().splitlines()
+    return tool, proc.returncode == 0, tail[-1] if tail else "(no output)"
+
+
 def main() -> int:
     jobs = [
         (RBAC_SERVICE, "test_rbac.py"),
         (GATEWAY_SERVICE, "test_rbac_gateway.py"),
+        # The service-side permission guard must reach the same verdict as the
+        # gateway for every one of the 279 routes -- exhaustively, not sampled.
+        # Runs from the gateway service because it imports both sides to compare.
+        (GATEWAY_SERVICE, "test_route_policy.py"),
         (NIGHT_AUDIT_SERVICE, "test_night_audit.py"),
         # Reservation's rules are pure functions in the same service.
         (NIGHT_AUDIT_SERVICE, "test_reservation_rules.py"),
@@ -151,11 +201,28 @@ def main() -> int:
         if not ok:
             failed.append(label)
 
+    # Script suites, which need the repository root rather than a service
+    # directory and drive their own subprocesses.
+    for suite in SCRIPT_SUITES:
+        label, ok, summary = run_script(suite)
+        print(f"{'PASS' if ok else 'FAIL'}  {label:<40} {summary}")
+        if not ok:
+            failed.append(label)
+
+    # Invariant checks: the tools that enforce the two source-wide rules, run in
+    # reporting mode so they cannot rewrite anything.
+    for tool in SOURCE_INVARIANT_TOOLS:
+        label, ok, summary = run_tool(tool)
+        print(f"{'PASS' if ok else 'FAIL'}  {label:<40} {summary}")
+        if not ok:
+            failed.append(label)
+
     print()
     if failed:
         print(f"{len(failed)} suite(s) failed: {', '.join(failed)}")
         return 1
-    print(f"All {len(jobs)} suites passed.")
+    print(f"All {len(jobs) + len(SCRIPT_SUITES) + len(SOURCE_INVARIANT_TOOLS)} "
+          f"suites passed.")
     return 0
 
 

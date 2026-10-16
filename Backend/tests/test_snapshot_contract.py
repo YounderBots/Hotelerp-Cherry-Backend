@@ -110,11 +110,36 @@ def client(db):
         main.app.dependency_overrides.pop(get_db, None)
 
 
+def _admin_perms():
+    """A `perm` claim like the one a real login mints: every page, every action.
+
+    This fixture used to mint a token with NO `perm` claim at all, which no
+    login can produce -- the gateway writes the claim, writing `perm: {}` when
+    the permission service is unreachable. Such a token is refused by BOTH
+    authorisation layers, correctly: a claimless token grants nothing.
+
+    That did not matter while the service had no authorisation of its own, but
+    under ROUTE_POLICY_MODE=enforce it made 10 of these 12 tests fail on a 403
+    before they reached the contract they exist to check. The fix is to mint the
+    token a real caller has, not to weaken the check.
+
+    Derived from the service's own map so the fixture cannot drift from it.
+    Authorisation itself is covered by test_route_policy.py; this suite is about
+    the SHAPE of the data, and a fixture modelling an impossible caller is not a
+    faithful stand-in for a real one.
+    """
+    from resources.route_policy import ROUTE_PERMISSIONS
+
+    bits = 1 | 2 | 4 | 8
+    pages = {page for route in ROUTE_PERMISSIONS.values() for page in route}
+    return {page: bits for page in pages}
+
+
 def token(company_id=TENANT):
     now = int(time.time())
     return jwt.encode(
         {"user_id": 1, "role_id": 1, "company_id": company_id, "iat": now, "exp": now + 600,
-         "iss": BaseConfig.JWT_ISSUER},
+         "iss": BaseConfig.JWT_ISSUER, "perm": _admin_perms()},
         BaseConfig.SECRET_KEY, algorithm=BaseConfig.ALGORITHM,
     )
 

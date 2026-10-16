@@ -34,11 +34,13 @@ Exit code 0 when every check passes, 1 otherwise.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
 import socket
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -94,6 +96,66 @@ def get_typed(url, token=None, timeout=20):
         return e.code, e.read(), e.headers.get("Content-Type", "")
     except Exception as exc:                                   # noqa: BLE001
         return 0, str(exc).encode(), ""
+
+
+def _jwt_claims(token):
+    """The payload of a JWT, without verifying it.
+
+    Deliberately unverified: this reads what the deployment SAYS about its own
+    token, which is the question check 3b and 3c ask. Verifying it would need
+    the signing key, which the operator does not have and should not have.
+    """
+    try:
+        seg = token.split(".")[1]
+        seg += "=" * (-len(seg) % 4)
+        return json.loads(base64.urlsafe_b64decode(seg))
+    except Exception:                                           # noqa: BLE001
+        return None
+
+
+def _check_token_lifetime(session, max_ttl_minutes):
+    """Report the lifetime the gateway advertises, and sanity-check it."""
+    token = (session or {}).get("access_token") or ""
+    if not token:
+        warn("no token to inspect", "the sign-in response carried no access_token")
+        return
+
+    claims = _jwt_claims(token)
+    if not claims:
+        bad("the access token is not a readable JWT",
+            "cannot establish a session lifetime at all")
+        return
+
+    now = int(time.time())
+    exp, iat = claims.get("exp"), claims.get("iat")
+
+    if exp is None:
+        bad("THE ACCESS TOKEN HAS NO EXPIRY",
+            "it carries no `exp` claim, so it is valid forever: a token copied "
+            "out of a browser is a permanent credential. Every service requires "
+            "exp/iat to be present -- check verify_authentication in "
+            "resources/utils.py of each service, and ACCESS_TOKEN_EXPIRE_MINUTES "
+            "in the gateway's .env")
+        return
+    if iat is None:
+        warn("the access token has no `iat`", "cannot compute its lifetime")
+
+    lifetime = (int(exp) - int(iat or now)) / 60.0
+    remaining = (int(exp) - now) / 60.0
+    detail = f"lifetime {lifetime:.0f} min, {remaining:.0f} min remaining"
+
+    if lifetime > max_ttl_minutes:
+        warn(f"the session lasts {lifetime:.0f} min (limit {max_ttl_minutes})",
+             f"{detail}. A stolen token stays usable that long. Lower "
+             f"ACCESS_TOKEN_EXPIRE_MINUTES in the gateway's .env, and confirm "
+             f"the services verify `exp` -- check 3c is how.")
+    else:
+        ok("the session has a bounded lifetime", detail)
+
+    if remaining <= 0:
+        bad("the token just handed out is ALREADY past its exp",
+            f"{detail}. The gateway is minting tokens that are expired on arrival; "
+            f"check the server's clock and ACCESS_TOKEN_EXPIRE_MINUTES")
 
 
 def login(host, port, email, password, timeout=25):
@@ -225,6 +287,18 @@ def main() -> int:
                     help="password for --low-email. Set it, or export "
                          "PREFLIGHT_LOW_PASSWORD, once the seeded password has "
                          "been rotated.")
+    # Session lifetime. See check 3b for why this is a parameter and not a
+    # constant: how long a session may last is a property decision, but a
+    # deployment that never expires one is indistinguishable from one that does
+    # until you have told it apart, and that is not a thing to discover during an
+    # incident.
+    ap.add_argument("--max-token-ttl-minutes", type=int,
+                    default=int(os.getenv("PREFLIGHT_MAX_TOKEN_TTL_MINUTES", "1440")),
+                    help="warn if a freshly minted token lives longer than this "
+                         "(default 1440 = 24h)")
+    ap.add_argument("--expired-token", default=os.getenv("PREFLIGHT_EXPIRED_TOKEN", ""),
+                    help="a token you know is past its exp, to ask the gateway "
+                         "whether it still honours it. See check 3c.")
     args = ap.parse_args()
 
     services = dict(DEFAULT_SERVICES)
@@ -310,6 +384,59 @@ def main() -> int:
                 "'audit', which only logs what it would have denied.")
         else:
             warn("unexpected status for the RBAC probe", f"status {st}")
+
+        # -- 3b. does a session actually END -------------------------------
+        # The deployment at 168.231.103.18 answered 200 for an access token
+        # 760 minutes past its `exp` claim, on every service, while a malformed
+        # token was correctly refused. The signature was being verified and the
+        # expiry was not, so the failure was invisible to every check that
+        # asked "is authentication working?" -- it was.
+        #
+        # What CAN be established from outside: what lifetime the gateway says
+        # it mints, and whether that matches the token it actually handed over.
+        # A deployment that advertises an hour and mints a year, or mints one
+        # with no `exp` at all, is caught here. Whether it HONOURS the claim it
+        # carries cannot be established without waiting for it to lapse, which
+        # is what check 3c is for.
+        print("\n=== 3b. the session has a lifetime ===")
+        _check_token_lifetime(low, args.max_token_ttl_minutes)
+
+    # -- 3c. is an already-expired token refused? ---------------------------
+    # Deliberately separate from 3b, and opt-in, because it needs a token that
+    # has actually expired and nobody wants to wait an hour inside a preflight.
+    # The operator runs it the next morning with yesterday's token:
+    #
+    #     python Backend/tools/preflight.py --host <server> \
+    #         --expired-token "$(cat yesterday-token.txt)"
+    #
+    # This is the probe that found the defect, so it belongs in the tool rather
+    # than in a one-off script that gets lost.
+    if args.expired_token:
+        print("\n=== 3c. an expired token is refused ===")
+        claims = _jwt_claims(args.expired_token)
+        if not claims or "exp" not in claims:
+            warn("the supplied token has no readable exp claim",
+                 "cannot tell whether it is expired; the probe proves nothing")
+        else:
+            age = int(time.time()) - int(claims["exp"])
+            st, body = get(f"http://{host}:{args.gateway}/masterdata/room",
+                           args.expired_token)
+            if st == 401:
+                ok(f"a token {age // 60} min past exp is refused",
+                   f"401 {str(body)[:60]}")
+            elif st == 200:
+                bad("AN EXPIRED TOKEN IS STILL ACCEPTED",
+                    f"this token expired {age // 60} min ago and the gateway "
+                    f"answered 200 with data. Sessions never end, so a stolen "
+                    f"token is valid for as long as the attacker keeps it. The "
+                    f"services verify the signature but not `exp` -- check "
+                    f"resources/utils.py verify_authentication in each service.")
+            else:
+                warn("unexpected status for the expired-token probe", f"status {st}")
+    else:
+        print("\n=== 3c. an expired token is refused ===")
+        print("  SKIP  pass --expired-token (or PREFLIGHT_EXPIRED_TOKEN) with a")
+        print("        token you know has lapsed, to prove expiry is enforced")
 
         # -- 4. can the gateway be stepped around -------------------------
         print("\n=== 4. the internal services are not reachable directly ===")

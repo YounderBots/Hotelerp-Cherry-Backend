@@ -22,7 +22,8 @@ Legend - A: has Add/create - V: has View/details - E: has Edit - T: has a table
 | 4 | Housekeeping | imran.khan, lakshmi.iyer |
 | 5 | Food & Beverage | vikram.singh, sunita.patel, joseph.dsouza |
 
-All 10 accounts share the demo password `CherryDemo!2026`, restored on
+All 10 accounts share one demo password, supplied at seed time through
+`SEED_PASSWORD` and never written to the repository; restored on
 request with `rotate_passwords.py --confirm --password '...' --out <file>`
 so that a demo works from one card.
 

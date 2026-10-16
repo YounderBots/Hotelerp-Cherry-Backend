@@ -30,7 +30,9 @@ logger = logging.getLogger("userservice.controller")
 # /login_post, but that limiter is keyed on the peer address and sits in front
 # of a different route: a caller who posts straight to /user/verify_credentials
 # gets unlimited guesses at a bcrypt hash-adjacent oracle, and under
-# RBAC_GATEWAY_MODE=audit (the default) the route is reachable.
+# RBAC_GATEWAY_MODE=audit (not the default -- rbac.py defaults to `enforce`
+# precisely so a deployment that forgets the variable is not left open) the
+# route is reachable.
 #
 # Keyed on the target account rather than the peer address, because behind the
 # proxy every request arrives from the gateway's own address -- a per-peer
