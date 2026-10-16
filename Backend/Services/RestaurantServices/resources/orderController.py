@@ -53,6 +53,8 @@ def _auth(request: Request):
 # request, with the failing SQL attached.
 ORDER_TYPES = ("Dine-In", "Takeaway", "Delivery", "Room Service")
 ORDER_STATUSES = ("New", "In Progress", "Ready", "Served", "Completed", "Cancelled")
+# Mirrors the `order_item_status_enum` column.
+ITEM_STATUSES = ("Pending", "Preparing", "Ready", "Served", "Cancelled")
 
 # Where each status may go next. The two terminal states are absent on purpose:
 # a Completed or Cancelled order is a closed financial record (billing has
@@ -276,6 +278,39 @@ def _recalculate_totals(db: Session, order: models.RestaurantOrder):
     order.sub_total = sub_total
     order.grand_total = grand_total
     return sub_total, grand_total
+
+
+def _active_bill(db: Session, order_id: int, company_id: str):
+    """The bill raised against an order, if one is still standing."""
+    return (
+        db.query(models.RestaurantBill)
+        .filter(
+            models.RestaurantBill.order_id == order_id,
+            models.RestaurantBill.company_id == company_id,
+            models.RestaurantBill.bill_status != "Cancelled",
+        )
+        .first()
+    )
+
+
+def _assert_not_billed(db: Session, order: models.RestaurantOrder, company_id: str) -> None:
+    """Refuse to change the lines of an order that has been billed.
+
+    A bill copies the order's lines and totals when it is generated and never
+    looks at the order again. Items added to a Served order after billing were
+    sent to the kitchen and then never charged -- the guest paid the old total
+    and the payment closed the order -- and a line removed after billing left
+    the guest paying for it anyway.
+    """
+    bill = _active_bill(db, order.id, company_id)
+    if bill:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"This order has been billed ({bill.bill_number}). Cancel the "
+                "unpaid bill to change the order, or start a new order."
+            ),
+        )
 
 
 def _modifier_data(modifier: models.RestaurantOrderItemModifier):
@@ -514,6 +549,7 @@ def get_order(order_id: int, request: Request, db: Session = Depends(get_db)):
     item_data = [
         _order_item_data(i, menu_name_by_id.get(i.menu_id), item_pricing[i.id]) for i in items
     ]
+    bill = _active_bill(db, order.id, company_id)
     # Return the same values used by the calculator, even for an order created
     # before modifier pricing was fixed and still carrying an old stored total.
     return {
@@ -524,6 +560,8 @@ def get_order(order_id: int, request: Request, db: Session = Depends(get_db)):
             "modifier_total": modifier_total,
             "grand_total": grand_total,
             "items": item_data,
+            # Set while a bill stands against the order; its lines are frozen.
+            "active_bill_number": bill.bill_number if bill else None,
         },
     }
 
@@ -540,6 +578,7 @@ def add_order_items(order_id: int, payload: OrderItemsIn, request: Request, db: 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     if order.order_status in ("Completed", "Cancelled"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot add items to a {order.order_status} order")
+    _assert_not_billed(db, order, company_id)
 
     try:
         created = []
@@ -601,13 +640,22 @@ def update_order_item(order_item_id: int, payload: OrderItemUpdate, request: Req
     )
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order item not found")
-    for field, value in payload.dict(exclude_unset=True).items():
+    order = (
+        db.query(models.RestaurantOrder)
+        .filter(models.RestaurantOrder.id == item.order_id, models.RestaurantOrder.company_id == company_id)
+        .first()
+    )
+    if not order or order.order_status in ("Completed", "Cancelled"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot update an item on a terminal order")
+    _assert_not_billed(db, order, company_id)
+    updates = payload.dict(exclude_unset=True)
+    if updates.get("item_status") is not None and updates["item_status"] not in ITEM_STATUSES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="item_status is invalid")
+    for field, value in updates.items():
         setattr(item, field, value)
     item.updated_by = user_id
     db.flush()
-    order = db.query(models.RestaurantOrder).filter(models.RestaurantOrder.id == item.order_id).first()
-    if order:
-        _recalculate_totals(db, order)
+    _recalculate_totals(db, order)
     db.commit()
     return {"status": "success", "message": "Order item updated"}
 
@@ -622,13 +670,27 @@ def cancel_order_item(order_item_id: int, request: Request, db: Session = Depend
     )
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order item not found")
+    order = (
+        db.query(models.RestaurantOrder)
+        .filter(models.RestaurantOrder.id == item.order_id, models.RestaurantOrder.company_id == company_id)
+        .first()
+    )
+    if not order or order.order_status in ("Completed", "Cancelled"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot remove an item from a terminal order")
+    _assert_not_billed(db, order, company_id)
+    # The Orders screen offers removal only before an item reaches the kitchen.
+    # Past that point a KOT exists and the dish is being made, so removing the
+    # line would take a prepared dish off the bill.
+    if item.item_status != "Pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This item is already {item.item_status} and can no longer be removed",
+        )
     item.status = UNSTATUS
     item.item_status = "Cancelled"
     item.updated_by = user_id
     db.flush()
-    order = db.query(models.RestaurantOrder).filter(models.RestaurantOrder.id == item.order_id).first()
-    if order:
-        _recalculate_totals(db, order)
+    _recalculate_totals(db, order)
     db.commit()
     return {"status": "success", "message": "Order item cancelled"}
 
@@ -755,6 +817,10 @@ def update_order_status(order_id: int, payload: OrderStatusIn, request: Request,
                 )
             ),
         )
+    # Cancelling a billed order left its bill open and payable; paying it then
+    # flipped the cancelled order to Completed.
+    if payload.order_status == "Cancelled":
+        _assert_not_billed(db, order, company_id)
 
     order.order_status = payload.order_status
     order.updated_by = user_id

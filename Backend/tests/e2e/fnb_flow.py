@@ -139,6 +139,15 @@ def venue_flow(prefix, ticket_path, label, dine_in):
     s, b = req("POST", f"/{prefix}/bill/generate/{oid}", TOK, CHARGES)
     check(f"{label}: billing the same order twice refused", refused(s), f"{s} {str(b)[:180]}")
 
+    # ---- a billed order's lines are frozen ----------------------------------
+    # The bill is a copy; an item added now would be made and never charged.
+    s, b = req("POST", f"/{prefix}/order/{oid}/items", TOK,
+               {"items": [{"menu_id": item["id"], "variant_id": None, "quantity": 1}]})
+    check(f"{label}: adding to a billed order refused", s == 409, f"{s} {str(b)[:180]}")
+    s, b = req("GET", f"/{prefix}/order/{oid}", TOK)
+    check(f"{label}: order names its standing bill",
+          bool((b.get("data") or {}).get("active_bill_number")), f"{s} {str(b)[:180]}")
+
     # ---- payment ------------------------------------------------------------
     s, b = req("POST", f"/{prefix}/bill/{bill_id}/payment", TOK,
                {"payment_method_id": method_id, "paid_amount": -5,
@@ -149,8 +158,18 @@ def venue_flow(prefix, ticket_path, label, dine_in):
                 "payment_reference": None, "remarks": None})
     check(f"{label}: unknown payment method refused", refused(s), f"{s} {str(b)[:150]}")
 
+    # ---- a part-paid bill can be settled, not cancelled ---------------------
+    # There is no refund path: a cancel would strand the money on a bill every
+    # report ignores and let the order be billed again in full.
     s, b = req("POST", f"/{prefix}/bill/{bill_id}/payment", TOK,
-               {"payment_method_id": method_id, "paid_amount": net,
+               {"payment_method_id": method_id, "paid_amount": 1,
+                "payment_reference": "FLOWTEST-PART", "remarks": "flow test"})
+    check(f"{label}: part payment -> 200/201", s in (200, 201), f"{s} {str(b)[:250]}")
+    s, b = req("PUT", f"/{prefix}/bill/{bill_id}/cancel", TOK, {"reason": "flow test"})
+    check(f"{label}: part-paid bill cannot be cancelled", s == 400, f"{s} {str(b)[:180]}")
+
+    s, b = req("POST", f"/{prefix}/bill/{bill_id}/payment", TOK,
+               {"payment_method_id": method_id, "paid_amount": round(net - 1, 2),
                 "payment_reference": "FLOWTEST", "remarks": "flow test"})
     check(f"{label}: settle the bill -> 200/201", s in (200, 201), f"{s} {str(b)[:250]}")
 

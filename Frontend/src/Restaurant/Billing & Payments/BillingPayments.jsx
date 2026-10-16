@@ -376,6 +376,9 @@ const BillingPayments = () => {
             render: (row) => {
               const settleable =
                 row.payment_status !== "Paid" && row.bill_status !== "Cancelled";
+              // Once money is taken the bill can only be settled: the API
+              // refuses to cancel it, as there is no refund path.
+              const cancellable = settleable && row.payment_status !== "Partial";
               return (
                 <RowActions
                   label={`bill ${row.bill_number || ""}`.trim()}
@@ -391,7 +394,7 @@ const BillingPayments = () => {
                       ariaLabel={`Collect payment for bill ${row.bill_number || ""}`}
                     />
                   )}
-                  {settleable && perms.delete && (
+                  {cancellable && perms.delete && (
                     <IconButton
                       variant="action-delete"
                       size="action"

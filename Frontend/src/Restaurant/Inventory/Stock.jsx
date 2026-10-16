@@ -504,6 +504,8 @@ const Stock = () => {
           name="direction"
           value={adjustForm.direction}
           onChange={(e) => setAdjustForm((p) => ({ ...p, direction: e.target.value }))}
+          // Wastage only ever removes stock; the API refuses a positive one.
+          disabled={adjustForm.transaction_type === "WASTE"}
           options={["Add", "Reduce"]}
         />
         <Input
@@ -520,7 +522,13 @@ const Stock = () => {
           label="Reason"
           name="transaction_type"
           value={adjustForm.transaction_type}
-          onChange={(e) => setAdjustForm((p) => ({ ...p, transaction_type: e.target.value }))}
+          onChange={(e) =>
+            setAdjustForm((p) => ({
+              ...p,
+              transaction_type: e.target.value,
+              direction: e.target.value === "WASTE" ? "Reduce" : p.direction,
+            }))
+          }
           options={ADJUST_REASONS}
         />
         <div className="field-full">

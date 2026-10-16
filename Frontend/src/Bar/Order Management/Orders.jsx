@@ -271,10 +271,14 @@ const Orders = () => {
     ["In Progress", "Ready"].includes(detailOrder.order_status) &&
     pendingItemCount === 0 &&
     allItemsReady;
-  const canEditItems =
+  const canSendItems =
     detailOrder &&
     !["Completed", "Cancelled"].includes(detailOrder.order_status) &&
     perms.edit;
+  // A billed order's lines are frozen: the bill is a copy taken when it was
+  // raised, so the API refuses changes until that bill is cancelled. Sending
+  // already-billed items to be made is still allowed.
+  const canEditItems = canSendItems && !detailOrder.active_bill_number;
 
   const pickedMenu = menuItems.find((m) => m.id === Number(pick.menuId));
   const variants = pickedMenu?.variants || [];
@@ -461,7 +465,7 @@ const Orders = () => {
         showFooter
         actions={[
           { label: "Close", variant: "secondary", onClick: closeDetail },
-          ...(pendingItemCount > 0 && canEditItems
+          ...(pendingItemCount > 0 && canSendItems
             ? [
                 {
                   label: `Send ${pendingItemCount} item${pendingItemCount === 1 ? "" : "s"} to Bar`,
@@ -488,6 +492,12 @@ const Orders = () => {
             <b>Payment</b>
             {detailOrder?.payment_status}
           </span>
+          {detailOrder?.active_bill_number && (
+            <span>
+              <b>Bill</b>
+              {detailOrder.active_bill_number}
+            </span>
+          )}
           <span>
             <b>Total</b>
             {formatPrecise(detailOrder?.grand_total)}

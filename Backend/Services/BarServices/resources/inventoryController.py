@@ -53,6 +53,20 @@ INVENTORY_UNITS = ("Bottle", "Litre", "ml", "Can", "Nos")
 STOCK_TRANSACTION_TYPES = ("ADJUSTMENT", "WASTE")
 
 
+def _assert_waste_reduces(payload) -> None:
+    """Wastage takes stock away; it can never add any.
+
+    The quantity's sign was the only thing that decided the direction, so
+    "Add" with "Wastage / Breakage" raised the stock level and wrote a positive
+    WASTE row to the ledger.
+    """
+    if payload.transaction_type == "WASTE" and payload.quantity > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Wastage reduces stock; send a negative quantity",
+        )
+
+
 def _validate_item_values(*, item_name, unit, min_stock_level):
     if item_name is not None:
         item_name = str(item_name).strip()
@@ -552,6 +566,7 @@ def adjust_stock(payload: StockAdjustIn, request: Request, db: Session = Depends
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="inventory_item_id does not exist")
     if payload.transaction_type not in STOCK_TRANSACTION_TYPES:
         raise HTTPException(status_code=400, detail="transaction_type is invalid")
+    _assert_waste_reduces(payload)
     if payload.remarks is not None and len(str(payload.remarks).strip()) > 255:
         raise HTTPException(status_code=400, detail="remarks must not exceed 255 characters")
     if payload.station_id is not None and not db.query(models.BarStation).filter(

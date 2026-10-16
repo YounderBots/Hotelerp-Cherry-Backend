@@ -174,3 +174,21 @@ def test_a_negative_bed_count_cannot_credit_the_folio(db):
     assert q["extra_bed_count"] == 0
     assert q["extra_bed_total"] == 0
     assert folio_identity_holds(q)
+
+
+# ---------------------------------------------------------------------------
+# Non-finite operator inputs. Form and JSON floats both accept "nan"/"inf", and
+# NaN cleared every range check in quote() (all comparisons with it are False),
+# so the folio came back NaN and the insert failed as a 500.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("field", [
+    "extra_charges", "extra_bed_cost", "room_amount_override", "paying_amount",
+])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), "nan"])
+def test_a_non_finite_amount_is_refused(db, field, value):
+    kw = {field: value}
+    if field == "extra_bed_cost":
+        kw["extra_bed_count"] = 1
+    with pytest.raises(rules.RuleError, match="finite"):
+        price(db, **kw)

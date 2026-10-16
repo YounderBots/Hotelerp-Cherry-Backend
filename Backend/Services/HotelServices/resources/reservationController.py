@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import re
 import uuid
@@ -3130,6 +3131,10 @@ async def reservation_pay_due_amount(
             paying_amount = rules.money(float(payload.get("paying_amount")))
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="Paying amount must be a number")
+        # NaN passes both range checks below (every comparison with it is
+        # False) and only failed at the insert, as a 500.
+        if not math.isfinite(paying_amount):
+            raise HTTPException(status_code=400, detail="Paying amount must be a finite number")
 
         if paying_amount <= 0:
             raise HTTPException(
@@ -3225,6 +3230,8 @@ async def reservation_refund_extra_amount(
             refund_amount = rules.money(float(payload.get("refund_amount")))
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="Refund amount must be a number")
+        if not math.isfinite(refund_amount):
+            raise HTTPException(status_code=400, detail="Refund amount must be a finite number")
 
         if refund_amount <= 0:
             raise HTTPException(

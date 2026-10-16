@@ -715,6 +715,18 @@ def quote(
     """
     nights = max(1, int(nights or 1))
 
+    # Form and JSON floats both accept "nan"/"inf", and `money` passes them
+    # through: NaN is neither < 0 nor > anything, so it cleared every check
+    # below and only failed at the insert, as a 500.
+    for label, value in (
+        ("Extra charges", extra_charges),
+        ("Extra bed cost", extra_bed_cost),
+        ("Room amount", room_amount_override),
+        ("Paying amount", paying_amount),
+    ):
+        if value is not None and not math.isfinite(as_float(value)):
+            raise RuleError(f"{label} must be a finite number")
+
     rooms = load_rooms(md, room_ids)
     type_ids = {as_int(rooms[r].room_type_id) for r in rooms}
     room_types = load_room_types(md, type_ids)

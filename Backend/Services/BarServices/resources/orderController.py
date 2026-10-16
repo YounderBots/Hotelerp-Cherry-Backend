@@ -298,6 +298,40 @@ def _recalculate_totals(db: Session, order: models.BarOrder):
     return sub_total, grand_total
 
 
+def _active_bill(db: Session, order_id: int, company_id: str):
+    """The bill raised against an order, if one is still standing."""
+    return (
+        db.query(models.BarBill)
+        .filter(
+            models.BarBill.order_id == order_id,
+            models.BarBill.company_id == company_id,
+            models.BarBill.status == STATUS,
+            models.BarBill.bill_status != "Cancelled",
+        )
+        .first()
+    )
+
+
+def _assert_not_billed(db: Session, order: models.BarOrder, company_id: str) -> None:
+    """Refuse to change the lines of an order that has been billed.
+
+    A bill copies the order's lines and totals when it is generated and never
+    looks at the order again. Items added to a Served order after billing were
+    sent to the bar and then never charged -- the guest paid the old total and
+    the payment closed the order -- and a line removed after billing left the
+    guest paying for it anyway.
+    """
+    bill = _active_bill(db, order.id, company_id)
+    if bill:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"This order has been billed ({bill.bill_number}). Cancel the "
+                "unpaid bill to change the order, or start a new order."
+            ),
+        )
+
+
 def _modifier_data(modifier: models.BarOrderItemModifier):
     return {
         "id": modifier.id,
@@ -500,6 +534,7 @@ def get_order(order_id: int, request: Request, db: Session = Depends(get_db)):
     item_data = [
         _order_item_data(i, menu_name_by_id.get(i.menu_id), item_pricing[i.id]) for i in items
     ]
+    bill = _active_bill(db, order.id, company_id)
     # Return the same values used by the calculator, even for an order created
     # before modifier pricing was fixed and still carrying an old stored total.
     return {
@@ -510,6 +545,8 @@ def get_order(order_id: int, request: Request, db: Session = Depends(get_db)):
             "modifier_total": modifier_total,
             "grand_total": grand_total,
             "items": item_data,
+            # Set while a bill stands against the order; its lines are frozen.
+            "active_bill_number": bill.bill_number if bill else None,
         },
     }
 
@@ -529,6 +566,7 @@ def add_order_items(order_id: int, payload: OrderItemsIn, request: Request, db: 
         raise HTTPException(status_code=400, detail="At least one order item is required")
     if order.order_status in ("Completed", "Cancelled"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Cannot add items to a {order.order_status} order")
+    _assert_not_billed(db, order, company_id)
 
     try:
         created = []
@@ -602,6 +640,7 @@ def update_order_item(order_item_id: int, payload: OrderItemUpdate, request: Req
     order = db.query(models.BarOrder).filter(models.BarOrder.id == item.order_id, models.BarOrder.company_id == company_id).first()
     if not order or order.order_status in ("Completed", "Cancelled"):
         raise HTTPException(status_code=400, detail="Cannot update an item on a terminal order")
+    _assert_not_billed(db, order, company_id)
     updates = payload.dict(exclude_unset=True)
     if updates.get("quantity") is not None and int(updates["quantity"]) < 1:
         raise HTTPException(status_code=400, detail="quantity must be at least 1")
@@ -636,6 +675,15 @@ def cancel_order_item(order_item_id: int, request: Request, db: Session = Depend
     order = db.query(models.BarOrder).filter(models.BarOrder.id == item.order_id, models.BarOrder.company_id == company_id).first()
     if not order or order.order_status in ("Completed", "Cancelled"):
         raise HTTPException(status_code=400, detail="Cannot remove an item from a terminal order")
+    _assert_not_billed(db, order, company_id)
+    # The Orders screen offers removal only before an item reaches the bar.
+    # Past that point a ticket exists and the drink is being made, so removing
+    # the line would take a prepared drink off the bill.
+    if item.item_status != "Pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This item is already {item.item_status} and can no longer be removed",
+        )
     item.status = UNSTATUS
     item.item_status = "Cancelled"
     item.updated_by = user_id
@@ -746,6 +794,9 @@ def update_order_status(order_id: int, payload: OrderStatusIn, request: Request,
     _assert_in(payload.order_status, ORDER_STATUSES, "order_status")
     if payload.order_status != order.order_status and payload.order_status not in ORDER_TRANSITIONS.get(order.order_status, set()):
         raise HTTPException(status_code=400, detail=f"Cannot transition order from {order.order_status} to {payload.order_status}")
+    # Cancelling a billed order left its bill open on a cancelled order.
+    if payload.order_status == "Cancelled" and order.order_status != "Cancelled":
+        _assert_not_billed(db, order, company_id)
 
     order.order_status = payload.order_status
     order.updated_by = user_id

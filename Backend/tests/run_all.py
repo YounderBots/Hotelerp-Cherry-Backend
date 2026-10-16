@@ -192,6 +192,11 @@ def main() -> int:
     jobs.append(("RestaurantServices", "test_combo_rules.py"))
     # F&B pricing and recipe-deduction guards run against both venue schemas.
     jobs += [(svc, "test_fnb_hardening.py") for svc in BILLING_SERVICES]
+    # A billed order's lines are frozen, a part-paid bill cannot be cancelled,
+    # and wastage only ever removes stock -- in both venues.
+    jobs += [(svc, "test_order_bill_integrity.py") for svc in BILLING_SERVICES]
+    # Hotel payment/refund amounts must be finite (NaN reached the insert).
+    jobs.append(("HotelServices", "test_reservation_payment_guards.py"))
     jobs += [(svc, "test_jwt_auth.py") for svc in SERVICES]
 
     failed = []

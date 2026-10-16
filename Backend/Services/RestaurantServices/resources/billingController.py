@@ -96,6 +96,18 @@ def _finite(value, field: str) -> float:
     return parsed
 
 
+def _has_successful_payment(db: Session, bill_id: int) -> bool:
+    return (
+        db.query(models.RestaurantBillPayment.id)
+        .filter(
+            models.RestaurantBillPayment.bill_id == bill_id,
+            models.RestaurantBillPayment.payment_status == "Success",
+        )
+        .first()
+        is not None
+    )
+
+
 # An order that was never confirmed has not reached the kitchen, and a cancelled
 # one is not owed. The Billing screen already offers only Served / Ready /
 # In Progress orders; this is the same rule on the server, where it binds.
@@ -455,6 +467,10 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
             ),
         )
 
+    order = db.query(models.RestaurantOrder).filter(models.RestaurantOrder.id == bill.order_id).first()
+    if order and order.order_status == "Cancelled":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot pay a bill for a cancelled order")
+
     try:
         now = datetime.now()
         payment = models.RestaurantBillPayment(
@@ -485,7 +501,6 @@ def record_payment(bill_id: int, payload: PaymentIn, request: Request, db: Sessi
         elif total_paid > 0:
             bill.payment_status = "Partial"
 
-        order = db.query(models.RestaurantOrder).filter(models.RestaurantOrder.id == bill.order_id).first()
         if order and bill.payment_status == "Paid" and order.order_status != "Completed":
             order.payment_status = "Paid"
             order.order_status = "Completed"
@@ -547,8 +562,22 @@ def cancel_bill(bill_id: int, payload: BillCancelIn, request: Request, db: Sessi
     )
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
+    if bill.bill_status == "Cancelled":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This bill is already cancelled")
     if bill.payment_status == "Paid":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot cancel a bill that is already paid")
+    # A part-paid bill cannot be cancelled either. There is no refund path, so
+    # the payment stayed on a Cancelled bill that every report excludes, and
+    # generate_bill -- which ignores cancelled bills -- then raised a fresh bill
+    # for the full amount: the guest was asked for money already taken. Same
+    # rule split_bill_by_person applies.
+    if _has_successful_payment(db, bill.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bill has payments against it; collect the balance instead of cancelling",
+        )
+    if not str(payload.reason or "").strip() or len(str(payload.reason).strip()) > 255:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reason must be 1-255 characters")
     bill.bill_status = "Cancelled"
     bill.remarks = f"Cancelled: {payload.reason}"
     bill.updated_by = user_id
